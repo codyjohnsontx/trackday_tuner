@@ -1,9 +1,10 @@
 
 function Header() {
   return (
-    <div>Hello World, hello all
-        
-    </div>
+    <>
+      Hello World, hello all
+      {/* This is the Header */}
+    </>
   )
 }
 
