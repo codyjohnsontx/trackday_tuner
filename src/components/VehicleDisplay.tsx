@@ -24,24 +24,29 @@ function VehicleDisplay() {
     }
 
     return (
-        <div className="max-w-md mx-auto p-6">
+        <div>
             {vehicle && (
                 <div>
-                    <h2 className="text-2xl font-bold">{vehicle.make} {vehicle.model}</h2>
-                    <div className="mt-4 space-y-2">
+                    <h2>{vehicle.make} {vehicle.model}</h2>
+                    <div>
                         <p>Year: {vehicle.year}</p>
                         <p>Type: {vehicle.type}</p>
                         <p>Engine: {vehicle.engine}</p>
                         <p>Power: {vehicle.power}</p>
+                        <p>Front Suspension: {vehicle.front_suspension}</p>
+                        <p>Front Wheel Travel: {vehicle.front_wheel_travel}</p>
+                        <p>Rear Suspension: {vehicle.rear_suspension}</p>
+                        <p>Rear Wheel Travel: {vehicle.rear_wheel_travel}</p>
+                        <p>Front Tire Size: {vehicle.front_tire}</p>
+                        <p>Rear Tire Size: {vehicle.rear_tire}</p>
+                        <p>Total Weight: {vehicle.total_weight}</p>
+
+
+
                     </div>
                 </div>
             )}
-            <button
-                onClick={getVehicle}
-                className="bg-blue-500 text-white px-4 py-2 rounded mt-4 hover:bg-blue-600 transition-colors"
-            >
-                Get Vehicle
-            </button>
+            <button onClick={getVehicle}>Get Vehicle</button>
         </div>
     );
 }
