@@ -299,3 +299,23 @@ Sessions per active user per month
 % of users who create a 2nd session (retention)
 
 Free → Pro conversion rate (after hitting limits / wanting compare/export/AI)
+
+---
+
+## Current Implementation Status
+
+- Framework migrated to Next.js App Router + TypeScript + Tailwind v4.
+- Mobile-first shell is implemented with routes for `/`, `/login`, `/signup`, and `/sessions/new`.
+- Session logging supports both `motorcycle` and `car` modes.
+- Session modules are optional per session and can be added/removed.
+- Advanced fields are hidden by default and available through per-module toggles.
+- Partial entry is supported and can be saved locally as a draft.
+
+## Local Run
+
+```bash
+npm install
+npm run dev
+```
+
+Then open `http://localhost:3000`.
