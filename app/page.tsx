@@ -23,11 +23,20 @@ export default function HomePage() {
       </section>
 
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <Link href="/dashboard" className="block">
-          <Button variant="secondary" fullWidth>
+        <div className="space-y-2">
+          <Link
+            href="/login"
+            className="block min-h-12 rounded-xl bg-cyan-400 px-4 py-3 text-center text-sm font-semibold text-zinc-950 transition hover:bg-cyan-300"
+          >
+            Login / Sign Up
+          </Link>
+          <Link
+            href="/dashboard"
+            className="block min-h-12 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-center text-sm font-semibold text-zinc-100 transition hover:bg-zinc-800"
+          >
             View Dashboard Placeholder
-          </Button>
-        </Link>
+          </Link>
+        </div>
       </section>
     </div>
   );

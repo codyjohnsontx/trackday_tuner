@@ -13,7 +13,12 @@ export function AppShell({ children, isAuthenticated }: AppShellProps) {
           <Link href="/" className="text-lg font-semibold text-cyan-400">
             Track Tuner
           </Link>
-          <span className="text-xs font-medium uppercase tracking-wider text-zinc-400">Trackside Mode</span>
+          <Link
+            href={isAuthenticated ? '/logout' : '/login'}
+            className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-100"
+          >
+            {isAuthenticated ? 'Logout' : 'Login'}
+          </Link>
         </div>
       </header>
 
@@ -22,9 +27,17 @@ export function AppShell({ children, isAuthenticated }: AppShellProps) {
       {isAuthenticated ? (
         <nav className="sticky bottom-0 border-t border-zinc-800 bg-zinc-950/95 px-3 py-2 backdrop-blur">
           <ul className="grid grid-cols-3 gap-2 text-center text-xs text-zinc-300">
-            <li className="rounded-lg bg-zinc-900 py-2">Dashboard</li>
-            <li className="rounded-lg bg-zinc-900 py-2">Sessions</li>
-            <li className="rounded-lg bg-zinc-900 py-2">Garage</li>
+            <li>
+              <Link href="/dashboard" className="block rounded-lg bg-zinc-900 py-2">
+                Dashboard
+              </Link>
+            </li>
+            <li>
+              <span className="block rounded-lg bg-zinc-900 py-2">Sessions</span>
+            </li>
+            <li>
+              <span className="block rounded-lg bg-zinc-900 py-2">Garage</span>
+            </li>
           </ul>
         </nav>
       ) : null}
