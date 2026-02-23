@@ -36,7 +36,7 @@ export function AppShell({ children, isAuthenticated }: AppShellProps) {
               <span className="block rounded-lg bg-zinc-900 py-2">Sessions</span>
             </li>
             <li>
-              <span className="block rounded-lg bg-zinc-900 py-2">Garage</span>
+              <Link href="/garage" className="block rounded-lg bg-zinc-900 py-2">Garage</Link>
             </li>
           </ul>
         </nav>
