@@ -38,6 +38,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
   const [trackId, setTrackId] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [date, setDate] = useState(today);
+  const [startTime, setStartTime] = useState('');
   const [conditions, setConditions] = useState<SessionCondition>('sunny');
   const [tireCondition, setTireCondition] = useState<TireCondition>('scrubbed');
   const [frontTire, setFrontTire] = useState(emptyTireEnd);
@@ -101,6 +102,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
         track_id: trackId,
         track_name: trackQuery.trim() || null,
         date,
+        start_time: startTime || null,
         conditions,
         tires,
         suspension,
@@ -194,6 +196,12 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
           value={date}
           onChange={(e) => setDate(e.target.value)}
           required
+        />
+        <Input
+          label="Start Time"
+          type="time"
+          value={startTime}
+          onChange={(e) => setStartTime(e.target.value)}
         />
       </div>
 

@@ -60,7 +60,7 @@ export type SessionCondition = 'sunny' | 'overcast' | 'rainy' | 'mixed';
 export interface Session {
   id: string; user_id: string; vehicle_id: string;
   track_id: string | null; track_name: string | null;
-  date: string; conditions: SessionCondition;
+  date: string; start_time: string | null; conditions: SessionCondition;
   tires: Tires; suspension: Suspension; alignment: Alignment | null;
   notes: string | null; created_at: string; updated_at: string;
 }
@@ -70,6 +70,7 @@ export interface CreateSessionInput {
   track_id: string | null;
   track_name: string | null;
   date: string;
+  start_time?: string | null;
   conditions: SessionCondition;
   tires: Tires;
   suspension: Suspension;

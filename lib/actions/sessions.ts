@@ -96,6 +96,7 @@ export async function createSession(
       track_id: input.track_id,
       track_name: trackName,
       date: input.date,
+      start_time: input.start_time ?? null,
       conditions: input.conditions,
       tires: input.tires,
       suspension: input.suspension,

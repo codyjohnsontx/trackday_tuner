@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { getSession } from '@/lib/actions/sessions';
 import { getVehicles } from '@/lib/actions/vehicles';
+import { TimeDisplay } from '@/components/ui/time-display';
 
 interface SessionDetailPageProps {
   params: Promise<{ id: string }>;
@@ -65,6 +66,10 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
         <DetailRow label="Track" value={session.track_name ?? '—'} />
         <DetailRow label="Vehicle" value={vehicleNickname} />
         <DetailRow label="Date" value={formattedDate} />
+        <div className="flex items-center justify-between gap-3 py-1.5">
+          <span className="text-sm text-zinc-400">Start Time</span>
+          <TimeDisplay time={session.start_time} />
+        </div>
         <DetailRow label="Conditions" value={conditionLabel[session.conditions] ?? session.conditions} />
       </SectionCard>
 
