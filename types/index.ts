@@ -48,6 +48,7 @@ export interface Track {
   name: string;
   location: string | null;
   is_seeded: boolean;
+  created_by: string | null;
   created_at: string;
 }
 
