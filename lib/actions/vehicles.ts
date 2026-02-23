@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
-import type { ActionResult, CreateVehicleInput, Profile, Vehicle } from '@/types';
+import type { ActionResult, CreateVehicleInput, UpdateVehicleInput, Profile, Vehicle } from '@/types';
 
 export async function getVehicles(): Promise<Vehicle[]> {
   const user = await getAuthenticatedUser();
@@ -68,7 +68,52 @@ export async function createVehicle(
       year: input.year ?? null,
       make: input.make ?? null,
       model: input.model ?? null,
+      photo_url: input.photo_url ?? null,
     })
+    .select()
+    .single();
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/garage');
+  return { ok: true, data: data as Vehicle };
+}
+
+export async function getVehicle(id: string): Promise<ActionResult<Vehicle>> {
+  const user = await getAuthenticatedUser();
+  if (!user) return { ok: false, error: 'Not authenticated.' };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('vehicles')
+    .select('*')
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .single();
+
+  if (error || !data) return { ok: false, error: 'Vehicle not found.' };
+  return { ok: true, data: data as Vehicle };
+}
+
+export async function updateVehicle(
+  id: string,
+  input: UpdateVehicleInput,
+): Promise<ActionResult<Vehicle>> {
+  const user = await getAuthenticatedUser();
+  if (!user) return { ok: false, error: 'Not authenticated.' };
+
+  if (input.year !== undefined && input.year !== null) {
+    if (!Number.isInteger(input.year) || input.year < 1885 || input.year > 2100) {
+      return { ok: false, error: 'Please enter a valid year.' };
+    }
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('vehicles')
+    .update(input)
+    .eq('id', id)
+    .eq('user_id', user.id)
     .select()
     .single();
 

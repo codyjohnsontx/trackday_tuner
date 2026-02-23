@@ -16,6 +16,7 @@ export interface Vehicle {
   year: number | null;
   make: string | null;
   model: string | null;
+  photo_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -26,6 +27,16 @@ export interface CreateVehicleInput {
   year?: number | null;
   make?: string | null;
   model?: string | null;
+  photo_url?: string | null;
+}
+
+export interface UpdateVehicleInput {
+  nickname?: string;
+  type?: VehicleType;
+  year?: number | null;
+  make?: string | null;
+  model?: string | null;
+  photo_url?: string | null;
 }
 
 export type ActionResult<T = void> =
