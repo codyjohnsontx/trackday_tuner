@@ -166,6 +166,8 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
             placeholder="Search or type a track name"
             value={trackQuery}
             autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
             onChange={(e) => handleTrackInputChange(e.target.value)}
             onFocus={() => setShowDropdown(true)}
             onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
@@ -257,6 +259,8 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
             value={frontTire.brand}
             onChange={(e) => setFrontTire({ ...frontTire, brand: e.target.value })}
             autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
           />
           <Input
             label="Compound"
@@ -265,6 +269,8 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
             value={frontTire.compound}
             onChange={(e) => setFrontTire({ ...frontTire, compound: e.target.value })}
             autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
           />
           <Input
             label="Pressure"
@@ -285,6 +291,8 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
             value={rearTire.brand}
             onChange={(e) => setRearTire({ ...rearTire, brand: e.target.value })}
             autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
           />
           <Input
             label="Compound"
@@ -293,6 +301,8 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
             value={rearTire.compound}
             onChange={(e) => setRearTire({ ...rearTire, compound: e.target.value })}
             autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
           />
           <Input
             label="Pressure"
