@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SagSection, type SagSectionValues } from '@/components/sag/sag-section';
 import { SagHistoryList } from '@/components/sag/sag-history-list';
 import { createSagEntry } from '@/lib/actions/sag';
+import { clearDraft, loadDraft, saveDraft } from '@/lib/drafts';
 import { parseMeasurement } from '@/lib/sag';
 import type { SagEntry } from '@/types';
 
@@ -20,6 +21,7 @@ const emptySide: SagSectionValues = {
 };
 
 export function SagCalculator({ initialEntries }: SagCalculatorProps) {
+  const draftKey = 'sag_calculator';
   const [entries, setEntries] = useState<SagEntry[]>(initialEntries);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -29,7 +31,28 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
   const [notes, setNotes] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [draftMessage, setDraftMessage] = useState('');
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    const draft = loadDraft<{
+      front: SagSectionValues;
+      rear: SagSectionValues;
+      label: string;
+      notes: string;
+    }>(draftKey);
+    if (!draft) return;
+
+    setFront(draft.front ?? emptySide);
+    setRear(draft.rear ?? emptySide);
+    setLabel(draft.label ?? '');
+    setNotes(draft.notes ?? '');
+    setDraftMessage('Draft restored from this device.');
+  }, []);
+
+  useEffect(() => {
+    saveDraft(draftKey, { front, rear, label, notes });
+  }, [front, rear, label, notes]);
 
   function resetAll() {
     setFront(emptySide);
@@ -39,6 +62,8 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
     setSelectedId(null);
     setErrorMessage('');
     setSuccessMessage('');
+    setDraftMessage('');
+    clearDraft(draftKey);
   }
 
   function loadEntry(entry: SagEntry) {
@@ -124,6 +149,7 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
 
           {errorMessage ? <p className="text-sm text-rose-300">{errorMessage}</p> : null}
           {successMessage ? <p className="text-sm text-emerald-300">{successMessage}</p> : null}
+          {draftMessage ? <p className="text-sm text-emerald-300">{draftMessage}</p> : null}
 
           <div className="grid grid-cols-2 gap-2">
             <Button type="submit" fullWidth disabled={isPending}>
