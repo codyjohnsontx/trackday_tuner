@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test';
 
 const E2E_EMAIL = process.env.E2E_EMAIL;
 const E2E_PASSWORD = process.env.E2E_PASSWORD;
+const GOOGLE_ENABLED = (process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED ?? 'true') === 'true';
+const APPLE_ENABLED = (process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED ?? 'false') === 'true';
 
 async function signIn(page: import('@playwright/test').Page) {
   await page.goto('/login');
@@ -26,6 +28,20 @@ test.describe('unauthenticated route guards', () => {
   test('renders login page controls', async ({ page }) => {
     await page.goto('/login');
     await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
+    const googleButton = page.getByRole('button', { name: 'Continue with Google' });
+    const appleButton = page.getByRole('button', { name: 'Continue with Apple' });
+    await expect(googleButton).toBeVisible();
+    await expect(appleButton).toBeVisible();
+    if (GOOGLE_ENABLED) {
+      await expect(googleButton).toBeEnabled();
+    } else {
+      await expect(googleButton).toBeDisabled();
+    }
+    if (APPLE_ENABLED) {
+      await expect(appleButton).toBeEnabled();
+    } else {
+      await expect(appleButton).toBeDisabled();
+    }
     await expect(page.getByLabel('Email')).toBeVisible();
     await expect(page.getByLabel('Password')).toBeVisible();
     await expect(page.getByRole('button', { name: /^Sign In$/ }).first()).toBeVisible();

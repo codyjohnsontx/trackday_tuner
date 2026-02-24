@@ -19,6 +19,13 @@ export default defineConfig({
       ? undefined
       : {
           command: `npm run dev -- --hostname 127.0.0.1 --port ${port}`,
+          env: {
+            ...process.env,
+            NEXT_PUBLIC_AUTH_GOOGLE_ENABLED:
+              process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED ?? 'true',
+            NEXT_PUBLIC_AUTH_APPLE_ENABLED:
+              process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED ?? 'false',
+          },
           url: baseURL,
           reuseExistingServer: !process.env.CI,
           timeout: 120_000,

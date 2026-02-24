@@ -4,6 +4,7 @@ import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { getOAuthProviders, type OAuthProvider } from '@/lib/auth/providers';
 import { createClient } from '@/lib/supabase/client';
 
 type AuthMode = 'sign-in' | 'sign-up';
@@ -16,6 +17,26 @@ export function AuthForm() {
   const [errorMessage, setErrorMessage] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const oauthProviders = getOAuthProviders();
+
+  async function handleOAuthSignIn(provider: OAuthProvider) {
+    setLoading(true);
+    setErrorMessage('');
+    setInfoMessage('');
+
+    const supabase = createClient();
+    const redirectTo = `${window.location.origin}/auth/callback?next=/dashboard`;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo },
+    });
+
+    if (error) {
+      setErrorMessage(error.message);
+      setLoading(false);
+      return;
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -61,6 +82,32 @@ export function AuthForm() {
     <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
       <h1 className="text-xl font-semibold text-zinc-100">Login</h1>
       <p className="text-sm text-zinc-300">Use your email and password to access Track Tuner.</p>
+
+      <div className="space-y-2">
+        {oauthProviders.map((provider) => (
+          <div key={provider.id} className="space-y-1">
+            <Button
+              type="button"
+              variant="secondary"
+              className="min-h-12 w-full"
+              onClick={() => handleOAuthSignIn(provider.id)}
+              disabled={!provider.enabled || loading}
+              aria-disabled={!provider.enabled || loading}
+            >
+              {`Continue with ${provider.label}`}
+            </Button>
+            {!provider.enabled ? (
+              <p className="text-xs text-zinc-400">{provider.label} sign-in is not configured in this environment.</p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="h-px flex-1 bg-zinc-800" />
+        <span className="text-xs uppercase tracking-wide text-zinc-400">or</span>
+        <span className="h-px flex-1 bg-zinc-800" />
+      </div>
 
       <div className="grid grid-cols-2 gap-2 rounded-xl bg-zinc-950 p-1">
         <Button
