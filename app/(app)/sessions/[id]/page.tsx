@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { getSession } from '@/lib/actions/sessions';
 import { getVehicles } from '@/lib/actions/vehicles';
 import { TimeDisplay } from '@/components/ui/time-display';
+import type { ExtraModules } from '@/types';
 
 interface SessionDetailPageProps {
   params: Promise<{ id: string }>;
@@ -34,6 +35,10 @@ function SectionCard({ title, children }: { title: string; children: React.React
   );
 }
 
+function hasValue(value: string | undefined): value is string {
+  return Boolean(value && value.trim());
+}
+
 export default async function SessionDetailPage({ params }: SessionDetailPageProps) {
   const { id } = await params;
   const [session, vehicles] = await Promise.all([getSession(id), getVehicles()]);
@@ -50,6 +55,12 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
     day: 'numeric',
     year: 'numeric',
   });
+
+  const extraModules = (session.extra_modules ?? null) as ExtraModules | null;
+  const suspensionDirection =
+    session.suspension.front.direction === session.suspension.rear.direction
+      ? session.suspension.front.direction
+      : null;
 
   return (
     <div className="space-y-5">
@@ -84,6 +95,12 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
       </SectionCard>
 
       <SectionCard title="Suspension">
+        {suspensionDirection ? (
+          <DetailRow
+            label="Direction"
+            value={suspensionDirection === 'in' ? 'Clicks in from open' : 'Clicks out from closed'}
+          />
+        ) : null}
         <DetailRow
           label="Front direction"
           value={session.suspension.front.direction === 'in' ? 'Clicks in from open' : 'Clicks out from closed'}
@@ -107,6 +124,60 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
           <DetailRow label="Front Toe" value={session.alignment.front_toe} />
           <DetailRow label="Rear Toe" value={session.alignment.rear_toe} />
           <DetailRow label="Caster" value={session.alignment.caster} />
+        </SectionCard>
+      ) : null}
+
+      {extraModules?.geometry ? (
+        <SectionCard title="Geometry">
+          {hasValue(extraModules.geometry.sag_front) ? (
+            <DetailRow label="Front Sag" value={extraModules.geometry.sag_front} />
+          ) : null}
+          {hasValue(extraModules.geometry.sag_rear) ? (
+            <DetailRow label="Rear Sag" value={extraModules.geometry.sag_rear} />
+          ) : null}
+          {hasValue(extraModules.geometry.fork_height) ? (
+            <DetailRow label="Fork Height" value={extraModules.geometry.fork_height} />
+          ) : null}
+          {hasValue(extraModules.geometry.rear_ride_height) ? (
+            <DetailRow label="Rear Ride Height" value={extraModules.geometry.rear_ride_height} />
+          ) : null}
+          {hasValue(extraModules.geometry.notes) ? (
+            <DetailRow label="Notes" value={extraModules.geometry.notes} />
+          ) : null}
+        </SectionCard>
+      ) : null}
+
+      {extraModules?.drivetrain ? (
+        <SectionCard title="Drivetrain">
+          {hasValue(extraModules.drivetrain.front_sprocket) ? (
+            <DetailRow label="Front Sprocket" value={extraModules.drivetrain.front_sprocket} />
+          ) : null}
+          {hasValue(extraModules.drivetrain.rear_sprocket) ? (
+            <DetailRow label="Rear Sprocket" value={extraModules.drivetrain.rear_sprocket} />
+          ) : null}
+          {hasValue(extraModules.drivetrain.chain_length) ? (
+            <DetailRow label="Chain Length" value={extraModules.drivetrain.chain_length} />
+          ) : null}
+          {hasValue(extraModules.drivetrain.notes) ? (
+            <DetailRow label="Notes" value={extraModules.drivetrain.notes} />
+          ) : null}
+        </SectionCard>
+      ) : null}
+
+      {extraModules?.aero ? (
+        <SectionCard title="Aero">
+          {hasValue(extraModules.aero.wing_angle) ? (
+            <DetailRow label="Wing Angle" value={extraModules.aero.wing_angle} />
+          ) : null}
+          {hasValue(extraModules.aero.splitter_setting) ? (
+            <DetailRow label="Splitter Setting" value={extraModules.aero.splitter_setting} />
+          ) : null}
+          {hasValue(extraModules.aero.rake) ? (
+            <DetailRow label="Rake" value={extraModules.aero.rake} />
+          ) : null}
+          {hasValue(extraModules.aero.notes) ? (
+            <DetailRow label="Notes" value={extraModules.aero.notes} />
+          ) : null}
         </SectionCard>
       ) : null}
 

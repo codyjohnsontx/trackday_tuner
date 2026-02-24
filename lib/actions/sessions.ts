@@ -101,6 +101,7 @@ export async function createSession(
       tires: input.tires,
       suspension: input.suspension,
       alignment: input.alignment,
+      extra_modules: input.extra_modules ?? null,
       notes: input.notes ?? null,
     })
     .select()
