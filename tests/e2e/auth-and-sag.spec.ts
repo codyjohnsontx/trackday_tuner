@@ -90,3 +90,43 @@ test.describe('authenticated sag smoke', () => {
     await expect(frontSection.getByText('Check measurements: L0 should be the largest number.')).toBeVisible();
   });
 });
+
+test.describe('authenticated tracks smoke', () => {
+  test.skip(!E2E_EMAIL || !E2E_PASSWORD, 'E2E_EMAIL and E2E_PASSWORD env vars are required');
+
+  test('can create, search, and view a custom track', async ({ page }) => {
+    await signIn(page);
+
+    const trackName = `PW Track ${Date.now()}`;
+    const location = 'Austin, TX';
+
+    await page.goto('/tracks/new');
+    await expect(page.getByRole('heading', { name: 'Add Track' })).toBeVisible();
+    await page.getByLabel('Track name').fill(trackName);
+    await page.getByLabel('Location (optional)').fill(location);
+    await page.getByRole('button', { name: 'Add Track' }).click();
+
+    await expect(page).toHaveURL(/\/tracks$/);
+    await page.getByLabel('Search tracks').fill(trackName);
+    await expect(page.getByText(trackName)).toBeVisible();
+
+    const trackRow = page.locator('li').filter({ hasText: trackName }).first();
+    await trackRow.getByRole('link', { name: 'View' }).click();
+    await expect(page).toHaveURL(/\/tracks\//);
+    await expect(page.getByRole('heading', { name: trackName })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Recent Sessions' })).toBeVisible();
+  });
+
+  test('can navigate dashboard, sessions, and tracks routes', async ({ page }) => {
+    await signIn(page);
+
+    await page.goto('/dashboard');
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+
+    await page.goto('/sessions');
+    await expect(page.getByRole('heading', { name: 'Sessions' })).toBeVisible();
+
+    await page.goto('/tracks');
+    await expect(page.getByRole('heading', { name: 'Tracks' })).toBeVisible();
+  });
+});

@@ -1,11 +1,12 @@
 'use client';
 
-import { useTransition, useState, useMemo } from 'react';
+import { useTransition, useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { createSession } from '@/lib/actions/sessions';
+import { clearDraft, loadDraft, saveDraft } from '@/lib/drafts';
 import type {
   Vehicle,
   Track,
@@ -29,10 +30,50 @@ const today = new Date().toISOString().split('T')[0];
 
 const emptyTireEnd = { brand: '', compound: '', pressure: '' };
 const emptySuspEnd = { preload: '', compression: '', rebound: '' };
+const sessionDraftKey = 'session_form_new';
+
+interface SessionDraft {
+  vehicleId: string;
+  trackQuery: string;
+  trackId: string | null;
+  date: string;
+  startTime: string;
+  conditions: SessionCondition;
+  tireCondition: TireCondition;
+  frontTire: typeof emptyTireEnd;
+  rearTire: typeof emptyTireEnd;
+  suspensionDirection: SuspensionDirection;
+  frontSusp: typeof emptySuspEnd;
+  rearSusp: typeof emptySuspEnd;
+  alignment: Alignment;
+  enabledModules: Record<ExtraModuleKey, boolean>;
+  showAdvancedModules: Record<ExtraModuleKey, boolean>;
+  geometry: {
+    sag_front: string;
+    sag_rear: string;
+    fork_height: string;
+    rear_ride_height: string;
+    notes: string;
+  };
+  drivetrain: {
+    front_sprocket: string;
+    rear_sprocket: string;
+    chain_length: string;
+    notes: string;
+  };
+  aero: {
+    wing_angle: string;
+    splitter_setting: string;
+    rake: string;
+    notes: string;
+  };
+  notes: string;
+}
 
 export function SessionForm({ vehicles, tracks }: SessionFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const hydratedRef = useRef(false);
 
   const [vehicleId, setVehicleId] = useState(vehicles.length === 1 ? vehicles[0].id : '');
   const [trackQuery, setTrackQuery] = useState('');
@@ -88,6 +129,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
 
   const [notes, setNotes] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [draftMessage, setDraftMessage] = useState('');
 
   const selectedVehicle = useMemo(
     () => vehicles.find((v) => v.id === vehicleId) ?? null,
@@ -104,6 +146,123 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
     if (!q) return tracks;
     return tracks.filter((t) => t.name.toLowerCase().includes(q));
   }, [tracks, trackQuery]);
+
+  useEffect(() => {
+    const draft = loadDraft<SessionDraft>(sessionDraftKey);
+    if (!draft) {
+      hydratedRef.current = true;
+      return;
+    }
+
+    setVehicleId(draft.vehicleId ?? '');
+    setTrackQuery(draft.trackQuery ?? '');
+    setTrackId(draft.trackId ?? null);
+    setDate(draft.date ?? today);
+    setStartTime(draft.startTime ?? '');
+    setConditions(draft.conditions ?? 'sunny');
+    setTireCondition(draft.tireCondition ?? 'scrubbed');
+    setFrontTire(draft.frontTire ?? emptyTireEnd);
+    setRearTire(draft.rearTire ?? emptyTireEnd);
+    setSuspensionDirection(draft.suspensionDirection ?? 'out');
+    setFrontSusp(draft.frontSusp ?? emptySuspEnd);
+    setRearSusp(draft.rearSusp ?? emptySuspEnd);
+    setAlignment(
+      draft.alignment ?? {
+        front_camber: '',
+        rear_camber: '',
+        front_toe: '',
+        rear_toe: '',
+        caster: '',
+      }
+    );
+    setEnabledModules(
+      draft.enabledModules ?? {
+        geometry: false,
+        drivetrain: false,
+        aero: false,
+      }
+    );
+    setShowAdvancedModules(
+      draft.showAdvancedModules ?? {
+        geometry: false,
+        drivetrain: false,
+        aero: false,
+      }
+    );
+    setGeometry(
+      draft.geometry ?? {
+        sag_front: '',
+        sag_rear: '',
+        fork_height: '',
+        rear_ride_height: '',
+        notes: '',
+      }
+    );
+    setDrivetrain(
+      draft.drivetrain ?? {
+        front_sprocket: '',
+        rear_sprocket: '',
+        chain_length: '',
+        notes: '',
+      }
+    );
+    setAero(
+      draft.aero ?? {
+        wing_angle: '',
+        splitter_setting: '',
+        rake: '',
+        notes: '',
+      }
+    );
+    setNotes(draft.notes ?? '');
+    setDraftMessage('Draft restored from this device.');
+    hydratedRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    saveDraft(sessionDraftKey, {
+      vehicleId,
+      trackQuery,
+      trackId,
+      date,
+      startTime,
+      conditions,
+      tireCondition,
+      frontTire,
+      rearTire,
+      suspensionDirection,
+      frontSusp,
+      rearSusp,
+      alignment,
+      enabledModules,
+      showAdvancedModules,
+      geometry,
+      drivetrain,
+      aero,
+      notes,
+    });
+  }, [
+    vehicleId,
+    trackQuery,
+    trackId,
+    date,
+    startTime,
+    conditions,
+    tireCondition,
+    frontTire,
+    rearTire,
+    suspensionDirection,
+    frontSusp,
+    rearSusp,
+    alignment,
+    enabledModules,
+    showAdvancedModules,
+    geometry,
+    drivetrain,
+    aero,
+    notes,
+  ]);
 
   function toggleModule(module: ExtraModuleKey) {
     setEnabledModules((prev) => ({ ...prev, [module]: !prev[module] }));
@@ -207,6 +366,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
         return;
       }
 
+      clearDraft(sessionDraftKey);
       router.push('/sessions');
       router.refresh();
     });
@@ -484,6 +644,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
       </div>
 
       {errorMessage ? <p className="text-sm text-rose-300">{errorMessage}</p> : null}
+      {draftMessage ? <p className="text-sm text-emerald-300">{draftMessage}</p> : null}
 
       <Button type="submit" fullWidth disabled={isPending}>
         {isPending ? 'Saving...' : 'Save Session'}
