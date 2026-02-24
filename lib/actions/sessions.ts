@@ -51,6 +51,38 @@ export async function getSession(id: string): Promise<Session | null> {
   return data as Session;
 }
 
+export async function getPreviousSession(
+  currentSession: Session,
+): Promise<Session | null> {
+  const user = await getAuthenticatedUser();
+  if (!user) return null;
+
+  const supabase = await createClient();
+
+  const currentDateTime = `${currentSession.date}T${currentSession.start_time ?? '23:59:59'}`;
+  const { data, error } = await supabase
+    .from('sessions')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('vehicle_id', currentSession.vehicle_id)
+    .neq('id', currentSession.id)
+    .or(`date.lt.${currentSession.date},and(date.eq.${currentSession.date},start_time.lt.${currentSession.start_time ?? '23:59:59'})`)
+    .order('date', { ascending: false })
+    .order('start_time', { ascending: false, nullsFirst: false })
+    .limit(10);
+
+  if (error || !data || data.length === 0) return null;
+
+  const sorted = (data as Session[]).sort((a, b) => {
+    const aDateTime = `${a.date}T${a.start_time ?? '23:59:59'}`;
+    const bDateTime = `${b.date}T${b.start_time ?? '23:59:59'}`;
+    return bDateTime.localeCompare(aDateTime);
+  });
+
+  const previous = sorted.find((s) => `${s.date}T${s.start_time ?? '23:59:59'}` < currentDateTime);
+  return previous ?? sorted[0] ?? null;
+}
+
 export async function createSession(
   input: CreateSessionInput,
 ): Promise<ActionResult<Session>> {
