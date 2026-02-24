@@ -26,17 +26,26 @@ export function AppShell({ children, isAuthenticated }: AppShellProps) {
 
       {isAuthenticated ? (
         <nav className="sticky bottom-0 border-t border-zinc-800 bg-zinc-950/95 px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur">
-          <ul className="grid grid-cols-3 gap-2 text-center text-xs text-zinc-300">
+          <ul className="grid grid-cols-4 gap-2 text-center text-xs text-zinc-300">
             <li>
               <Link href="/dashboard" className="block rounded-lg bg-zinc-900 py-2">
                 Dashboard
               </Link>
             </li>
             <li>
-              <Link href="/sessions" className="block rounded-lg bg-zinc-900 py-2">Sessions</Link>
+              <Link href="/sessions" className="block rounded-lg bg-zinc-900 py-2">
+                Sessions
+              </Link>
             </li>
             <li>
-              <Link href="/garage" className="block rounded-lg bg-zinc-900 py-2">Garage</Link>
+              <Link href="/garage" className="block rounded-lg bg-zinc-900 py-2">
+                Garage
+              </Link>
+            </li>
+            <li>
+              <Link href="/tools" className="block rounded-lg bg-zinc-900 py-2">
+                Tools
+              </Link>
             </li>
           </ul>
         </nav>

@@ -119,3 +119,32 @@ export interface CreateSessionInput {
   extra_modules?: ExtraModules | null;
   notes?: string | null;
 }
+
+export interface SagEntry {
+  id: string;
+  user_id: string;
+  created_at: string;
+  label: string | null;
+  notes: string | null;
+  front_l0: number | null;
+  front_l1: number | null;
+  front_l2: number | null;
+  rear_l0: number | null;
+  rear_l1: number | null;
+  rear_l2: number | null;
+  front_travel_mm: number | null;
+  rear_travel_mm: number | null;
+}
+
+export interface CreateSagEntryInput {
+  label?: string | null;
+  notes?: string | null;
+  front_l0?: number | null;
+  front_l1?: number | null;
+  front_l2?: number | null;
+  rear_l0?: number | null;
+  rear_l1?: number | null;
+  rear_l2?: number | null;
+  front_travel_mm?: number | null;
+  rear_travel_mm?: number | null;
+}
