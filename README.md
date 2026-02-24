@@ -191,6 +191,10 @@ Analytics views (simple charts later)
 
 AI Setup Assistant (when launched)
 
+Pricing rollout:
+- Pro base price: `$2.99/month`
+- Founder special: `$1.99/month` with promo code `FOUNDER100` (first 100 redemptions)
+
 (We can tune the exact limits later, but this structure matches your “free → love it → subscribe” behavior.)
 
 9. AI Setup Assistant (planned, not MVP)

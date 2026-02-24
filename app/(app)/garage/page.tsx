@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
+import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { VehicleCard } from '@/components/garage/vehicle-card';
 import { Button } from '@/components/ui/button';
 
@@ -54,9 +55,7 @@ export default async function GaragePage() {
             Upgrade to Pro for unlimited vehicles, full session history, and AI-powered tuning suggestions.
           </p>
           <div className="mt-4">
-            <Button variant="secondary" fullWidth disabled>
-              Upgrade to Pro (coming soon)
-            </Button>
+            <UpgradeToProButton fullWidth />
           </div>
         </section>
       ) : null}

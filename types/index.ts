@@ -4,6 +4,10 @@ export type VehicleType = 'motorcycle' | 'car';
 export interface Profile {
   id: string;
   tier: Tier;
+  stripe_customer_id?: string | null;
+  stripe_subscription_id?: string | null;
+  stripe_price_id?: string | null;
+  stripe_current_period_end?: string | null;
   created_at: string;
   updated_at: string;
 }
