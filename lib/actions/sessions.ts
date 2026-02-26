@@ -1,22 +1,34 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { unstable_cache } from 'next/cache';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import type { ActionResult, CreateSessionInput, Session, Track } from '@/types';
 
-export async function getTracks(): Promise<Track[]> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from('tracks')
-    .select('*')
-    .order('name', { ascending: true });
+const fetchTracksFromDb = unstable_cache(
+  async () => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !anonKey) throw new Error('Missing Supabase environment variables.');
+    const supabase = createSupabaseClient(url, anonKey);
+    const { data } = await supabase
+      .from('tracks')
+      .select('*')
+      .order('name', { ascending: true });
+    return (data as Track[]) ?? [];
+  },
+  ['tracks-list'],
+  { tags: ['tracks'], revalidate: 3600 },
+);
 
-  return (data as Track[]) ?? [];
+export async function getTracks(): Promise<Track[]> {
+  return fetchTracksFromDb();
 }
 
-export async function getSessions(vehicleId?: string): Promise<Session[]> {
+export async function getSessions(vehicleId?: string, limit?: number): Promise<Session[]> {
   const user = await getAuthenticatedUser();
   if (!user) return [];
 
@@ -31,8 +43,30 @@ export async function getSessions(vehicleId?: string): Promise<Session[]> {
     query = query.eq('vehicle_id', vehicleId);
   }
 
+  if (limit) {
+    query = query.limit(limit);
+  }
+
   const { data } = await query;
   return (data as Session[]) ?? [];
+}
+
+export async function getSessionCount(vehicleId?: string): Promise<number> {
+  const user = await getAuthenticatedUser();
+  if (!user) return 0;
+
+  const supabase = await createClient();
+  let query = supabase
+    .from('sessions')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id);
+
+  if (vehicleId) {
+    query = query.eq('vehicle_id', vehicleId);
+  }
+
+  const { count } = await query;
+  return count ?? 0;
 }
 
 export async function getSession(id: string): Promise<Session | null> {
@@ -59,7 +93,6 @@ export async function getPreviousSession(
 
   const supabase = await createClient();
 
-  const currentDateTime = `${currentSession.date}T${currentSession.start_time ?? '23:59:59'}`;
   const { data, error } = await supabase
     .from('sessions')
     .select('*')
@@ -69,18 +102,11 @@ export async function getPreviousSession(
     .or(`date.lt.${currentSession.date},and(date.eq.${currentSession.date},start_time.lt.${currentSession.start_time ?? '23:59:59'})`)
     .order('date', { ascending: false })
     .order('start_time', { ascending: false, nullsFirst: false })
-    .limit(10);
+    .limit(1);
 
   if (error || !data || data.length === 0) return null;
 
-  const sorted = (data as Session[]).sort((a, b) => {
-    const aDateTime = `${a.date}T${a.start_time ?? '23:59:59'}`;
-    const bDateTime = `${b.date}T${b.start_time ?? '23:59:59'}`;
-    return bDateTime.localeCompare(aDateTime);
-  });
-
-  const previous = sorted.find((s) => `${s.date}T${s.start_time ?? '23:59:59'}` < currentDateTime);
-  return previous ?? sorted[0] ?? null;
+  return (data[0] as Session) ?? null;
 }
 
 export async function createSession(

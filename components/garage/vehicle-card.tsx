@@ -22,7 +22,6 @@ export function VehicleCard({ vehicle }: VehicleCardProps) {
               width={48}
               height={48}
               className="h-12 w-12 shrink-0 rounded-lg object-cover"
-              unoptimized
             />
           ) : null}
           <div className="min-w-0">

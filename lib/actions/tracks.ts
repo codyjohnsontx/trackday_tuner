@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { getTracks } from '@/lib/actions/sessions';
@@ -69,6 +69,7 @@ export async function createTrack(input: {
 
   if (error) return { ok: false, error: error.message };
 
+  revalidateTag('tracks');
   revalidatePath('/tracks');
   revalidatePath('/sessions/new');
 
@@ -114,6 +115,7 @@ export async function updateTrack(
 
   if (error || !data) return { ok: false, error: error?.message ?? 'Track not found.' };
 
+  revalidateTag('tracks');
   revalidatePath('/tracks');
   revalidatePath(`/tracks/${id}`);
   revalidatePath('/sessions/new');
@@ -139,6 +141,7 @@ export async function deleteTrack(id: string): Promise<ActionResult> {
 
   if (error) return { ok: false, error: error.message };
 
+  revalidateTag('tracks');
   revalidatePath('/tracks');
   revalidatePath('/sessions/new');
 

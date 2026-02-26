@@ -187,7 +187,7 @@ export function VehicleForm({ vehicle }: VehicleFormProps) {
               width={64}
               height={64}
               className="h-16 w-16 rounded-lg object-cover"
-              unoptimized
+              unoptimized={photoPreview?.startsWith('blob:')}
             />
             <button
               type="button"
