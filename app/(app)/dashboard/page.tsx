@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { ManageBillingButton, UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
 import { getSessions } from '@/lib/actions/sessions';
 import { Button } from '@/components/ui/button';
@@ -13,7 +14,11 @@ export default async function DashboardPage() {
 
   const hasVehicles = vehicles.length > 0;
   const isFree = !profile || profile.tier === 'free';
+  const isPro = profile?.tier === 'pro';
   const atSessionLimit = isFree && sessions.length >= 10;
+  const billingRenewal = profile?.stripe_current_period_end
+    ? new Date(profile.stripe_current_period_end).toLocaleDateString()
+    : null;
 
   const vehicleMap = new Map(vehicles.map((v) => [v.id, v.nickname]));
   const recentSessions = sessions.slice(0, 3);
@@ -30,9 +35,7 @@ export default async function DashboardPage() {
             </p>
             <div className="mt-4">
               {atSessionLimit ? (
-                <Button variant="secondary" disabled fullWidth>
-                  Session limit reached — Upgrade to Pro
-                </Button>
+                <UpgradeToProButton fullWidth />
               ) : (
                 <Link href="/sessions/new">
                   <Button fullWidth>+ New Session</Button>
@@ -52,6 +55,27 @@ export default async function DashboardPage() {
             </div>
           </>
         )}
+      </section>
+
+      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">
+          Billing
+        </h3>
+        <p className="mt-2 text-sm text-zinc-300">
+          Plan: <span className="font-medium uppercase">{isPro ? 'Pro' : 'Free'}</span>
+        </p>
+        {isPro ? (
+          <p className="mt-1 text-sm text-zinc-400">
+            {billingRenewal ? `Renews on ${billingRenewal}.` : 'Active subscription.'}
+          </p>
+        ) : (
+          <p className="mt-1 text-sm text-zinc-400">
+            Upgrade to unlock unlimited vehicles, tracks, and sessions.
+          </p>
+        )}
+        <div className="mt-4">
+          {isPro ? <ManageBillingButton fullWidth /> : <UpgradeToProButton fullWidth />}
+        </div>
       </section>
 
       {recentSessions.length > 0 ? (

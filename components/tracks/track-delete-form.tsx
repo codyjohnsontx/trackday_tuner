@@ -27,7 +27,7 @@ export function TrackDeleteForm({ trackId, redirectPath = '/tracks' }: TrackDele
         return;
       }
 
-      router.push(redirectPath);
+      router.push(redirectPath as never);
       router.refresh();
     });
   }

@@ -34,6 +34,11 @@ export default function ToolsPage() {
       <section className="space-y-3">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Calculators</h2>
         <ToolCard
+          title="Unit Converter"
+          description="Fast pressure, temperature, torque, mass, and volume conversions."
+          href="/tools/converter"
+        />
+        <ToolCard
           title="Sag Calculator"
           description="Calculate free/static and rider/race sag in mm and % of travel."
           href="/sag"

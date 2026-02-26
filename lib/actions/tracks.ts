@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { getTracks } from '@/lib/actions/sessions';
+import { getUserProfile } from '@/lib/actions/vehicles';
 import type { ActionResult, Track } from '@/types';
 
 export { getTracks };
@@ -37,6 +38,24 @@ export async function createTrack(input: {
   if (!name) return { ok: false, error: 'Track name is required.' };
 
   const supabase = await createClient();
+  const profile = await getUserProfile();
+  const tier = profile?.tier ?? 'free';
+
+  if (tier === 'free') {
+    const { count } = await supabase
+      .from('tracks')
+      .select('id', { count: 'exact', head: true })
+      .eq('created_by', user.id)
+      .eq('is_seeded', false);
+
+    if ((count ?? 0) >= 3) {
+      return {
+        ok: false,
+        error: 'Free plan is limited to 3 tracks. Upgrade to Pro for unlimited tracks.',
+      };
+    }
+  }
+
   const { data, error } = await supabase
     .from('tracks')
     .insert({

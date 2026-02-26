@@ -130,3 +130,45 @@ test.describe('authenticated tracks smoke', () => {
     await expect(page.getByRole('heading', { name: 'Tracks' })).toBeVisible();
   });
 });
+
+test.describe('authenticated converter smoke', () => {
+  test.skip(!E2E_EMAIL || !E2E_PASSWORD, 'E2E_EMAIL and E2E_PASSWORD env vars are required');
+
+  test('supports presets, dropdown units, swap, and recents', async ({ page }) => {
+    await signIn(page);
+
+    await page.goto('/tools');
+    await page.getByRole('link', { name: 'Unit Converter' }).click();
+    await expect(page).toHaveURL(/\/tools\/converter/);
+    await expect(page.getByRole('heading', { name: 'Unit Converter' })).toBeVisible();
+
+    await page.getByLabel('Value').fill('32');
+    await expect(page.getByText('2.206')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Convert + Save Pair' }).click();
+    await expect(page.getByRole('heading', { name: 'Recent (Top 5)' })).toBeVisible();
+
+    await page.getByLabel('Category').selectOption('mass');
+    await page.getByLabel('From').selectOption('lb');
+    await page.getByLabel('To').selectOption('kg');
+    await page.getByLabel('Value').fill('10');
+    await expect(page.getByText('4.536')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Swap' }).click();
+    await expect(page.getByText('22.046')).toBeVisible();
+    await page.getByRole('button', { name: 'Convert + Save Pair' }).click();
+
+    await page.getByLabel('Category').selectOption('spring_rate');
+    await page.getByLabel('From').selectOption('N/mm');
+    await page.getByLabel('To').selectOption('lb/in');
+    await page.getByLabel('Value').fill('10');
+    await expect(page.getByText('57.101')).toBeVisible();
+
+    const recentButtons = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Recent (Top 5)' }) })
+      .getByRole('button');
+
+    await expect(recentButtons.first()).toHaveText('kg → lb');
+  });
+});

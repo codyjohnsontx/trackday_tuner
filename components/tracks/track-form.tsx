@@ -59,7 +59,7 @@ export function TrackForm({ initialTrack, onSuccessPath = '/tracks' }: TrackForm
       }
 
       clearDraft(draftKey);
-      router.push(onSuccessPath);
+      router.push(onSuccessPath as never);
       router.refresh();
     });
   }

@@ -12,18 +12,23 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(),
 }));
 
+vi.mock('@/lib/actions/vehicles', () => ({
+  getUserProfile: vi.fn(),
+}));
+
 import { revalidatePath } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { getUserProfile } from '@/lib/actions/vehicles';
 import { createClient } from '@/lib/supabase/server';
 import { createTrack, deleteTrack, getTrack, updateTrack } from '@/lib/actions/tracks';
 
 type QueryResponse = {
-  base?: { data?: unknown; error?: { message: string } | null };
+  base?: { data?: unknown; error?: { message: string } | null; count?: number | null };
   single?: { data?: unknown; error?: { message: string } | null };
 };
 
 function createQuery(response: QueryResponse = {}) {
-  const base = response.base ?? { data: null, error: null };
+  const base = response.base ?? { data: null, error: null, count: null };
   const single = response.single ?? { data: null, error: null };
   const query: Record<string, unknown> = {};
 
@@ -63,6 +68,7 @@ describe('tracks actions', () => {
 
   it('creates custom track and revalidates dependent pages', async () => {
     vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
 
     const insertQuery = createQuery({
       single: {
@@ -93,6 +99,24 @@ describe('tracks actions', () => {
     });
     expect(revalidatePath).toHaveBeenCalledWith('/tracks');
     expect(revalidatePath).toHaveBeenCalledWith('/sessions/new');
+  });
+
+  it('enforces free tier track limit', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free' } as never);
+
+    const countQuery = createQuery({
+      base: { data: null, error: null, count: 3 },
+    });
+    const from = vi.fn().mockReturnValue(countQuery);
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await createTrack({ name: 'Any Track' });
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Free plan is limited to 3 tracks. Upgrade to Pro for unlimited tracks.',
+    });
   });
 
   it('gets track details for seeded track', async () => {

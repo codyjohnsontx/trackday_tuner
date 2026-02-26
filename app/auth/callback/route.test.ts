@@ -10,7 +10,8 @@ vi.mock('@/lib/supabase/server', () => ({
   })),
 }));
 
-import { GET, sanitizeNextPath } from '@/app/auth/callback/route';
+import { GET } from '@/app/auth/callback/route';
+import { sanitizeNextPath } from '@/lib/auth/redirects';
 
 describe('sanitizeNextPath', () => {
   it('defaults to dashboard for invalid values', () => {
