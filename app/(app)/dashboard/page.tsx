@@ -1,27 +1,27 @@
 import Link from 'next/link';
 import { ManageBillingButton, UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
-import { getSessions } from '@/lib/actions/sessions';
+import { getSessions, getSessionCount } from '@/lib/actions/sessions';
 import { Button } from '@/components/ui/button';
 import { SessionCard } from '@/components/sessions/session-card';
 
 export default async function DashboardPage() {
-  const [vehicles, sessions, profile] = await Promise.all([
+  const [vehicles, sessions, sessionCount, profile] = await Promise.all([
     getVehicles(),
-    getSessions(),
+    getSessions(undefined, 3),
+    getSessionCount(),
     getUserProfile(),
   ]);
 
   const hasVehicles = vehicles.length > 0;
   const isFree = !profile || profile.tier === 'free';
   const isPro = profile?.tier === 'pro';
-  const atSessionLimit = isFree && sessions.length >= 10;
+  const atSessionLimit = isFree && sessionCount >= 10;
   const billingRenewal = profile?.stripe_current_period_end
     ? new Date(profile.stripe_current_period_end).toLocaleDateString()
     : null;
 
   const vehicleMap = new Map(vehicles.map((v) => [v.id, v.nickname]));
-  const recentSessions = sessions.slice(0, 3);
 
   return (
     <div className="space-y-5">
@@ -30,7 +30,7 @@ export default async function DashboardPage() {
         {hasVehicles ? (
           <>
             <p className="mt-2 text-sm text-zinc-300">
-              {vehicles.length} vehicle{vehicles.length !== 1 ? 's' : ''} · {sessions.length}/
+              {vehicles.length} vehicle{vehicles.length !== 1 ? 's' : ''} · {sessionCount}/
               {isFree ? '10' : '∞'} sessions
             </p>
             <div className="mt-4">
@@ -78,7 +78,7 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {recentSessions.length > 0 ? (
+      {sessions.length > 0 ? (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">
@@ -89,7 +89,7 @@ export default async function DashboardPage() {
             </Link>
           </div>
           <ul className="space-y-3">
-            {recentSessions.map((s) => (
+            {sessions.map((s) => (
               <SessionCard
                 key={s.id}
                 session={s}
