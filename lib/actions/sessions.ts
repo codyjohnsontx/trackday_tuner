@@ -155,10 +155,12 @@ export async function createSession(
       track_name: trackName,
       date: input.date,
       start_time: input.start_time ?? null,
+      session_number: input.session_number ?? null,
       conditions: input.conditions,
       tires: input.tires,
       suspension: input.suspension,
       alignment: input.alignment,
+      enabled_modules: input.enabled_modules ?? null,
       extra_modules: input.extra_modules ?? null,
       notes: input.notes ?? null,
     })

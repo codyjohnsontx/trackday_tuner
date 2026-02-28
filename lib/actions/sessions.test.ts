@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
+  unstable_cache: (fn: (...args: unknown[]) => unknown) => fn,
 }));
 
 vi.mock('@/lib/auth', () => ({
@@ -53,6 +54,7 @@ const validInput: CreateSessionInput = {
   track_name: null,
   date: '2026-02-24',
   start_time: '09:30:00',
+  session_number: 2,
   conditions: 'sunny',
   tires: {
     front: { brand: 'Pirelli', compound: 'SC1', pressure: '31' },
@@ -64,6 +66,15 @@ const validInput: CreateSessionInput = {
     rear: { preload: '6', compression: '12', rebound: '10', direction: 'in' },
   },
   alignment: null,
+  enabled_modules: {
+    tires: true,
+    suspension: true,
+    alignment: false,
+    geometry: false,
+    drivetrain: false,
+    aero: false,
+    notes: true,
+  },
   notes: 'baseline',
 };
 
@@ -136,6 +147,8 @@ describe('sessions actions', () => {
         user_id: 'user-1',
         track_id: 'track-1',
         track_name: 'Road America',
+        session_number: 2,
+        enabled_modules: validInput.enabled_modules,
       })
     );
     expect(revalidatePath).toHaveBeenCalledWith('/sessions');
@@ -153,10 +166,12 @@ describe('sessions actions', () => {
       track_name: null,
       date: '2026-02-24',
       start_time: '12:00:00',
+      session_number: 2,
       conditions: 'sunny',
       tires: validInput.tires,
       suspension: validInput.suspension,
       alignment: null,
+      enabled_modules: validInput.enabled_modules ?? null,
       extra_modules: null,
       notes: null,
       created_at: '2026-02-24T12:00:00Z',
@@ -164,8 +179,8 @@ describe('sessions actions', () => {
     };
 
     const priorRows: Session[] = [
-      { ...current, id: 'older', date: '2026-02-23', start_time: '17:00:00' },
       { ...current, id: 'previous', date: '2026-02-24', start_time: '11:30:00' },
+      { ...current, id: 'older', date: '2026-02-23', start_time: '17:00:00' },
     ];
 
     const previousQuery = createQuery({

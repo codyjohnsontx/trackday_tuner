@@ -72,6 +72,16 @@ export interface Alignment {
 }
 
 export type SessionCondition = 'sunny' | 'overcast' | 'rainy' | 'mixed';
+export type SessionModuleKey =
+  | 'tires'
+  | 'suspension'
+  | 'alignment'
+  | 'geometry'
+  | 'drivetrain'
+  | 'aero'
+  | 'notes';
+export type SessionEnabledModules = Record<SessionModuleKey, boolean>;
+export type SessionAdvancedVisibility = Partial<Record<SessionModuleKey, boolean>>;
 
 export interface GeometryModule {
   sag_front?: string;
@@ -104,8 +114,9 @@ export interface ExtraModules {
 export interface Session {
   id: string; user_id: string; vehicle_id: string;
   track_id: string | null; track_name: string | null;
-  date: string; start_time: string | null; conditions: SessionCondition;
+  date: string; start_time: string | null; session_number: number | null; conditions: SessionCondition;
   tires: Tires; suspension: Suspension; alignment: Alignment | null;
+  enabled_modules: SessionEnabledModules | null;
   extra_modules: ExtraModules | null;
   notes: string | null; created_at: string; updated_at: string;
 }
@@ -116,10 +127,12 @@ export interface CreateSessionInput {
   track_name: string | null;
   date: string;
   start_time?: string | null;
+  session_number?: number | null;
   conditions: SessionCondition;
   tires: Tires;
   suspension: Suspension;
   alignment: Alignment | null;
+  enabled_modules?: SessionEnabledModules | null;
   extra_modules?: ExtraModules | null;
   notes?: string | null;
 }

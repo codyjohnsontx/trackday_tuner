@@ -1,22 +1,32 @@
 'use client';
 
-import { useTransition, useState, useMemo, useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { createSession } from '@/lib/actions/sessions';
 import { clearDraft, loadDraft, saveDraft } from '@/lib/drafts';
+import {
+  getAvailableSessionModules,
+  getDefaultAdvancedVisibility,
+  sanitizeAdvancedVisibility,
+  sanitizeEnabledModules,
+  sessionModuleConfigs,
+} from '@/lib/session-modules';
 import type {
-  Vehicle,
-  Track,
-  SessionCondition,
-  TireCondition,
-  SuspensionDirection,
-  Tires,
-  Suspension,
   Alignment,
   ExtraModules,
+  SessionAdvancedVisibility,
+  SessionCondition,
+  SessionEnabledModules,
+  SessionModuleKey,
+  Suspension,
+  SuspensionDirection,
+  TireCondition,
+  Tires,
+  Track,
+  Vehicle,
 } from '@/types';
 
 interface SessionFormProps {
@@ -24,13 +34,39 @@ interface SessionFormProps {
   tracks: Track[];
 }
 
-type ExtraModuleKey = 'geometry' | 'drivetrain' | 'aero';
-
 const today = new Date().toISOString().split('T')[0];
+const sessionDraftKey = 'session_form_new';
 
 const emptyTireEnd = { brand: '', compound: '', pressure: '' };
 const emptySuspEnd = { preload: '', compression: '', rebound: '' };
-const sessionDraftKey = 'session_form_new';
+const emptyAlignment: Alignment = {
+  front_camber: '',
+  rear_camber: '',
+  front_toe: '',
+  rear_toe: '',
+  caster: '',
+};
+const emptyGeometry = {
+  sag_front: '',
+  sag_rear: '',
+  fork_height: '',
+  rear_ride_height: '',
+  notes: '',
+};
+const emptyDrivetrain = {
+  front_sprocket: '',
+  rear_sprocket: '',
+  chain_length: '',
+  notes: '',
+};
+const emptyAero = {
+  wing_angle: '',
+  splitter_setting: '',
+  rake: '',
+  notes: '',
+};
+
+type ModuleToggleKey = Exclude<SessionModuleKey, 'notes'>;
 
 interface SessionDraft {
   vehicleId: string;
@@ -38,6 +74,7 @@ interface SessionDraft {
   trackId: string | null;
   date: string;
   startTime: string;
+  sessionNumber: string;
   conditions: SessionCondition;
   tireCondition: TireCondition;
   frontTire: typeof emptyTireEnd;
@@ -46,28 +83,38 @@ interface SessionDraft {
   frontSusp: typeof emptySuspEnd;
   rearSusp: typeof emptySuspEnd;
   alignment: Alignment;
-  enabledModules: Record<ExtraModuleKey, boolean>;
-  showAdvancedModules: Record<ExtraModuleKey, boolean>;
-  geometry: {
-    sag_front: string;
-    sag_rear: string;
-    fork_height: string;
-    rear_ride_height: string;
-    notes: string;
-  };
-  drivetrain: {
-    front_sprocket: string;
-    rear_sprocket: string;
-    chain_length: string;
-    notes: string;
-  };
-  aero: {
-    wing_angle: string;
-    splitter_setting: string;
-    rake: string;
-    notes: string;
-  };
+  enabledModules: SessionEnabledModules;
+  showAdvancedModules: SessionAdvancedVisibility;
+  geometry: typeof emptyGeometry;
+  drivetrain: typeof emptyDrivetrain;
+  aero: typeof emptyAero;
   notes: string;
+}
+
+function ModuleHeader({
+  module,
+  enabled,
+  onToggle,
+}: {
+  module: ModuleToggleKey;
+  enabled: boolean;
+  onToggle: (module: ModuleToggleKey) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+        {sessionModuleConfigs[module].label}
+      </span>
+      <Button
+        type="button"
+        variant={enabled ? 'primary' : 'secondary'}
+        className="min-h-10 px-3 text-xs"
+        onClick={() => onToggle(module)}
+      >
+        {enabled ? 'On' : 'Off'}
+      </Button>
+    </div>
+  );
 }
 
 export function SessionForm({ vehicles, tracks }: SessionFormProps) {
@@ -75,12 +122,16 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
   const [isPending, startTransition] = useTransition();
   const hydratedRef = useRef(false);
 
-  const [vehicleId, setVehicleId] = useState(vehicles.length === 1 ? vehicles[0].id : '');
+  const initialVehicle = vehicles.length === 1 ? vehicles[0] : null;
+  const initialVehicleType = initialVehicle?.type ?? 'motorcycle';
+
+  const [vehicleId, setVehicleId] = useState(initialVehicle?.id ?? '');
   const [trackQuery, setTrackQuery] = useState('');
   const [trackId, setTrackId] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [date, setDate] = useState(today);
   const [startTime, setStartTime] = useState('');
+  const [sessionNumber, setSessionNumber] = useState('');
   const [conditions, setConditions] = useState<SessionCondition>('sunny');
   const [tireCondition, setTireCondition] = useState<TireCondition>('scrubbed');
   const [frontTire, setFrontTire] = useState(emptyTireEnd);
@@ -88,64 +139,41 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
   const [suspensionDirection, setSuspensionDirection] = useState<SuspensionDirection>('out');
   const [frontSusp, setFrontSusp] = useState(emptySuspEnd);
   const [rearSusp, setRearSusp] = useState(emptySuspEnd);
-  const [alignment, setAlignment] = useState<Alignment>({
-    front_camber: '',
-    rear_camber: '',
-    front_toe: '',
-    rear_toe: '',
-    caster: '',
-  });
-
-  const [enabledModules, setEnabledModules] = useState<Record<ExtraModuleKey, boolean>>({
-    geometry: false,
-    drivetrain: false,
-    aero: false,
-  });
-  const [showAdvancedModules, setShowAdvancedModules] = useState<Record<ExtraModuleKey, boolean>>({
-    geometry: false,
-    drivetrain: false,
-    aero: false,
-  });
-
-  const [geometry, setGeometry] = useState({
-    sag_front: '',
-    sag_rear: '',
-    fork_height: '',
-    rear_ride_height: '',
-    notes: '',
-  });
-  const [drivetrain, setDrivetrain] = useState({
-    front_sprocket: '',
-    rear_sprocket: '',
-    chain_length: '',
-    notes: '',
-  });
-  const [aero, setAero] = useState({
-    wing_angle: '',
-    splitter_setting: '',
-    rake: '',
-    notes: '',
-  });
-
+  const [alignment, setAlignment] = useState<Alignment>(emptyAlignment);
+  const [enabledModules, setEnabledModules] = useState<SessionEnabledModules>(
+    sanitizeEnabledModules(initialVehicleType, null)
+  );
+  const [showAdvancedModules, setShowAdvancedModules] = useState<SessionAdvancedVisibility>(
+    getDefaultAdvancedVisibility()
+  );
+  const [geometry, setGeometry] = useState(emptyGeometry);
+  const [drivetrain, setDrivetrain] = useState(emptyDrivetrain);
+  const [aero, setAero] = useState(emptyAero);
   const [notes, setNotes] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [draftMessage, setDraftMessage] = useState('');
 
   const selectedVehicle = useMemo(
-    () => vehicles.find((v) => v.id === vehicleId) ?? null,
-    [vehicles, vehicleId]
+    () => vehicles.find((vehicle) => vehicle.id === vehicleId) ?? null,
+    [vehicles, vehicleId],
   );
 
-  const showAlignment = selectedVehicle?.type === 'car';
-  const showGeometry = selectedVehicle?.type === 'motorcycle';
-  const showDrivetrain = selectedVehicle?.type === 'motorcycle';
-  const showAero = selectedVehicle?.type === 'car';
+  const selectedVehicleType = selectedVehicle?.type ?? initialVehicleType;
+  const availableModules = useMemo(
+    () => getAvailableSessionModules(selectedVehicleType),
+    [selectedVehicleType],
+  );
 
   const filteredTracks = useMemo(() => {
-    const q = trackQuery.trim().toLowerCase();
-    if (!q) return tracks;
-    return tracks.filter((t) => t.name.toLowerCase().includes(q));
+    const query = trackQuery.trim().toLowerCase();
+    if (!query) return tracks;
+    return tracks.filter((track) => track.name.toLowerCase().includes(query));
   }, [tracks, trackQuery]);
+
+  useEffect(() => {
+    setEnabledModules((current) => sanitizeEnabledModules(selectedVehicleType, current));
+    setShowAdvancedModules((current) => sanitizeAdvancedVisibility(selectedVehicleType, current));
+  }, [selectedVehicleType]);
 
   useEffect(() => {
     const draft = loadDraft<SessionDraft>(sessionDraftKey);
@@ -154,11 +182,15 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
       return;
     }
 
+    const draftVehicle = vehicles.find((vehicle) => vehicle.id === draft.vehicleId) ?? null;
+    const draftVehicleType = draftVehicle?.type ?? initialVehicleType;
+
     setVehicleId(draft.vehicleId ?? '');
     setTrackQuery(draft.trackQuery ?? '');
     setTrackId(draft.trackId ?? null);
     setDate(draft.date ?? today);
     setStartTime(draft.startTime ?? '');
+    setSessionNumber(draft.sessionNumber ?? '');
     setConditions(draft.conditions ?? 'sunny');
     setTireCondition(draft.tireCondition ?? 'scrubbed');
     setFrontTire(draft.frontTire ?? emptyTireEnd);
@@ -166,58 +198,16 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
     setSuspensionDirection(draft.suspensionDirection ?? 'out');
     setFrontSusp(draft.frontSusp ?? emptySuspEnd);
     setRearSusp(draft.rearSusp ?? emptySuspEnd);
-    setAlignment(
-      draft.alignment ?? {
-        front_camber: '',
-        rear_camber: '',
-        front_toe: '',
-        rear_toe: '',
-        caster: '',
-      }
-    );
-    setEnabledModules(
-      draft.enabledModules ?? {
-        geometry: false,
-        drivetrain: false,
-        aero: false,
-      }
-    );
-    setShowAdvancedModules(
-      draft.showAdvancedModules ?? {
-        geometry: false,
-        drivetrain: false,
-        aero: false,
-      }
-    );
-    setGeometry(
-      draft.geometry ?? {
-        sag_front: '',
-        sag_rear: '',
-        fork_height: '',
-        rear_ride_height: '',
-        notes: '',
-      }
-    );
-    setDrivetrain(
-      draft.drivetrain ?? {
-        front_sprocket: '',
-        rear_sprocket: '',
-        chain_length: '',
-        notes: '',
-      }
-    );
-    setAero(
-      draft.aero ?? {
-        wing_angle: '',
-        splitter_setting: '',
-        rake: '',
-        notes: '',
-      }
-    );
+    setAlignment(draft.alignment ?? emptyAlignment);
+    setEnabledModules(sanitizeEnabledModules(draftVehicleType, draft.enabledModules));
+    setShowAdvancedModules(sanitizeAdvancedVisibility(draftVehicleType, draft.showAdvancedModules));
+    setGeometry(draft.geometry ?? emptyGeometry);
+    setDrivetrain(draft.drivetrain ?? emptyDrivetrain);
+    setAero(draft.aero ?? emptyAero);
     setNotes(draft.notes ?? '');
     setDraftMessage('Draft restored from this device.');
     hydratedRef.current = true;
-  }, []);
+  }, [initialVehicleType, vehicles]);
 
   useEffect(() => {
     if (!hydratedRef.current) return;
@@ -227,6 +217,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
       trackId,
       date,
       startTime,
+      sessionNumber,
       conditions,
       tireCondition,
       frontTire,
@@ -248,6 +239,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
     trackId,
     date,
     startTime,
+    sessionNumber,
     conditions,
     tireCondition,
     frontTire,
@@ -264,14 +256,6 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
     notes,
   ]);
 
-  function toggleModule(module: ExtraModuleKey) {
-    setEnabledModules((prev) => ({ ...prev, [module]: !prev[module] }));
-  }
-
-  function toggleAdvanced(module: ExtraModuleKey) {
-    setShowAdvancedModules((prev) => ({ ...prev, [module]: !prev[module] }));
-  }
-
   function handleTrackSelect(track: Track) {
     setTrackQuery(track.name);
     setTrackId(track.id);
@@ -284,35 +268,33 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
     setShowDropdown(true);
   }
 
-  function buildExtraModules(): ExtraModules | null {
+  function toggleModule(module: ModuleToggleKey) {
+    setEnabledModules((current) => {
+      const next = { ...current, [module]: !current[module] };
+      return sanitizeEnabledModules(selectedVehicleType, next);
+    });
+  }
+
+  function toggleAdvanced(module: SessionModuleKey) {
+    setShowAdvancedModules((current) => ({
+      ...current,
+      [module]: !current[module],
+    }));
+  }
+
+  function buildExtraModules(modules: SessionEnabledModules): ExtraModules | null {
     const result: ExtraModules = {};
 
-    if (showGeometry && enabledModules.geometry) {
-      result.geometry = {
-        sag_front: geometry.sag_front,
-        sag_rear: geometry.sag_rear,
-        fork_height: geometry.fork_height,
-        rear_ride_height: geometry.rear_ride_height,
-        notes: geometry.notes,
-      };
+    if (modules.geometry) {
+      result.geometry = { ...geometry };
     }
 
-    if (showDrivetrain && enabledModules.drivetrain) {
-      result.drivetrain = {
-        front_sprocket: drivetrain.front_sprocket,
-        rear_sprocket: drivetrain.rear_sprocket,
-        chain_length: drivetrain.chain_length,
-        notes: drivetrain.notes,
-      };
+    if (modules.drivetrain) {
+      result.drivetrain = { ...drivetrain };
     }
 
-    if (showAero && enabledModules.aero) {
-      result.aero = {
-        wing_angle: aero.wing_angle,
-        splitter_setting: aero.splitter_setting,
-        rake: aero.rake,
-        notes: aero.notes,
-      };
+    if (modules.aero) {
+      result.aero = { ...aero };
     }
 
     return Object.keys(result).length > 0 ? result : null;
@@ -332,6 +314,17 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
       return;
     }
 
+    const parsedSessionNumber = sessionNumber.trim() ? Number(sessionNumber.trim()) : null;
+    if (
+      parsedSessionNumber !== null &&
+      (!Number.isInteger(parsedSessionNumber) || parsedSessionNumber <= 0)
+    ) {
+      setErrorMessage('Session number must be a whole number greater than 0.');
+      return;
+    }
+
+    const sanitizedModules = sanitizeEnabledModules(selectedVehicleType, enabledModules);
+
     const tires: Tires = {
       front: frontTire,
       rear: rearTire,
@@ -343,8 +336,9 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
       rear: { ...rearSusp, direction: suspensionDirection },
     };
 
-    const alignmentData: Alignment | null = showAlignment ? alignment : null;
-    const extraModules = buildExtraModules();
+    const alignmentData: Alignment | null =
+      selectedVehicleType === 'car' && sanitizedModules.alignment ? alignment : null;
+    const extraModules = buildExtraModules(sanitizedModules);
 
     startTransition(async () => {
       const result = await createSession({
@@ -353,10 +347,12 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
         track_name: trackQuery.trim() || null,
         date,
         start_time: startTime || null,
+        session_number: parsedSessionNumber,
         conditions,
         tires,
         suspension,
         alignment: alignmentData,
+        enabled_modules: sanitizedModules,
         extra_modules: extraModules,
         notes: notes.trim() || null,
       });
@@ -392,27 +388,33 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Session Info</span>
 
         <div className="space-y-1">
-          <label className="block text-sm font-medium text-zinc-300">Vehicle</label>
+          <label htmlFor="session-vehicle" className="block text-sm font-medium text-zinc-300">
+            Vehicle
+          </label>
           <select
+            id="session-vehicle"
             className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 focus:border-cyan-400 focus:outline-none"
             value={vehicleId}
-            onChange={(e) => setVehicleId(e.target.value)}
+            onChange={(event) => setVehicleId(event.target.value)}
             required
           >
             <option value="" disabled>
               Select a vehicle
             </option>
-            {vehicles.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.nickname}
+            {vehicles.map((vehicle) => (
+              <option key={vehicle.id} value={vehicle.id}>
+                {vehicle.nickname}
               </option>
             ))}
           </select>
         </div>
 
         <div className="relative space-y-1">
-          <label className="block text-sm font-medium text-zinc-300">Track</label>
+          <label htmlFor="session-track" className="block text-sm font-medium text-zinc-300">
+            Track
+          </label>
           <input
+            id="session-track"
             type="text"
             className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-400 focus:outline-none"
             placeholder="Search or type a track name"
@@ -420,7 +422,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
-            onChange={(e) => handleTrackInputChange(e.target.value)}
+            onChange={(event) => handleTrackInputChange(event.target.value)}
             onFocus={() => setShowDropdown(true)}
             onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
           />
@@ -442,204 +444,306 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
           ) : null}
         </div>
 
-        <Input label="Date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
-        <Input label="Start Time" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+        <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
+        <Input label="Start Time" type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+        <Input
+          label="Session Number (optional)"
+          type="text"
+          inputMode="numeric"
+          placeholder="e.g. 3"
+          value={sessionNumber}
+          onChange={(event) => setSessionNumber(event.target.value)}
+        />
       </div>
 
       <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Conditions</span>
         <div className="grid grid-cols-4 gap-2 rounded-xl bg-zinc-950 p-1">
-          {conditionOptions.map((opt) => (
+          {conditionOptions.map((option) => (
             <Button
-              key={opt.value}
+              key={option.value}
               type="button"
-              variant={conditions === opt.value ? 'primary' : 'secondary'}
+              variant={conditions === option.value ? 'primary' : 'secondary'}
               className="min-h-10 px-1 text-xs"
-              onClick={() => setConditions(opt.value)}
+              onClick={() => setConditions(option.value)}
             >
-              {opt.label}
+              {option.label}
             </Button>
           ))}
         </div>
       </div>
 
-      <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Tires</span>
-
-        <div className="space-y-2">
-          <span className="text-xs font-medium text-zinc-400">Condition</span>
-          <div className="grid grid-cols-4 gap-2 rounded-xl bg-zinc-950 p-1">
-            {tireConditionOptions.map((opt) => (
+      <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+        <div>
+          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Modules</span>
+          <p className="mt-1 text-sm text-zinc-400">
+            Start with the basics. Turn on extra modules only for the data you want to log this session.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {availableModules
+            .filter((module) => module !== 'notes')
+            .map((module) => (
               <Button
-                key={opt.value}
+                key={module}
                 type="button"
-                variant={tireCondition === opt.value ? 'primary' : 'secondary'}
-                className="min-h-10 px-1 text-xs"
-                onClick={() => setTireCondition(opt.value)}
+                variant={enabledModules[module] ? 'primary' : 'secondary'}
+                className="justify-between px-3 text-xs"
+                onClick={() => toggleModule(module as ModuleToggleKey)}
               >
-                {opt.label}
+                <span>{sessionModuleConfigs[module].label}</span>
+                <span>{enabledModules[module] ? 'On' : 'Off'}</span>
               </Button>
             ))}
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <span className="text-xs font-medium text-zinc-400">Front</span>
-          <Input label="Brand" type="text" placeholder="e.g. Pirelli" value={frontTire.brand} onChange={(e) => setFrontTire({ ...frontTire, brand: e.target.value })} autoComplete="off" autoCorrect="off" autoCapitalize="off" />
-          <Input label="Compound" type="text" placeholder="e.g. SC2" value={frontTire.compound} onChange={(e) => setFrontTire({ ...frontTire, compound: e.target.value })} autoComplete="off" autoCorrect="off" autoCapitalize="off" />
-          <Input label="Pressure" type="text" inputMode="numeric" placeholder="e.g. 32.5" value={frontTire.pressure} onChange={(e) => setFrontTire({ ...frontTire, pressure: e.target.value })} />
-        </div>
-
-        <div className="space-y-3">
-          <span className="text-xs font-medium text-zinc-400">Rear</span>
-          <Input label="Brand" type="text" placeholder="e.g. Pirelli" value={rearTire.brand} onChange={(e) => setRearTire({ ...rearTire, brand: e.target.value })} autoComplete="off" autoCorrect="off" autoCapitalize="off" />
-          <Input label="Compound" type="text" placeholder="e.g. SC1" value={rearTire.compound} onChange={(e) => setRearTire({ ...rearTire, compound: e.target.value })} autoComplete="off" autoCorrect="off" autoCapitalize="off" />
-          <Input label="Pressure" type="text" inputMode="numeric" placeholder="e.g. 28.5" value={rearTire.pressure} onChange={(e) => setRearTire({ ...rearTire, pressure: e.target.value })} />
         </div>
       </div>
 
-      <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Suspension</span>
+      {enabledModules.tires ? (
+        <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+          <ModuleHeader module="tires" enabled={enabledModules.tires} onToggle={toggleModule} />
 
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-medium text-zinc-400">Clicks counted for both front and rear</span>
-          <div className="flex items-center gap-2">
-            <InfoTooltip text="Out — rotate the adjuster fully clockwise (full hard) until it stops, then count each click as you back it out. Most common standard. In — count from fully open (full soft). Some manufacturers use this. Check your manual if unsure." />
-            <div className="flex overflow-hidden rounded-lg border border-zinc-700">
-              <button
-                type="button"
-                onClick={() => setSuspensionDirection('out')}
-                className={`px-3 py-1 text-xs font-medium transition ${suspensionDirection === 'out' ? 'bg-cyan-400 text-zinc-950' : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'}`}
-              >
-                Out
-              </button>
-              <button
-                type="button"
-                onClick={() => setSuspensionDirection('in')}
-                className={`px-3 py-1 text-xs font-medium transition ${suspensionDirection === 'in' ? 'bg-cyan-400 text-zinc-950' : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'}`}
-              >
-                In
-              </button>
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-zinc-400">Condition</span>
+            <div className="grid grid-cols-4 gap-2 rounded-xl bg-zinc-950 p-1">
+              {tireConditionOptions.map((option) => (
+                <Button
+                  key={option.value}
+                  type="button"
+                  variant={tireCondition === option.value ? 'primary' : 'secondary'}
+                  className="min-h-10 px-1 text-xs"
+                  onClick={() => setTireCondition(option.value)}
+                >
+                  {option.label}
+                </Button>
+              ))}
             </div>
           </div>
-        </div>
 
-        <div className="space-y-3">
-          <span className="text-xs font-medium text-zinc-400">Front</span>
-          <Input label="Preload" type="text" inputMode="numeric" placeholder="e.g. 5" value={frontSusp.preload} onChange={(e) => setFrontSusp({ ...frontSusp, preload: e.target.value })} />
-          <Input label="Compression" type="text" inputMode="numeric" placeholder="e.g. 12" value={frontSusp.compression} onChange={(e) => setFrontSusp({ ...frontSusp, compression: e.target.value })} />
-          <Input label="Rebound" type="text" inputMode="numeric" placeholder="e.g. 14" value={frontSusp.rebound} onChange={(e) => setFrontSusp({ ...frontSusp, rebound: e.target.value })} />
-        </div>
+          <Button
+            type="button"
+            variant="secondary"
+            className="min-h-10 w-full text-xs"
+            onClick={() => toggleAdvanced('tires')}
+          >
+            {showAdvancedModules.tires ? 'Hide tire details' : sessionModuleConfigs.tires.advancedLabel}
+          </Button>
 
-        <div className="space-y-3">
-          <span className="text-xs font-medium text-zinc-400">Rear</span>
-          <Input label="Preload" type="text" inputMode="numeric" placeholder="e.g. 8" value={rearSusp.preload} onChange={(e) => setRearSusp({ ...rearSusp, preload: e.target.value })} />
-          <Input label="Compression" type="text" inputMode="numeric" placeholder="e.g. 10" value={rearSusp.compression} onChange={(e) => setRearSusp({ ...rearSusp, compression: e.target.value })} />
-          <Input label="Rebound" type="text" inputMode="numeric" placeholder="e.g. 16" value={rearSusp.rebound} onChange={(e) => setRearSusp({ ...rearSusp, rebound: e.target.value })} />
-        </div>
-      </div>
+          <div className="space-y-3">
+            <span className="text-xs font-medium text-zinc-400">Front</span>
+            <Input
+              label="Front Pressure"
+              type="text"
+              inputMode="decimal"
+              placeholder="e.g. 32.5"
+              value={frontTire.pressure}
+              onChange={(event) => setFrontTire({ ...frontTire, pressure: event.target.value })}
+            />
+            {showAdvancedModules.tires ? (
+              <>
+                <Input
+                  label="Front Brand"
+                  type="text"
+                  placeholder="e.g. Pirelli"
+                  value={frontTire.brand}
+                  onChange={(event) => setFrontTire({ ...frontTire, brand: event.target.value })}
+                  autoComplete="off"
+                />
+                <Input
+                  label="Front Compound"
+                  type="text"
+                  placeholder="e.g. SC2"
+                  value={frontTire.compound}
+                  onChange={(event) => setFrontTire({ ...frontTire, compound: event.target.value })}
+                  autoComplete="off"
+                />
+              </>
+            ) : null}
+          </div>
 
-      {showAlignment ? (
-        <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Alignment</span>
-          <Input label="Front Camber" type="text" inputMode="numeric" placeholder="e.g. -2.5" value={alignment.front_camber} onChange={(e) => setAlignment({ ...alignment, front_camber: e.target.value })} />
-          <Input label="Rear Camber" type="text" inputMode="numeric" placeholder="e.g. -1.8" value={alignment.rear_camber} onChange={(e) => setAlignment({ ...alignment, rear_camber: e.target.value })} />
-          <Input label="Front Toe" type="text" inputMode="numeric" placeholder="e.g. 0.1" value={alignment.front_toe} onChange={(e) => setAlignment({ ...alignment, front_toe: e.target.value })} />
-          <Input label="Rear Toe" type="text" inputMode="numeric" placeholder="e.g. 0.2" value={alignment.rear_toe} onChange={(e) => setAlignment({ ...alignment, rear_toe: e.target.value })} />
-          <Input label="Caster" type="text" inputMode="numeric" placeholder="e.g. 6.5" value={alignment.caster} onChange={(e) => setAlignment({ ...alignment, caster: e.target.value })} />
+          <div className="space-y-3">
+            <span className="text-xs font-medium text-zinc-400">Rear</span>
+            <Input
+              label="Rear Pressure"
+              type="text"
+              inputMode="decimal"
+              placeholder="e.g. 28.5"
+              value={rearTire.pressure}
+              onChange={(event) => setRearTire({ ...rearTire, pressure: event.target.value })}
+            />
+            {showAdvancedModules.tires ? (
+              <>
+                <Input
+                  label="Rear Brand"
+                  type="text"
+                  placeholder="e.g. Pirelli"
+                  value={rearTire.brand}
+                  onChange={(event) => setRearTire({ ...rearTire, brand: event.target.value })}
+                  autoComplete="off"
+                />
+                <Input
+                  label="Rear Compound"
+                  type="text"
+                  placeholder="e.g. SC1"
+                  value={rearTire.compound}
+                  onChange={(event) => setRearTire({ ...rearTire, compound: event.target.value })}
+                  autoComplete="off"
+                />
+              </>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
-      {showGeometry ? (
-        <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Geometry (optional module)</span>
-            <Button type="button" variant={enabledModules.geometry ? 'primary' : 'secondary'} className="min-h-10 px-3 text-xs" onClick={() => toggleModule('geometry')}>
-              {enabledModules.geometry ? 'Enabled' : 'Enable'}
-            </Button>
+      {enabledModules.suspension ? (
+        <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+          <ModuleHeader module="suspension" enabled={enabledModules.suspension} onToggle={toggleModule} />
+
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-zinc-400">Clicks counted for both front and rear</span>
+            <div className="flex items-center gap-2">
+              <InfoTooltip text="Out - rotate the adjuster fully clockwise (full hard) until it stops, then count each click as you back it out. Most common standard. In - count from fully open (full soft). Some manufacturers use this. Check your manual if unsure." />
+              <div className="flex overflow-hidden rounded-lg border border-zinc-700">
+                <button
+                  type="button"
+                  onClick={() => setSuspensionDirection('out')}
+                  className={`px-3 py-1 text-xs font-medium transition ${
+                    suspensionDirection === 'out'
+                      ? 'bg-cyan-400 text-zinc-950'
+                      : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  Out
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSuspensionDirection('in')}
+                  className={`px-3 py-1 text-xs font-medium transition ${
+                    suspensionDirection === 'in'
+                      ? 'bg-cyan-400 text-zinc-950'
+                      : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  In
+                </button>
+              </div>
+            </div>
           </div>
 
-          {enabledModules.geometry ? (
+          <div className="space-y-3">
+            <span className="text-xs font-medium text-zinc-400">Front</span>
+            <Input label="Front Preload" type="text" inputMode="numeric" placeholder="e.g. 5" value={frontSusp.preload} onChange={(event) => setFrontSusp({ ...frontSusp, preload: event.target.value })} />
+            <Input label="Front Compression" type="text" inputMode="numeric" placeholder="e.g. 12" value={frontSusp.compression} onChange={(event) => setFrontSusp({ ...frontSusp, compression: event.target.value })} />
+            <Input label="Front Rebound" type="text" inputMode="numeric" placeholder="e.g. 14" value={frontSusp.rebound} onChange={(event) => setFrontSusp({ ...frontSusp, rebound: event.target.value })} />
+          </div>
+
+          <div className="space-y-3">
+            <span className="text-xs font-medium text-zinc-400">Rear</span>
+            <Input label="Rear Preload" type="text" inputMode="numeric" placeholder="e.g. 8" value={rearSusp.preload} onChange={(event) => setRearSusp({ ...rearSusp, preload: event.target.value })} />
+            <Input label="Rear Compression" type="text" inputMode="numeric" placeholder="e.g. 10" value={rearSusp.compression} onChange={(event) => setRearSusp({ ...rearSusp, compression: event.target.value })} />
+            <Input label="Rear Rebound" type="text" inputMode="numeric" placeholder="e.g. 16" value={rearSusp.rebound} onChange={(event) => setRearSusp({ ...rearSusp, rebound: event.target.value })} />
+          </div>
+        </div>
+      ) : null}
+
+      {availableModules.includes('alignment') && enabledModules.alignment ? (
+        <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+          <ModuleHeader module="alignment" enabled={enabledModules.alignment} onToggle={toggleModule} />
+          <Button
+            type="button"
+            variant="secondary"
+            className="min-h-10 w-full text-xs"
+            onClick={() => toggleAdvanced('alignment')}
+          >
+            {showAdvancedModules.alignment ? 'Hide advanced fields' : 'Show advanced fields'}
+          </Button>
+          <Input label="Front Camber" type="text" inputMode="decimal" placeholder="e.g. -2.5" value={alignment.front_camber} onChange={(event) => setAlignment({ ...alignment, front_camber: event.target.value })} />
+          <Input label="Rear Camber" type="text" inputMode="decimal" placeholder="e.g. -1.8" value={alignment.rear_camber} onChange={(event) => setAlignment({ ...alignment, rear_camber: event.target.value })} />
+          <Input label="Front Toe" type="text" inputMode="decimal" placeholder="e.g. 0.1" value={alignment.front_toe} onChange={(event) => setAlignment({ ...alignment, front_toe: event.target.value })} />
+          <Input label="Rear Toe" type="text" inputMode="decimal" placeholder="e.g. 0.2" value={alignment.rear_toe} onChange={(event) => setAlignment({ ...alignment, rear_toe: event.target.value })} />
+          {showAdvancedModules.alignment ? (
+            <Input label="Caster" type="text" inputMode="decimal" placeholder="e.g. 6.5" value={alignment.caster} onChange={(event) => setAlignment({ ...alignment, caster: event.target.value })} />
+          ) : null}
+        </div>
+      ) : null}
+
+      {availableModules.includes('geometry') && enabledModules.geometry ? (
+        <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+          <ModuleHeader module="geometry" enabled={enabledModules.geometry} onToggle={toggleModule} />
+          <Button
+            type="button"
+            variant="secondary"
+            className="min-h-10 w-full text-xs"
+            onClick={() => toggleAdvanced('geometry')}
+          >
+            {showAdvancedModules.geometry ? 'Hide advanced fields' : 'Show advanced fields'}
+          </Button>
+          <Input label="Front Sag" type="text" inputMode="decimal" placeholder="e.g. 35" value={geometry.sag_front} onChange={(event) => setGeometry({ ...geometry, sag_front: event.target.value })} />
+          <Input label="Rear Sag" type="text" inputMode="decimal" placeholder="e.g. 30" value={geometry.sag_rear} onChange={(event) => setGeometry({ ...geometry, sag_rear: event.target.value })} />
+          {showAdvancedModules.geometry ? (
             <>
-              <Button type="button" variant="secondary" className="min-h-10 w-full text-xs" onClick={() => toggleAdvanced('geometry')}>
-                {showAdvancedModules.geometry ? 'Hide advanced fields' : 'Show advanced fields'}
-              </Button>
-              <Input label="Front Sag" type="text" inputMode="numeric" placeholder="e.g. 35mm" value={geometry.sag_front} onChange={(e) => setGeometry({ ...geometry, sag_front: e.target.value })} />
-              <Input label="Rear Sag" type="text" inputMode="numeric" placeholder="e.g. 30mm" value={geometry.sag_rear} onChange={(e) => setGeometry({ ...geometry, sag_rear: e.target.value })} />
-              {showAdvancedModules.geometry ? (
-                <>
-                  <Input label="Fork Height" type="text" inputMode="numeric" placeholder="e.g. +2mm" value={geometry.fork_height} onChange={(e) => setGeometry({ ...geometry, fork_height: e.target.value })} />
-                  <Input label="Rear Ride Height" type="text" inputMode="numeric" placeholder="e.g. +1 turn" value={geometry.rear_ride_height} onChange={(e) => setGeometry({ ...geometry, rear_ride_height: e.target.value })} />
-                  <Input label="Geometry Notes" type="text" placeholder="Optional notes" value={geometry.notes} onChange={(e) => setGeometry({ ...geometry, notes: e.target.value })} />
-                </>
-              ) : null}
+              <Input label="Fork Height" type="text" inputMode="decimal" placeholder="e.g. +2" value={geometry.fork_height} onChange={(event) => setGeometry({ ...geometry, fork_height: event.target.value })} />
+              <Input label="Rear Ride Height" type="text" inputMode="decimal" placeholder="e.g. +1 turn" value={geometry.rear_ride_height} onChange={(event) => setGeometry({ ...geometry, rear_ride_height: event.target.value })} />
+              <Input label="Geometry Notes" type="text" placeholder="Optional notes" value={geometry.notes} onChange={(event) => setGeometry({ ...geometry, notes: event.target.value })} />
             </>
           ) : null}
         </div>
       ) : null}
 
-      {showDrivetrain ? (
+      {availableModules.includes('drivetrain') && enabledModules.drivetrain ? (
         <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Drivetrain (optional module)</span>
-            <Button type="button" variant={enabledModules.drivetrain ? 'primary' : 'secondary'} className="min-h-10 px-3 text-xs" onClick={() => toggleModule('drivetrain')}>
-              {enabledModules.drivetrain ? 'Enabled' : 'Enable'}
-            </Button>
-          </div>
-
-          {enabledModules.drivetrain ? (
+          <ModuleHeader module="drivetrain" enabled={enabledModules.drivetrain} onToggle={toggleModule} />
+          <Button
+            type="button"
+            variant="secondary"
+            className="min-h-10 w-full text-xs"
+            onClick={() => toggleAdvanced('drivetrain')}
+          >
+            {showAdvancedModules.drivetrain ? 'Hide advanced fields' : 'Show advanced fields'}
+          </Button>
+          <Input label="Front Sprocket" type="text" inputMode="numeric" placeholder="e.g. 15" value={drivetrain.front_sprocket} onChange={(event) => setDrivetrain({ ...drivetrain, front_sprocket: event.target.value })} />
+          <Input label="Rear Sprocket" type="text" inputMode="numeric" placeholder="e.g. 45" value={drivetrain.rear_sprocket} onChange={(event) => setDrivetrain({ ...drivetrain, rear_sprocket: event.target.value })} />
+          {showAdvancedModules.drivetrain ? (
             <>
-              <Button type="button" variant="secondary" className="min-h-10 w-full text-xs" onClick={() => toggleAdvanced('drivetrain')}>
-                {showAdvancedModules.drivetrain ? 'Hide advanced fields' : 'Show advanced fields'}
-              </Button>
-              <Input label="Front Sprocket" type="text" inputMode="numeric" placeholder="e.g. 15" value={drivetrain.front_sprocket} onChange={(e) => setDrivetrain({ ...drivetrain, front_sprocket: e.target.value })} />
-              <Input label="Rear Sprocket" type="text" inputMode="numeric" placeholder="e.g. 45" value={drivetrain.rear_sprocket} onChange={(e) => setDrivetrain({ ...drivetrain, rear_sprocket: e.target.value })} />
-              {showAdvancedModules.drivetrain ? (
-                <>
-                  <Input label="Chain Length" type="text" placeholder="Optional" value={drivetrain.chain_length} onChange={(e) => setDrivetrain({ ...drivetrain, chain_length: e.target.value })} />
-                  <Input label="Drivetrain Notes" type="text" placeholder="Optional notes" value={drivetrain.notes} onChange={(e) => setDrivetrain({ ...drivetrain, notes: e.target.value })} />
-                </>
-              ) : null}
+              <Input label="Chain Length" type="text" placeholder="Optional" value={drivetrain.chain_length} onChange={(event) => setDrivetrain({ ...drivetrain, chain_length: event.target.value })} />
+              <Input label="Drivetrain Notes" type="text" placeholder="Optional notes" value={drivetrain.notes} onChange={(event) => setDrivetrain({ ...drivetrain, notes: event.target.value })} />
             </>
           ) : null}
         </div>
       ) : null}
 
-      {showAero ? (
+      {availableModules.includes('aero') && enabledModules.aero ? (
         <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Aero (optional module)</span>
-            <Button type="button" variant={enabledModules.aero ? 'primary' : 'secondary'} className="min-h-10 px-3 text-xs" onClick={() => toggleModule('aero')}>
-              {enabledModules.aero ? 'Enabled' : 'Enable'}
-            </Button>
-          </div>
-
-          {enabledModules.aero ? (
+          <ModuleHeader module="aero" enabled={enabledModules.aero} onToggle={toggleModule} />
+          <Button
+            type="button"
+            variant="secondary"
+            className="min-h-10 w-full text-xs"
+            onClick={() => toggleAdvanced('aero')}
+          >
+            {showAdvancedModules.aero ? 'Hide advanced fields' : 'Show advanced fields'}
+          </Button>
+          <Input label="Wing Angle" type="text" inputMode="decimal" placeholder="e.g. 4" value={aero.wing_angle} onChange={(event) => setAero({ ...aero, wing_angle: event.target.value })} />
+          {showAdvancedModules.aero ? (
             <>
-              <Button type="button" variant="secondary" className="min-h-10 w-full text-xs" onClick={() => toggleAdvanced('aero')}>
-                {showAdvancedModules.aero ? 'Hide advanced fields' : 'Show advanced fields'}
-              </Button>
-              <Input label="Wing Angle" type="text" inputMode="numeric" placeholder="e.g. 4" value={aero.wing_angle} onChange={(e) => setAero({ ...aero, wing_angle: e.target.value })} />
-              {showAdvancedModules.aero ? (
-                <>
-                  <Input label="Splitter Setting" type="text" placeholder="Optional" value={aero.splitter_setting} onChange={(e) => setAero({ ...aero, splitter_setting: e.target.value })} />
-                  <Input label="Rake" type="text" inputMode="numeric" placeholder="Optional" value={aero.rake} onChange={(e) => setAero({ ...aero, rake: e.target.value })} />
-                  <Input label="Aero Notes" type="text" placeholder="Optional notes" value={aero.notes} onChange={(e) => setAero({ ...aero, notes: e.target.value })} />
-                </>
-              ) : null}
+              <Input label="Splitter Setting" type="text" placeholder="Optional" value={aero.splitter_setting} onChange={(event) => setAero({ ...aero, splitter_setting: event.target.value })} />
+              <Input label="Rake" type="text" inputMode="decimal" placeholder="Optional" value={aero.rake} onChange={(event) => setAero({ ...aero, rake: event.target.value })} />
+              <Input label="Aero Notes" type="text" placeholder="Optional notes" value={aero.notes} onChange={(event) => setAero({ ...aero, notes: event.target.value })} />
             </>
           ) : null}
         </div>
       ) : null}
 
       <div className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-500">Notes</label>
+        <label htmlFor="session-notes" className="block text-xs font-semibold uppercase tracking-wider text-zinc-500">
+          Notes
+        </label>
         <textarea
+          id="session-notes"
           className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-400 focus:outline-none"
           rows={4}
           placeholder="Observations, lap times, what to try next..."
           value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          onChange={(event) => setNotes(event.target.value)}
         />
       </div>
 
