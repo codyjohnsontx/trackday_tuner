@@ -5,15 +5,35 @@ import { Input } from '@/components/ui/input';
 export default function HomePage() {
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <h1 className="text-2xl font-semibold">Track Tuner</h1>
-        <p className="mt-2 text-sm text-zinc-300">
-          Capture setup changes fast at the track, compare what worked, and keep clean session history.
+      {/* Hero */}
+      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6">
+        <p className="text-xs font-semibold uppercase tracking-wider text-cyan-400">Trackday Tuner</p>
+        <h1 className="mt-2 text-2xl font-bold leading-tight text-zinc-100">
+          Your setup sheet.<br />Every session. Always with you.
+        </h1>
+        <p className="mt-3 text-sm text-zinc-400">
+          Stop writing clicker settings on tape. Log tires, suspension, alignment, and conditions between sessions — then compare what actually worked.
         </p>
+
+        {/* Feature list */}
+        <ul className="mt-5 space-y-2">
+          {[
+            { icon: '📋', text: 'Modular setup logging — tires, suspension, alignment, and more' },
+            { icon: '🔁', text: 'Compare sessions side-by-side across the same track' },
+            { icon: '🏎', text: 'Multi-vehicle garage — motorcycles and cars' },
+            { icon: '🧮', text: 'Trackside tools: sag calculator, unit converter, AI Q&A' },
+          ].map(({ icon, text }) => (
+            <li key={text} className="flex items-start gap-2 text-sm text-zinc-300">
+              <span className="shrink-0">{icon}</span>
+              <span>{text}</span>
+            </li>
+          ))}
+        </ul>
       </section>
 
+      {/* Early access */}
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-300">Get Early Access</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Get Early Access</h2>
         <form className="mt-3 space-y-3">
           <Input label="Email" type="email" placeholder="you@tracktuner.app" autoComplete="email" />
           <Button type="submit" fullWidth>
@@ -22,21 +42,14 @@ export default function HomePage() {
         </form>
       </section>
 
+      {/* Auth links */}
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <div className="space-y-2">
-          <Link
-            href="/login"
-            className="block min-h-12 rounded-xl bg-cyan-400 px-4 py-3 text-center text-sm font-semibold text-zinc-950 transition hover:bg-cyan-300"
-          >
-            Login / Sign Up
-          </Link>
-          <Link
-            href="/dashboard"
-            className="block min-h-12 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-center text-sm font-semibold text-zinc-100 transition hover:bg-zinc-800"
-          >
-            View Dashboard Placeholder
-          </Link>
-        </div>
+        <Link
+          href="/login"
+          className="block min-h-12 rounded-xl bg-cyan-400 px-4 py-3 text-center text-sm font-semibold text-zinc-950 transition hover:bg-cyan-300 active:scale-[0.98]"
+        >
+          Log In / Sign Up
+        </Link>
       </section>
     </div>
   );

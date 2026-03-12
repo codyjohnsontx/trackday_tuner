@@ -1,5 +1,29 @@
 @import "tailwindcss";
 
+@theme {
+  /* Surfaces */
+  --color-surface: rgba(24, 24, 27, 0.6);
+  --color-surface-raised: rgba(24, 24, 27, 0.8);
+  --color-surface-sunken: #09090b;
+
+  /* Accent (cyan-400 base) */
+  --color-accent: #22d3ee;
+  --color-accent-hover: #67e8f9;
+  --color-accent-muted: rgba(34, 211, 238, 0.08);
+  --color-accent-border: rgba(34, 211, 238, 0.25);
+
+  /* Feedback */
+  --color-feedback-error: #fda4af;
+  --color-feedback-success: #6ee7b7;
+  --color-feedback-warning: #fcd34d;
+  --color-feedback-info: #93c5fd;
+
+  /* Motorsport semantic (flag colors) */
+  --color-flag-red: #f87171;
+  --color-flag-yellow: #fbbf24;
+  --color-flag-green: #4ade80;
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
 }
@@ -29,8 +53,8 @@ button {
   font: inherit;
 }
 
-button,
-a,
+/* Primary interactive elements get 44px min touch targets by default.
+   Use min-h-auto or explicit overrides on small/decorative elements. */
 input,
 select,
 textarea {

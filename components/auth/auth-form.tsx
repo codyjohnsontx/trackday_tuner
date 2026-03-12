@@ -4,12 +4,16 @@ import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { getOAuthProviders, type OAuthProvider } from '@/lib/auth/providers';
+import { type OAuthProvider, type OAuthProviderConfig } from '@/lib/auth/providers';
 import { createClient } from '@/lib/supabase/client';
 
 type AuthMode = 'sign-in' | 'sign-up';
 
-export function AuthForm() {
+interface AuthFormProps {
+  providers: OAuthProviderConfig[];
+}
+
+export function AuthForm({ providers: oauthProviders }: AuthFormProps) {
   const router = useRouter();
   const [mode, setMode] = useState<AuthMode>('sign-in');
   const [email, setEmail] = useState('');
@@ -17,7 +21,6 @@ export function AuthForm() {
   const [errorMessage, setErrorMessage] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const oauthProviders = getOAuthProviders();
 
   async function handleOAuthSignIn(provider: OAuthProvider) {
     setLoading(true);
@@ -80,8 +83,8 @@ export function AuthForm() {
 
   return (
     <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-      <h1 className="text-xl font-semibold text-zinc-100">Login</h1>
-      <p className="text-sm text-zinc-300">Use your email and password to access Track Tuner.</p>
+      <h1 className="text-2xl font-bold text-zinc-100">Get on track</h1>
+      <p className="text-sm text-zinc-400">Log setups, compare sessions, dial in your ride.</p>
 
       <div className="space-y-2">
         {oauthProviders.map((provider) => (
@@ -147,8 +150,8 @@ export function AuthForm() {
           required
         />
 
-        <Button type="submit" fullWidth disabled={loading}>
-          {loading ? 'Processing...' : mode === 'sign-in' ? 'Sign In' : 'Create Account'}
+        <Button type="submit" fullWidth loading={loading}>
+          {mode === 'sign-in' ? 'Sign In' : 'Create Account'}
         </Button>
       </form>
 

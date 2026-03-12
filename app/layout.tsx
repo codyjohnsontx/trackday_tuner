@@ -4,8 +4,8 @@ import { AppShell } from '@/components/layout/app-shell';
 import { isAuthenticated } from '@/lib/auth';
 
 export const metadata: Metadata = {
-  title: 'Track Tuner',
-  description: 'Mobile-first setup logger for racebike and racecar sessions.',
+  title: 'Trackday Tuner',
+  description: 'Log your track session setups, compare what worked, and dial in your ride.',
 };
 
 export const viewport: Viewport = {
