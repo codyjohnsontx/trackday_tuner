@@ -1,14 +1,12 @@
 import { NextResponse } from 'next/server';
-import { getUserProfile } from '@/lib/actions/vehicles';
 import { getAuthenticatedUser } from '@/lib/auth';
-import { logError, logInfo, logWarn } from '@/lib/observability';
+import { getUserProfile } from '@/lib/actions/vehicles';
 import { getAppBaseUrl, getStripeClient } from '@/lib/stripe/server';
 
 export async function POST(request: Request) {
   try {
     const user = await getAuthenticatedUser();
     if (!user) {
-      logWarn('stripe.portal.unauthenticated');
       return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
     }
 
@@ -28,17 +26,10 @@ export async function POST(request: Request) {
       return_url: `${appUrl}/dashboard`,
     });
 
-    logInfo('stripe.portal.session_created', {
-      userId: user.id,
-      customerId: profile.stripe_customer_id,
-    });
-
     return NextResponse.json({ url: portalSession.url });
   } catch (error) {
-    logError('stripe.portal.failed', error);
-    return NextResponse.json(
-      { error: 'Unable to create billing portal session.' },
-      { status: 500 },
-    );
+    const message =
+      error instanceof Error ? error.message : 'Unable to create billing portal session.';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getUserProfile } from '@/lib/actions/vehicles';
 import { getAuthenticatedUser } from '@/lib/auth';
-import { logError, logInfo, logWarn } from '@/lib/observability';
+import { getUserProfile } from '@/lib/actions/vehicles';
 import { createClient } from '@/lib/supabase/server';
 import { getAppBaseUrl, getProMonthlyPriceId, getStripeClient } from '@/lib/stripe/server';
 
@@ -9,7 +8,6 @@ export async function POST(request: Request) {
   try {
     const user = await getAuthenticatedUser();
     if (!user) {
-      logWarn('stripe.checkout.unauthenticated');
       return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
     }
 
@@ -48,18 +46,10 @@ export async function POST(request: Request) {
       },
     });
 
-    logInfo('stripe.checkout.session_created', {
-      userId: user.id,
-      customerId,
-      hasExistingCustomer: Boolean(profile?.stripe_customer_id),
-    });
-
     return NextResponse.json({ url: session.url });
   } catch (error) {
-    logError('stripe.checkout.failed', error);
-    return NextResponse.json(
-      { error: 'Unable to create checkout session.' },
-      { status: 500 },
-    );
+    const message =
+      error instanceof Error ? error.message : 'Unable to create checkout session.';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

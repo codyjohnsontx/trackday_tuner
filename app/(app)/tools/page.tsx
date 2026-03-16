@@ -13,7 +13,7 @@ function ToolCard({
   return (
     <Link
       href={href}
-      className="block rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 transition hover:border-zinc-700 hover:bg-zinc-900/80"
+      className="block rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 transition hover:border-zinc-600"
     >
       <p className="text-base font-semibold text-zinc-100">{title}</p>
       <p className="mt-1 text-sm text-zinc-400">{description}</p>
@@ -25,9 +25,9 @@ export default function ToolsPage() {
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <h1 className="text-2xl font-bold text-zinc-100">Pit Tools</h1>
+        <h1 className="text-2xl font-bold text-zinc-100">Tools</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Calculators and utilities for trackside setup work.
+          Dedicated calculators and utilities for trackside setup work.
         </p>
       </section>
 
@@ -43,18 +43,13 @@ export default function ToolsPage() {
           description="Calculate free/static and rider/race sag in mm and % of travel."
           href="/sag"
         />
-        <ToolCard
-          title="AI Tuning Q&A"
-          description="Ask tuning questions informed by setup knowledge and your session history."
-          href="/tools/rag"
-        />
       </section>
 
       <section className="space-y-3">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Utilities</h2>
         <ToolCard
           title="Tracks"
-          description="Manage built-in and custom tracks used across your sessions."
+          description="Manage seeded and custom tracks used in session logging."
           href="/tracks"
         />
       </section>

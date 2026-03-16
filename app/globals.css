@@ -1,54 +1,5 @@
 @import "tailwindcss";
 
-@layer base {
-  :root {
-    --background: oklch(0.145 0 0);            /* zinc-950 */
-    --foreground: oklch(0.985 0 0);            /* zinc-100 */
-    --card: oklch(0.21 0 0);                   /* zinc-900 */
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.21 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.789 0.154 211);         /* cyan-400 */
-    --primary-foreground: oklch(0.145 0 0);    /* zinc-950 on cyan */
-    --secondary: oklch(0.269 0 0);             /* zinc-800 */
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.553 0 0);      /* zinc-400 */
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.712 0.194 13.4);    /* rose-400 */
-    --destructive-foreground: oklch(0.985 0 0);
-    --border: oklch(0.269 0 0);                /* zinc-800 */
-    --input: oklch(0.269 0 0);
-    --ring: oklch(0.789 0.154 211);            /* cyan-400 */
-    --radius: 0.75rem;                          /* matches rounded-xl */
-  }
-}
-
-@theme {
-  /* Surfaces */
-  --color-surface: rgba(24, 24, 27, 0.6);
-  --color-surface-raised: rgba(24, 24, 27, 0.8);
-  --color-surface-sunken: #09090b;
-
-  /* Accent (cyan-400 base) */
-  --color-accent: #22d3ee;
-  --color-accent-hover: #67e8f9;
-  --color-accent-muted: rgba(34, 211, 238, 0.08);
-  --color-accent-border: rgba(34, 211, 238, 0.25);
-
-  /* Feedback */
-  --color-feedback-error: #fda4af;
-  --color-feedback-success: #6ee7b7;
-  --color-feedback-warning: #fcd34d;
-  --color-feedback-info: #93c5fd;
-
-  /* Motorsport semantic (flag colors) */
-  --color-flag-red: #f87171;
-  --color-flag-yellow: #fbbf24;
-  --color-flag-green: #4ade80;
-}
-
 * {
   -webkit-tap-highlight-color: transparent;
 }
@@ -78,11 +29,18 @@ button {
   font: inherit;
 }
 
-/* Primary interactive elements get 44px min touch targets by default.
-   Use min-h-auto or explicit overrides on small/decorative elements. */
+button,
+a,
 input,
 select,
 textarea {
   min-height: 2.75rem;
 }
 
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 2px;
+}

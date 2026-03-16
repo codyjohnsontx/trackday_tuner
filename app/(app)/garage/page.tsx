@@ -3,16 +3,15 @@ import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { VehicleCard } from '@/components/garage/vehicle-card';
 import { Button } from '@/components/ui/button';
-import { formatFreePlanUsage, getFreePlanLimit } from '@/lib/plans';
 
 export default async function GaragePage() {
   const [vehicles, profile] = await Promise.all([getVehicles(), getUserProfile()]);
 
   const isFree = !profile || profile.tier === 'free';
-  const atLimit = isFree && vehicles.length >= getFreePlanLimit('vehicles');
+  const atLimit = isFree && vehicles.length >= 1;
 
   const tierLabel = isFree
-    ? formatFreePlanUsage('vehicles', vehicles.length)
+    ? `Free plan · ${vehicles.length}/1 vehicle`
     : `Pro plan · ${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''}`;
 
   return (
@@ -32,17 +31,12 @@ export default async function GaragePage() {
       </div>
 
       {vehicles.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-zinc-700 bg-zinc-950/50 p-8 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 text-zinc-500">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-6 w-6">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
-            </svg>
-          </div>
-          <p className="text-sm font-semibold text-zinc-300">Your garage is empty</p>
-          <p className="mt-1 text-sm text-zinc-500">Add your first machine to start building your setup history.</p>
+        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 text-center">
+          <p className="text-sm text-zinc-400">No vehicles yet.</p>
+          <p className="mt-1 text-sm text-zinc-500">Add your first vehicle to start logging sessions.</p>
           <div className="mt-4">
             <Link href="/garage/new">
-              <Button fullWidth>Add Your First Machine</Button>
+              <Button fullWidth>Add Your First Vehicle</Button>
             </Link>
           </div>
         </section>
@@ -56,9 +50,9 @@ export default async function GaragePage() {
 
       {atLimit ? (
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 text-center">
-          <p className="text-sm font-semibold text-zinc-200">Garage full on the free plan</p>
+          <p className="text-sm font-semibold text-zinc-200">Want more vehicles?</p>
           <p className="mt-1 text-sm text-zinc-400">
-            Upgrade to Factory for unlimited machines, full session history, and AI tuning advice.
+            Upgrade to Pro for unlimited vehicles, full session history, and AI-powered tuning suggestions.
           </p>
           <div className="mt-4">
             <UpgradeToProButton fullWidth />

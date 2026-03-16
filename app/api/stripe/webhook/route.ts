@@ -1,8 +1,6 @@
 import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 import type Stripe from 'stripe';
-import { getStripeWebhookSecret } from '@/lib/env';
-import { logError, logInfo, logWarn } from '@/lib/observability';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getTierFromSubscription, unixToIso } from '@/lib/stripe/entitlements';
 import { getProMonthlyPriceId, getStripeClient } from '@/lib/stripe/server';
@@ -45,28 +43,30 @@ async function updateProfileFromSubscription(
 }
 
 export async function POST(request: Request) {
+  const stripe = getStripeClient();
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    return NextResponse.json(
+      { error: 'Missing STRIPE_WEBHOOK_SECRET.' },
+      { status: 500 },
+    );
+  }
+
+  const body = await request.text();
+  const headerList = await headers();
+  const signature = headerList.get('stripe-signature');
+  if (!signature) {
+    return NextResponse.json({ error: 'Missing signature.' }, { status: 400 });
+  }
+
+  let event: Stripe.Event;
   try {
-    const stripe = getStripeClient();
-    const webhookSecret = getStripeWebhookSecret();
+    event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
+  } catch {
+    return NextResponse.json({ error: 'Invalid signature.' }, { status: 400 });
+  }
 
-    const body = await request.text();
-    const headerList = await headers();
-    const signature = headerList.get('stripe-signature');
-    if (!signature) {
-      logWarn('stripe.webhook.missing_signature');
-      return NextResponse.json({ error: 'Missing signature.' }, { status: 400 });
-    }
-
-    let event: Stripe.Event;
-    try {
-      event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
-    } catch (error) {
-      logWarn('stripe.webhook.invalid_signature', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return NextResponse.json({ error: 'Invalid signature.' }, { status: 400 });
-    }
-
+  try {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
@@ -95,16 +95,15 @@ export async function POST(request: Request) {
       }
       case 'invoice.paid':
       case 'invoice.payment_failed': {
+        // No-op for v1. Subscription events remain canonical for entitlement sync.
         break;
       }
       default:
         break;
     }
-
-    logInfo('stripe.webhook.processed', { eventType: event.type });
-    return NextResponse.json({ received: true });
-  } catch (error) {
-    logError('stripe.webhook.processing_failed', error);
+  } catch {
     return NextResponse.json({ error: 'Webhook processing failed.' }, { status: 500 });
   }
+
+  return NextResponse.json({ received: true });
 }
