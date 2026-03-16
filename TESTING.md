@@ -130,11 +130,21 @@ Founder promo verification:
 - Optional model overrides:
   - `OPENAI_CHAT_MODEL=gpt-4.1-mini`
   - `OPENAI_EMBED_MODEL=text-embedding-3-small`
+- Early safety defaults:
+  - `RAG_ENABLED=true`
+  - `RAG_DAILY_LIMIT=3`
+  - `RAG_RATE_LIMIT_MAX_REQUESTS=2`
+  - `RAG_RATE_LIMIT_WINDOW_MS=60000`
 - Build the local index before using the UI:
 ```bash
 npm run rag:index
 ```
 - The `/api/rag/query` route now requires an authenticated user session.
+- The route also enforces:
+  - an authenticated-user requirement
+  - a short-window request cap
+  - a persistent per-user daily cap
+  - a server-side kill switch via `RAG_ENABLED`
 - For `npm run rag:eval`, export `RAG_EVAL_AUTH_COOKIE` from a valid signed-in browser session so the script can call the protected route.
 - Start the app:
 ```bash
@@ -144,6 +154,12 @@ npm run dev
 ```bash
 npm run rag:eval
 ```
+
+Common RAG failure modes:
+- Missing index: `RAG index not built. Run npm run rag:index.`
+- OpenAI unavailable/quota exhausted: `AI service is currently unavailable.`
+- Daily cap reached: `Daily AI question limit reached. Try again tomorrow.`
+- Kill switch disabled: `AI Q&A is temporarily disabled.`
 
 ## Cross-Device Release Checklist
 - Touch targets for primary actions are `>= 44px`.

@@ -293,9 +293,45 @@ export interface Database {
         };
         Relationships: [];
       };
+      rag_daily_usage: {
+        Row: {
+          user_id: string;
+          usage_date: string;
+          request_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          usage_date: string;
+          request_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          usage_date?: string;
+          request_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      consume_rag_daily_limit: {
+        Args: {
+          p_user_id: string;
+          p_usage_date: string;
+          p_limit: number;
+        };
+        Returns: {
+          allowed: boolean;
+          request_count: number;
+        }[];
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

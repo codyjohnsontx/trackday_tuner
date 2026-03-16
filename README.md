@@ -71,10 +71,30 @@ Required for the RAG spike:
 Optional RAG tuning:
 - `OPENAI_CHAT_MODEL`
 - `OPENAI_EMBED_MODEL`
+- `RAG_ENABLED`
+- `RAG_DAILY_LIMIT`
 - `RAG_RATE_LIMIT_MAX_REQUESTS`
 - `RAG_RATE_LIMIT_WINDOW_MS`
 - `RAG_EVAL_BASE_URL`
 - `RAG_EVAL_AUTH_COOKIE`
+
+Recommended early-rollout defaults:
+- `RAG_ENABLED=true`
+- `RAG_DAILY_LIMIT=3`
+- `RAG_RATE_LIMIT_MAX_REQUESTS=2`
+- `RAG_RATE_LIMIT_WINDOW_MS=60000`
+
+## RAG Bring-Up
+1. Set a valid `OPENAI_API_KEY` with available quota.
+2. Run `npm run rag:index`.
+3. Start the app with `npm run dev`.
+4. Sign in with a test account.
+5. Ask one seeded question from the AI Q&A page.
+
+Expected early failure modes:
+- If the index is missing, the UI will say to run `npm run rag:index`.
+- If the OpenAI account is out of quota or misconfigured, the UI will show `AI service is currently unavailable.`
+- If the request caps are exceeded, the UI will show a retry message and block additional questions until the limit resets.
 
 ## Product Limits
 Current enforced free-tier limits:

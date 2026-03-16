@@ -19,7 +19,7 @@ function readRequiredEnv(name: string): string {
   return value;
 }
 
-function readBooleanEnv(name: string, fallback = false): boolean {
+function readBooleanEnv(name: string, fallback: boolean): boolean {
   const value = readEnv(name);
   if (!value) {
     return fallback;
@@ -42,12 +42,40 @@ function readNumberEnv(name: string, fallback: number): number {
   return parsed;
 }
 
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const parsed = readNumberEnv(name, fallback);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`Invalid ${name}: expected a positive integer.`);
+  }
+
+  return parsed;
+}
+
+function readPublicEnv(value: string | undefined): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 export function getSupabaseUrl(): string {
-  return readRequiredEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const value = readPublicEnv(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  if (!value) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL.');
+  }
+
+  return value;
 }
 
 export function getSupabaseAnonKey(): string {
-  return readRequiredEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  const value = readPublicEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  if (!value) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+  }
+
+  return value;
 }
 
 export function getSupabaseServiceRoleKey(): string {
@@ -55,11 +83,11 @@ export function getSupabaseServiceRoleKey(): string {
 }
 
 export function isGoogleAuthEnabled(): boolean {
-  return readBooleanEnv('NEXT_PUBLIC_AUTH_GOOGLE_ENABLED', true);
+  return TRUE_VALUES.has(readPublicEnv(process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED) ?? 'true');
 }
 
 export function isAppleAuthEnabled(): boolean {
-  return readBooleanEnv('NEXT_PUBLIC_AUTH_APPLE_ENABLED', false);
+  return TRUE_VALUES.has(readPublicEnv(process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED) ?? '');
 }
 
 export function getStripeSecretKey(): string {
@@ -75,11 +103,16 @@ export function getStripeProMonthlyPriceId(): string {
 }
 
 export function getPublicAppUrl(): string {
-  return readRequiredEnv('NEXT_PUBLIC_APP_URL');
+  const value = readPublicEnv(process.env.NEXT_PUBLIC_APP_URL);
+  if (!value) {
+    throw new Error('Missing NEXT_PUBLIC_APP_URL.');
+  }
+
+  return value;
 }
 
 export function getFounderPromoCodeEnv(): string | undefined {
-  return readEnv('NEXT_PUBLIC_STRIPE_FOUNDER_PROMO_CODE');
+  return readPublicEnv(process.env.NEXT_PUBLIC_STRIPE_FOUNDER_PROMO_CODE);
 }
 
 export function getOpenAIApiKey(): string {
@@ -98,10 +131,18 @@ export function getRagEvalBaseUrl(): string {
   return readEnv('RAG_EVAL_BASE_URL') ?? 'http://127.0.0.1:3000';
 }
 
+export function isRagEnabled(): boolean {
+  return readBooleanEnv('RAG_ENABLED', true);
+}
+
+export function getRagDailyLimit(): number {
+  return readPositiveIntegerEnv('RAG_DAILY_LIMIT', 3);
+}
+
 export function getRagRateLimitMaxRequests(): number {
-  return readNumberEnv('RAG_RATE_LIMIT_MAX_REQUESTS', 5);
+  return readPositiveIntegerEnv('RAG_RATE_LIMIT_MAX_REQUESTS', 2);
 }
 
 export function getRagRateLimitWindowMs(): number {
-  return readNumberEnv('RAG_RATE_LIMIT_WINDOW_MS', 60_000);
+  return readPositiveIntegerEnv('RAG_RATE_LIMIT_WINDOW_MS', 60_000);
 }

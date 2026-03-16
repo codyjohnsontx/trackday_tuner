@@ -20,6 +20,33 @@ const initialFilters = {
   dateTo: '',
 };
 
+function formatRetryAfter(seconds: number): string {
+  if (seconds >= 3600) {
+    const hours = Math.ceil(seconds / 3600);
+    return `${hours} hour${hours === 1 ? '' : 's'}`;
+  }
+
+  if (seconds >= 60) {
+    const minutes = Math.ceil(seconds / 60);
+    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  }
+
+  return `${seconds} second${seconds === 1 ? '' : 's'}`;
+}
+
+function getErrorMessage(status: number, payload: RagQueryResponse | RagErrorResponse): string {
+  if (!isRagErrorResponse(payload)) {
+    return 'Unable to answer question.';
+  }
+
+  const baseMessage = payload.error ?? 'Unable to answer question.';
+  if (status === 429 && typeof payload.retry_after_seconds === 'number') {
+    return `${baseMessage} Retry in ${formatRetryAfter(payload.retry_after_seconds)}.`;
+  }
+
+  return baseMessage;
+}
+
 export function RagQuery() {
   const [question, setQuestion] = useState('');
   const [filters, setFilters] = useState(initialFilters);
@@ -61,7 +88,7 @@ export function RagQuery() {
 
       if (!response.ok) {
         setResult(null);
-        setError(isRagErrorResponse(payload) ? payload.error ?? 'Unable to answer question.' : 'Unable to answer question.');
+        setError(getErrorMessage(response.status, payload));
         return;
       }
 

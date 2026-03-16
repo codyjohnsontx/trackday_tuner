@@ -45,7 +45,7 @@ const navItems = [
       </svg>
     ),
   },
-];
+] as const;
 
 export function BottomNav() {
   const pathname = usePathname();
