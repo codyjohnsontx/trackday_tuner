@@ -1,18 +1,8 @@
 import { test, expect } from '@playwright/test';
+import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 
-const E2E_EMAIL = process.env.E2E_EMAIL;
-const E2E_PASSWORD = process.env.E2E_PASSWORD;
 const GOOGLE_ENABLED = (process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED ?? 'true') === 'true';
 const APPLE_ENABLED = (process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED ?? 'false') === 'true';
-
-async function signIn(page: import('@playwright/test').Page) {
-  await page.goto('/login');
-  await page.getByRole('button', { name: /^Sign In$/ }).first().click();
-  await page.getByLabel('Email').fill(E2E_EMAIL!);
-  await page.getByLabel('Password').fill(E2E_PASSWORD!);
-  await page.getByRole('button', { name: /^Sign In$/ }).nth(1).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 
 test.describe('unauthenticated route guards', () => {
   test('redirects /dashboard to /login', async ({ page }) => {
@@ -50,7 +40,7 @@ test.describe('unauthenticated route guards', () => {
 });
 
 test.describe('authenticated sag smoke', () => {
-  test.skip(!E2E_EMAIL || !E2E_PASSWORD, 'E2E_EMAIL and E2E_PASSWORD env vars are required');
+  test.skip(!hasE2EAuth(), 'E2E_EMAIL and E2E_PASSWORD env vars are required');
 
   test('can access tools and open sag calculator', async ({ page }) => {
     await signIn(page);
@@ -92,7 +82,7 @@ test.describe('authenticated sag smoke', () => {
 });
 
 test.describe('authenticated tracks smoke', () => {
-  test.skip(!E2E_EMAIL || !E2E_PASSWORD, 'E2E_EMAIL and E2E_PASSWORD env vars are required');
+  test.skip(!hasE2EAuth(), 'E2E_EMAIL and E2E_PASSWORD env vars are required');
 
   test('can create, search, and view a custom track', async ({ page }) => {
     await signIn(page);
@@ -132,7 +122,7 @@ test.describe('authenticated tracks smoke', () => {
 });
 
 test.describe('authenticated converter smoke', () => {
-  test.skip(!E2E_EMAIL || !E2E_PASSWORD, 'E2E_EMAIL and E2E_PASSWORD env vars are required');
+  test.skip(!hasE2EAuth(), 'E2E_EMAIL and E2E_PASSWORD env vars are required');
 
   test('supports presets, dropdown units, swap, and recents', async ({ page }) => {
     await signIn(page);
@@ -170,5 +160,20 @@ test.describe('authenticated converter smoke', () => {
       .getByRole('button');
 
     await expect(recentButtons.first()).toHaveText('kg → lb');
+  });
+});
+
+test.describe('authenticated rag smoke', () => {
+  test.skip(!hasE2EAuth(), 'E2E_EMAIL and E2E_PASSWORD env vars are required');
+
+  test('can open ai tuning q&a from tools', async ({ page }) => {
+    await signIn(page);
+
+    await page.goto('/tools');
+    await page.getByRole('link', { name: 'AI Tuning Q&A' }).click();
+    await expect(page).toHaveURL(/\/tools\/rag/);
+    await expect(page.getByRole('heading', { name: 'AI Tuning Q&A' })).toBeVisible();
+    await expect(page.getByLabel('Question')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Ask Track Tuner' })).toBeVisible();
   });
 });

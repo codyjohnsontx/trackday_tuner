@@ -1,4 +1,5 @@
 import { InputHTMLAttributes } from 'react';
+import { cn } from '@/lib/utils';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label: string;
@@ -6,7 +7,7 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   helperText?: string;
 }
 
-export function Input({ id, label, error, helperText, className = '', ...props }: InputProps) {
+export function Input({ id, label, error, helperText, className, ...props }: InputProps) {
   const inputId = id ?? label.toLowerCase().replace(/\s+/g, '_');
   const descId = error ? `${inputId}-error` : helperText ? `${inputId}-helper` : undefined;
 
@@ -17,7 +18,11 @@ export function Input({ id, label, error, helperText, className = '', ...props }
         id={inputId}
         aria-describedby={descId}
         aria-invalid={error ? 'true' : undefined}
-        className={`w-full rounded-xl border ${error ? 'border-rose-600' : 'border-zinc-700'} bg-zinc-900 px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 ${className}`.trim()}
+        className={cn(
+          'flex w-full rounded-xl border bg-zinc-900 px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:cursor-not-allowed disabled:opacity-50',
+          error ? 'border-rose-600' : 'border-zinc-700',
+          className
+        )}
         {...props}
       />
       {error && (

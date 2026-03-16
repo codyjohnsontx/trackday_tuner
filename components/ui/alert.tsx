@@ -1,6 +1,7 @@
 'use client';
 
 import { HTMLAttributes, ReactNode, useState } from 'react';
+import { cn } from '@/lib/utils';
 
 type AlertVariant = 'error' | 'success' | 'warning' | 'info';
 
@@ -49,7 +50,7 @@ const variantConfig: Record<AlertVariant, { container: string; icon: string; ico
   },
 };
 
-export function Alert({ variant = 'info', dismissible = false, title, className = '', children, ...props }: AlertProps) {
+export function Alert({ variant = 'info', dismissible = false, title, className, children, ...props }: AlertProps) {
   const [dismissed, setDismissed] = useState(false);
   const config = variantConfig[variant];
 
@@ -58,7 +59,7 @@ export function Alert({ variant = 'info', dismissible = false, title, className 
   return (
     <div
       role="alert"
-      className={`flex items-start gap-3 rounded-xl p-3 text-sm ${config.container} ${className}`.trim()}
+      className={cn('flex items-start gap-3 rounded-xl p-3 text-sm', config.container, className)}
       {...props}
     >
       <svg
@@ -67,7 +68,7 @@ export function Alert({ variant = 'info', dismissible = false, title, className 
         viewBox="0 0 24 24"
         strokeWidth={1.5}
         stroke="currentColor"
-        className={`mt-0.5 h-4 w-4 shrink-0 ${config.icon}`}
+        className={cn('mt-0.5 h-4 w-4 shrink-0', config.icon)}
         aria-hidden="true"
       >
         {config.iconPath}

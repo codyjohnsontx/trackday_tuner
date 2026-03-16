@@ -1,13 +1,35 @@
 'use server';
 
+import { cache } from 'react';
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
-import { getTracks } from '@/lib/actions/sessions';
 import { getUserProfile } from '@/lib/actions/vehicles';
+import { getFreePlanLimitMessage, getFreePlanLimit } from '@/lib/plans';
+import type { TableInsert } from '@/types/supabase';
 import type { ActionResult, Track } from '@/types';
 
-export { getTracks };
+const getTracksForUser = cache(async (userId: string): Promise<Track[]> => {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('tracks')
+    .select('*')
+    .or(`is_seeded.eq.true,created_by.eq.${userId}`)
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []) as Track[];
+});
+
+export async function getTracks(): Promise<Track[]> {
+  const user = await getAuthenticatedUser();
+  if (!user) return [];
+
+  return getTracksForUser(user.id);
+}
 
 async function getTrackForUser(id: string, userId: string): Promise<Track | null> {
   const supabase = await createClient();
@@ -18,8 +40,8 @@ async function getTrackForUser(id: string, userId: string): Promise<Track | null
     .single();
 
   if (error || !data) return null;
-
   const track = data as Track;
+
   if (track.is_seeded || track.created_by === userId) {
     return track;
   }
@@ -48,22 +70,24 @@ export async function createTrack(input: {
       .eq('created_by', user.id)
       .eq('is_seeded', false);
 
-    if ((count ?? 0) >= 3) {
+    if ((count ?? 0) >= getFreePlanLimit('tracks')) {
       return {
         ok: false,
-        error: 'Free plan is limited to 3 tracks. Upgrade to Pro for unlimited tracks.',
+        error: getFreePlanLimitMessage('tracks'),
       };
     }
   }
 
+  const payload: TableInsert<'tracks'> = {
+    name,
+    location: input.location?.trim() || null,
+    is_seeded: false,
+    created_by: user.id,
+  };
+
   const { data, error } = await supabase
     .from('tracks')
-    .insert({
-      name,
-      location: input.location?.trim() || null,
-      is_seeded: false,
-      created_by: user.id,
-    })
+    .insert(payload)
     .select('*')
     .single();
 

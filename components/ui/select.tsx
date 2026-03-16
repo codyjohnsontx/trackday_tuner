@@ -1,4 +1,5 @@
 import { SelectHTMLAttributes } from 'react';
+import { cn } from '@/lib/utils';
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label: string;
@@ -6,7 +7,7 @@ interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   helperText?: string;
 }
 
-export function Select({ id, label, error, helperText, className = '', children, ...props }: SelectProps) {
+export function Select({ id, label, error, helperText, className, children, ...props }: SelectProps) {
   const selectId = id ?? label.toLowerCase().replace(/\s+/g, '_');
   const descId = error ? `${selectId}-error` : helperText ? `${selectId}-helper` : undefined;
 
@@ -17,7 +18,11 @@ export function Select({ id, label, error, helperText, className = '', children,
         id={selectId}
         aria-describedby={descId}
         aria-invalid={error ? 'true' : undefined}
-        className={`w-full rounded-xl border ${error ? 'border-rose-600' : 'border-zinc-700'} bg-zinc-900 px-4 py-3 text-sm text-zinc-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 ${className}`.trim()}
+        className={cn(
+          'w-full rounded-xl border bg-zinc-900 px-4 py-3 text-sm text-zinc-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-0',
+          error ? 'border-rose-600' : 'border-zinc-700',
+          className
+        )}
         {...props}
       >
         {children}

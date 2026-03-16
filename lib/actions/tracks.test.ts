@@ -22,7 +22,7 @@ import { revalidatePath } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { createClient } from '@/lib/supabase/server';
-import { createTrack, deleteTrack, getTrack, updateTrack } from '@/lib/actions/tracks';
+import { createTrack, deleteTrack, getTrack, getTracks, updateTrack } from '@/lib/actions/tracks';
 
 type QueryResponse = {
   base?: { data?: unknown; error?: { message: string } | null; count?: number | null };
@@ -35,10 +35,12 @@ function createQuery(response: QueryResponse = {}) {
   const query: Record<string, unknown> = {};
 
   query.eq = vi.fn(() => query);
+  query.or = vi.fn(() => query);
   query.insert = vi.fn(() => query);
   query.update = vi.fn(() => query);
   query.delete = vi.fn(() => query);
   query.select = vi.fn(() => query);
+  query.order = vi.fn(() => query);
   query.single = vi.fn(async () => single);
   query.then = (onFulfilled: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
     Promise.resolve(base).then(onFulfilled, onRejected);
@@ -101,6 +103,28 @@ describe('tracks actions', () => {
     });
     expect(revalidatePath).toHaveBeenCalledWith('/tracks');
     expect(revalidatePath).toHaveBeenCalledWith('/sessions/new');
+  });
+
+  it('returns only seeded and owned tracks for the authenticated user', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+
+    const listQuery = createQuery({
+      base: {
+        data: [
+          { id: 'seeded-1', name: 'Road America', is_seeded: true, created_by: null, location: null, created_at: '2026-03-01T00:00:00Z' },
+          { id: 'custom-1', name: 'My Track', is_seeded: false, created_by: 'user-1', location: null, created_at: '2026-03-02T00:00:00Z' },
+        ],
+        error: null,
+      },
+    });
+    const from = vi.fn().mockReturnValue(listQuery);
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await getTracks();
+
+    expect(result).toHaveLength(2);
+    expect(listQuery.or).toHaveBeenCalledWith('is_seeded.eq.true,created_by.eq.user-1');
+    expect(listQuery.order).toHaveBeenCalledWith('name', { ascending: true });
   });
 
   it('enforces free tier track limit', async () => {

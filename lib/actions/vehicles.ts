@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
+import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
+import type { TableInsert } from '@/types/supabase';
 import type { ActionResult, CreateVehicleInput, UpdateVehicleInput, Profile, Vehicle } from '@/types';
 
 export async function getVehicles(): Promise<Vehicle[]> {
@@ -16,7 +18,7 @@ export async function getVehicles(): Promise<Vehicle[]> {
     .eq('user_id', user.id)
     .order('created_at', { ascending: true });
 
-  return (data as Vehicle[]) ?? [];
+  return (data ?? []) as Vehicle[];
 }
 
 export async function getUserProfile(): Promise<Profile | null> {
@@ -30,7 +32,7 @@ export async function getUserProfile(): Promise<Profile | null> {
     .eq('id', user.id)
     .single();
 
-  return (data as Profile) ?? null;
+  return (data as Profile | null) ?? null;
 }
 
 export async function createVehicle(
@@ -50,26 +52,27 @@ export async function createVehicle(
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id);
 
-    if ((count ?? 0) >= 1) {
+    if ((count ?? 0) >= getFreePlanLimit('vehicles')) {
       return {
         ok: false,
-        error:
-          'Free plan is limited to 1 vehicle. Upgrade to Pro for unlimited vehicles.',
+        error: getFreePlanLimitMessage('vehicles'),
       };
     }
   }
 
+  const payload: TableInsert<'vehicles'> = {
+    user_id: user.id,
+    nickname: input.nickname,
+    type: input.type,
+    year: input.year ?? null,
+    make: input.make ?? null,
+    model: input.model ?? null,
+    photo_url: input.photo_url ?? null,
+  };
+
   const { data, error } = await supabase
     .from('vehicles')
-    .insert({
-      user_id: user.id,
-      nickname: input.nickname,
-      type: input.type,
-      year: input.year ?? null,
-      make: input.make ?? null,
-      model: input.model ?? null,
-      photo_url: input.photo_url ?? null,
-    })
+    .insert(payload)
     .select()
     .single();
 

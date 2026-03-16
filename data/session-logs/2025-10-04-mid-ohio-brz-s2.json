@@ -1,0 +1,30 @@
+{
+  "id": "2025-10-04-mid-ohio-brz-s2",
+  "date": "2025-10-04",
+  "track": "Mid-Ohio Sports Car Course",
+  "bike": "Subaru BRZ",
+  "setup": {
+    "tires": {
+      "front_pressure_hot": "33 psi",
+      "rear_pressure_hot": "33 psi"
+    },
+    "suspension": {
+      "front_damping": "baseline",
+      "rear_damping": "baseline",
+      "front_bar": "middle",
+      "rear_bar": "soft"
+    },
+    "notes": "Dropped front hot pressure 1 psi and added a touch of front toe out."
+  },
+  "conditions": {
+    "weather": "sunny",
+    "ambient_temp_f": 61,
+    "track_condition": "dry"
+  },
+  "rider_feedback": [
+    "car rotated better on entry",
+    "mid-corner push reduced",
+    "front tire happier across the run"
+  ],
+  "lap_times": ["1:40.5", "1:40.1", "1:39.8"]
+}

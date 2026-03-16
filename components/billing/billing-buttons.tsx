@@ -2,7 +2,11 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { getFounderPromoCode } from '@/lib/billing';
+import {
+  FOUNDER_PROMO_MAX_REDEMPTIONS,
+  FOUNDER_PROMO_PRICE_USD,
+  getFounderPromoCode,
+} from '@/lib/billing';
 
 interface BillingButtonProps {
   fullWidth?: boolean;
@@ -58,7 +62,7 @@ export function UpgradeToProButton({ fullWidth = false, className }: BillingButt
         {loading ? 'Redirecting...' : 'Upgrade to Pro'}
       </Button>
       <p className="text-xs text-zinc-400">
-        Founder special: use code {founderCode} for $1.99/mo (first 100).
+        Founder special: use code {founderCode} for ${FOUNDER_PROMO_PRICE_USD.toFixed(2)}/mo (first {FOUNDER_PROMO_MAX_REDEMPTIONS}).
       </p>
       {error ? <p className="text-sm text-rose-300">{error}</p> : null}
     </div>

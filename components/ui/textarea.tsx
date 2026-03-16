@@ -1,4 +1,5 @@
 import { TextareaHTMLAttributes } from 'react';
+import { cn } from '@/lib/utils';
 
 interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label: string;
@@ -6,7 +7,7 @@ interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   helperText?: string;
 }
 
-export function Textarea({ id, label, error, helperText, className = '', ...props }: TextareaProps) {
+export function Textarea({ id, label, error, helperText, className, ...props }: TextareaProps) {
   const textareaId = id ?? label.toLowerCase().replace(/\s+/g, '_');
   const descId = error ? `${textareaId}-error` : helperText ? `${textareaId}-helper` : undefined;
 
@@ -17,7 +18,11 @@ export function Textarea({ id, label, error, helperText, className = '', ...prop
         id={textareaId}
         aria-describedby={descId}
         aria-invalid={error ? 'true' : undefined}
-        className={`w-full rounded-xl border ${error ? 'border-rose-600' : 'border-zinc-700'} bg-zinc-900 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 resize-none ${className}`.trim()}
+        className={cn(
+          'flex w-full rounded-xl border bg-zinc-900 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 resize-none disabled:cursor-not-allowed disabled:opacity-50',
+          error ? 'border-rose-600' : 'border-zinc-700',
+          className
+        )}
         {...props}
       />
       {error && (

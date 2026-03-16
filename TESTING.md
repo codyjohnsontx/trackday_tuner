@@ -24,10 +24,14 @@ STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_PRO_MONTHLY_PRICE_ID=price_...
 NEXT_PUBLIC_STRIPE_FOUNDER_PROMO_CODE=FOUNDER100
+RAG_RATE_LIMIT_MAX_REQUESTS=5
+RAG_RATE_LIMIT_WINDOW_MS=60000
+RAG_EVAL_AUTH_COOKIE=sb-access-token=...; sb-refresh-token=...
 ```
 
-`E2E_EMAIL` and `E2E_PASSWORD` are required only for authenticated smoke tests.
-Unauthenticated guard tests run without them.
+`E2E_EMAIL` and `E2E_PASSWORD` should point to a dedicated Pro-tier Playwright account.
+That account should already have at least one vehicle available for session tests.
+Unauthenticated guard tests run without them, but authenticated specs assume that shared fixture account.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 ## Install browser runtime
@@ -37,9 +41,26 @@ npx playwright install
 
 ## Run tests
 ```bash
+npm run lint
 npm run test:unit
+npm run test:unit:coverage
 npm run test:e2e
 ```
+
+RAG spike scripts:
+```bash
+npm run rag:index
+npm run rag:eval
+```
+
+If `data/rag/index.json` does not exist yet, `POST /api/rag/query` returns:
+```json
+{ "error": "RAG index not built. Run npm run rag:index." }
+```
+
+The RAG spike currently uses only seeded in-repo content:
+- `docs/knowledge-base/*.md`
+- `data/session-logs/*.json`
 
 By default, `npm run test:e2e` skips in CI unless explicitly enabled.
 - Force E2E in CI: `RUN_E2E=1 npm run test:e2e`
@@ -54,6 +75,12 @@ Interactive Playwright UI:
 ```bash
 npm run test:e2e:ui
 ```
+
+Playwright account policy:
+- Use a non-production dedicated Pro-tier user, not a personal account.
+- Session tests create persistent session rows and do not clean them up afterward.
+- Track tests create unique custom tracks and delete them before finishing.
+- Repeated authenticated runs are expected to accumulate sessions over time, so the account must tolerate that.
 
 Run a specific device profile:
 ```bash
@@ -97,6 +124,26 @@ Founder promo verification:
 - Open Checkout and apply `FOUNDER100`; total should reflect `$1.99/mo`.
 - Remove promo code; base pricing should show `$2.99/mo`.
 - After 100 redemptions, Stripe should reject the code and keep base price active.
+
+## OpenAI RAG setup checklist
+- Add `OPENAI_API_KEY` to `.env.local`.
+- Optional model overrides:
+  - `OPENAI_CHAT_MODEL=gpt-4.1-mini`
+  - `OPENAI_EMBED_MODEL=text-embedding-3-small`
+- Build the local index before using the UI:
+```bash
+npm run rag:index
+```
+- The `/api/rag/query` route now requires an authenticated user session.
+- For `npm run rag:eval`, export `RAG_EVAL_AUTH_COOKIE` from a valid signed-in browser session so the script can call the protected route.
+- Start the app:
+```bash
+npm run dev
+```
+- Run the eval script against the local route:
+```bash
+npm run rag:eval
+```
 
 ## Cross-Device Release Checklist
 - Touch targets for primary actions are `>= 44px`.

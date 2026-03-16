@@ -1,0 +1,32 @@
+{
+  "id": "2025-08-20-road-america-r6-s4",
+  "date": "2025-08-20",
+  "track": "Road America",
+  "bike": "Yamaha R6",
+  "setup": {
+    "tires": {
+      "front_pressure_hot": "30 psi",
+      "rear_pressure_hot": "24 psi"
+    },
+    "suspension": {
+      "fork_preload": "4 turns in",
+      "fork_compression": "10 clicks out",
+      "fork_rebound": "8 clicks out",
+      "shock_preload": "6 turns in",
+      "shock_compression": "12 clicks out",
+      "shock_rebound": "10 clicks out"
+    },
+    "notes": "Kept the lower front pressure and raised rear ride height 2 mm from the last strong Road America session."
+  },
+  "conditions": {
+    "weather": "sunny",
+    "ambient_temp_f": 77,
+    "track_condition": "dry"
+  },
+  "rider_feedback": [
+    "bike still turned well mid-corner",
+    "felt more consistent over full session",
+    "best drive off final corner yet"
+  ],
+  "lap_times": ["2:37.0", "2:36.8", "2:36.5"]
+}
