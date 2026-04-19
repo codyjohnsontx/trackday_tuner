@@ -465,7 +465,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
               key={option.value}
               type="button"
               variant={conditions === option.value ? 'primary' : 'secondary'}
-              className="min-h-10 px-1 text-xs"
+              className="min-h-11 px-1 text-xs"
               onClick={() => setConditions(option.value)}
             >
               {option.label}
@@ -511,7 +511,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
                   key={option.value}
                   type="button"
                   variant={tireCondition === option.value ? 'primary' : 'secondary'}
-                  className="min-h-10 px-1 text-xs"
+                  className="min-h-11 px-1 text-xs"
                   onClick={() => setTireCondition(option.value)}
                 >
                   {option.label}
@@ -523,7 +523,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
           <Button
             type="button"
             variant="secondary"
-            className="min-h-10 w-full text-xs"
+            className="min-h-11 w-full text-xs"
             onClick={() => toggleAdvanced('tires')}
           >
             {showAdvancedModules.tires ? 'Hide tire details' : sessionModuleConfigs.tires.advancedLabel}
@@ -654,7 +654,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
           <Button
             type="button"
             variant="secondary"
-            className="min-h-10 w-full text-xs"
+            className="min-h-11 w-full text-xs"
             onClick={() => toggleAdvanced('alignment')}
           >
             {showAdvancedModules.alignment ? 'Hide advanced fields' : 'Show advanced fields'}
@@ -675,7 +675,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
           <Button
             type="button"
             variant="secondary"
-            className="min-h-10 w-full text-xs"
+            className="min-h-11 w-full text-xs"
             onClick={() => toggleAdvanced('geometry')}
           >
             {showAdvancedModules.geometry ? 'Hide advanced fields' : 'Show advanced fields'}
@@ -698,7 +698,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
           <Button
             type="button"
             variant="secondary"
-            className="min-h-10 w-full text-xs"
+            className="min-h-11 w-full text-xs"
             onClick={() => toggleAdvanced('drivetrain')}
           >
             {showAdvancedModules.drivetrain ? 'Hide advanced fields' : 'Show advanced fields'}
@@ -720,7 +720,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
           <Button
             type="button"
             variant="secondary"
-            className="min-h-10 w-full text-xs"
+            className="min-h-11 w-full text-xs"
             onClick={() => toggleAdvanced('aero')}
           >
             {showAdvancedModules.aero ? 'Hide advanced fields' : 'Show advanced fields'}

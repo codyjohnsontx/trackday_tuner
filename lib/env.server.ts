@@ -2,7 +2,7 @@ import 'server-only';
 
 function readEnv(name: string): string {
   const value = process.env[name];
-  if (!value) {
+  if (!value || value.trim() === '') {
     throw new Error(`Missing environment variable: ${name}`);
   }
 

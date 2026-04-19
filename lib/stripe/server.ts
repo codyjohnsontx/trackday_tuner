@@ -19,9 +19,9 @@ export function getAppBaseUrl(requestUrl?: string) {
   try {
     return getPublicAppUrl();
   } catch {
-    if (requestUrl) {
+    if (process.env.NODE_ENV !== 'production' && requestUrl) {
       return new URL(requestUrl).origin;
     }
   }
-  throw new Error('Missing NEXT_PUBLIC_APP_URL.');
+  throw new Error('Missing NEXT_PUBLIC_APP_URL. Stripe redirects require an explicit public app URL.');
 }

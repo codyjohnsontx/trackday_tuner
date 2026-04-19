@@ -110,6 +110,7 @@ export function Button({
           className,
         )}
       >
+        {loading && <Spinner />}
         {children}
       </Slot>
     );
@@ -119,6 +120,7 @@ export function Button({
     <button
       type={type}
       disabled={isDisabled}
+      aria-busy={loading}
       className={cn(buttonVariants({ variant, size }), fullWidth && 'w-full', className)}
       {...props}
     >
