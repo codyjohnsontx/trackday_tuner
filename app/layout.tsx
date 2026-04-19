@@ -1,26 +1,24 @@
-import type { Metadata, Viewport } from 'next';
+import type { Metadata } from 'next';
 import './globals.css';
 import { AppShell } from '@/components/layout/app-shell';
 import { isAuthenticated } from '@/lib/auth';
 
 export const metadata: Metadata = {
-  title: 'Track Tuner',
-  description: 'Mobile-first setup logger for racebike and racecar sessions.',
+  title: 'Trackday Tuner',
+  description: 'Mobile-first motorsport setup logger for track sessions.',
 };
 
-export const viewport: Viewport = {
-  width: 'device-width',
-  initialScale: 1,
-  viewportFit: 'cover',
-};
-
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const authed = await isAuthenticated();
+export default async function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  const authenticated = await isAuthenticated();
 
   return (
     <html lang="en">
       <body>
-        <AppShell isAuthenticated={authed}>{children}</AppShell>
+        <AppShell isAuthenticated={authenticated}>{children}</AppShell>
       </body>
     </html>
   );

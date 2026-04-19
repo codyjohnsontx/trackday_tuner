@@ -1,32 +1,12 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { unstable_cache } from 'next/cache';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
-import type { ActionResult, CreateSessionInput, Session, Track } from '@/types';
-
-const fetchTracksFromDb = unstable_cache(
-  async () => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !anonKey) throw new Error('Missing Supabase environment variables.');
-    const supabase = createSupabaseClient(url, anonKey);
-    const { data } = await supabase
-      .from('tracks')
-      .select('*')
-      .order('name', { ascending: true });
-    return (data as Track[]) ?? [];
-  },
-  ['tracks-list'],
-  { tags: ['tracks'], revalidate: 3600 },
-);
-
-export async function getTracks(): Promise<Track[]> {
-  return fetchTracksFromDb();
-}
+import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
+import type { TableInsert } from '@/types/supabase';
+import type { ActionResult, CreateSessionInput, Session } from '@/types';
 
 export async function getSessions(vehicleId?: string, limit?: number): Promise<Session[]> {
   const user = await getAuthenticatedUser();
@@ -48,7 +28,7 @@ export async function getSessions(vehicleId?: string, limit?: number): Promise<S
   }
 
   const { data } = await query;
-  return (data as Session[]) ?? [];
+  return (data ?? []) as Session[];
 }
 
 export async function getSessionCount(vehicleId?: string): Promise<number> {
@@ -106,7 +86,7 @@ export async function getPreviousSession(
 
   if (error || !data || data.length === 0) return null;
 
-  return (data[0] as Session) ?? null;
+  return (data?.[0] ?? null) as Session | null;
 }
 
 export async function createSession(
@@ -126,11 +106,10 @@ export async function createSession(
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id);
 
-    if ((count ?? 0) >= 10) {
+    if ((count ?? 0) >= getFreePlanLimit('sessions')) {
       return {
         ok: false,
-        error:
-          'Free plan is limited to 10 sessions. Upgrade to Pro for unlimited sessions.',
+        error: getFreePlanLimitMessage('sessions'),
       };
     }
   }
@@ -146,22 +125,26 @@ export async function createSession(
     trackName = trackData?.name ?? null;
   }
 
+  const payload: TableInsert<'sessions'> = {
+    user_id: user.id,
+    vehicle_id: input.vehicle_id,
+    track_id: input.track_id,
+    track_name: trackName,
+    date: input.date,
+    start_time: input.start_time ?? null,
+    session_number: input.session_number ?? null,
+    conditions: input.conditions,
+    tires: input.tires,
+    suspension: input.suspension,
+    alignment: input.alignment,
+    enabled_modules: input.enabled_modules ?? null,
+    extra_modules: input.extra_modules ?? null,
+    notes: input.notes ?? null,
+  };
+
   const { data, error } = await supabase
     .from('sessions')
-    .insert({
-      user_id: user.id,
-      vehicle_id: input.vehicle_id,
-      track_id: input.track_id,
-      track_name: trackName,
-      date: input.date,
-      start_time: input.start_time ?? null,
-      conditions: input.conditions,
-      tires: input.tires,
-      suspension: input.suspension,
-      alignment: input.alignment,
-      extra_modules: input.extra_modules ?? null,
-      notes: input.notes ?? null,
-    })
+    .insert(payload)
     .select()
     .single();
 

@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
+import type { TableInsert } from '@/types/supabase';
 import type { ActionResult, CreateSagEntryInput, SagEntry } from '@/types';
 
 export async function getSagEntries(): Promise<SagEntry[]> {
@@ -16,7 +17,7 @@ export async function getSagEntries(): Promise<SagEntry[]> {
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
 
-  return (data as SagEntry[]) ?? [];
+  return (data ?? []) as SagEntry[];
 }
 
 export async function createSagEntry(
@@ -39,21 +40,22 @@ export async function createSagEntry(
   }
 
   const supabase = await createClient();
+  const payload: TableInsert<'sag_entries'> = {
+    user_id: user.id,
+    label: input.label?.trim() || null,
+    notes: input.notes?.trim() || null,
+    front_l0: input.front_l0 ?? null,
+    front_l1: input.front_l1 ?? null,
+    front_l2: input.front_l2 ?? null,
+    rear_l0: input.rear_l0 ?? null,
+    rear_l1: input.rear_l1 ?? null,
+    rear_l2: input.rear_l2 ?? null,
+    front_travel_mm: input.front_travel_mm ?? null,
+    rear_travel_mm: input.rear_travel_mm ?? null,
+  };
   const { data, error } = await supabase
     .from('sag_entries')
-    .insert({
-      user_id: user.id,
-      label: input.label?.trim() || null,
-      notes: input.notes?.trim() || null,
-      front_l0: input.front_l0 ?? null,
-      front_l1: input.front_l1 ?? null,
-      front_l2: input.front_l2 ?? null,
-      rear_l0: input.rear_l0 ?? null,
-      rear_l1: input.rear_l1 ?? null,
-      rear_l2: input.rear_l2 ?? null,
-      front_travel_mm: input.front_travel_mm ?? null,
-      rear_travel_mm: input.rear_travel_mm ?? null,
-    })
+    .insert(payload)
     .select('*')
     .single();
 

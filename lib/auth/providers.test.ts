@@ -6,13 +6,22 @@ describe('getOAuthProviders', () => {
   const originalAppleFlag = process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED;
 
   afterEach(() => {
-    process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED = originalGoogleFlag;
-    process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED = originalAppleFlag;
+    if (originalGoogleFlag === undefined) {
+      delete process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED;
+    } else {
+      process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED = originalGoogleFlag;
+    }
+
+    if (originalAppleFlag === undefined) {
+      delete process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED;
+    } else {
+      process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED = originalAppleFlag;
+    }
   });
 
   it('enables providers only when env flag equals true', () => {
     process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED = 'true';
-    process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED = 'TRUE';
+    process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED = 'false';
 
     const providers = getOAuthProviders();
     const google = providers.find((provider) => provider.id === 'google');
@@ -20,6 +29,15 @@ describe('getOAuthProviders', () => {
 
     expect(google?.enabled).toBe(true);
     expect(apple?.enabled).toBe(false);
+  });
+
+  it('throws on invalid boolean env values', () => {
+    process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED = 'true';
+    process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED = 'TRUE';
+
+    expect(() => getOAuthProviders()).toThrow(
+      'Invalid boolean environment variable NEXT_PUBLIC_AUTH_APPLE_ENABLED: TRUE',
+    );
   });
 
   it('keeps provider metadata stable', () => {

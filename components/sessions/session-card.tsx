@@ -40,7 +40,11 @@ export function SessionCard({ session, vehicleNickname }: SessionCardProps) {
               {session.track_name ?? 'Unknown Track'}
             </p>
             <p className="mt-0.5 truncate text-sm text-zinc-400">
-              {vehicleNickname} · {formattedDate}{session.start_time ? ` · ${formatTime12h(session.start_time)}` : ''}
+              {vehicleNickname}
+              {session.session_number ? ` · S${session.session_number}` : ''}
+              {' · '}
+              {formattedDate}
+              {session.start_time ? ` · ${formatTime12h(session.start_time)}` : ''}
             </p>
           </div>
           <span className="shrink-0 rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-semibold text-zinc-300">

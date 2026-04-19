@@ -1,3 +1,9 @@
+import { getFounderPromoCodeEnv } from '@/lib/env.public';
+
+export const PRO_MONTHLY_PRICE_USD = 2.99;
+export const FOUNDER_PROMO_PRICE_USD = 1.99;
+export const FOUNDER_PROMO_MAX_REDEMPTIONS = 100;
+
 export function getFounderPromoCode(): string {
-  return process.env.NEXT_PUBLIC_STRIPE_FOUNDER_PROMO_CODE || 'FOUNDER100';
+  return getFounderPromoCodeEnv() ?? 'FOUNDER100';
 }

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { getVehicles } from '@/lib/actions/vehicles';
-import { getTracks } from '@/lib/actions/sessions';
+import { getTracks } from '@/lib/actions/tracks';
 import { SessionForm } from '@/components/sessions/session-form';
 
 export default async function NewSessionPage() {
