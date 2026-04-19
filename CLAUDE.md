@@ -11,7 +11,7 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 - **UI**: shadcn/ui pattern — `cva` + `cn()` from `lib/utils.ts`, Radix primitives
 - **Backend/Auth**: Supabase (email/password)
 - **Payments**: Stripe (subscriptions)
-- **AI**: OpenAI (RAG query tool)
+- **AI**: OpenAI (planned RAG query tool, not active in current routes)
 - **Hosting**: Vercel
 
 ## Git Protocol
@@ -48,20 +48,20 @@ npm run rag:index    # build RAG index from docs/knowledge-base/
 
 ```
 app/(app)/           # authenticated routes (layout enforces auth)
-app/api/             # API routes (stripe webhooks, RAG query)
+app/api/             # API routes (stripe checkout/portal/webhooks)
 components/ui/       # shadcn/ui-backed component wrappers
 components/layout/   # app shell, bottom nav
 components/auth/     # auth form
 components/sessions/ # session form
 components/garage/   # vehicle form
 lib/actions/         # server actions (sessions, tracks, vehicles, sag)
-lib/rag/             # RAG pipeline (chunking, retrieval, query, rate limiting)
+# lib/rag/           # planned RAG pipeline (not currently present)
 lib/supabase/        # client, server, middleware, admin clients
 lib/auth/            # getAuthenticatedUser(), isAuthenticated()
 lib/utils.ts         # cn() utility (twMerge + clsx)
 lib/billing.ts       # plan/tier helpers
 lib/plans.ts         # plan definitions
-docs/knowledge-base/ # markdown source files for RAG index
+# docs/knowledge-base/ # planned markdown source files for future RAG index
 data/session-logs/   # sample session log JSON
 ```
 
@@ -99,6 +99,6 @@ Tailwind v4 project tokens live in `@theme { ... }` — these are separate names
 - `lib/supabase/middleware.ts` handles session refresh — runs via `middleware.ts`
 - Admin client (`lib/supabase/admin.ts`) uses service role key — server only
 
-## Known Pre-existing Test Failure
+## Current AI Status
 
-`app/api/rag/query/route.test.ts` has 1 failing test (expects 400, gets 500). Pre-existing on this branch — not a regression.
+RAG routes and `lib/rag` implementation are planned but not active in this checkout.

@@ -17,7 +17,7 @@ test.describe('unauthenticated route guards', () => {
 
   test('renders login page controls', async ({ page }) => {
     await page.goto('/login');
-    await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Get on track' })).toBeVisible();
     const googleButton = page.getByRole('button', { name: 'Continue with Google' });
     const appleButton = page.getByRole('button', { name: 'Continue with Apple' });
     await expect(googleButton).toBeVisible();
@@ -160,20 +160,5 @@ test.describe('authenticated converter smoke', () => {
       .getByRole('button');
 
     await expect(recentButtons.first()).toHaveText('kg → lb');
-  });
-});
-
-test.describe('authenticated rag smoke', () => {
-  test.skip(!hasE2EAuth(), 'E2E_EMAIL and E2E_PASSWORD env vars are required');
-
-  test('can open ai tuning q&a from tools', async ({ page }) => {
-    await signIn(page);
-
-    await page.goto('/tools');
-    await page.getByRole('link', { name: 'AI Tuning Q&A' }).click();
-    await expect(page).toHaveURL(/\/tools\/rag/);
-    await expect(page.getByRole('heading', { name: 'AI Tuning Q&A' })).toBeVisible();
-    await expect(page.getByLabel('Question')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Ask Track Tuner' })).toBeVisible();
   });
 });

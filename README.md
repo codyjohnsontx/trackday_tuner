@@ -309,11 +309,27 @@ Free → Pro conversion rate (after hitting limits / wanting compare/export/AI)
 ## Current Implementation Status
 
 - Framework migrated to Next.js App Router + TypeScript + Tailwind v4.
-- Mobile-first shell is implemented with routes for `/`, `/login`, `/signup`, and `/sessions/new`.
+- Mobile-first shell is implemented with routes for `/`, `/login`, and authenticated app sections.
 - Session logging supports both `motorcycle` and `car` modes.
 - Session modules are optional per session and can be added/removed.
 - Advanced fields are hidden by default and available through per-module toggles.
 - Partial entry is supported and can be saved locally as a draft.
+
+## Implemented vs Planned
+
+### Implemented
+
+- Authentication with Supabase and route-protected app pages.
+- Garage, tracks, and session logging workflows with free-tier limits.
+- Session history and compare-with-previous workflow.
+- Stripe checkout + customer portal + webhook sync for entitlements.
+- Trackside tools: sag calculator and unit converter.
+
+### Planned
+
+- AI tuning assistant (RAG-backed Q&A and guided recommendations).
+- Knowledge-base indexing and AI response evaluation workflows.
+- Expanded analytics and export features.
 
 ## Local Run
 
@@ -323,3 +339,16 @@ npm run dev
 ```
 
 Then open `http://localhost:3000`.
+
+## Linting
+
+This repo uses ESLint v9 with a flat config at `eslint.config.mjs` (via `@eslint/eslintrc` `FlatCompat` wrapping `eslint-config-next` presets).
+
+```bash
+npm run lint
+```
+
+Notes:
+
+- `next lint` is intentionally not used here; the lint script runs the ESLint CLI directly.
+- `next-env.d.ts` is ignored by ESLint because Next generates a triple-slash reference there that conflicts with `@typescript-eslint/triple-slash-reference`.

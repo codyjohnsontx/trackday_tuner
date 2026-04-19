@@ -21,7 +21,7 @@ export default function HomePage() {
             { icon: '📋', text: 'Modular setup logging — tires, suspension, alignment, and more' },
             { icon: '🔁', text: 'Compare sessions side-by-side across the same track' },
             { icon: '🏎', text: 'Multi-vehicle garage — motorcycles and cars' },
-            { icon: '🧮', text: 'Trackside tools: sag calculator, unit converter, AI Q&A' },
+            { icon: '🧮', text: 'Trackside tools: sag calculator and unit converter' },
           ].map(({ icon, text }) => (
             <li key={text} className="flex items-start gap-2 text-sm text-zinc-300">
               <span className="shrink-0">{icon}</span>

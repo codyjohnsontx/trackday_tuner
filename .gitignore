@@ -1,1 +1,21 @@
 node_modules
+
+# Next.js
+.next/
+out/
+
+# Env files (keep secrets out of git)
+.env
+.env.*
+!.env.example
+
+# Tooling / local artifacts
+.DS_Store
+*.log
+coverage/
+test-results/
+playwright-report/
+tsconfig.tsbuildinfo
+
+# Cursor / local agent settings (optional)
+.claude/

@@ -71,10 +71,12 @@ export function getDefaultEnabledModules(vehicleType: VehicleType): SessionEnabl
 export function getDefaultAdvancedVisibility(): SessionAdvancedVisibility {
   return {
     tires: false,
+    suspension: false,
     alignment: false,
     geometry: false,
     drivetrain: false,
     aero: false,
+    notes: false,
   };
 }
 
