@@ -1,4 +1,4 @@
-import { getFounderPromoCodeEnv } from '@/lib/env';
+import { getFounderPromoCodeEnv } from '@/lib/env.public';
 
 export const PRO_MONTHLY_PRICE_USD = 2.99;
 export const FOUNDER_PROMO_PRICE_USD = 1.99;

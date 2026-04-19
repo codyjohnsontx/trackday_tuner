@@ -1,4 +1,4 @@
-import { isAppleAuthEnabled, isGoogleAuthEnabled } from '@/lib/env';
+import { isAppleAuthEnabled, isGoogleAuthEnabled } from '@/lib/env.public';
 
 export type OAuthProvider = 'google' | 'apple';
 

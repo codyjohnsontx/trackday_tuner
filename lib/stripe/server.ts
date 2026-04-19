@@ -1,9 +1,6 @@
 import Stripe from 'stripe';
-import {
-  getPublicAppUrl,
-  getStripeProMonthlyPriceId,
-  getStripeSecretKey,
-} from '@/lib/env';
+import { getPublicAppUrl } from '@/lib/env.public';
+import { getStripeProMonthlyPriceId, getStripeSecretKey } from '@/lib/env.server';
 
 let stripeClient: Stripe | null = null;
 

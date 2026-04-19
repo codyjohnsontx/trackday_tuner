@@ -80,6 +80,15 @@ export function Button({
 
       props.onClick?.(event as MouseEvent<HTMLButtonElement>);
     };
+    const handleClickCapture = (event: MouseEvent<HTMLElement>) => {
+      if (isDisabled) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      props.onClickCapture?.(event as MouseEvent<HTMLButtonElement>);
+    };
     const slotProps = {
       ...(props as object),
       disabled: isDisabled,
@@ -87,6 +96,7 @@ export function Button({
       'aria-busy': loading,
       'data-disabled': isDisabled ? '' : undefined,
       tabIndex: isDisabled ? -1 : undefined,
+      onClickCapture: handleClickCapture,
       onClick: handleClick,
     };
 

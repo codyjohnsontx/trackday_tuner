@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import { getSupabaseAnonKey, getSupabaseUrl } from '@/lib/env';
+import { getSupabaseAnonKey, getSupabaseUrl } from '@/lib/env.public';
 import type { Database } from '@/types/supabase';
 
 export async function createClient() {

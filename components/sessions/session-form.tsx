@@ -394,7 +394,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
           </label>
           <select
             id="session-vehicle"
-            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 focus:border-cyan-400 focus:outline-none"
+            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 focus:border-cyan-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
             value={vehicleId}
             onChange={(event) => setVehicleId(event.target.value)}
             required
@@ -417,7 +417,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
           <input
             id="session-track"
             type="text"
-            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-400 focus:outline-none"
+            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
             placeholder="Search or type a track name"
             value={trackQuery}
             autoComplete="off"
@@ -433,7 +433,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
                 <li key={track.id}>
                   <button
                     type="button"
-                    className="w-full px-3 py-2.5 text-left text-sm text-zinc-200 hover:bg-zinc-800"
+                    className="min-h-11 w-full px-3 py-3 text-left text-sm text-zinc-200 hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-cyan-400/80"
                     onMouseDown={() => handleTrackSelect(track)}
                   >
                     <span className="font-medium">{track.name}</span>
@@ -742,7 +742,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
         </label>
         <textarea
           id="session-notes"
-          className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-400 focus:outline-none"
+          className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
           rows={4}
           placeholder="Observations, lap times, what to try next..."
           value={notes}

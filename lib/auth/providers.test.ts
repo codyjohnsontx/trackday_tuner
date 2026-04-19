@@ -6,8 +6,17 @@ describe('getOAuthProviders', () => {
   const originalAppleFlag = process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED;
 
   afterEach(() => {
-    process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED = originalGoogleFlag;
-    process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED = originalAppleFlag;
+    if (originalGoogleFlag === undefined) {
+      delete process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED;
+    } else {
+      process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED = originalGoogleFlag;
+    }
+
+    if (originalAppleFlag === undefined) {
+      delete process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED;
+    } else {
+      process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED = originalAppleFlag;
+    }
   });
 
   it('enables providers only when env flag equals true', () => {
