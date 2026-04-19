@@ -1,4 +1,4 @@
-import { ButtonHTMLAttributes } from 'react';
+import { ButtonHTMLAttributes, MouseEvent } from 'react';
 import { Slot } from '@radix-ui/react-slot';
 import { cva } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
@@ -68,11 +68,37 @@ export function Button({
   children,
   ...props
 }: ButtonProps) {
+  const isDisabled = disabled || loading;
+
   if (asChild) {
+    const handleClick = (event: MouseEvent<HTMLElement>) => {
+      if (isDisabled) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      props.onClick?.(event as MouseEvent<HTMLButtonElement>);
+    };
+    const slotProps = {
+      ...(props as object),
+      disabled: isDisabled,
+      'aria-disabled': isDisabled,
+      'aria-busy': loading,
+      'data-disabled': isDisabled ? '' : undefined,
+      tabIndex: isDisabled ? -1 : undefined,
+      onClick: handleClick,
+    };
+
     return (
       <Slot
-        className={cn(buttonVariants({ variant, size }), fullWidth && 'w-full', className)}
-        {...(props as object)}
+        {...slotProps}
+        className={cn(
+          buttonVariants({ variant, size }),
+          fullWidth && 'w-full',
+          isDisabled && 'pointer-events-none',
+          className,
+        )}
       >
         {children}
       </Slot>
@@ -82,7 +108,7 @@ export function Button({
   return (
     <button
       type={type}
-      disabled={disabled || loading}
+      disabled={isDisabled}
       className={cn(buttonVariants({ variant, size }), fullWidth && 'w-full', className)}
       {...props}
     >

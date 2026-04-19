@@ -15,8 +15,10 @@ function readOptionalEnv(name: string): string | undefined {
 
 function readBooleanEnv(name: string, fallback: boolean): boolean {
   const value = process.env[name];
-  if (!value) return fallback;
-  return value === 'true';
+  if (value === undefined) return fallback;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`Invalid boolean environment variable ${name}: ${value}`);
 }
 
 export function getSupabaseUrl(): string {

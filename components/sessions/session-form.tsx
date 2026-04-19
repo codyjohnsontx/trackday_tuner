@@ -109,7 +109,7 @@ function ModuleHeader({
       <Button
         type="button"
         variant={enabled ? 'primary' : 'secondary'}
-        className="min-h-10 px-3 text-xs"
+        className="min-h-11 px-3 text-xs"
         onClick={() => onToggle(module)}
       >
         {enabled ? 'On' : 'Off'}
