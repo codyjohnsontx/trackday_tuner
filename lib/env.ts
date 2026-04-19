@@ -15,7 +15,7 @@ function readOptionalEnv(name: string): string | undefined {
 
 function readBooleanEnv(name: string, fallback: boolean): boolean {
   const value = process.env[name];
-  if (value === undefined) return fallback;
+  if (!value) return fallback;
   return value === 'true';
 }
 

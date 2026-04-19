@@ -86,7 +86,7 @@ export async function getPreviousSession(
 
   if (error || !data || data.length === 0) return null;
 
-  return ((data?.[0] as Session | undefined) ?? null);
+  return (data?.[0] ?? null) as Session | null;
 }
 
 export async function createSession(

@@ -31,7 +31,7 @@ export function Input({ id, label, error, helperText, className, ...props }: Inp
         </p>
       )}
       {!error && helperText && (
-        <p id={`${inputId}-helper`} className="text-xs text-zinc-500">
+        <p id={`${inputId}-helper`} className="text-xs text-zinc-400">
           {helperText}
         </p>
       )}

@@ -14,6 +14,7 @@ import {
   sanitizeEnabledModules,
   sessionModuleConfigs,
 } from '@/lib/session-modules';
+import { cn } from '@/lib/utils';
 import type {
   Alignment,
   ExtraModules,
@@ -606,22 +607,24 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
                 <button
                   type="button"
                   onClick={() => setSuspensionDirection('out')}
-                  className={`px-3 py-1 text-xs font-medium transition ${
+                  className={cn(
+                    'min-h-11 px-3 py-2 text-xs font-medium transition focus-visible:ring-2 focus-visible:ring-cyan-400/80',
                     suspensionDirection === 'out'
                       ? 'bg-cyan-400 text-zinc-950'
-                      : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'
-                  }`}
+                      : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200',
+                  )}
                 >
                   Out
                 </button>
                 <button
                   type="button"
                   onClick={() => setSuspensionDirection('in')}
-                  className={`px-3 py-1 text-xs font-medium transition ${
+                  className={cn(
+                    'min-h-11 px-3 py-2 text-xs font-medium transition focus-visible:ring-2 focus-visible:ring-cyan-400/80',
                     suspensionDirection === 'in'
                       ? 'bg-cyan-400 text-zinc-950'
-                      : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'
-                  }`}
+                      : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200',
+                  )}
                 >
                   In
                 </button>

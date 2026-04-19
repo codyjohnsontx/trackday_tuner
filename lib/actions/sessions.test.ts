@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
-  unstable_cache: (fn: (...args: unknown[]) => unknown) => fn,
 }));
 
 vi.mock('@/lib/auth', () => ({

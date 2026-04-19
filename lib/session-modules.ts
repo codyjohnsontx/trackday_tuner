@@ -103,7 +103,6 @@ export function sanitizeEnabledModules(
     }
   }
 
-  defaults.notes = true;
   return defaults;
 }
 

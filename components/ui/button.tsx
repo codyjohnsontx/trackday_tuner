@@ -14,7 +14,7 @@ const buttonVariants = cva(
         destructive: 'border border-rose-800 bg-rose-950/40 text-rose-200 hover:bg-rose-900/50',
       },
       size: {
-        sm: 'min-h-10 px-3 py-2 text-xs',
+        sm: 'min-h-11 px-3 py-2 text-xs',
         md: 'min-h-12 px-4 py-3 text-sm',
         lg: 'min-h-14 px-6 py-4 text-base',
       },

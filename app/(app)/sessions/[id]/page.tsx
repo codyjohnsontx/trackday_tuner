@@ -351,17 +351,21 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
               value={suspensionDirection === 'in' ? 'Clicks in from open' : 'Clicks out from closed'}
             />
           ) : null}
-          <DetailRow
-            label="Front direction"
-            value={session.suspension.front.direction === 'in' ? 'Clicks in from open' : 'Clicks out from closed'}
-          />
+          {!suspensionDirection ? (
+            <DetailRow
+              label="Front direction"
+              value={session.suspension.front.direction === 'in' ? 'Clicks in from open' : 'Clicks out from closed'}
+            />
+          ) : null}
           <DetailRow label="Front Preload" value={session.suspension.front.preload} />
           <DetailRow label="Front Compression" value={session.suspension.front.compression} />
           <DetailRow label="Front Rebound" value={session.suspension.front.rebound} />
-          <DetailRow
-            label="Rear direction"
-            value={session.suspension.rear.direction === 'in' ? 'Clicks in from open' : 'Clicks out from closed'}
-          />
+          {!suspensionDirection ? (
+            <DetailRow
+              label="Rear direction"
+              value={session.suspension.rear.direction === 'in' ? 'Clicks in from open' : 'Clicks out from closed'}
+            />
+          ) : null}
           <DetailRow label="Rear Preload" value={session.suspension.rear.preload} />
           <DetailRow label="Rear Compression" value={session.suspension.rear.compression} />
           <DetailRow label="Rear Rebound" value={session.suspension.rear.rebound} />
