@@ -1,21 +1,24 @@
 function readEnv(name: string, value: string | undefined): string {
-  if (!value) {
+  const normalized = value?.trim();
+  if (!normalized) {
     throw new Error(`Missing environment variable: ${name}`);
   }
 
-  return value;
+  return normalized;
 }
 
 function readOptionalEnv(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  return value;
+  const normalized = value?.trim();
+  if (!normalized) return undefined;
+  return normalized;
 }
 
 function readBooleanEnv(name: string, value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) return fallback;
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-  throw new Error(`Invalid boolean environment variable ${name}: ${value}`);
+  const normalized = value.trim();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  throw new Error(`Invalid boolean environment variable ${name}: ${normalized}`);
 }
 
 export function getSupabaseUrl(): string {

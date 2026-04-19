@@ -6,7 +6,7 @@ function readEnv(name: string): string {
     throw new Error(`Missing environment variable: ${name}`);
   }
 
-  return value;
+  return value.trim();
 }
 
 export function getSupabaseServiceRoleKey(): string {

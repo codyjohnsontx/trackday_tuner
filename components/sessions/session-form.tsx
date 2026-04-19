@@ -122,6 +122,9 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const hydratedRef = useRef(false);
+  const previousEnabledModulesRef = useRef<Pick<SessionEnabledModules, 'geometry' | 'drivetrain' | 'aero'> | null>(
+    null,
+  );
 
   const initialVehicle = vehicles.length === 1 ? vehicles[0] : null;
   const initialVehicleType = initialVehicle?.type ?? 'motorcycle';
@@ -257,6 +260,18 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
     notes,
   ]);
 
+  useEffect(() => {
+    const previous = previousEnabledModulesRef.current;
+    if (previous?.geometry && !enabledModules.geometry) setGeometry(emptyGeometry);
+    if (previous?.drivetrain && !enabledModules.drivetrain) setDrivetrain(emptyDrivetrain);
+    if (previous?.aero && !enabledModules.aero) setAero(emptyAero);
+    previousEnabledModulesRef.current = {
+      geometry: enabledModules.geometry,
+      drivetrain: enabledModules.drivetrain,
+      aero: enabledModules.aero,
+    };
+  }, [enabledModules.geometry, enabledModules.drivetrain, enabledModules.aero]);
+
   function handleTrackSelect(track: Track) {
     setTrackQuery(track.name);
     setTrackId(track.id);
@@ -267,6 +282,11 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
     setTrackQuery(value);
     setTrackId(null);
     setShowDropdown(true);
+  }
+
+  function handleSessionNumberChange(value: string) {
+    const digits = value.replace(/\D/g, '');
+    setSessionNumber(digits ? String(Math.max(1, Number(digits))) : '');
   }
 
   function toggleModule(module: ModuleToggleKey) {
@@ -451,9 +471,10 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
           label="Session Number (optional)"
           type="text"
           inputMode="numeric"
+          pattern="[0-9]*"
           placeholder="e.g. 3"
           value={sessionNumber}
-          onChange={(event) => setSessionNumber(event.target.value)}
+          onChange={(event) => handleSessionNumberChange(event.target.value)}
         />
       </div>
 
@@ -489,7 +510,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
                 key={module}
                 type="button"
                 variant={enabledModules[module] ? 'primary' : 'secondary'}
-                className="justify-between px-3 text-xs"
+                className="min-h-11 justify-between px-3 text-xs"
                 onClick={() => toggleModule(module as ModuleToggleKey)}
               >
                 <span>{sessionModuleConfigs[module].label}</span>
