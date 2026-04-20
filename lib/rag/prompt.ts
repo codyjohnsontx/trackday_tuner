@@ -97,12 +97,15 @@ function formatSessionBlock(label: string, session: Session | null): string {
 }
 
 function formatVehicleBlock(vehicle: Vehicle): string {
+  // vehicle.type is a strict union; year is a number. nickname/make/model are
+  // user-controlled free text, so route them through sanitizeFreeText to
+  // neutralize any literal data-block tags the user may have saved.
   const parts = [
     `type: ${vehicle.type}`,
-    `nickname: ${vehicle.nickname}`,
+    `nickname: ${sanitizeFreeText(vehicle.nickname)}`,
     vehicle.year ? `year: ${vehicle.year}` : null,
-    vehicle.make ? `make: ${vehicle.make}` : null,
-    vehicle.model ? `model: ${vehicle.model}` : null,
+    vehicle.make ? `make: ${sanitizeFreeText(vehicle.make)}` : null,
+    vehicle.model ? `model: ${sanitizeFreeText(vehicle.model)}` : null,
   ].filter(Boolean);
   return `Vehicle:\n  ${parts.join('\n  ')}`;
 }

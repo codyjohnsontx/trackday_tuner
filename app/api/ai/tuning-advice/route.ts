@@ -53,13 +53,16 @@ class ReservationError extends Error {
 
 async function reservePendingSlot(params: {
   userId: string;
-  sessionId: string | null;
   requestId: string;
 }): Promise<void> {
   const admin = createAdminClient();
+  // session_id starts null: the caller has not yet confirmed the referenced
+  // session exists, and ai_requests.session_id has a FK to sessions(id) that
+  // would otherwise reject a bogus reference with 503 instead of 404. The
+  // real session_id is stamped on after the context lookup succeeds.
   const { error } = await admin.from('ai_requests').insert({
     user_id: params.userId,
-    session_id: params.sessionId,
+    session_id: null,
     request_id: params.requestId,
     status: 'pending',
   });
@@ -69,39 +72,63 @@ async function reservePendingSlot(params: {
   }
 }
 
-async function updateRequestLog(params: {
+interface UpdateRequestLogParams {
   requestId: string;
   status: string;
+  sessionId?: string | null;
   model?: string | null;
   promptTokens?: number | null;
   completionTokens?: number | null;
   latencyMs?: number | null;
   errorMessage?: string | null;
-}): Promise<void> {
+}
+
+async function updateRequestLog(params: UpdateRequestLogParams): Promise<void> {
+  const patch: Record<string, unknown> = {
+    status: params.status,
+    model: params.model ?? null,
+    prompt_tokens: params.promptTokens ?? null,
+    completion_tokens: params.completionTokens ?? null,
+    latency_ms: params.latencyMs ?? null,
+    error_message: params.errorMessage ?? null,
+  };
+  if (params.sessionId !== undefined) {
+    patch.session_id = params.sessionId;
+  }
   try {
     const admin = createAdminClient();
-    await admin
+    const { error } = await admin
       .from('ai_requests')
-      .update({
-        status: params.status,
-        model: params.model ?? null,
-        prompt_tokens: params.promptTokens ?? null,
-        completion_tokens: params.completionTokens ?? null,
-        latency_ms: params.latencyMs ?? null,
-        error_message: params.errorMessage ?? null,
-      })
+      .update(patch)
       .eq('request_id', params.requestId);
-  } catch {
-    // Swallow logging errors so they never shadow the user-facing response.
+    if (error) {
+      console.error(
+        '[ai/tuning-advice] updateRequestLog failed',
+        { requestId: params.requestId, status: params.status },
+        error,
+      );
+    }
+  } catch (thrown) {
+    // Guard against transport-layer exceptions (e.g., fetch timeouts) so
+    // logging never shadows the user-facing response.
+    console.error('[ai/tuning-advice] updateRequestLog threw', thrown);
   }
 }
 
 async function releaseReservation(requestId: string): Promise<void> {
   try {
     const admin = createAdminClient();
-    await admin.from('ai_requests').delete().eq('request_id', requestId);
-  } catch {
-    // Best effort: the row will age out of the rate-limit window even if this fails.
+    const { error } = await admin
+      .from('ai_requests')
+      .delete()
+      .eq('request_id', requestId);
+    if (error) {
+      console.error('[ai/tuning-advice] releaseReservation failed', { requestId }, error);
+    }
+  } catch (thrown) {
+    // Best effort: the row will age out of the rate-limit window even if
+    // this fails, but we still want to observe the failure.
+    console.error('[ai/tuning-advice] releaseReservation threw', thrown);
   }
 }
 
@@ -174,11 +201,7 @@ export async function POST(request: Request) {
   // see every other request's pending row, which closes the TOCTOU gap between
   // a bare count and the subsequent insert.
   try {
-    await reservePendingSlot({
-      userId: user.id,
-      sessionId: validated.data.session_id,
-      requestId,
-    });
+    await reservePendingSlot({ userId: user.id, requestId });
   } catch {
     return errorResponse(
       503,
@@ -281,7 +304,9 @@ export async function POST(request: Request) {
   }
 
   if (session.vehicle_id !== vehicle.id) {
-    await updateRequestLog({ requestId, status: 'mismatched_ids' });
+    // A bad cross-reference from the client: free the reservation so it
+    // doesn't burn the caller's rate-limit budget, mirroring the 404 path.
+    await releaseReservation(requestId);
     return errorResponse(
       400,
       'Session does not belong to the provided vehicle.',
@@ -319,6 +344,7 @@ export async function POST(request: Request) {
 
     await updateRequestLog({
       requestId,
+      sessionId: session.id,
       status: result.advice.refusal ? 'refused' : 'ok',
       model: result.model,
       promptTokens: result.usage.prompt_tokens,
@@ -344,6 +370,7 @@ export async function POST(request: Request) {
     const isRetriable = err instanceof UpstreamTimeoutError;
     await updateRequestLog({
       requestId,
+      sessionId: session.id,
       status: isRetriable ? 'upstream_timeout' : 'error',
       errorMessage: message,
     });

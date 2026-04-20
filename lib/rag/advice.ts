@@ -84,7 +84,17 @@ export async function generateTuningAdvice(
 ): Promise<GenerateAdviceResult> {
   const vehicleType = input.vehicle.type;
   const symptomText = (input.symptoms ?? []).join(' ');
-  const queryText = `${input.question}\n${symptomText}\n${input.changeIntent ?? ''}`.trim();
+  const temperatureLine =
+    input.temperatureC != null ? `ambient temperature ${input.temperatureC} C` : '';
+  const queryText = [
+    input.question,
+    symptomText,
+    input.changeIntent ?? '',
+    temperatureLine,
+  ]
+    .filter((part) => part && part.trim().length > 0)
+    .join('\n')
+    .trim();
 
   const queryEmbedding = await embedQuery(queryText);
   const retrieved = await retrieveRelevantChunks(queryEmbedding, {
