@@ -17,5 +17,8 @@ test-results/
 playwright-report/
 tsconfig.tsbuildinfo
 
+# RAG build artifacts (rebuild via `npm run rag:index`)
+data/rag-index.json
+
 # Cursor / local agent settings (optional)
 .claude/

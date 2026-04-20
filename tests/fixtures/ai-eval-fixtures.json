@@ -1,0 +1,242 @@
+{
+  "version": 1,
+  "notes": "Hand-curated AdviceResponse samples used by scripts/eval-rag.mjs to exercise the rubric scorer.",
+  "cases": [
+    {
+      "id": "mc-front-push-pressure",
+      "scenario": "Motorcycle: front pushes mid-corner after +1 psi increase.",
+      "response": {
+        "summary": "Front push is most likely from exceeding the front tire's pressure window after the +1 psi change.",
+        "recommended_changes": [
+          {
+            "component": "front_tire_pressure",
+            "direction": "decrease",
+            "magnitude": "0.5 psi",
+            "reason": "Restore the contact patch and reduce mid-corner push without giving up initial bite."
+          }
+        ],
+        "tradeoffs": ["Too large a drop can reduce steering precision."],
+        "confidence": "medium",
+        "safety_notes": [
+          "This is informational only. You are responsible for vehicle safety and on-track conduct.",
+          "Make one change at a time and re-test for a full session before stacking another change."
+        ],
+        "citations": [
+          { "source": "docs/knowledge-base/tires/pressure-basics.md", "snippet": "Front pushing mid-corner after a pressure increase: try dropping 0.5 psi." }
+        ],
+        "refusal": null
+      }
+    },
+    {
+      "id": "car-entry-understeer-toe",
+      "scenario": "Car: lazy turn-in with zero front toe.",
+      "response": {
+        "summary": "Lazy turn-in at zero front toe is commonly addressed with a small amount of toe-out.",
+        "recommended_changes": [
+          {
+            "component": "front_toe",
+            "direction": "toe-out",
+            "magnitude": "1.0 mm total",
+            "reason": "Sharpens initial response without overly affecting straight-line stability."
+          }
+        ],
+        "tradeoffs": ["Slightly more tire scrub; monitor shoulder wear over the weekend."],
+        "confidence": "medium",
+        "safety_notes": [
+          "This is informational only. You are responsible for vehicle safety and on-track conduct.",
+          "Make one change at a time and re-test for a full session before stacking another change."
+        ],
+        "citations": [
+          { "source": "docs/knowledge-base/alignment/toe-basics.md", "snippet": "Front toe-out (1-3 mm total): sharper turn-in, more responsive feel." }
+        ],
+        "refusal": null
+      }
+    },
+    {
+      "id": "mc-rear-wallow-rebound",
+      "scenario": "Motorcycle: rear wallows through long corners.",
+      "response": {
+        "summary": "Wallow through long corners points to too-soft rear rebound letting the chassis oscillate.",
+        "recommended_changes": [
+          {
+            "component": "rear_rebound",
+            "direction": "stiffen",
+            "magnitude": "1 click",
+            "reason": "Controls chassis oscillation without packing down on repeated bumps."
+          }
+        ],
+        "tradeoffs": ["Too stiff and the rear can skip over bumps; revert if grip fades."],
+        "confidence": "medium",
+        "safety_notes": [
+          "This is informational only. You are responsible for vehicle safety and on-track conduct.",
+          "Make one change at a time and re-test for a full session before stacking another change."
+        ],
+        "citations": [
+          { "source": "docs/knowledge-base/suspension/damping-basics.md", "snippet": "Wallowy, floaty, pogo feel: rebound too soft. Stiffen rebound 1-2 clicks." }
+        ],
+        "refusal": null
+      }
+    },
+    {
+      "id": "car-high-speed-oversteer",
+      "scenario": "Car: stable slow, loose at high speed.",
+      "response": {
+        "summary": "Aero balance is likely rear-light at speed while mechanical balance is fine at low speed.",
+        "recommended_changes": [
+          {
+            "component": "rear_wing_angle",
+            "direction": "increase",
+            "magnitude": "1 position",
+            "reason": "Adds rear downforce where the car is loose without changing mechanical balance."
+          }
+        ],
+        "tradeoffs": ["Small top-speed penalty; re-evaluate based on lap time, not trap speed."],
+        "confidence": "medium",
+        "safety_notes": [
+          "This is informational only. You are responsible for vehicle safety and on-track conduct.",
+          "Make one change at a time and re-test for a full session before stacking another change."
+        ],
+        "citations": [
+          { "source": "docs/knowledge-base/aero/downforce-basics.md", "snippet": "Stable through slow corners, loose at speed: rear aero too low. Add wing angle or rake." }
+        ],
+        "refusal": null
+      }
+    },
+    {
+      "id": "mc-cold-track-pressures",
+      "scenario": "Motorcycle: cold track, hot pressures below target.",
+      "response": {
+        "summary": "Cold-day sessions build less heat, so cold pressures need to come down to land hot pressures at target.",
+        "recommended_changes": [
+          {
+            "component": "front_and_rear_cold_pressure",
+            "direction": "decrease",
+            "magnitude": "1 psi each end",
+            "reason": "Reaches target hot pressures for the current ambient temperature."
+          }
+        ],
+        "tradeoffs": ["If the day warms quickly, hot pressures may creep above target; re-check after second session."],
+        "confidence": "medium",
+        "safety_notes": [
+          "This is informational only. You are responsible for vehicle safety and on-track conduct.",
+          "Make one change at a time and re-test for a full session before stacking another change."
+        ],
+        "citations": [
+          { "source": "docs/knowledge-base/conditions/cold-track.md", "snippet": "Lowering cold pressures 1-2 psi brings hot pressures back toward target." }
+        ],
+        "refusal": null
+      }
+    },
+    {
+      "id": "mc-brake-dive-compression",
+      "scenario": "Motorcycle: nose dives excessively under braking.",
+      "response": {
+        "summary": "Excessive brake dive is consistent with front compression that is too soft for your pace.",
+        "recommended_changes": [
+          {
+            "component": "front_compression",
+            "direction": "stiffen",
+            "magnitude": "1-2 clicks",
+            "reason": "Reduces dive without sacrificing initial bump compliance."
+          }
+        ],
+        "tradeoffs": ["Too stiff can make the front chatter over mid-corner bumps."],
+        "confidence": "medium",
+        "safety_notes": [
+          "This is informational only. You are responsible for vehicle safety and on-track conduct.",
+          "Make one change at a time and re-test for a full session before stacking another change."
+        ],
+        "citations": [
+          { "source": "docs/knowledge-base/suspension/damping-basics.md", "snippet": "Harsh over bumps, tire skipping: compression too stiff." }
+        ],
+        "refusal": null
+      }
+    },
+    {
+      "id": "mc-refusal-mechanical",
+      "scenario": "Motorcycle: note mentions leaking fork seal.",
+      "response": {
+        "summary": "A leaking fork seal is a mechanical issue, not a setup issue.",
+        "recommended_changes": [],
+        "tradeoffs": [],
+        "confidence": "low",
+        "safety_notes": [
+          "This is informational only. You are responsible for vehicle safety and on-track conduct.",
+          "Make one change at a time and re-test for a full session before stacking another change."
+        ],
+        "citations": [
+          { "source": "docs/knowledge-base/safety/disclaimers.md", "snippet": "Recommendations assume the vehicle is mechanically sound." }
+        ],
+        "refusal": "A leaking fork seal is a mechanical fault. Inspect and repair the fork before chasing any setup change."
+      }
+    },
+    {
+      "id": "car-camber-inner-wear",
+      "scenario": "Car: inside front tire edge is hottest and wearing fast.",
+      "response": {
+        "summary": "A hot inside edge with a cool outside edge suggests slightly too much front negative camber.",
+        "recommended_changes": [
+          {
+            "component": "front_camber",
+            "direction": "reduce negative camber",
+            "magnitude": "0.5 degree",
+            "reason": "Moves the contact patch back toward the middle of the tire at maximum load."
+          }
+        ],
+        "tradeoffs": ["Slightly less peak cornering grip; monitor lap time over a few sessions."],
+        "confidence": "medium",
+        "safety_notes": [
+          "This is informational only. You are responsible for vehicle safety and on-track conduct.",
+          "Make one change at a time and re-test for a full session before stacking another change."
+        ],
+        "citations": [
+          { "source": "docs/knowledge-base/alignment/camber-basics.md", "snippet": "A hot inside edge with a cool outside edge suggests too much negative camber." }
+        ],
+        "refusal": null
+      }
+    },
+    {
+      "id": "mc-gearing-slow-corner",
+      "scenario": "Motorcycle: dropping out of the powerband in a second-gear corner.",
+      "response": {
+        "summary": "Gearing is slightly too tall for the slowest corner at this track.",
+        "recommended_changes": [
+          {
+            "component": "rear_sprocket",
+            "direction": "shorter gearing",
+            "magnitude": "+1 tooth",
+            "reason": "Keeps engine RPM in the powerband through the slow corner without large steps."
+          }
+        ],
+        "tradeoffs": ["Slightly lower top speed on the main straight; re-check lap time, not trap speed."],
+        "confidence": "medium",
+        "safety_notes": [
+          "This is informational only. You are responsible for vehicle safety and on-track conduct.",
+          "Make one change at a time and re-test for a full session before stacking another change."
+        ],
+        "citations": [
+          { "source": "docs/knowledge-base/drivetrain/gearing-basics.md", "snippet": "Second gear corner that drops RPM below the powerband: shorten gearing." }
+        ],
+        "refusal": null
+      }
+    },
+    {
+      "id": "refusal-out-of-domain",
+      "scenario": "User asks a question outside trackday setup scope.",
+      "response": {
+        "summary": "That question is outside the scope of post-session setup advice.",
+        "recommended_changes": [],
+        "tradeoffs": [],
+        "confidence": "low",
+        "safety_notes": [
+          "This is informational only. You are responsible for vehicle safety and on-track conduct.",
+          "Make one change at a time and re-test for a full session before stacking another change."
+        ],
+        "citations": [
+          { "source": "docs/knowledge-base/safety/disclaimers.md", "snippet": "Do not offer adjustments when the question is outside the scope of trackday setup." }
+        ],
+        "refusal": "This question is outside trackday setup scope. I can only advise on setup changes grounded in your session data."
+      }
+    }
+  ]
+}
