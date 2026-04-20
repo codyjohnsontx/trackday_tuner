@@ -36,9 +36,12 @@ export function scoreChunks(
   options: RetrieveOptions = {},
 ): RetrievedChunk[] {
   const vehicleType = options.vehicleType;
-  const filtered = vehicleType
-    ? chunks.filter((c) => c.vehicle_type === 'both' || c.vehicle_type === vehicleType)
-    : chunks;
+  const queryDim = queryEmbedding.length;
+  const filtered = chunks.filter((c) => {
+    if (c.embedding.length !== queryDim) return false;
+    if (!vehicleType) return true;
+    return c.vehicle_type === 'both' || c.vehicle_type === vehicleType;
+  });
   return filtered
     .map((chunk) => ({ chunk, score: cosineSimilarity(queryEmbedding, chunk.embedding) }))
     .sort((a, b) => b.score - a.score);
@@ -65,11 +68,19 @@ export function dedupeScored(
   return kept;
 }
 
+function sanitizePositiveInt(value: number | undefined, fallback: number): number {
+  if (value === undefined || !Number.isFinite(value)) return fallback;
+  const floored = Math.floor(value);
+  return floored > 0 ? floored : fallback;
+}
+
 export function selectTopChunks(
   input: RetrievalInput,
   options: RetrieveOptions = {},
 ): RetrievedChunk[] {
-  const topK = Math.min(options.topK ?? DEFAULT_TOP_K, options.maxK ?? MAX_TOP_K);
+  const maxK = sanitizePositiveInt(options.maxK, MAX_TOP_K);
+  const requestedTopK = sanitizePositiveInt(options.topK, DEFAULT_TOP_K);
+  const topK = Math.max(1, Math.min(requestedTopK, maxK));
   const scored = scoreChunks(input, options);
   const deduped = dedupeScored(scored, options.duplicateThreshold);
   return deduped.slice(0, topK);

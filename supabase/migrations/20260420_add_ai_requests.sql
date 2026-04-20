@@ -16,6 +16,9 @@ create table if not exists public.ai_requests (
 create index if not exists ai_requests_user_created_idx
   on public.ai_requests(user_id, created_at desc);
 
+create unique index if not exists ai_requests_request_id_key
+  on public.ai_requests(request_id);
+
 alter table public.ai_requests enable row level security;
 
 create policy "ai_requests: select own"

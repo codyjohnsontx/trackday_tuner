@@ -27,5 +27,5 @@ Raising rear ride height (longer shock link or more preload, depending on config
 ## Symptoms and likely causes
 
 - Bike feels lazy on turn-in but stable at speed: geometry is biased too stable. Try dropping the front 2 mm or raising the rear.
-- Bike is nervous on straights and has a wandery front: geometry is too quick. Try raising the front 2 mm or lowering the rear.
+- Bike is nervous on straights and has a wandering front: geometry is too quick. Try raising the front 2 mm or lowering the rear.
 - Front pushes mid-corner only, stable everywhere else: this is usually a tire or damping issue, not geometry. Rule those out first.

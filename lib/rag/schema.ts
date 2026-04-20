@@ -1,6 +1,8 @@
 export const CONFIDENCE_LEVELS = ['low', 'medium', 'high'] as const;
 export type AdviceConfidence = (typeof CONFIDENCE_LEVELS)[number];
 
+export const MAX_RECOMMENDED_CHANGES = 2;
+
 export interface RecommendedChange {
   component: string;
   direction: string;
@@ -42,6 +44,7 @@ export const adviceResponseJsonSchema = {
       summary: { type: 'string' },
       recommended_changes: {
         type: 'array',
+        maxItems: MAX_RECOMMENDED_CHANGES,
         items: {
           type: 'object',
           additionalProperties: false,
@@ -134,6 +137,12 @@ export function parseAdviceResponse(value: unknown): ParseResult<AdviceResponse>
   if (!isString(v.summary)) return { ok: false, error: 'summary must be a string.' };
   if (!Array.isArray(v.recommended_changes) || !v.recommended_changes.every(isRecommendedChange)) {
     return { ok: false, error: 'recommended_changes must be an array of change objects.' };
+  }
+  if (v.recommended_changes.length > MAX_RECOMMENDED_CHANGES) {
+    return {
+      ok: false,
+      error: `recommended_changes cannot exceed ${MAX_RECOMMENDED_CHANGES} entries (one primary plus at most one secondary check).`,
+    };
   }
   if (!isStringArray(v.tradeoffs)) return { ok: false, error: 'tradeoffs must be an array of strings.' };
   if (!isConfidence(v.confidence)) {

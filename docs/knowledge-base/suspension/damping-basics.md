@@ -14,6 +14,7 @@ Damping controls how fast a suspension responds to input. Compression resists th
 - Wallowy, floaty, pogo feel: rebound too soft. Stiffen rebound 1-2 clicks.
 - Packing down after successive bumps: rebound too stiff (suspension cannot extend in time). Soften rebound 1-2 clicks.
 - Slow turn-in with a nose-up feel on entry: front compression too stiff or rebound too soft relative to the rear. Adjust the end of the bike/car that is not loading.
+- Excessive nose-dive under braking: front compression too soft for your pace. Stiffen front compression 1-2 clicks and re-test; watch for new mid-corner harshness before stacking more.
 
 ## Safe increments
 

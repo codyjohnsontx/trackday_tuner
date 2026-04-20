@@ -64,17 +64,29 @@ async function logRequest(params: {
   }
 }
 
+class RateLimitLookupError extends Error {
+  constructor(cause: unknown) {
+    super('Rate limit lookup failed.');
+    this.name = 'RateLimitLookupError';
+    this.cause = cause;
+  }
+}
+
 async function countRequestsSince(
   userId: string,
   sinceMs: number,
 ): Promise<number> {
   const admin = createAdminClient();
   const sinceIso = new Date(Date.now() - sinceMs).toISOString();
-  const { count } = await admin
+  const { count, error } = await admin
     .from('ai_requests')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
     .gte('created_at', sinceIso);
+  if (error) {
+    console.error('[ai/tuning-advice] rate limit count failed', error);
+    throw new RateLimitLookupError(error);
+  }
   return count ?? 0;
 }
 
@@ -124,10 +136,28 @@ export async function POST(request: Request) {
 
   const perHour = getAiRateLimitPerHour();
   const perMinute = getAiRateLimitPerMinute();
-  const [hourCount, minuteCount] = await Promise.all([
-    countRequestsSince(user.id, 60 * 60 * 1000),
-    countRequestsSince(user.id, 60 * 1000),
-  ]);
+  let hourCount: number;
+  let minuteCount: number;
+  try {
+    [hourCount, minuteCount] = await Promise.all([
+      countRequestsSince(user.id, 60 * 60 * 1000),
+      countRequestsSince(user.id, 60 * 1000),
+    ]);
+  } catch (err) {
+    await logRequest({
+      userId: user.id,
+      sessionId: validated.data.session_id,
+      requestId,
+      status: 'rate_limit_lookup_error',
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
+    return errorResponse(
+      503,
+      'Rate limit check is temporarily unavailable. Please try again shortly.',
+      requestId,
+      { 'retry-after': '30' },
+    );
+  }
   if (hourCount >= perHour) {
     await logRequest({
       userId: user.id,

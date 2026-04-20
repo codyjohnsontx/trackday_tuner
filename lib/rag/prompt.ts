@@ -97,6 +97,22 @@ function formatVehicleBlock(vehicle: Vehicle): string {
   return `Vehicle:\n  ${parts.join('\n  ')}`;
 }
 
+const EXCERPT_MAX_CHARS = 800;
+
+function truncateAtWordBoundary(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const window = text.slice(0, max);
+  const boundary = Math.max(
+    window.lastIndexOf(' '),
+    window.lastIndexOf('\n'),
+    window.lastIndexOf('.'),
+    window.lastIndexOf(','),
+    window.lastIndexOf(';'),
+  );
+  const cut = boundary > max * 0.6 ? window.slice(0, boundary).trimEnd() : window.trimEnd();
+  return `${cut}\u2026`;
+}
+
 function formatRetrievedBlock(retrieved: RetrievedChunk[]): string {
   if (retrieved.length === 0) {
     return 'Knowledge snippets:\n  (none matched the query)';
@@ -106,7 +122,7 @@ function formatRetrievedBlock(retrieved: RetrievedChunk[]): string {
     lines.push(
       `  [${idx + 1}] source=${chunk.source} heading="${chunk.heading}" vehicle=${chunk.vehicle_type} score=${score.toFixed(3)}`,
     );
-    const excerpt = chunk.text.length > 800 ? `${chunk.text.slice(0, 800)}…` : chunk.text;
+    const excerpt = truncateAtWordBoundary(chunk.text, EXCERPT_MAX_CHARS);
     lines.push(excerpt.split('\n').map((line) => `      ${line}`).join('\n'));
   });
   return lines.join('\n');

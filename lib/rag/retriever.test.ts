@@ -129,4 +129,42 @@ describe('selectTopChunks', () => {
     );
     expect(result).toHaveLength(3);
   });
+
+  it('clamps zero or negative topK to at least 1 via defaults', () => {
+    const zeroResult = selectTopChunks({ queryEmbedding: [1, 0, 0], chunks }, { topK: 0 });
+    expect(zeroResult.length).toBeGreaterThanOrEqual(1);
+
+    const negativeResult = selectTopChunks(
+      { queryEmbedding: [1, 0, 0], chunks },
+      { topK: -5 },
+    );
+    expect(negativeResult.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('floors non-integer topK to a positive integer', () => {
+    const result = selectTopChunks(
+      { queryEmbedding: [1, 0, 0], chunks },
+      { topK: 2.9, maxK: 10 },
+    );
+    expect(result).toHaveLength(2);
+  });
+
+  it('falls back to defaults for non-finite options', () => {
+    const result = selectTopChunks(
+      { queryEmbedding: [1, 0, 0], chunks },
+      { topK: Number.NaN, maxK: Number.POSITIVE_INFINITY },
+    );
+    expect(result.length).toBeGreaterThan(0);
+    expect(result.length).toBeLessThanOrEqual(5);
+  });
+
+  it('excludes chunks whose embedding dimension differs from the query', () => {
+    const mixed = [
+      chunk('good', [1, 0, 0]),
+      chunk('bad', [1, 0]),
+    ];
+    const result = selectTopChunks({ queryEmbedding: [1, 0, 0], chunks: mixed });
+    expect(result).toHaveLength(1);
+    expect(result[0].chunk.id).toBe('good');
+  });
 });

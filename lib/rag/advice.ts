@@ -47,8 +47,9 @@ export interface GenerateAdviceResult {
 
 function ensureSafetyNotes(advice: AdviceResponse): AdviceResponse {
   const notes = [...advice.safety_notes];
-  if (!notes.some((n) => n.includes('informational'))) notes.push(DISCLAIMER_NOTE);
-  if (!notes.some((n) => n.toLowerCase().includes('one change'))) notes.push(ONE_CHANGE_NOTE);
+  const normalized = notes.map((n) => n.toLowerCase());
+  if (!normalized.some((n) => n.includes('informational'))) notes.push(DISCLAIMER_NOTE);
+  if (!normalized.some((n) => n.includes('one change'))) notes.push(ONE_CHANGE_NOTE);
   return { ...advice, safety_notes: notes };
 }
 

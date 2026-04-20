@@ -13,7 +13,7 @@ It is easy to confuse the two. Use this checklist before adjusting.
 Symptoms show up while the suspension is being compressed:
 
 - Hard impact feel over sharp bumps.
-- Nose diving excessively under braking.
+- Nose-diving excessively under braking.
 - Loss of grip on turn-in, with the front tire chattering or skipping.
 - Rear squatting so much on throttle that the front unloads.
 

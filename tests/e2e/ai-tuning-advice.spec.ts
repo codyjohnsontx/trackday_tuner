@@ -1,5 +1,14 @@
 import { test, expect } from '@playwright/test';
 
+const FREE_EMAIL = process.env.E2E_FREE_EMAIL;
+const FREE_PASSWORD = process.env.E2E_FREE_PASSWORD;
+const FREE_VEHICLE_ID = process.env.E2E_FREE_VEHICLE_ID;
+const FREE_SESSION_ID = process.env.E2E_FREE_SESSION_ID;
+
+function hasFreeTierFixture(): boolean {
+  return Boolean(FREE_EMAIL && FREE_PASSWORD && FREE_VEHICLE_ID && FREE_SESSION_ID);
+}
+
 test.describe('/api/ai/tuning-advice', () => {
   test('rejects unauthenticated requests with 401', async ({ request }) => {
     const response = await request.post('/api/ai/tuning-advice', {
@@ -10,6 +19,31 @@ test.describe('/api/ai/tuning-advice', () => {
       },
     });
     expect(response.status()).toBe(401);
+    const body = await response.json();
+    expect(body.ok).toBe(false);
+    expect(body.request_id).toBeTruthy();
+  });
+
+  test('rejects non-Pro accounts with 402', async ({ page, request }) => {
+    test.skip(
+      !hasFreeTierFixture(),
+      'Requires E2E_FREE_EMAIL, E2E_FREE_PASSWORD, E2E_FREE_VEHICLE_ID, E2E_FREE_SESSION_ID to be set for a seeded free-tier account.',
+    );
+
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(FREE_EMAIL!);
+    await page.getByLabel('Password').fill(FREE_PASSWORD!);
+    await page.getByRole('button', { name: /^Sign In$/ }).first().click();
+    await expect(page).toHaveURL(/\/dashboard/);
+
+    const response = await request.post('/api/ai/tuning-advice', {
+      data: {
+        vehicle_id: FREE_VEHICLE_ID!,
+        session_id: FREE_SESSION_ID!,
+        question: 'Front pushed mid-corner after raising pressure 1 psi; what should I try next?',
+      },
+    });
+    expect(response.status()).toBe(402);
     const body = await response.json();
     expect(body.ok).toBe(false);
     expect(body.request_id).toBeTruthy();

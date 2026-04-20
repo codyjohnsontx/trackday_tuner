@@ -54,6 +54,28 @@ describe('parseAdviceResponse', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('accepts up to two recommended_changes (primary + secondary)', () => {
+    const change = validResponse.recommended_changes[0];
+    const result = parseAdviceResponse({
+      ...validResponse,
+      recommended_changes: [change, { ...change, component: 'secondary_check' }],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects more than two recommended_changes', () => {
+    const change = validResponse.recommended_changes[0];
+    const result = parseAdviceResponse({
+      ...validResponse,
+      recommended_changes: [
+        change,
+        { ...change, component: 'secondary_check' },
+        { ...change, component: 'tertiary_check' },
+      ],
+    });
+    expect(result.ok).toBe(false);
+  });
+
   it('rejects malformed citations', () => {
     const result = parseAdviceResponse({
       ...validResponse,

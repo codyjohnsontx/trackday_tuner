@@ -152,6 +152,22 @@ async function embedBatch(client, model, texts) {
   return response.data.map((item) => item.embedding);
 }
 
+const KNOWN_EMBEDDING_DIMENSIONS = {
+  'text-embedding-3-small': 1536,
+  'text-embedding-3-large': 3072,
+  'text-embedding-ada-002': 1536,
+};
+const FALLBACK_EMBEDDING_DIM = 1536;
+
+function getEmbeddingDim(embeddingModel) {
+  const known = KNOWN_EMBEDDING_DIMENSIONS[embeddingModel];
+  if (known) return known;
+  console.warn(
+    `[rag:index] Unknown embedding model '${embeddingModel}'; using fallback dim ${FALLBACK_EMBEDDING_DIM}.`,
+  );
+  return FALLBACK_EMBEDDING_DIM;
+}
+
 async function main() {
   const apiKey = process.env.OPENAI_API_KEY;
   const embeddingModel = process.env.AI_EMBEDDING_MODEL ?? 'text-embedding-3-small';
@@ -175,11 +191,12 @@ async function main() {
 
   let embeddings;
   if (!apiKey) {
+    const zeroDim = getEmbeddingDim(embeddingModel);
     console.warn(
-      '[rag:index] OPENAI_API_KEY not set; writing index with zero-vector embeddings. ' +
+      `[rag:index] OPENAI_API_KEY not set; writing index with zero-vector embeddings (dim=${zeroDim}). ` +
         'Retrieval will return arbitrary results until the index is rebuilt with a real key.',
     );
-    embeddings = allChunks.map(() => new Array(1536).fill(0));
+    embeddings = allChunks.map(() => new Array(zeroDim).fill(0));
   } else {
     const client = new OpenAI({ apiKey });
     embeddings = [];

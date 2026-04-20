@@ -4,6 +4,10 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import type { AdviceResponse } from '@/lib/rag/schema';
+import { cn } from '@/lib/utils';
+
+const MIN_TEMPERATURE_C = -40;
+const MAX_TEMPERATURE_C = 70;
 
 const SYMPTOM_OPTIONS = [
   { id: 'understeer_entry', label: 'Understeer on entry' },
@@ -109,7 +113,17 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
     if (intent) body.change_intent = intent;
     if (temperature.trim().length > 0) {
       const parsed = Number(temperature);
-      if (Number.isFinite(parsed)) body.temperature_c = parsed;
+      if (!Number.isFinite(parsed)) {
+        setError('Temperature must be a number in Celsius.');
+        return;
+      }
+      if (parsed < MIN_TEMPERATURE_C || parsed > MAX_TEMPERATURE_C) {
+        setError(
+          `Temperature must be between ${MIN_TEMPERATURE_C}\u00b0C and ${MAX_TEMPERATURE_C}\u00b0C.`,
+        );
+        return;
+      }
+      body.temperature_c = parsed;
     }
 
     setLoading(true);
@@ -178,11 +192,12 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
                   type="button"
                   aria-pressed={active}
                   onClick={() => toggleSymptom(opt.id)}
-                  className={
+                  className={cn(
+                    'min-h-11 rounded-full border px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950',
                     active
-                      ? 'min-h-11 rounded-full border border-cyan-400/70 bg-cyan-400/10 px-3 py-2 text-xs font-medium text-cyan-200 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950'
-                      : 'min-h-11 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-300 transition hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950'
-                  }
+                      ? 'border-cyan-400/70 bg-cyan-400/10 text-cyan-200'
+                      : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800',
+                  )}
                 >
                   {opt.label}
                 </button>

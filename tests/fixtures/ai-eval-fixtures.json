@@ -147,7 +147,7 @@
           "Make one change at a time and re-test for a full session before stacking another change."
         ],
         "citations": [
-          { "source": "docs/knowledge-base/suspension/damping-basics.md", "snippet": "Harsh over bumps, tire skipping: compression too stiff." }
+          { "source": "docs/knowledge-base/suspension/damping-basics.md", "snippet": "Excessive nose-dive under braking: front compression too soft for your pace. Stiffen front compression 1-2 clicks and re-test." }
         ],
         "refusal": null
       }

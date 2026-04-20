@@ -25,14 +25,23 @@ function getIndexPath(): string {
 export async function loadKnowledgeIndex(): Promise<KnowledgeIndex> {
   if (cachedIndex) return cachedIndex;
   if (cachedIndexPromise) return cachedIndexPromise;
-  cachedIndexPromise = (async () => {
-    const indexPath = getIndexPath();
-    const raw = await fs.readFile(indexPath, 'utf8');
-    const parsed = JSON.parse(raw) as KnowledgeIndex;
-    cachedIndex = parsed;
-    return parsed;
+  const promise = (async () => {
+    try {
+      const indexPath = getIndexPath();
+      const raw = await fs.readFile(indexPath, 'utf8');
+      const parsed = JSON.parse(raw) as KnowledgeIndex;
+      cachedIndex = parsed;
+      return parsed;
+    } catch (err) {
+      // Clear the cached promise so a transient failure does not permanently
+      // poison subsequent calls.
+      cachedIndex = null;
+      cachedIndexPromise = null;
+      throw err;
+    }
   })();
-  return cachedIndexPromise;
+  cachedIndexPromise = promise;
+  return promise;
 }
 
 export function isKnowledgeIndexLoaded(): boolean {

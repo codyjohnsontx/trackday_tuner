@@ -30,4 +30,4 @@ If rider sag is in range but static sag is near zero, the spring is too soft for
 
 ## Interactions
 
-Raising front preload steepens rake, quickens steering, reduces stability. Raising rear preload increases rear ride height, quickens steering, can add wheelie tendency. Make one change at a time and measure sag again before riding.
+Raising front preload lifts the front of the bike, which slackens rake and trail, generally slows steering, and adds stability. Raising rear preload increases rear ride height, which steepens rake, quickens steering, and can add wheelie tendency. Make one change at a time and measure sag again before riding.
