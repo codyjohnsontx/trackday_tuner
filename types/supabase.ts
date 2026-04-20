@@ -238,6 +238,48 @@ export type Database = {
         };
         Relationships: [];
       };
+      ai_requests: {
+        Row: {
+          id: string;
+          user_id: string;
+          session_id: string | null;
+          request_id: string;
+          status: string;
+          model: string | null;
+          prompt_tokens: number | null;
+          completion_tokens: number | null;
+          latency_ms: number | null;
+          error_message: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          session_id?: string | null;
+          request_id: string;
+          status: string;
+          model?: string | null;
+          prompt_tokens?: number | null;
+          completion_tokens?: number | null;
+          latency_ms?: number | null;
+          error_message?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          session_id?: string | null;
+          request_id?: string;
+          status?: string;
+          model?: string | null;
+          prompt_tokens?: number | null;
+          completion_tokens?: number | null;
+          latency_ms?: number | null;
+          error_message?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       sag_entries: {
         Row: {
           id: string;

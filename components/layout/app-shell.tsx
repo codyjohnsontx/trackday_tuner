@@ -19,7 +19,7 @@ export function AppShell({ children, isAuthenticated }: AppShellProps) {
           </Link>
           <Link
             href={isAuthenticated ? '/logout' : '/login'}
-            className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-100 transition hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 px-3 text-xs font-semibold uppercase leading-none tracking-wide text-zinc-100 transition hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-cyan-400/80"
           >
             {isAuthenticated ? 'Log Out' : 'Log In'}
           </Link>

@@ -1,8 +1,9 @@
 import { notFound } from 'next/navigation';
 import { getPreviousSession, getSession } from '@/lib/actions/sessions';
-import { getVehicles } from '@/lib/actions/vehicles';
+import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
 import { TimeDisplay } from '@/components/ui/time-display';
 import { SessionCompare, type CompareRow } from '@/components/sessions/session-compare';
+import { TuningAdvicePanel } from '@/components/ai/tuning-advice-panel';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import type { ExtraModules, Session } from '@/types';
 
@@ -276,11 +277,16 @@ function buildCompareRows(
 
 export default async function SessionDetailPage({ params }: SessionDetailPageProps) {
   const { id } = await params;
-  const [session, vehicles] = await Promise.all([getSession(id), getVehicles()]);
+  const [session, vehicles, profile] = await Promise.all([
+    getSession(id),
+    getVehicles(),
+    getUserProfile(),
+  ]);
 
   if (!session) notFound();
 
   const previousSession = await getPreviousSession(session);
+  const tier = profile?.tier ?? 'free';
   const vehicle = vehicles.find((v) => v.id === session.vehicle_id);
   const vehicleNickname = vehicle?.nickname ?? 'Unknown Vehicle';
   const vehicleType = vehicle?.type ?? 'motorcycle';
@@ -316,6 +322,8 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
           <p className="mt-2 text-sm text-zinc-400">No earlier session found for this vehicle.</p>
         </section>
       )}
+
+      <TuningAdvicePanel sessionId={session.id} vehicleId={session.vehicle_id} tier={tier} />
 
       <SectionCard title="Session Info">
         <DetailRow label="Track" value={session.track_name ?? '—'} />
