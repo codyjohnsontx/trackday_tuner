@@ -7,7 +7,7 @@ import {
   getAiRateLimitPerHour,
   getAiRateLimitPerMinute,
 } from '@/lib/env.server';
-import { generateTuningAdvice } from '@/lib/rag/advice';
+import { generateTuningAdvice, UpstreamTimeoutError } from '@/lib/rag/advice';
 import {
   TUNING_ADVICE_LIMITS,
   validateTuningAdviceRequest,
@@ -35,9 +35,41 @@ function errorResponse(
   );
 }
 
-async function logRequest(params: {
+class RateLimitLookupError extends Error {
+  constructor(cause: unknown) {
+    super('Rate limit lookup failed.');
+    this.name = 'RateLimitLookupError';
+    this.cause = cause;
+  }
+}
+
+class ReservationError extends Error {
+  constructor(cause: unknown) {
+    super('Rate limit reservation failed.');
+    this.name = 'ReservationError';
+    this.cause = cause;
+  }
+}
+
+async function reservePendingSlot(params: {
   userId: string;
   sessionId: string | null;
+  requestId: string;
+}): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin.from('ai_requests').insert({
+    user_id: params.userId,
+    session_id: params.sessionId,
+    request_id: params.requestId,
+    status: 'pending',
+  });
+  if (error) {
+    console.error('[ai/tuning-advice] reservation insert failed', error);
+    throw new ReservationError(error);
+  }
+}
+
+async function updateRequestLog(params: {
   requestId: string;
   status: string;
   model?: string | null;
@@ -48,27 +80,28 @@ async function logRequest(params: {
 }): Promise<void> {
   try {
     const admin = createAdminClient();
-    await admin.from('ai_requests').insert({
-      user_id: params.userId,
-      session_id: params.sessionId,
-      request_id: params.requestId,
-      status: params.status,
-      model: params.model ?? null,
-      prompt_tokens: params.promptTokens ?? null,
-      completion_tokens: params.completionTokens ?? null,
-      latency_ms: params.latencyMs ?? null,
-      error_message: params.errorMessage ?? null,
-    });
+    await admin
+      .from('ai_requests')
+      .update({
+        status: params.status,
+        model: params.model ?? null,
+        prompt_tokens: params.promptTokens ?? null,
+        completion_tokens: params.completionTokens ?? null,
+        latency_ms: params.latencyMs ?? null,
+        error_message: params.errorMessage ?? null,
+      })
+      .eq('request_id', params.requestId);
   } catch {
     // Swallow logging errors so they never shadow the user-facing response.
   }
 }
 
-class RateLimitLookupError extends Error {
-  constructor(cause: unknown) {
-    super('Rate limit lookup failed.');
-    this.name = 'RateLimitLookupError';
-    this.cause = cause;
+async function releaseReservation(requestId: string): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    await admin.from('ai_requests').delete().eq('request_id', requestId);
+  } catch {
+    // Best effort: the row will age out of the rate-limit window even if this fails.
   }
 }
 
@@ -136,6 +169,25 @@ export async function POST(request: Request) {
 
   const perHour = getAiRateLimitPerHour();
   const perMinute = getAiRateLimitPerMinute();
+
+  // Atomically reserve a slot BEFORE counting. Every concurrent request will
+  // see every other request's pending row, which closes the TOCTOU gap between
+  // a bare count and the subsequent insert.
+  try {
+    await reservePendingSlot({
+      userId: user.id,
+      sessionId: validated.data.session_id,
+      requestId,
+    });
+  } catch {
+    return errorResponse(
+      503,
+      'Rate limit reservation is temporarily unavailable. Please try again shortly.',
+      requestId,
+      { 'retry-after': '30' },
+    );
+  }
+
   let hourCount: number;
   let minuteCount: number;
   try {
@@ -144,9 +196,7 @@ export async function POST(request: Request) {
       countRequestsSince(user.id, 60 * 1000),
     ]);
   } catch (err) {
-    await logRequest({
-      userId: user.id,
-      sessionId: validated.data.session_id,
+    await updateRequestLog({
       requestId,
       status: 'rate_limit_lookup_error',
       errorMessage: err instanceof Error ? err.message : String(err),
@@ -158,13 +208,8 @@ export async function POST(request: Request) {
       { 'retry-after': '30' },
     );
   }
-  if (hourCount >= perHour) {
-    await logRequest({
-      userId: user.id,
-      sessionId: validated.data.session_id,
-      requestId,
-      status: 'rate_limited_hour',
-    });
+  if (hourCount > perHour) {
+    await updateRequestLog({ requestId, status: 'rate_limited_hour' });
     return errorResponse(
       429,
       `Rate limit exceeded: max ${perHour} requests/hour.`,
@@ -172,13 +217,8 @@ export async function POST(request: Request) {
       { 'retry-after': '3600' },
     );
   }
-  if (minuteCount >= perMinute) {
-    await logRequest({
-      userId: user.id,
-      sessionId: validated.data.session_id,
-      requestId,
-      status: 'rate_limited_minute',
-    });
+  if (minuteCount > perMinute) {
+    await updateRequestLog({ requestId, status: 'rate_limited_minute' });
     return errorResponse(
       429,
       `Rate limit exceeded: max ${perMinute} requests/minute.`,
@@ -203,26 +243,45 @@ export async function POST(request: Request) {
       .single(),
   ]);
 
+  const sessionError = sessionResult.error;
+  const vehicleError = vehicleResult.error;
+  // `.single()` returns a PGRST116 code when zero rows match; those are
+  // not-found cases, not transport/DB errors.
+  const isNotFound = (err: typeof sessionError) => err?.code === 'PGRST116';
+  const hasRealError =
+    (sessionError && !isNotFound(sessionError)) ||
+    (vehicleError && !isNotFound(vehicleError));
+
+  if (hasRealError) {
+    const message =
+      sessionError && !isNotFound(sessionError)
+        ? sessionError.message
+        : vehicleError?.message ?? 'Context lookup failed.';
+    await updateRequestLog({
+      requestId,
+      status: 'context_lookup_error',
+      errorMessage: message,
+    });
+    return errorResponse(
+      503,
+      'Unable to load session context right now. Please try again shortly.',
+      requestId,
+      { 'retry-after': '30' },
+    );
+  }
+
   const session = (sessionResult.data ?? null) as Session | null;
   const vehicle = (vehicleResult.data ?? null) as Vehicle | null;
 
   if (!session || !vehicle) {
-    await logRequest({
-      userId: user.id,
-      sessionId: validated.data.session_id,
-      requestId,
-      status: 'context_not_found',
-    });
+    // A malformed request that references someone else's rows is cheap and
+    // should not consume the caller's rate-limit budget; release the slot.
+    await releaseReservation(requestId);
     return errorResponse(404, 'Session or vehicle not found.', requestId);
   }
 
   if (session.vehicle_id !== vehicle.id) {
-    await logRequest({
-      userId: user.id,
-      sessionId: validated.data.session_id,
-      requestId,
-      status: 'mismatched_ids',
-    });
+    await updateRequestLog({ requestId, status: 'mismatched_ids' });
     return errorResponse(
       400,
       'Session does not belong to the provided vehicle.',
@@ -258,9 +317,7 @@ export async function POST(request: Request) {
       temperatureC: validated.data.temperature_c,
     });
 
-    await logRequest({
-      userId: user.id,
-      sessionId: session.id,
+    await updateRequestLog({
       requestId,
       status: result.advice.refusal ? 'refused' : 'ok',
       model: result.model,
@@ -284,13 +341,20 @@ export async function POST(request: Request) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error.';
-    await logRequest({
-      userId: user.id,
-      sessionId: session.id,
+    const isRetriable = err instanceof UpstreamTimeoutError;
+    await updateRequestLog({
       requestId,
-      status: 'error',
+      status: isRetriable ? 'upstream_timeout' : 'error',
       errorMessage: message,
     });
+    if (isRetriable) {
+      return errorResponse(
+        504,
+        'The tuning advice service timed out. Please retry.',
+        requestId,
+        { 'retry-after': '5' },
+      );
+    }
     return errorResponse(
       500,
       'Unable to generate tuning advice right now. Please try again later.',

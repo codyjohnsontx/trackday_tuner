@@ -161,7 +161,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
       <div>
         <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Race Engineer</h2>
         <p className="mt-1 text-sm text-zinc-300">
-          Your personal race engineer. Ask one small, specific question about this session and Race Engineer will suggest at most one change.
+          Your personal race engineer. Ask one small, specific question about this session and Race Engineer will return a single primary recommendation, with an optional secondary check when it matters.
         </p>
       </div>
 
@@ -193,7 +193,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
                   aria-pressed={active}
                   onClick={() => toggleSymptom(opt.id)}
                   className={cn(
-                    'min-h-11 rounded-full border px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950',
+                    'min-h-11 rounded-xl border px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950',
                     active
                       ? 'border-cyan-400/70 bg-cyan-400/10 text-cyan-200'
                       : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800',
@@ -228,7 +228,8 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
           <input
             id="race_engineer_temperature"
             type="number"
-            inputMode="numeric"
+            inputMode="decimal"
+            step="any"
             value={temperature}
             onChange={(e) => setTemperature(e.target.value)}
             placeholder="24"

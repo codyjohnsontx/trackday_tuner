@@ -24,7 +24,7 @@ test.describe('/api/ai/tuning-advice', () => {
     expect(body.request_id).toBeTruthy();
   });
 
-  test('rejects non-Pro accounts with 402', async ({ page, request }) => {
+  test('rejects non-Pro accounts with 402', async ({ page }) => {
     test.skip(
       !hasFreeTierFixture(),
       'Requires E2E_FREE_EMAIL, E2E_FREE_PASSWORD, E2E_FREE_VEHICLE_ID, E2E_FREE_SESSION_ID to be set for a seeded free-tier account.',
@@ -36,7 +36,10 @@ test.describe('/api/ai/tuning-advice', () => {
     await page.getByRole('button', { name: /^Sign In$/ }).first().click();
     await expect(page).toHaveURL(/\/dashboard/);
 
-    const response = await request.post('/api/ai/tuning-advice', {
+    // Use the page's authenticated request context so login cookies are
+    // carried; the standalone `request` fixture does not share state with
+    // `page`.
+    const response = await page.request.post('/api/ai/tuning-advice', {
       data: {
         vehicle_id: FREE_VEHICLE_ID!,
         session_id: FREE_SESSION_ID!,

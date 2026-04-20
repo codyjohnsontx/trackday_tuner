@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   cosineSimilarity,
+  DEFAULT_TOP_K,
   dedupeScored,
   scoreChunks,
   selectTopChunks,
@@ -149,13 +150,12 @@ describe('selectTopChunks', () => {
     expect(result).toHaveLength(2);
   });
 
-  it('falls back to defaults for non-finite options', () => {
+  it('falls back to DEFAULT_TOP_K for non-finite options', () => {
     const result = selectTopChunks(
       { queryEmbedding: [1, 0, 0], chunks },
       { topK: Number.NaN, maxK: Number.POSITIVE_INFINITY },
     );
-    expect(result.length).toBeGreaterThan(0);
-    expect(result.length).toBeLessThanOrEqual(5);
+    expect(result).toHaveLength(Math.min(DEFAULT_TOP_K, chunks.length));
   });
 
   it('excludes chunks whose embedding dimension differs from the query', () => {

@@ -107,21 +107,37 @@ function isConfidence(value: unknown): value is AdviceConfidence {
   );
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function hasExactKeys(value: Record<string, unknown>, required: readonly string[]): boolean {
+  const keys = Object.keys(value);
+  if (keys.length !== required.length) return false;
+  const expected = new Set(required);
+  return keys.every((k) => expected.has(k));
+}
+
+const RECOMMENDED_CHANGE_KEYS = ['component', 'direction', 'magnitude', 'reason'] as const;
+const CITATION_KEYS = ['source', 'snippet'] as const;
+
 function isRecommendedChange(value: unknown): value is RecommendedChange {
-  if (!value || typeof value !== 'object') return false;
-  const v = value as Record<string, unknown>;
+  if (!isPlainObject(value)) return false;
+  if (!hasExactKeys(value, RECOMMENDED_CHANGE_KEYS)) return false;
   return (
-    isString(v.component) &&
-    isString(v.direction) &&
-    isString(v.magnitude) &&
-    isString(v.reason)
+    isString(value.component) &&
+    isString(value.direction) &&
+    isString(value.magnitude) &&
+    isString(value.reason)
   );
 }
 
 function isCitation(value: unknown): value is AdviceCitation {
-  if (!value || typeof value !== 'object') return false;
-  const v = value as Record<string, unknown>;
-  return isString(v.source) && isString(v.snippet);
+  if (!isPlainObject(value)) return false;
+  if (!hasExactKeys(value, CITATION_KEYS)) return false;
+  return isString(value.source) && isString(value.snippet);
 }
 
 export type ParseResult<T> =

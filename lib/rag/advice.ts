@@ -1,5 +1,5 @@
 import 'server-only';
-import OpenAI from 'openai';
+import OpenAI, { APIConnectionTimeoutError, APIUserAbortError } from 'openai';
 import {
   getAiModel,
   getOpenAIApiKey,
@@ -15,11 +15,27 @@ import {
 import type { RetrievedChunk } from '@/lib/rag/types';
 import type { Session, Vehicle } from '@/types';
 
+// Upper bound on the OpenAI chat completion request. 30s is well above the
+// p95 for gpt-4o-mini on our payload size and still short enough that the
+// route handler can surface a retriable 504 to the client.
+const OPENAI_REQUEST_TIMEOUT_MS = 30_000;
+
+export class UpstreamTimeoutError extends Error {
+  constructor(cause: unknown) {
+    super('Upstream tuning-advice call timed out.');
+    this.name = 'UpstreamTimeoutError';
+    this.cause = cause;
+  }
+}
+
 let cachedClient: OpenAI | null = null;
 
 function getClient(): OpenAI {
   if (!cachedClient) {
-    cachedClient = new OpenAI({ apiKey: getOpenAIApiKey() });
+    cachedClient = new OpenAI({
+      apiKey: getOpenAIApiKey(),
+      timeout: OPENAI_REQUEST_TIMEOUT_MS,
+    });
   }
   return cachedClient;
 }
@@ -47,10 +63,20 @@ export interface GenerateAdviceResult {
 
 function ensureSafetyNotes(advice: AdviceResponse): AdviceResponse {
   const notes = [...advice.safety_notes];
-  const normalized = notes.map((n) => n.toLowerCase());
-  if (!normalized.some((n) => n.includes('informational'))) notes.push(DISCLAIMER_NOTE);
-  if (!normalized.some((n) => n.includes('one change'))) notes.push(ONE_CHANGE_NOTE);
+  const normalized = new Set(notes.map((n) => n.trim().toLowerCase()));
+  if (!normalized.has(DISCLAIMER_NOTE.toLowerCase())) notes.push(DISCLAIMER_NOTE);
+  if (!normalized.has(ONE_CHANGE_NOTE.toLowerCase())) notes.push(ONE_CHANGE_NOTE);
   return { ...advice, safety_notes: notes };
+}
+
+function filterCitationsToRetrievedSources(
+  advice: AdviceResponse,
+  retrieved: RetrievedChunk[],
+): AdviceResponse {
+  const allowed = new Set(retrieved.map(({ chunk }) => chunk.source));
+  const filtered = advice.citations.filter((c) => allowed.has(c.source));
+  if (filtered.length === advice.citations.length) return advice;
+  return { ...advice, citations: filtered };
 }
 
 export async function generateTuningAdvice(
@@ -81,15 +107,26 @@ export async function generateTuningAdvice(
   const model = getAiModel();
   const client = getClient();
   const start = Date.now();
-  const completion = await client.chat.completions.create({
-    model,
-    messages,
-    temperature: 0.2,
-    response_format: {
-      type: 'json_schema',
-      json_schema: adviceResponseJsonSchema,
-    },
-  });
+  let completion;
+  try {
+    completion = await client.chat.completions.create(
+      {
+        model,
+        messages,
+        temperature: 0.2,
+        response_format: {
+          type: 'json_schema',
+          json_schema: adviceResponseJsonSchema,
+        },
+      },
+      { timeout: OPENAI_REQUEST_TIMEOUT_MS },
+    );
+  } catch (err) {
+    if (err instanceof APIConnectionTimeoutError || err instanceof APIUserAbortError) {
+      throw new UpstreamTimeoutError(err);
+    }
+    throw err;
+  }
   const latencyMs = Date.now() - start;
 
   const content = completion.choices[0]?.message?.content;
@@ -109,8 +146,12 @@ export async function generateTuningAdvice(
     throw new Error(`Response did not match schema: ${parsed.error}`);
   }
 
+  // Strip any citations whose source is not in the retrieved set (the model
+  // should never invent knowledge-base paths; defense in depth).
+  const sanitized = filterCitationsToRetrievedSources(parsed.data, retrieved);
+
   return {
-    advice: ensureSafetyNotes(parsed.data),
+    advice: ensureSafetyNotes(sanitized),
     retrieved,
     usage: {
       prompt_tokens: completion.usage?.prompt_tokens ?? null,
