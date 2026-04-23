@@ -54,6 +54,8 @@ export const adviceResponseJsonSchema = {
   schema: {
     type: 'object',
     additionalProperties: false,
+    // The model contract requires these fields, but the parser still backfills
+    // prediction, personal_evidence, and data_used for older stored responses.
     required: [
       'summary',
       'recommended_changes',
@@ -252,6 +254,8 @@ export type ParseResult<T> =
   | { ok: false; error: string };
 
 export function parseAdviceResponse(value: unknown): ParseResult<AdviceResponse> {
+  // This mismatch is intentional: prediction, personal_evidence, and data_used
+  // remain optional here so older responses can parse with safe defaults.
   if (!value || typeof value !== 'object') {
     return { ok: false, error: 'Response is not an object.' };
   }

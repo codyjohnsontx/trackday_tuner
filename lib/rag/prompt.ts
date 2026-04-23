@@ -1,6 +1,7 @@
 import type { RetrievedChunk } from '@/lib/rag/types';
 import type { RaceEngineerContext } from '@/lib/rag/race-engineer-context';
 import type { CreateSessionEnvironmentInput, Session, SessionEnvironment, Vehicle } from '@/types';
+import { truncateAtWordBoundary } from '@/lib/utils';
 
 export const SYSTEM_PROMPT = `You are Race Engineer, the rider's or driver's personal post-session race engineer for trackday motorcycles and cars. Speak like a seasoned, level-headed race engineer: direct, specific, and conservative.
 
@@ -150,20 +151,6 @@ function formatVehicleBlock(vehicle: Vehicle): string {
 
 const EXCERPT_MAX_CHARS = 800;
 
-function truncateAtWordBoundary(text: string, max: number): string {
-  if (text.length <= max) return text;
-  const window = text.slice(0, max);
-  const boundary = Math.max(
-    window.lastIndexOf(' '),
-    window.lastIndexOf('\n'),
-    window.lastIndexOf('.'),
-    window.lastIndexOf(','),
-    window.lastIndexOf(';'),
-  );
-  const cut = boundary > max * 0.6 ? window.slice(0, boundary).trimEnd() : window.trimEnd();
-  return `${cut}\u2026`;
-}
-
 function formatRetrievedBlock(retrieved: RetrievedChunk[]): string {
   if (retrieved.length === 0) {
     return 'Knowledge snippets:\n  (none matched the query)';
@@ -187,7 +174,7 @@ function formatRaceEngineerContext(context: RaceEngineerContext | null | undefin
   const lines: string[] = ['Adaptive context:'];
   lines.push(`  data_used: manual=${context.dataUsed.manual} weather=${context.dataUsed.weather} history=${context.dataUsed.history} feedback=${context.dataUsed.feedback} telemetry=${context.dataUsed.telemetry}`);
   lines.push(`  day_trend: ${sanitizeFreeText(context.dayTrend)}`);
-  lines.push(formatEnvironmentBlock('  session_environment', context.sessionEnvironment).replace(/^/gm, '  '));
+  lines.push(formatEnvironmentBlock('session_environment', context.sessionEnvironment).replace(/^/gm, '  '));
 
   if (context.memory) {
     lines.push('  rider_memory:');

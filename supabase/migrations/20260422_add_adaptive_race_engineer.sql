@@ -129,6 +129,26 @@ create unique index if not exists telemetry_summaries_session_id_key
 create index if not exists telemetry_summaries_user_vehicle_created_idx
   on public.telemetry_summaries(user_id, vehicle_id, created_at desc);
 
+drop trigger if exists session_environment_set_updated_at on public.session_environment;
+create trigger session_environment_set_updated_at
+  before update on public.session_environment
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists ai_recommendations_set_updated_at on public.ai_recommendations;
+create trigger ai_recommendations_set_updated_at
+  before update on public.ai_recommendations
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists race_engineer_memory_set_updated_at on public.race_engineer_memory;
+create trigger race_engineer_memory_set_updated_at
+  before update on public.race_engineer_memory
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists telemetry_summaries_set_updated_at on public.telemetry_summaries;
+create trigger telemetry_summaries_set_updated_at
+  before update on public.telemetry_summaries
+  for each row execute function public.set_updated_at();
+
 alter table public.session_environment enable row level security;
 alter table public.ai_recommendations enable row level security;
 alter table public.session_feedback enable row level security;
@@ -165,6 +185,10 @@ create policy "ai_recommendations: update own"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+create policy "ai_recommendations: delete own"
+  on public.ai_recommendations for delete
+  using (auth.uid() = user_id);
+
 create policy "session_feedback: select own"
   on public.session_feedback for select
   using (auth.uid() = user_id);
@@ -195,6 +219,10 @@ create policy "race_engineer_memory: update own"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+create policy "race_engineer_memory: delete own"
+  on public.race_engineer_memory for delete
+  using (auth.uid() = user_id);
+
 create policy "telemetry_summaries: select own"
   on public.telemetry_summaries for select
   using (auth.uid() = user_id);
@@ -207,3 +235,7 @@ create policy "telemetry_summaries: update own"
   on public.telemetry_summaries for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+create policy "telemetry_summaries: delete own"
+  on public.telemetry_summaries for delete
+  using (auth.uid() = user_id);

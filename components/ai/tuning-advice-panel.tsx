@@ -440,6 +440,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
                   <button
                     key={value}
                     type="button"
+                    aria-pressed={feedbackOutcome === value}
                     onClick={() => setFeedbackOutcome(value as typeof feedbackOutcome)}
                     className={cn(
                       'min-h-11 rounded-lg px-2 text-xs font-semibold transition',

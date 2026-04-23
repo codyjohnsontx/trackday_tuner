@@ -211,10 +211,12 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
               ))}
             </ul>
           ) : null}
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
-            <p>{advice.prediction.expected_effect}</p>
-            <p className="mt-1 text-zinc-500">{advice.prediction.day_trend}</p>
-          </div>
+          {advice.prediction ? (
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
+              <p>{advice.prediction.expected_effect}</p>
+              <p className="mt-1 text-zinc-500">{advice.prediction.day_trend}</p>
+            </div>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             {Object.entries(advice.data_used).map(([key, used]) => (
               <span

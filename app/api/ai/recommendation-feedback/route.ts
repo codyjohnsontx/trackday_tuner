@@ -283,7 +283,7 @@ export async function POST(request: Request) {
   }
 
   if (validated.data.recommendation_id) {
-    await supabase
+    const { data: recommendationRow, error: recommendationError } = await supabase
       .from('ai_recommendations')
       .update({
         status: validated.data.outcome === 'worse' ? 'rejected' : 'applied',
@@ -291,7 +291,16 @@ export async function POST(request: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', validated.data.recommendation_id)
-      .eq('user_id', user.id);
+      .eq('user_id', user.id)
+      .select('id')
+      .maybeSingle();
+    if (recommendationError || !recommendationRow) {
+      console.error('[ai/recommendation-feedback] ai_recommendations update failed', {
+        userId: user.id,
+        recommendationId: validated.data.recommendation_id,
+        error: recommendationError?.message ?? 'Recommendation row was not updated.',
+      });
+    }
   }
 
   await updateMemory({

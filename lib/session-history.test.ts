@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSessionHistorySummary, getNotesPreview } from '@/lib/session-history';
+import { buildSessionHistorySummary, formatSessionTimeLabel, getNotesPreview } from '@/lib/session-history';
 import type { Session, SessionEnvironment } from '@/types';
 
 function session(partial: Partial<Session> = {}): Session {
@@ -68,12 +68,19 @@ describe('session-history helpers', () => {
     const preview = getNotesPreview(
       'This is a long note that should be truncated at a word boundary so the inline accordion summary stays tidy and does not turn into a full detail page replacement.',
     );
-    expect(preview).toMatch(/\.\.\.$/);
+    expect(preview).toMatch(/…$/);
     expect(preview?.length).toBeLessThanOrEqual(143);
   });
 
   it('omits notes preview when notes are blank', () => {
     expect(getNotesPreview('   ')).toBeNull();
     expect(buildSessionHistorySummary(session({ notes: '   ' }), null).notesPreview).toBeNull();
+  });
+
+  it('returns an empty time label for malformed times', () => {
+    expect(formatSessionTimeLabel('abc')).toBe('');
+    expect(formatSessionTimeLabel('12')).toBe('');
+    expect(formatSessionTimeLabel('25:10')).toBe('');
+    expect(formatSessionTimeLabel('10:99')).toBe('');
   });
 });

@@ -1,4 +1,5 @@
 import type { Session, SessionEnvironment } from '@/types';
+import { truncateAtWordBoundary } from '@/lib/utils';
 
 const conditionLabel: Record<string, string> = {
   sunny: 'Sunny',
@@ -8,14 +9,6 @@ const conditionLabel: Record<string, string> = {
 };
 
 const NOTES_PREVIEW_LIMIT = 140;
-
-function truncateAtWordBoundary(text: string, max: number): string {
-  if (text.length <= max) return text;
-  const window = text.slice(0, max);
-  const boundary = Math.max(window.lastIndexOf(' '), window.lastIndexOf(','), window.lastIndexOf('.'));
-  const cut = boundary > max * 0.6 ? window.slice(0, boundary).trimEnd() : window.trimEnd();
-  return `${cut}...`;
-}
 
 export function formatSessionDateLabel(dateString: string): string {
   const [year, month, day] = dateString.split('-').map(Number);
@@ -30,7 +23,10 @@ export function formatSessionDateLabel(dateString: string): string {
 
 export function formatSessionTimeLabel(time: string | null): string {
   if (!time) return '';
-  const [h, m] = time.split(':').map(Number);
+  const parts = time.split(':');
+  if (parts.length < 2) return '';
+  const [h, m] = parts.map(Number);
+  if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || h > 23 || m < 0 || m > 59) return '';
   const ampm = h >= 12 ? 'PM' : 'AM';
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
