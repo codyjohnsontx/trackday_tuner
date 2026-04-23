@@ -323,7 +323,7 @@ create policy "ai_recommendations: insert own"
       or exists (
         select 1
         from public.tracks t
-        where t.id = track_id and t.user_id = auth.uid()
+        where t.id = track_id and (t.created_by = auth.uid() or t.is_seeded = true)
       )
     )
     and (
@@ -358,7 +358,7 @@ create policy "ai_recommendations: update own"
       or exists (
         select 1
         from public.tracks t
-        where t.id = track_id and t.user_id = auth.uid()
+        where t.id = track_id and (t.created_by = auth.uid() or t.is_seeded = true)
       )
     )
     and (
@@ -390,7 +390,7 @@ create policy "ai_recommendations: update own"
       or exists (
         select 1
         from public.tracks t
-        where t.id = track_id and t.user_id = auth.uid()
+        where t.id = track_id and (t.created_by = auth.uid() or t.is_seeded = true)
       )
     )
     and (
@@ -430,7 +430,7 @@ create policy "session_feedback: insert own"
       or exists (
         select 1
         from public.tracks t
-        where t.id = track_id and t.user_id = auth.uid()
+        where t.id = track_id and (t.created_by = auth.uid() or t.is_seeded = true)
       )
     )
     and (
@@ -462,7 +462,7 @@ create policy "session_feedback: update own"
       or exists (
         select 1
         from public.tracks t
-        where t.id = track_id and t.user_id = auth.uid()
+        where t.id = track_id and (t.created_by = auth.uid() or t.is_seeded = true)
       )
     )
     and (
@@ -491,7 +491,7 @@ create policy "session_feedback: update own"
       or exists (
         select 1
         from public.tracks t
-        where t.id = track_id and t.user_id = auth.uid()
+        where t.id = track_id and (t.created_by = auth.uid() or t.is_seeded = true)
       )
     )
     and (
@@ -526,7 +526,7 @@ create policy "race_engineer_memory: insert own"
       or exists (
         select 1
         from public.tracks t
-        where t.id = track_id and t.user_id = auth.uid()
+        where t.id = track_id and (t.created_by = auth.uid() or t.is_seeded = true)
       )
     )
   );
@@ -545,7 +545,7 @@ create policy "race_engineer_memory: update own"
       or exists (
         select 1
         from public.tracks t
-        where t.id = track_id and t.user_id = auth.uid()
+        where t.id = track_id and (t.created_by = auth.uid() or t.is_seeded = true)
       )
     )
   )
@@ -561,7 +561,7 @@ create policy "race_engineer_memory: update own"
       or exists (
         select 1
         from public.tracks t
-        where t.id = track_id and t.user_id = auth.uid()
+        where t.id = track_id and (t.created_by = auth.uid() or t.is_seeded = true)
       )
     )
   );

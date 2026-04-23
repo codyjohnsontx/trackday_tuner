@@ -197,6 +197,23 @@ export async function POST(request: Request) {
   }
 
   const session = sessionRow as Session;
+  const recommendation =
+    validated.data.recommendation_id
+      ? await supabase
+          .from('ai_recommendations')
+          .select('id, vehicle_id')
+          .eq('id', validated.data.recommendation_id)
+          .eq('user_id', user.id)
+          .eq('vehicle_id', session.vehicle_id)
+          .maybeSingle()
+      : null;
+
+  if (validated.data.recommendation_id) {
+    if (recommendation?.error || !recommendation?.data) {
+      return errorResponse(404, 'Recommendation not found.', requestId);
+    }
+  }
+
   const symptoms = validated.data.symptoms ?? [];
   const { data: feedbackRow, error: feedbackError } = await supabase
     .from('session_feedback')
@@ -205,7 +222,7 @@ export async function POST(request: Request) {
       session_id: session.id,
       vehicle_id: session.vehicle_id,
       track_id: session.track_id,
-      recommendation_id: validated.data.recommendation_id ?? null,
+      recommendation_id: recommendation?.data?.id ?? null,
       outcome: validated.data.outcome,
       rider_confidence: validated.data.rider_confidence ?? null,
       symptoms,
@@ -225,7 +242,7 @@ export async function POST(request: Request) {
     return errorResponse(500, 'Internal server error processing feedback.', requestId);
   }
 
-  if (validated.data.recommendation_id) {
+  if (recommendation?.data) {
     const recommendationPatch: {
       status?: 'applied' | 'rejected';
       outcome_session_id: string;
@@ -243,14 +260,14 @@ export async function POST(request: Request) {
     const { data: recommendationRow, error: recommendationError } = await supabase
       .from('ai_recommendations')
       .update(recommendationPatch)
-      .eq('id', validated.data.recommendation_id)
+      .eq('id', recommendation.data.id)
       .eq('user_id', user.id)
       .select('id')
       .maybeSingle();
     if (recommendationError || !recommendationRow) {
       console.error('[ai/recommendation-feedback] ai_recommendations update failed', {
         userId: user.id,
-        recommendationId: validated.data.recommendation_id,
+        recommendationId: recommendation.data.id,
         error: recommendationError?.message ?? 'Recommendation row was not updated.',
       });
     }

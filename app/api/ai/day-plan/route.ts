@@ -111,6 +111,14 @@ function validateDayPlanRequest(input: unknown): ValidationResult {
       return { ok: false, error: 'target_date must be YYYY-MM-DD.' };
     }
   }
+  if (
+    Object.prototype.hasOwnProperty.call(record, 'time_zone') &&
+    record.time_zone !== undefined &&
+    record.time_zone !== null &&
+    typeof record.time_zone !== 'string'
+  ) {
+    return { ok: false, error: 'time_zone must be a string.' };
+  }
   const timeZone = typeof record.time_zone === 'string' && record.time_zone.trim()
     ? record.time_zone.trim()
     : undefined;
@@ -118,6 +126,14 @@ function validateDayPlanRequest(input: unknown): ValidationResult {
     return { ok: false, error: 'time_zone must be at most 100 characters.' };
   }
 
+  if (
+    Object.prototype.hasOwnProperty.call(record, 'track_name') &&
+    record.track_name !== undefined &&
+    record.track_name !== null &&
+    typeof record.track_name !== 'string'
+  ) {
+    return { ok: false, error: 'track_name must be a string.' };
+  }
   const trackName = typeof record.track_name === 'string' ? record.track_name.trim() : undefined;
   if (trackName && trackName.length > 120) {
     return { ok: false, error: 'track_name must be at most 120 characters.' };
@@ -130,6 +146,14 @@ function validateDayPlanRequest(input: unknown): ValidationResult {
   const humidity = validateNumber(record, 'humidity_percent', 0, 100);
   if (humidity && !humidity.ok) return humidity;
 
+  if (
+    Object.prototype.hasOwnProperty.call(record, 'weather_condition') &&
+    record.weather_condition !== undefined &&
+    record.weather_condition !== null &&
+    typeof record.weather_condition !== 'string'
+  ) {
+    return { ok: false, error: 'weather_condition must be a string.' };
+  }
   const weather = typeof record.weather_condition === 'string'
     ? record.weather_condition.trim()
     : undefined;
@@ -137,6 +161,14 @@ function validateDayPlanRequest(input: unknown): ValidationResult {
     return { ok: false, error: 'weather_condition must be at most 64 characters.' };
   }
 
+  if (
+    Object.prototype.hasOwnProperty.call(record, 'surface_condition') &&
+    record.surface_condition !== undefined &&
+    record.surface_condition !== null &&
+    typeof record.surface_condition !== 'string'
+  ) {
+    return { ok: false, error: 'surface_condition must be a string.' };
+  }
   const surface = typeof record.surface_condition === 'string'
     ? record.surface_condition.trim()
     : undefined;
@@ -291,8 +323,8 @@ async function findTargetTrackId(params: {
   const { data, error } = await params.supabase
     .from('tracks')
     .select('id')
-    .eq('user_id', params.userId)
     .eq('name', trackName)
+    .or(`is_seeded.eq.true,created_by.eq.${params.userId}`)
     .limit(1);
 
   if (error) {
