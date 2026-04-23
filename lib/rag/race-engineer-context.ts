@@ -237,6 +237,10 @@ export async function loadRaceEngineerContext(
   const candidates = (candidateRows ?? []) as Session[];
   const sessionIds = [session.id, ...candidates.map((candidate) => candidate.id)];
 
+  const trackFilter = session.track_id
+    ? `track_id.eq.${session.track_id},track_id.is.null`
+    : 'track_id.is.null';
+
   const [
     environmentResult,
     feedbackResult,
@@ -268,7 +272,7 @@ export async function loadRaceEngineerContext(
       .select('*')
       .eq('user_id', userId)
       .eq('vehicle_id', session.vehicle_id)
-      .or(`track_id.eq.${session.track_id ?? '00000000-0000-0000-0000-000000000000'},track_id.is.null`)
+      .or(trackFilter)
       .order('track_id', { ascending: false, nullsFirst: false })
       .order('updated_at', { ascending: false })
       .limit(1),

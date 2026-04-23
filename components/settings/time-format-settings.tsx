@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { readTimeFormat, writeTimeFormat, type TimeFormat } from '@/lib/time-format';
+import { cn } from '@/lib/utils';
 
 export function TimeFormatSettings() {
   const [format, setFormat] = useState<TimeFormat>('12h');
@@ -27,18 +28,20 @@ export function TimeFormatSettings() {
           <button
             type="button"
             onClick={() => set('12h')}
-            className={`px-3 py-1.5 font-medium transition ${
-              format === '12h' ? 'bg-cyan-400 text-zinc-950' : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'
-            }`}
+            className={cn(
+              'px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80',
+              format === '12h' ? 'bg-cyan-400 text-zinc-950' : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200',
+            )}
           >
             12-hour
           </button>
           <button
             type="button"
             onClick={() => set('24h')}
-            className={`px-3 py-1.5 font-medium transition ${
-              format === '24h' ? 'bg-cyan-400 text-zinc-950' : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'
-            }`}
+            className={cn(
+              'px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80',
+              format === '24h' ? 'bg-cyan-400 text-zinc-950' : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200',
+            )}
           >
             24-hour
           </button>

@@ -1,6 +1,19 @@
 alter table public.sessions
   add column if not exists updated_at timestamptz not null default now();
 
+create or replace function public.set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists sessions_set_updated_at on public.sessions;
+create trigger sessions_set_updated_at
+  before update on public.sessions
+  for each row execute function public.set_updated_at();
+
 create table if not exists public.session_environment (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,

@@ -18,11 +18,13 @@ function truncateAtWordBoundary(text: string, max: number): string {
 }
 
 export function formatSessionDateLabel(dateString: string): string {
-  const date = new Date(`${dateString}T00:00:00`);
+  const [year, month, day] = dateString.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
   return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    timeZone: 'UTC',
   });
 }
 

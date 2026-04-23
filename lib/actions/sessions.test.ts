@@ -155,6 +155,50 @@ describe('sessions actions', () => {
     expect(revalidatePath).toHaveBeenCalledWith('/dashboard');
   });
 
+  it('still returns success when optional environment insert fails', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const insertQuery = createQuery({
+      single: { data: { id: 'sess-1', ...validInput }, error: null },
+    });
+    const environmentInsertQuery = createQuery({
+      base: { data: null, error: { message: 'env failed' } },
+    });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('session_environment');
+        return environmentInsertQuery;
+      });
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await createSession({
+      ...validInput,
+      environment: {
+        ambient_temperature_c: 24,
+        source: 'manual',
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[sessions] session_environment insert failed',
+      expect.objectContaining({
+        userId: 'user-1',
+        sessionId: 'sess-1',
+        error: 'env failed',
+      }),
+    );
+    errorSpy.mockRestore();
+  });
+
   it('returns the closest previous session for same day and earlier time', async () => {
     vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
 

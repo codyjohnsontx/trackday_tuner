@@ -1,11 +1,20 @@
 'use client';
 
-import * as Dialog from '@radix-ui/react-dialog';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { Menu, X } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { APP_NAV_ITEMS, isActivePath } from '@/components/layout/app-nav-config';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogOverlay,
+  DialogPortal,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
 const linkRowClass =
@@ -18,8 +27,8 @@ export function HeaderAppMenu() {
   const settingsActive = isActivePath(pathname, '/settings');
 
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger asChild>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
         <button
           type="button"
           className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-100 transition hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-cyan-400/80"
@@ -29,33 +38,35 @@ export function HeaderAppMenu() {
         >
           <Menu className="h-5 w-5" aria-hidden />
         </button>
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 transition-opacity data-[state=closed]:opacity-0 data-[state=open]:opacity-100" />
-        <Dialog.Content
+      </DialogTrigger>
+      <DialogPortal>
+        <DialogOverlay />
+        <DialogContent
           id="app-menu-panel"
           className={cn(
-            'fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-sm flex-col border-l border-zinc-800 bg-zinc-950 shadow-xl outline-none',
+            'fixed inset-y-0 right-0 left-auto top-0 z-50 flex h-full w-full max-w-sm translate-x-0 translate-y-0 flex-col border-l border-zinc-800 bg-zinc-950 p-0 shadow-xl',
             'transition-transform duration-200 ease-out data-[state=closed]:translate-x-full data-[state=open]:translate-x-0',
           )}
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          <Dialog.Title className="sr-only">App menu</Dialog.Title>
-          <Dialog.Description className="sr-only">
+          <DialogTitle className="sr-only">App menu</DialogTitle>
+          <DialogDescription className="sr-only">
             Navigate the app, open settings, or sign out.
-          </Dialog.Description>
+          </DialogDescription>
 
           <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
             <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Menu</span>
-            <Dialog.Close asChild>
+            <DialogClose asChild>
               <button
                 type="button"
                 className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-cyan-400/80"
                 aria-label="Close menu"
               >
-                <X className="h-5 w-5" aria-hidden />
+                <span className="text-lg leading-none" aria-hidden>
+                  ×
+                </span>
               </button>
-            </Dialog.Close>
+            </DialogClose>
           </div>
 
           <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
@@ -106,8 +117,8 @@ export function HeaderAppMenu() {
               </li>
             </ul>
           </nav>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </DialogContent>
+      </DialogPortal>
+    </Dialog>
   );
 }

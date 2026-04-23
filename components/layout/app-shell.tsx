@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { HeaderAppMenu } from './header-app-menu';
+import { HeaderAppMenu } from '@/components/layout/header-app-menu';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -18,15 +18,15 @@ export function AppShell({ children, isAuthenticated }: AppShellProps) {
             Trackday Tuner
           </Link>
           <div className="flex shrink-0 items-center gap-2">
-            {isAuthenticated ? <HeaderAppMenu /> : null}
-            {!isAuthenticated ? (
+            {isAuthenticated && <HeaderAppMenu />}
+            {!isAuthenticated && (
               <Link
                 href="/login"
                 className="inline-flex min-h-11 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 px-3 text-xs font-semibold uppercase leading-none tracking-wide text-zinc-100 transition hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-cyan-400/80"
               >
                 Log In
               </Link>
-            ) : null}
+            )}
           </div>
         </div>
       </header>

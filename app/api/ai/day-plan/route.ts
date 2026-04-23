@@ -225,6 +225,28 @@ export async function POST(request: Request) {
       .limit(5),
   ]);
 
+  if (sessionsResult.error) {
+    console.error('[ai/day-plan] sessions query failed', {
+      userId: user.id,
+      vehicleId: vehicle.id,
+      error: sessionsResult.error.message,
+    });
+  }
+  if (memoryResult.error) {
+    console.error('[ai/day-plan] memory query failed', {
+      userId: user.id,
+      vehicleId: vehicle.id,
+      error: memoryResult.error.message,
+    });
+  }
+  if (feedbackResult.error) {
+    console.error('[ai/day-plan] feedback query failed', {
+      userId: user.id,
+      vehicleId: vehicle.id,
+      error: feedbackResult.error.message,
+    });
+  }
+
   const recentSessions = (sessionsResult.data ?? []) as Session[];
   const memory = ((memoryResult.data ?? [])[0] ?? null) as RaceEngineerMemory | null;
   const feedback = (feedbackResult.data ?? []) as SessionFeedback[];

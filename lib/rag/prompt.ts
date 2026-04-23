@@ -236,10 +236,11 @@ function formatRaceEngineerContext(context: RaceEngineerContext | null | undefin
   }
 
   if (context.telemetrySummary) {
+    const metricsJson = JSON.stringify(context.telemetrySummary.metrics);
     lines.push('  telemetry_summary:');
     lines.push(`    source: ${sanitizeFreeText(context.telemetrySummary.source)}`);
     lines.push(`    summary: ${sanitizeFreeText(context.telemetrySummary.summary ?? '(no summary)')}`);
-    lines.push(`    metrics: ${sanitizeFreeText(JSON.stringify(context.telemetrySummary.metrics).slice(0, 700))}`);
+    lines.push(`    metrics: ${sanitizeFreeText(truncateAtWordBoundary(metricsJson, 700))}`);
   } else {
     lines.push('  telemetry_summary: (none)');
   }

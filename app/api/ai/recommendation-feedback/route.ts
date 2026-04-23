@@ -184,7 +184,7 @@ async function updateMemory(params: {
   });
 
   if (existing) {
-    await params.supabase
+    const { error: updateError } = await params.supabase
       .from('race_engineer_memory')
       .update({
         summary: next.summary,
@@ -194,10 +194,18 @@ async function updateMemory(params: {
       })
       .eq('id', existing.id)
       .eq('user_id', params.userId);
+    if (updateError) {
+      console.error('[ai/recommendation-feedback] race_engineer_memory update failed', {
+        userId: params.userId,
+        vehicleId: params.session.vehicle_id,
+        trackId: params.session.track_id,
+        error: updateError.message,
+      });
+    }
     return;
   }
 
-  await params.supabase.from('race_engineer_memory').insert({
+  const { error: insertError } = await params.supabase.from('race_engineer_memory').insert({
     user_id: params.userId,
     vehicle_id: params.session.vehicle_id,
     track_id: params.session.track_id,
@@ -205,6 +213,14 @@ async function updateMemory(params: {
     patterns: next.patterns,
     evidence_count: next.evidence_count,
   });
+  if (insertError) {
+    console.error('[ai/recommendation-feedback] race_engineer_memory insert failed', {
+      userId: params.userId,
+      vehicleId: params.session.vehicle_id,
+      trackId: params.session.track_id,
+      error: insertError.message,
+    });
+  }
 }
 
 export async function POST(request: Request) {

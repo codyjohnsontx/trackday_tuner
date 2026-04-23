@@ -14,6 +14,7 @@ export function readTimeFormat(): TimeFormat {
 }
 
 export function writeTimeFormat(format: TimeFormat): void {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return;
   localStorage.setItem(TIME_FORMAT_STORAGE_KEY, format);
   window.dispatchEvent(new CustomEvent<TimeFormat>(TIME_FORMAT_CHANGE_EVENT, { detail: format }));
 }

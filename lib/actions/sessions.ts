@@ -217,7 +217,13 @@ export async function createSession(
       .from('session_environment')
       .insert(environmentPayload);
 
-    if (environmentError) return { ok: false, error: environmentError.message };
+    if (environmentError) {
+      console.error('[sessions] session_environment insert failed', {
+        userId: user.id,
+        sessionId: createdSession.id,
+        error: environmentError.message,
+      });
+    }
   }
 
   revalidatePath('/sessions');
