@@ -419,6 +419,7 @@ export type Database = {
           notes: string | null;
           lap_time_delta_ms: number | null;
           created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
@@ -433,6 +434,7 @@ export type Database = {
           notes?: string | null;
           lap_time_delta_ms?: number | null;
           created_at?: string;
+          updated_at?: string;
         };
         Update: {
           id?: string;
@@ -447,6 +449,7 @@ export type Database = {
           notes?: string | null;
           lap_time_delta_ms?: number | null;
           created_at?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };

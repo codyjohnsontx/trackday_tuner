@@ -407,6 +407,14 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
     const alignmentData: Alignment | null =
       selectedVehicleType === 'car' && sanitizedModules.alignment ? alignment : null;
     const extraModules = buildExtraModules(sanitizedModules);
+    const trimmedWeatherCondition = weatherCondition.trim();
+    const trimmedSurfaceCondition = surfaceCondition.trim();
+    const hasEnvironmentData =
+      parsedAmbientTemperature !== null ||
+      parsedTrackTemperature !== null ||
+      parsedHumidity !== null ||
+      trimmedWeatherCondition.length > 0 ||
+      trimmedSurfaceCondition.length > 0;
 
     startTransition(async () => {
       const result = await createSession({
@@ -422,14 +430,16 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
         alignment: alignmentData,
         enabled_modules: sanitizedModules,
         extra_modules: extraModules,
-        environment: {
-          ambient_temperature_c: parsedAmbientTemperature,
-          track_temperature_c: parsedTrackTemperature,
-          humidity_percent: parsedHumidity,
-          weather_condition: weatherCondition.trim() || null,
-          surface_condition: surfaceCondition.trim() || null,
-          source: 'manual',
-        },
+        environment: hasEnvironmentData
+          ? {
+              ambient_temperature_c: parsedAmbientTemperature,
+              track_temperature_c: parsedTrackTemperature,
+              humidity_percent: parsedHumidity,
+              weather_condition: trimmedWeatherCondition || null,
+              surface_condition: trimmedSurfaceCondition || null,
+              source: 'manual',
+            }
+          : undefined,
         notes: notes.trim() || null,
       });
 

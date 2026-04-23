@@ -279,7 +279,13 @@ export async function POST(request: Request) {
     .single();
 
   if (feedbackError) {
-    return errorResponse(500, feedbackError.message, requestId);
+    console.error('[ai/recommendation-feedback] feedback insert failed', {
+      requestId,
+      userId: user.id,
+      sessionId: session.id,
+      error: feedbackError.message,
+    });
+    return errorResponse(500, 'Internal server error processing feedback.', requestId);
   }
 
   if (validated.data.recommendation_id) {

@@ -32,6 +32,10 @@ type ValidationResult =
   | { ok: true; data: DayPlanRequest }
   | { ok: false; error: string };
 
+type NumberValidationResult =
+  | { ok: true; value: number }
+  | { ok: false; error: string };
+
 function errorResponse(status: number, error: string, requestId: string) {
   return NextResponse.json(
     { ok: false, error, request_id: requestId },
@@ -44,7 +48,7 @@ function validateNumber(
   key: keyof DayPlanRequest,
   min: number,
   max: number,
-): number | undefined | ValidationResult {
+): NumberValidationResult | undefined {
   const value = record[key];
   if (value === undefined || value === null || value === '') return undefined;
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -53,7 +57,7 @@ function validateNumber(
   if (value < min || value > max) {
     return { ok: false, error: `${key} must be between ${min} and ${max}.` };
   }
-  return value;
+  return { ok: true, value };
 }
 
 function validateDayPlanRequest(input: unknown): ValidationResult {
@@ -92,11 +96,11 @@ function validateDayPlanRequest(input: unknown): ValidationResult {
   }
 
   const ambient = validateNumber(record, 'ambient_temperature_c', -40, 70);
-  if (typeof ambient === 'object') return ambient;
+  if (ambient && !ambient.ok) return ambient;
   const track = validateNumber(record, 'track_temperature_c', -40, 95);
-  if (typeof track === 'object') return track;
+  if (track && !track.ok) return track;
   const humidity = validateNumber(record, 'humidity_percent', 0, 100);
-  if (typeof humidity === 'object') return humidity;
+  if (humidity && !humidity.ok) return humidity;
 
   const weather = typeof record.weather_condition === 'string'
     ? record.weather_condition.trim()
@@ -118,9 +122,9 @@ function validateDayPlanRequest(input: unknown): ValidationResult {
       vehicle_id: record.vehicle_id,
       target_date: targetDate,
       track_name: trackName || undefined,
-      ambient_temperature_c: ambient,
-      track_temperature_c: track,
-      humidity_percent: humidity,
+      ambient_temperature_c: ambient?.value,
+      track_temperature_c: track?.value,
+      humidity_percent: humidity?.value,
       weather_condition: weather || undefined,
       surface_condition: surface || undefined,
     },

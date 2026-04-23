@@ -79,6 +79,7 @@ create table if not exists public.session_feedback (
   notes text,
   lap_time_delta_ms integer,
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   constraint session_feedback_outcome_check
     check (outcome in ('better', 'same', 'worse', 'unknown')),
   constraint session_feedback_confidence_check
@@ -137,6 +138,11 @@ create trigger session_environment_set_updated_at
 drop trigger if exists ai_recommendations_set_updated_at on public.ai_recommendations;
 create trigger ai_recommendations_set_updated_at
   before update on public.ai_recommendations
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists session_feedback_set_updated_at on public.session_feedback;
+create trigger session_feedback_set_updated_at
+  before update on public.session_feedback
   for each row execute function public.set_updated_at();
 
 drop trigger if exists race_engineer_memory_set_updated_at on public.race_engineer_memory;

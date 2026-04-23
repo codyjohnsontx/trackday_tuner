@@ -84,4 +84,51 @@ describe('selectSimilarSessions', () => {
     expect(result[0].reasons).toContain('same track');
     expect(result[0].reasons).toContain('similar ambient temperature');
   });
+
+  it('returns no matches when there are no candidates', () => {
+    const result = selectSimilarSessions({
+      current: baseSession,
+      candidates: [],
+      environments: [environment(baseSession.id, 26)],
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it('still matches same-track sessions without environment rows', () => {
+    const sameTrack = {
+      ...baseSession,
+      id: 'same-track-no-env',
+      date: '2026-04-21',
+    };
+
+    const result = selectSimilarSessions({
+      current: baseSession,
+      candidates: [sameTrack],
+      environments: [environment(baseSession.id, 26)],
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].session.id).toBe('same-track-no-env');
+    expect(result[0].reasons).toContain('same track');
+    expect(result[0].reasons).not.toContain('similar ambient temperature');
+  });
+
+  it('does not tag far-apart same-track sessions as similar ambient temperature', () => {
+    const sameTrack = {
+      ...baseSession,
+      id: 'same-track-hot',
+      date: '2026-04-21',
+    };
+
+    const result = selectSimilarSessions({
+      current: baseSession,
+      candidates: [sameTrack],
+      environments: [environment(baseSession.id, 26), environment(sameTrack.id, 44)],
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].reasons).toContain('same track');
+    expect(result[0].reasons).not.toContain('similar ambient temperature');
+  });
 });

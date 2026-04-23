@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import type { AdviceResponse } from '@/lib/rag/schema';
@@ -26,6 +26,14 @@ interface DayPlanError {
 
 type DayPlanResponse = DayPlanSuccess | DayPlanError;
 
+const DATA_USED_LABELS: Record<string, string> = {
+  manual: 'Manual Input',
+  weather: 'Weather Data',
+  history: 'Session History',
+  feedback: 'Past Feedback',
+  telemetry: 'Telemetry',
+};
+
 export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id ?? '');
   const [trackName, setTrackName] = useState('');
@@ -40,6 +48,11 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
     () => vehicles.find((vehicle) => vehicle.id === vehicleId) ?? null,
     [vehicleId, vehicles],
   );
+
+  useEffect(() => {
+    if (vehicles.some((vehicle) => vehicle.id === vehicleId)) return;
+    setVehicleId(vehicles[0]?.id ?? '');
+  }, [vehicleId, vehicles]);
 
   if (tier !== 'pro') {
     return (
@@ -90,12 +103,22 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
           weather_condition: weatherCondition.trim() || undefined,
         }),
       });
-      const parsed = await res.json() as DayPlanResponse;
-      if (!parsed.ok) {
-        setError(parsed.error ?? `Request failed (${res.status}).`);
+      const parsed: unknown = await res.json();
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        Array.isArray(parsed) ||
+        typeof (parsed as { ok?: unknown }).ok !== 'boolean'
+      ) {
+        setError(`Unexpected response format (${res.status}).`);
         return;
       }
-      setResponse(parsed);
+      const safeParsed = parsed as DayPlanResponse;
+      if (!safeParsed.ok) {
+        setError(safeParsed.error ?? `Request failed (${res.status}).`);
+        return;
+      }
+      setResponse(safeParsed);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to generate a day plan.');
     } finally {
@@ -228,7 +251,7 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
                     : 'border-zinc-800 bg-zinc-950 text-zinc-500',
                 )}
               >
-                {key}
+                {DATA_USED_LABELS[key] ?? key}
               </span>
             ))}
           </div>

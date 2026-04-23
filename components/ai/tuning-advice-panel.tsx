@@ -30,6 +30,14 @@ const INTENT_OPTIONS: Array<{ id: string; label: string }> = [
   { id: 'better_feel', label: 'Better feel' },
 ];
 
+const DATA_USED_LABELS: Record<string, string> = {
+  manual: 'Manual Input',
+  weather: 'Weather Data',
+  history: 'Session History',
+  feedback: 'Past Feedback',
+  telemetry: 'Telemetry',
+};
+
 interface TuningAdvicePanelProps {
   sessionId: string;
   vehicleId: string;
@@ -391,7 +399,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
                       : 'border-zinc-800 bg-zinc-950 text-zinc-500',
                   )}
                 >
-                  {key}
+                  {DATA_USED_LABELS[key] ?? key}
                 </span>
               ))}
             </div>

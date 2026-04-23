@@ -10,8 +10,6 @@ import {
   DialogClose,
   DialogContent,
   DialogDescription,
-  DialogOverlay,
-  DialogPortal,
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
@@ -39,16 +37,14 @@ export function HeaderAppMenu() {
           <Menu className="h-5 w-5" aria-hidden />
         </button>
       </DialogTrigger>
-      <DialogPortal>
-        <DialogOverlay />
-        <DialogContent
-          id="app-menu-panel"
-          className={cn(
-            'fixed inset-y-0 right-0 left-auto top-0 z-50 flex h-full w-full max-w-sm translate-x-0 translate-y-0 flex-col border-l border-zinc-800 bg-zinc-950 p-0 shadow-xl',
-            'transition-transform duration-200 ease-out data-[state=closed]:translate-x-full data-[state=open]:translate-x-0',
-          )}
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
+      <DialogContent
+        id="app-menu-panel"
+        className={cn(
+          'fixed inset-y-0 right-0 left-auto top-0 z-50 flex h-full w-full max-w-sm translate-x-0 translate-y-0 flex-col border-l border-zinc-800 bg-zinc-950 p-0 shadow-xl',
+          'transition-transform duration-200 ease-out data-[state=closed]:translate-x-full data-[state=open]:translate-x-0',
+        )}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
           <DialogTitle className="sr-only">App menu</DialogTitle>
           <DialogDescription className="sr-only">
             Navigate the app, open settings, or sign out.
@@ -59,7 +55,7 @@ export function HeaderAppMenu() {
             <DialogClose asChild>
               <button
                 type="button"
-                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-cyan-400/80"
                 aria-label="Close menu"
               >
                 <span className="text-lg leading-none" aria-hidden>
@@ -117,8 +113,7 @@ export function HeaderAppMenu() {
               </li>
             </ul>
           </nav>
-        </DialogContent>
-      </DialogPortal>
+      </DialogContent>
     </Dialog>
   );
 }

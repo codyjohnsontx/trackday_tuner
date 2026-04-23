@@ -15,7 +15,10 @@ export function TimeDisplay({ time }: { time: string | null }) {
   useEffect(() => {
     setFormat(readTimeFormat());
 
-    const onCustom = () => setFormat(readTimeFormat());
+    const onCustom = (event: Event) => {
+      const detail = (event as CustomEvent<TimeFormat>).detail;
+      setFormat(detail);
+    };
     const onStorage = (e: StorageEvent) => {
       if (e.key === TIME_FORMAT_STORAGE_KEY) setFormat(readTimeFormat());
     };
