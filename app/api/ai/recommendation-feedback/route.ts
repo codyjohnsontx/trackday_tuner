@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { createClient } from '@/lib/supabase/server';
-import type { FeedbackOutcome, Json, RaceEngineerMemory, Session } from '@/types';
+import type { FeedbackOutcome, Session } from '@/types';
 
 export const runtime = 'nodejs';
 
@@ -127,41 +127,6 @@ function validateFeedbackRequest(input: unknown): ValidationResult {
   };
 }
 
-function buildMemorySummary(params: {
-  existing: RaceEngineerMemory | null;
-  session: Session;
-  outcome: FeedbackOutcome;
-  symptoms: string[];
-  notes?: string;
-}): { summary: string; patterns: Json; evidence_count: number } {
-  const evidenceCount = (params.existing?.evidence_count ?? 0) + 1;
-  const symptomText = params.symptoms.length > 0 ? params.symptoms.join(', ') : 'no structured symptoms';
-  const noteText = params.notes ? ` Notes: ${params.notes}` : '';
-  const latest = `Latest feedback at ${params.session.track_name ?? 'unknown track'}: ${params.outcome} with ${symptomText}.${noteText}`;
-  const prior = params.existing?.summary?.trim();
-  const summary = prior ? `${latest}\n${prior}`.slice(0, 1800) : latest;
-  const existingPatterns =
-    params.existing?.patterns && typeof params.existing.patterns === 'object'
-      ? params.existing.patterns
-      : {};
-
-  return {
-    summary,
-    evidence_count: evidenceCount,
-    patterns: {
-      ...existingPatterns,
-      last_feedback: {
-        session_id: params.session.id,
-        track_name: params.session.track_name,
-        outcome: params.outcome,
-        symptoms: params.symptoms,
-        notes: params.notes ?? null,
-        date: params.session.date,
-      },
-    },
-  };
-}
-
 async function updateMemory(params: {
   supabase: Awaited<ReturnType<typeof createClient>>;
   userId: string;
@@ -170,46 +135,29 @@ async function updateMemory(params: {
   symptoms: string[];
   notes?: string;
 }): Promise<void> {
-  let query = params.supabase
-    .from('race_engineer_memory')
-    .select('*')
-    .eq('user_id', params.userId)
-    .eq('vehicle_id', params.session.vehicle_id);
-
-  query = params.session.track_id ? query.eq('track_id', params.session.track_id) : query.is('track_id', null);
-  const { data: existingRows } = await query.limit(1);
-  const existing = ((existingRows ?? [])[0] ?? null) as RaceEngineerMemory | null;
-  const next = buildMemorySummary({
-    existing,
-    session: params.session,
-    outcome: params.outcome,
-    symptoms: params.symptoms,
-    notes: params.notes,
+  const rpcClient = params.supabase as unknown as {
+    rpc: (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => PromiseLike<{ error: { message: string } | null }>;
+  };
+  const { error } = await rpcClient.rpc('record_race_engineer_memory_feedback', {
+    p_user_id: params.userId,
+    p_vehicle_id: params.session.vehicle_id,
+    p_track_id: params.session.track_id,
+    p_session_id: params.session.id,
+    p_track_name: params.session.track_name,
+    p_session_date: params.session.date,
+    p_outcome: params.outcome,
+    p_symptoms: params.symptoms,
+    p_notes: params.notes ?? null,
   });
-
-  const { error: upsertError } = await params.supabase
-    .from('race_engineer_memory')
-    .upsert(
-      {
-        id: existing?.id,
-        user_id: params.userId,
-        vehicle_id: params.session.vehicle_id,
-        track_id: params.session.track_id,
-        summary: next.summary,
-        patterns: next.patterns,
-        evidence_count: next.evidence_count,
-        updated_at: new Date().toISOString(),
-      },
-      {
-        onConflict: 'user_id,vehicle_id,track_id',
-      },
-    );
-  if (upsertError) {
-    console.error('[ai/recommendation-feedback] race_engineer_memory upsert failed', {
+  if (error) {
+    console.error('[ai/recommendation-feedback] race_engineer_memory rpc failed', {
       userId: params.userId,
       vehicleId: params.session.vehicle_id,
       trackId: params.session.track_id,
-      error: upsertError.message,
+      error: error.message,
     });
   }
 }

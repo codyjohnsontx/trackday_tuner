@@ -18,9 +18,9 @@ export function readTimeFormat(): TimeFormat {
 }
 
 export function writeTimeFormat(format: TimeFormat): void {
-  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return;
+  if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(TIME_FORMAT_STORAGE_KEY, format);
+    window.localStorage.setItem(TIME_FORMAT_STORAGE_KEY, format);
   } catch {
     // Ignore storage failures so the in-memory UI state can still update.
   }

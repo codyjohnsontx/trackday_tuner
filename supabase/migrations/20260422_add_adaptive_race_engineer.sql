@@ -112,6 +112,82 @@ create unique index if not exists race_engineer_memory_scope_key
 create index if not exists race_engineer_memory_user_vehicle_idx
   on public.race_engineer_memory(user_id, vehicle_id, updated_at desc);
 
+create or replace function public.record_race_engineer_memory_feedback(
+  p_user_id uuid,
+  p_vehicle_id uuid,
+  p_track_id uuid,
+  p_session_id uuid,
+  p_track_name text,
+  p_session_date date,
+  p_outcome text,
+  p_symptoms text[],
+  p_notes text
+)
+returns void
+language plpgsql
+security invoker
+as $$
+declare
+  latest_summary text;
+  latest_feedback jsonb;
+begin
+  latest_summary := format(
+    'Latest feedback at %s: %s with %s.%s',
+    coalesce(p_track_name, 'unknown track'),
+    p_outcome,
+    case
+      when coalesce(array_length(p_symptoms, 1), 0) > 0 then array_to_string(p_symptoms, ', ')
+      else 'no structured symptoms'
+    end,
+    case
+      when p_notes is not null and btrim(p_notes) <> '' then ' Notes: ' || p_notes
+      else ''
+    end
+  );
+
+  latest_feedback := jsonb_build_object(
+    'session_id', p_session_id,
+    'track_name', p_track_name,
+    'outcome', p_outcome,
+    'symptoms', coalesce(to_jsonb(p_symptoms), '[]'::jsonb),
+    'notes', p_notes,
+    'date', p_session_date
+  );
+
+  insert into public.race_engineer_memory (
+    user_id,
+    vehicle_id,
+    track_id,
+    summary,
+    patterns,
+    evidence_count,
+    updated_at
+  )
+  values (
+    p_user_id,
+    p_vehicle_id,
+    p_track_id,
+    latest_summary,
+    jsonb_build_object('last_feedback', latest_feedback),
+    1,
+    now()
+  )
+  on conflict (user_id, vehicle_id, track_id) do update
+  set
+    summary = left(
+      case
+        when public.race_engineer_memory.summary is null or public.race_engineer_memory.summary = '' then latest_summary
+        else latest_summary || E'\n' || public.race_engineer_memory.summary
+      end,
+      1800
+    ),
+    patterns = coalesce(public.race_engineer_memory.patterns, '{}'::jsonb)
+      || jsonb_build_object('last_feedback', latest_feedback),
+    evidence_count = public.race_engineer_memory.evidence_count + 1,
+    updated_at = now();
+end;
+$$;
+
 create table if not exists public.telemetry_summaries (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -217,7 +293,7 @@ create policy "ai_recommendations: insert own"
       or exists (
         select 1
         from public.sessions s
-        where s.id = session_id and s.user_id = auth.uid()
+        where s.id = session_id and s.user_id = auth.uid() and s.vehicle_id = ai_recommendations.vehicle_id
       )
     )
     and (
@@ -233,7 +309,7 @@ create policy "ai_recommendations: insert own"
       or exists (
         select 1
         from public.sessions s
-        where s.id = outcome_session_id and s.user_id = auth.uid()
+        where s.id = outcome_session_id and s.user_id = auth.uid() and s.vehicle_id = ai_recommendations.vehicle_id
       )
     )
   );
@@ -252,7 +328,7 @@ create policy "ai_recommendations: update own"
       or exists (
         select 1
         from public.sessions s
-        where s.id = session_id and s.user_id = auth.uid()
+        where s.id = session_id and s.user_id = auth.uid() and s.vehicle_id = ai_recommendations.vehicle_id
       )
     )
     and (
@@ -268,7 +344,7 @@ create policy "ai_recommendations: update own"
       or exists (
         select 1
         from public.sessions s
-        where s.id = outcome_session_id and s.user_id = auth.uid()
+        where s.id = outcome_session_id and s.user_id = auth.uid() and s.vehicle_id = ai_recommendations.vehicle_id
       )
     )
   )
@@ -284,7 +360,7 @@ create policy "ai_recommendations: update own"
       or exists (
         select 1
         from public.sessions s
-        where s.id = session_id and s.user_id = auth.uid()
+        where s.id = session_id and s.user_id = auth.uid() and s.vehicle_id = ai_recommendations.vehicle_id
       )
     )
     and (
@@ -300,7 +376,7 @@ create policy "ai_recommendations: update own"
       or exists (
         select 1
         from public.sessions s
-        where s.id = outcome_session_id and s.user_id = auth.uid()
+        where s.id = outcome_session_id and s.user_id = auth.uid() and s.vehicle_id = ai_recommendations.vehicle_id
       )
     )
   );
@@ -320,7 +396,7 @@ create policy "session_feedback: insert own"
     and exists (
       select 1
       from public.sessions s
-      where s.id = session_id and s.user_id = auth.uid()
+      where s.id = session_id and s.user_id = auth.uid() and s.vehicle_id = session_feedback.vehicle_id
     )
     and exists (
       select 1
@@ -340,7 +416,7 @@ create policy "session_feedback: insert own"
       or exists (
         select 1
         from public.ai_recommendations r
-        where r.id = recommendation_id and r.user_id = auth.uid()
+        where r.id = recommendation_id and r.user_id = auth.uid() and r.vehicle_id = session_feedback.vehicle_id
       )
     )
   );
@@ -352,7 +428,7 @@ create policy "session_feedback: update own"
     and exists (
       select 1
       from public.sessions s
-      where s.id = session_id and s.user_id = auth.uid()
+      where s.id = session_id and s.user_id = auth.uid() and s.vehicle_id = session_feedback.vehicle_id
     )
     and exists (
       select 1
@@ -372,7 +448,7 @@ create policy "session_feedback: update own"
       or exists (
         select 1
         from public.ai_recommendations r
-        where r.id = recommendation_id and r.user_id = auth.uid()
+        where r.id = recommendation_id and r.user_id = auth.uid() and r.vehicle_id = session_feedback.vehicle_id
       )
     )
   )
@@ -381,7 +457,7 @@ create policy "session_feedback: update own"
     and exists (
       select 1
       from public.sessions s
-      where s.id = session_id and s.user_id = auth.uid()
+      where s.id = session_id and s.user_id = auth.uid() and s.vehicle_id = session_feedback.vehicle_id
     )
     and exists (
       select 1
@@ -401,7 +477,7 @@ create policy "session_feedback: update own"
       or exists (
         select 1
         from public.ai_recommendations r
-        where r.id = recommendation_id and r.user_id = auth.uid()
+        where r.id = recommendation_id and r.user_id = auth.uid() and r.vehicle_id = session_feedback.vehicle_id
       )
     )
   );
@@ -483,7 +559,7 @@ create policy "telemetry_summaries: insert own"
     and exists (
       select 1
       from public.sessions s
-      where s.id = session_id and s.user_id = auth.uid()
+      where s.id = session_id and s.user_id = auth.uid() and s.vehicle_id = telemetry_summaries.vehicle_id
     )
     and exists (
       select 1
@@ -499,7 +575,7 @@ create policy "telemetry_summaries: update own"
     and exists (
       select 1
       from public.sessions s
-      where s.id = session_id and s.user_id = auth.uid()
+      where s.id = session_id and s.user_id = auth.uid() and s.vehicle_id = telemetry_summaries.vehicle_id
     )
     and exists (
       select 1
@@ -512,7 +588,7 @@ create policy "telemetry_summaries: update own"
     and exists (
       select 1
       from public.sessions s
-      where s.id = session_id and s.user_id = auth.uid()
+      where s.id = session_id and s.user_id = auth.uid() and s.vehicle_id = telemetry_summaries.vehicle_id
     )
     and exists (
       select 1

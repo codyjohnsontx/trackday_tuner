@@ -42,6 +42,18 @@ function getLocalIsoDate(): string {
   return `${year}-${month}-${day}`;
 }
 
+function isDayPlanSuccess(value: DayPlanResponse): value is DayPlanSuccess {
+  return (
+    value.ok === true &&
+    typeof value.request_id === 'string' &&
+    !!value.advice &&
+    typeof value.advice === 'object' &&
+    Array.isArray(value.advice.recommended_changes) &&
+    typeof value.advice.summary === 'string' &&
+    typeof value.advice.confidence === 'string'
+  );
+}
+
 export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id ?? '');
   const [trackName, setTrackName] = useState('');
@@ -90,6 +102,11 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
     setError('');
     setResponse(null);
 
+    if (!vehicleId) {
+      setError('Select a vehicle before generating a day plan.');
+      return;
+    }
+
     const ambient = parseOptionalNumber(ambientTemperatureC);
     const track = parseOptionalNumber(trackTemperatureC);
     if (Number.isNaN(ambient) || Number.isNaN(track)) {
@@ -127,9 +144,14 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
         setError(safeParsed.error ?? `Request failed (${res.status}).`);
         return;
       }
+      if (!isDayPlanSuccess(safeParsed)) {
+        setError('Unexpected response shape on success.');
+        return;
+      }
       setResponse(safeParsed);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to generate a day plan.');
+      console.error('[day-plan-panel] request failed', err);
+      setError('Unable to generate a day plan. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -154,6 +176,7 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
             onChange={(event) => setVehicleId(event.target.value)}
             className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
           >
+            <option value="">Select vehicle</option>
             {vehicles.map((vehicle) => (
               <option key={vehicle.id} value={vehicle.id}>
                 {vehicle.nickname}
@@ -212,7 +235,7 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
           <p className="text-xs text-zinc-500">Planning for {selectedVehicle.nickname}.</p>
         ) : null}
 
-        <Button type="submit" fullWidth loading={loading}>
+        <Button type="submit" fullWidth loading={loading} disabled={!vehicleId}>
           {loading ? 'Planning...' : 'Generate Morning Plan'}
         </Button>
       </form>

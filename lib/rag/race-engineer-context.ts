@@ -284,6 +284,49 @@ export async function loadRaceEngineerContext(
       .limit(1),
   ]);
 
+  const degradedContext =
+    Boolean(environmentResult.error) ||
+    Boolean(feedbackResult.error) ||
+    Boolean(recommendationResult.error) ||
+    Boolean(memoryResult.error) ||
+    Boolean(telemetryResult.error);
+
+  if (environmentResult.error) {
+    console.error('[race-engineer-context] session_environment query failed', {
+      userId,
+      sessionId: session.id,
+      error: environmentResult.error.message,
+    });
+  }
+  if (feedbackResult.error) {
+    console.error('[race-engineer-context] session_feedback query failed', {
+      userId,
+      sessionId: session.id,
+      error: feedbackResult.error.message,
+    });
+  }
+  if (recommendationResult.error) {
+    console.error('[race-engineer-context] ai_recommendations query failed', {
+      userId,
+      sessionId: session.id,
+      error: recommendationResult.error.message,
+    });
+  }
+  if (memoryResult.error) {
+    console.error('[race-engineer-context] race_engineer_memory query failed', {
+      userId,
+      sessionId: session.id,
+      error: memoryResult.error.message,
+    });
+  }
+  if (telemetryResult.error) {
+    console.error('[race-engineer-context] telemetry_summaries query failed', {
+      userId,
+      sessionId: session.id,
+      error: telemetryResult.error.message,
+    });
+  }
+
   const environments = (environmentResult.data ?? []) as SessionEnvironment[];
   const sessionEnvironment = environmentFor(session.id, environments);
   const similarSessions = selectSimilarSessions({
@@ -297,7 +340,10 @@ export async function loadRaceEngineerContext(
   const memory = ((memoryResult.data ?? [])[0] ?? null) as RaceEngineerMemory | null;
   const telemetrySummary = ((telemetryResult.data ?? [])[0] ?? null) as TelemetrySummary | null;
 
-  const dayTrend = buildDayTrend(session, sessionEnvironment, similarSessions);
+  const dayTrendBase = buildDayTrend(session, sessionEnvironment, similarSessions);
+  const dayTrend = degradedContext
+    ? `Adaptive context is partially unavailable because one or more history queries failed. ${dayTrendBase}`
+    : dayTrendBase;
 
   return {
     similarSessions,

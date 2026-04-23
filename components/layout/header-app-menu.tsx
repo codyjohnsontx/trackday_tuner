@@ -104,6 +104,7 @@ export function HeaderAppMenu() {
               <li>
                 <Link
                   href="/logout"
+                  prefetch={false}
                   className={cn(linkRowClass, 'text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100')}
                   onClick={() => setOpen(false)}
                 >

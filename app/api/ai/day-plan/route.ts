@@ -266,6 +266,82 @@ function buildContext(params: {
   };
 }
 
+async function findTargetTrackId(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  userId: string;
+  trackName?: string;
+}): Promise<string | null> {
+  const trackName = params.trackName?.trim();
+  if (!trackName) return null;
+
+  const { data, error } = await params.supabase
+    .from('tracks')
+    .select('id')
+    .eq('user_id', params.userId)
+    .eq('name', trackName)
+    .limit(1);
+
+  if (error) {
+    console.error('[ai/day-plan] track lookup failed', {
+      userId: params.userId,
+      trackName,
+      error: error.message,
+    });
+    return null;
+  }
+
+  return data?.[0]?.id ?? null;
+}
+
+async function loadPreferredMemory(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  userId: string;
+  vehicleId: string;
+  trackId: string | null;
+}): Promise<RaceEngineerMemory | null> {
+  if (params.trackId) {
+    const { data, error } = await params.supabase
+      .from('race_engineer_memory')
+      .select('*')
+      .eq('user_id', params.userId)
+      .eq('vehicle_id', params.vehicleId)
+      .eq('track_id', params.trackId)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.error('[ai/day-plan] exact-track memory query failed', {
+        userId: params.userId,
+        vehicleId: params.vehicleId,
+        trackId: params.trackId,
+        error: error.message,
+      });
+    } else if (data?.[0]) {
+      return data[0] as RaceEngineerMemory;
+    }
+  }
+
+  const { data, error } = await params.supabase
+    .from('race_engineer_memory')
+    .select('*')
+    .eq('user_id', params.userId)
+    .eq('vehicle_id', params.vehicleId)
+    .is('track_id', null)
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error('[ai/day-plan] fallback memory query failed', {
+      userId: params.userId,
+      vehicleId: params.vehicleId,
+      error: error.message,
+    });
+    return null;
+  }
+
+  return (data?.[0] ?? null) as RaceEngineerMemory | null;
+}
+
 export async function POST(request: Request) {
   const requestId = randomUUID();
 
@@ -304,7 +380,7 @@ export async function POST(request: Request) {
   }
 
   const vehicle = vehicleRow as Vehicle;
-  const [sessionsResult, environmentsResult, memoryResult, feedbackResult] = await Promise.all([
+  const [sessionsResult, feedbackResult, targetTrackId] = await Promise.all([
     supabase
       .from('sessions')
       .select('*')
@@ -314,23 +390,17 @@ export async function POST(request: Request) {
       .order('start_time', { ascending: false, nullsFirst: false })
       .limit(10),
     supabase
-      .from('session_environment')
-      .select('*')
-      .eq('user_id', user.id),
-    supabase
-      .from('race_engineer_memory')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('vehicle_id', vehicle.id)
-      .order('updated_at', { ascending: false })
-      .limit(1),
-    supabase
       .from('session_feedback')
       .select('*')
       .eq('user_id', user.id)
       .eq('vehicle_id', vehicle.id)
       .order('created_at', { ascending: false })
       .limit(5),
+    findTargetTrackId({
+      supabase,
+      userId: user.id,
+      trackName: validated.data.track_name,
+    }),
   ]);
 
   if (sessionsResult.error) {
@@ -338,20 +408,6 @@ export async function POST(request: Request) {
       userId: user.id,
       vehicleId: vehicle.id,
       error: sessionsResult.error.message,
-    });
-  }
-  if (environmentsResult.error) {
-    console.error('[ai/day-plan] environments query failed', {
-      userId: user.id,
-      vehicleId: vehicle.id,
-      error: environmentsResult.error.message,
-    });
-  }
-  if (memoryResult.error) {
-    console.error('[ai/day-plan] memory query failed', {
-      userId: user.id,
-      vehicleId: vehicle.id,
-      error: memoryResult.error.message,
     });
   }
   if (feedbackResult.error) {
@@ -363,8 +419,30 @@ export async function POST(request: Request) {
   }
 
   const recentSessions = (sessionsResult.data ?? []) as Session[];
+  const recentSessionIds = recentSessions.map((session) => session.id);
+  const [environmentsResult, memory] = await Promise.all([
+    recentSessionIds.length > 0
+      ? supabase
+          .from('session_environment')
+          .select('*')
+          .eq('user_id', user.id)
+          .in('session_id', recentSessionIds)
+      : Promise.resolve({ data: [], error: null }),
+    loadPreferredMemory({
+      supabase,
+      userId: user.id,
+      vehicleId: vehicle.id,
+      trackId: targetTrackId,
+    }),
+  ]);
+  if (environmentsResult.error) {
+    console.error('[ai/day-plan] environments query failed', {
+      userId: user.id,
+      vehicleId: vehicle.id,
+      error: environmentsResult.error.message,
+    });
+  }
   const recentEnvironments = (environmentsResult.data ?? []) as SessionEnvironment[];
-  const memory = ((memoryResult.data ?? [])[0] ?? null) as RaceEngineerMemory | null;
   const feedback = (feedbackResult.data ?? []) as SessionFeedback[];
   const environment: CreateSessionEnvironmentInput = {
     ambient_temperature_c: validated.data.ambient_temperature_c ?? null,
