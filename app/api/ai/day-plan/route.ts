@@ -94,8 +94,22 @@ function validateDayPlanRequest(input: unknown): ValidationResult {
   const targetDate = typeof record.target_date === 'string' && record.target_date.trim()
     ? record.target_date.trim()
     : undefined;
-  if (targetDate && !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
-    return { ok: false, error: 'target_date must be YYYY-MM-DD.' };
+  if (targetDate) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(targetDate);
+    if (!match) {
+      return { ok: false, error: 'target_date must be YYYY-MM-DD.' };
+    }
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const parsedDate = new Date(year, month - 1, day);
+    if (
+      parsedDate.getFullYear() !== year ||
+      parsedDate.getMonth() !== month - 1 ||
+      parsedDate.getDate() !== day
+    ) {
+      return { ok: false, error: 'target_date must be YYYY-MM-DD.' };
+    }
   }
   const timeZone = typeof record.time_zone === 'string' && record.time_zone.trim()
     ? record.time_zone.trim()
@@ -441,6 +455,9 @@ export async function POST(request: Request) {
       vehicleId: vehicle.id,
       error: environmentsResult.error.message,
     });
+  }
+  if (sessionsResult.error || feedbackResult.error || environmentsResult.error) {
+    return errorResponse(500, 'Unable to load planning history right now.', requestId);
   }
   const recentEnvironments = (environmentsResult.data ?? []) as SessionEnvironment[];
   const feedback = (feedbackResult.data ?? []) as SessionFeedback[];

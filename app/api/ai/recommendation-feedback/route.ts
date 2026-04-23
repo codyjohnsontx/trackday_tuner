@@ -109,7 +109,11 @@ function validateFeedbackRequest(input: unknown): ValidationResult {
     if (typeof record.lap_time_delta_ms !== 'number' || !Number.isFinite(record.lap_time_delta_ms)) {
       return { ok: false, error: 'lap_time_delta_ms must be a number.' };
     }
-    lapTimeDeltaMs = Math.round(record.lap_time_delta_ms);
+    const rounded = Math.round(record.lap_time_delta_ms);
+    if (rounded < -2147483648 || rounded > 2147483647) {
+      return { ok: false, error: 'lap_time_delta_ms must be a 32-bit integer.' };
+    }
+    lapTimeDeltaMs = rounded;
   }
 
   return {

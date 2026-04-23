@@ -49,6 +49,9 @@ function isDayPlanSuccess(value: DayPlanResponse): value is DayPlanSuccess {
     !!value.advice &&
     typeof value.advice === 'object' &&
     Array.isArray(value.advice.recommended_changes) &&
+    !!value.advice.data_used &&
+    typeof value.advice.data_used === 'object' &&
+    !Array.isArray(value.advice.data_used) &&
     typeof value.advice.summary === 'string' &&
     typeof value.advice.confidence === 'string'
   );

@@ -130,7 +130,29 @@ as $$
 declare
   latest_summary text;
   latest_feedback jsonb;
+  session_scope_ok boolean;
 begin
+  if auth.uid() is null or auth.uid() <> p_user_id then
+    raise exception 'record_race_engineer_memory_feedback caller mismatch';
+  end if;
+
+  select exists (
+    select 1
+    from public.sessions s
+    where s.id = p_session_id
+      and s.user_id = auth.uid()
+      and s.vehicle_id = p_vehicle_id
+      and (
+        (p_track_id is null and s.track_id is null)
+        or s.track_id = p_track_id
+      )
+  )
+  into session_scope_ok;
+
+  if not session_scope_ok then
+    raise exception 'record_race_engineer_memory_feedback session scope mismatch';
+  end if;
+
   latest_summary := format(
     'Latest feedback at %s: %s with %s.%s',
     coalesce(p_track_name, 'unknown track'),
