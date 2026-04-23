@@ -24,7 +24,7 @@ export interface AdvicePrediction {
 export interface PersonalEvidence {
   label: string;
   detail: string;
-  source_session_id?: string | null;
+  source_session_id: string | null;
 }
 
 export interface AdviceDataUsed {

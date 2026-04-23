@@ -43,7 +43,6 @@ export function HeaderAppMenu() {
           'fixed inset-y-0 right-0 left-auto top-0 z-50 flex h-full w-full max-w-sm translate-x-0 translate-y-0 flex-col border-l border-zinc-800 bg-zinc-950 p-0 shadow-xl',
           'transition-transform duration-200 ease-out data-[state=closed]:translate-x-full data-[state=open]:translate-x-0',
         )}
-        onOpenAutoFocus={(e) => e.preventDefault()}
       >
           <DialogTitle className="sr-only">App menu</DialogTitle>
           <DialogDescription className="sr-only">

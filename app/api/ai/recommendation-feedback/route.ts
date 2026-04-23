@@ -9,6 +9,7 @@ export const runtime = 'nodejs';
 
 const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const OUTCOMES = new Set<FeedbackOutcome>(['better', 'same', 'worse', 'unknown']);
+const MAX_SYMPTOMS = 50;
 
 interface FeedbackRequest {
   session_id: string;
@@ -85,6 +86,9 @@ function validateFeedbackRequest(input: unknown): ValidationResult {
   if (record.symptoms !== undefined) {
     if (!Array.isArray(record.symptoms)) {
       return { ok: false, error: 'symptoms must be an array of strings.' };
+    }
+    if (record.symptoms.length > MAX_SYMPTOMS) {
+      return { ok: false, error: `symptoms cannot exceed ${MAX_SYMPTOMS} entries.` };
     }
     symptoms = [];
     for (const symptom of record.symptoms) {
@@ -183,42 +187,29 @@ async function updateMemory(params: {
     notes: params.notes,
   });
 
-  if (existing) {
-    const { error: updateError } = await params.supabase
-      .from('race_engineer_memory')
-      .update({
+  const { error: upsertError } = await params.supabase
+    .from('race_engineer_memory')
+    .upsert(
+      {
+        id: existing?.id,
+        user_id: params.userId,
+        vehicle_id: params.session.vehicle_id,
+        track_id: params.session.track_id,
         summary: next.summary,
         patterns: next.patterns,
         evidence_count: next.evidence_count,
         updated_at: new Date().toISOString(),
-      })
-      .eq('id', existing.id)
-      .eq('user_id', params.userId);
-    if (updateError) {
-      console.error('[ai/recommendation-feedback] race_engineer_memory update failed', {
-        userId: params.userId,
-        vehicleId: params.session.vehicle_id,
-        trackId: params.session.track_id,
-        error: updateError.message,
-      });
-    }
-    return;
-  }
-
-  const { error: insertError } = await params.supabase.from('race_engineer_memory').insert({
-    user_id: params.userId,
-    vehicle_id: params.session.vehicle_id,
-    track_id: params.session.track_id,
-    summary: next.summary,
-    patterns: next.patterns,
-    evidence_count: next.evidence_count,
-  });
-  if (insertError) {
-    console.error('[ai/recommendation-feedback] race_engineer_memory insert failed', {
+      },
+      {
+        onConflict: 'user_id,vehicle_id,track_id',
+      },
+    );
+  if (upsertError) {
+    console.error('[ai/recommendation-feedback] race_engineer_memory upsert failed', {
       userId: params.userId,
       vehicleId: params.session.vehicle_id,
       trackId: params.session.track_id,
-      error: insertError.message,
+      error: upsertError.message,
     });
   }
 }
@@ -289,13 +280,23 @@ export async function POST(request: Request) {
   }
 
   if (validated.data.recommendation_id) {
+    const recommendationPatch: {
+      status?: 'applied' | 'rejected';
+      outcome_session_id: string;
+      updated_at: string;
+    } = {
+      outcome_session_id: session.id,
+      updated_at: new Date().toISOString(),
+    };
+    if (validated.data.outcome === 'worse') {
+      recommendationPatch.status = 'rejected';
+    } else if (validated.data.outcome === 'better' || validated.data.outcome === 'same') {
+      recommendationPatch.status = 'applied';
+    }
+
     const { data: recommendationRow, error: recommendationError } = await supabase
       .from('ai_recommendations')
-      .update({
-        status: validated.data.outcome === 'worse' ? 'rejected' : 'applied',
-        outcome_session_id: session.id,
-        updated_at: new Date().toISOString(),
-      })
+      .update(recommendationPatch)
       .eq('id', validated.data.recommendation_id)
       .eq('user_id', user.id)
       .select('id')

@@ -35,6 +35,7 @@ function createQuery(response: QueryResponse = {}) {
 
   query.select = vi.fn(() => query);
   query.insert = vi.fn(() => query);
+  query.delete = vi.fn(() => query);
   query.eq = vi.fn(() => query);
   query.in = vi.fn(() => query);
   query.neq = vi.fn(() => query);
@@ -155,7 +156,7 @@ describe('sessions actions', () => {
     expect(revalidatePath).toHaveBeenCalledWith('/dashboard');
   });
 
-  it('still returns success when optional environment insert fails', async () => {
+  it('rolls back the session when environment insert fails', async () => {
     vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -165,6 +166,9 @@ describe('sessions actions', () => {
     });
     const environmentInsertQuery = createQuery({
       base: { data: null, error: { message: 'env failed' } },
+    });
+    const rollbackQuery = createQuery({
+      base: { data: null, error: null },
     });
 
     const from = vi
@@ -176,6 +180,10 @@ describe('sessions actions', () => {
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('session_environment');
         return environmentInsertQuery;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return rollbackQuery;
       });
     vi.mocked(createClient).mockResolvedValue({ from } as never);
 
@@ -187,7 +195,8 @@ describe('sessions actions', () => {
       },
     });
 
-    expect(result.ok).toBe(true);
+    expect(result).toEqual({ ok: false, error: 'env failed' });
+    expect(rollbackQuery.delete).toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(
       '[sessions] session_environment insert failed',
       expect.objectContaining({

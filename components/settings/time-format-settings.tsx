@@ -24,12 +24,13 @@ export function TimeFormatSettings() {
       </p>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <span className="text-sm font-medium text-zinc-200">Format</span>
-        <div className="flex overflow-hidden rounded-md border border-zinc-700 text-xs">
+        <div role="group" aria-label="Time format" className="flex overflow-hidden rounded-xl border border-zinc-700 text-xs">
           <button
             type="button"
+            aria-pressed={format === '12h'}
             onClick={() => set('12h')}
             className={cn(
-              'px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80',
+              'rounded-xl px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80',
               format === '12h' ? 'bg-cyan-400 text-zinc-950' : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200',
             )}
           >
@@ -37,9 +38,10 @@ export function TimeFormatSettings() {
           </button>
           <button
             type="button"
+            aria-pressed={format === '24h'}
             onClick={() => set('24h')}
             className={cn(
-              'px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80',
+              'rounded-xl px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80',
               format === '24h' ? 'bg-cyan-400 text-zinc-950' : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200',
             )}
           >

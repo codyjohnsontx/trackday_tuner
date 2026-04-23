@@ -107,7 +107,7 @@ create table if not exists public.race_engineer_memory (
 );
 
 create unique index if not exists race_engineer_memory_scope_key
-  on public.race_engineer_memory(user_id, vehicle_id, coalesce(track_id, '00000000-0000-0000-0000-000000000000'::uuid));
+  on public.race_engineer_memory(user_id, vehicle_id, track_id) nulls not distinct;
 
 create index if not exists race_engineer_memory_user_vehicle_idx
   on public.race_engineer_memory(user_id, vehicle_id, updated_at desc);
@@ -167,12 +167,33 @@ create policy "session_environment: select own"
 
 create policy "session_environment: insert own"
   on public.session_environment for insert
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.sessions s
+      where s.id = session_id and s.user_id = auth.uid()
+    )
+  );
 
 create policy "session_environment: update own"
   on public.session_environment for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.sessions s
+      where s.id = session_id and s.user_id = auth.uid()
+    )
+  )
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.sessions s
+      where s.id = session_id and s.user_id = auth.uid()
+    )
+  );
 
 create policy "session_environment: delete own"
   on public.session_environment for delete
@@ -184,12 +205,105 @@ create policy "ai_recommendations: select own"
 
 create policy "ai_recommendations: insert own"
   on public.ai_recommendations for insert
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.vehicles v
+      where v.id = vehicle_id and v.user_id = auth.uid()
+    )
+    and (
+      session_id is null
+      or exists (
+        select 1
+        from public.sessions s
+        where s.id = session_id and s.user_id = auth.uid()
+      )
+    )
+    and (
+      track_id is null
+      or exists (
+        select 1
+        from public.tracks t
+        where t.id = track_id and t.user_id = auth.uid()
+      )
+    )
+    and (
+      outcome_session_id is null
+      or exists (
+        select 1
+        from public.sessions s
+        where s.id = outcome_session_id and s.user_id = auth.uid()
+      )
+    )
+  );
 
 create policy "ai_recommendations: update own"
   on public.ai_recommendations for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.vehicles v
+      where v.id = vehicle_id and v.user_id = auth.uid()
+    )
+    and (
+      session_id is null
+      or exists (
+        select 1
+        from public.sessions s
+        where s.id = session_id and s.user_id = auth.uid()
+      )
+    )
+    and (
+      track_id is null
+      or exists (
+        select 1
+        from public.tracks t
+        where t.id = track_id and t.user_id = auth.uid()
+      )
+    )
+    and (
+      outcome_session_id is null
+      or exists (
+        select 1
+        from public.sessions s
+        where s.id = outcome_session_id and s.user_id = auth.uid()
+      )
+    )
+  )
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.vehicles v
+      where v.id = vehicle_id and v.user_id = auth.uid()
+    )
+    and (
+      session_id is null
+      or exists (
+        select 1
+        from public.sessions s
+        where s.id = session_id and s.user_id = auth.uid()
+      )
+    )
+    and (
+      track_id is null
+      or exists (
+        select 1
+        from public.tracks t
+        where t.id = track_id and t.user_id = auth.uid()
+      )
+    )
+    and (
+      outcome_session_id is null
+      or exists (
+        select 1
+        from public.sessions s
+        where s.id = outcome_session_id and s.user_id = auth.uid()
+      )
+    )
+  );
 
 create policy "ai_recommendations: delete own"
   on public.ai_recommendations for delete
@@ -201,12 +315,96 @@ create policy "session_feedback: select own"
 
 create policy "session_feedback: insert own"
   on public.session_feedback for insert
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.sessions s
+      where s.id = session_id and s.user_id = auth.uid()
+    )
+    and exists (
+      select 1
+      from public.vehicles v
+      where v.id = vehicle_id and v.user_id = auth.uid()
+    )
+    and (
+      track_id is null
+      or exists (
+        select 1
+        from public.tracks t
+        where t.id = track_id and t.user_id = auth.uid()
+      )
+    )
+    and (
+      recommendation_id is null
+      or exists (
+        select 1
+        from public.ai_recommendations r
+        where r.id = recommendation_id and r.user_id = auth.uid()
+      )
+    )
+  );
 
 create policy "session_feedback: update own"
   on public.session_feedback for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.sessions s
+      where s.id = session_id and s.user_id = auth.uid()
+    )
+    and exists (
+      select 1
+      from public.vehicles v
+      where v.id = vehicle_id and v.user_id = auth.uid()
+    )
+    and (
+      track_id is null
+      or exists (
+        select 1
+        from public.tracks t
+        where t.id = track_id and t.user_id = auth.uid()
+      )
+    )
+    and (
+      recommendation_id is null
+      or exists (
+        select 1
+        from public.ai_recommendations r
+        where r.id = recommendation_id and r.user_id = auth.uid()
+      )
+    )
+  )
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.sessions s
+      where s.id = session_id and s.user_id = auth.uid()
+    )
+    and exists (
+      select 1
+      from public.vehicles v
+      where v.id = vehicle_id and v.user_id = auth.uid()
+    )
+    and (
+      track_id is null
+      or exists (
+        select 1
+        from public.tracks t
+        where t.id = track_id and t.user_id = auth.uid()
+      )
+    )
+    and (
+      recommendation_id is null
+      or exists (
+        select 1
+        from public.ai_recommendations r
+        where r.id = recommendation_id and r.user_id = auth.uid()
+      )
+    )
+  );
 
 create policy "session_feedback: delete own"
   on public.session_feedback for delete
@@ -218,12 +416,57 @@ create policy "race_engineer_memory: select own"
 
 create policy "race_engineer_memory: insert own"
   on public.race_engineer_memory for insert
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.vehicles v
+      where v.id = vehicle_id and v.user_id = auth.uid()
+    )
+    and (
+      track_id is null
+      or exists (
+        select 1
+        from public.tracks t
+        where t.id = track_id and t.user_id = auth.uid()
+      )
+    )
+  );
 
 create policy "race_engineer_memory: update own"
   on public.race_engineer_memory for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.vehicles v
+      where v.id = vehicle_id and v.user_id = auth.uid()
+    )
+    and (
+      track_id is null
+      or exists (
+        select 1
+        from public.tracks t
+        where t.id = track_id and t.user_id = auth.uid()
+      )
+    )
+  )
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.vehicles v
+      where v.id = vehicle_id and v.user_id = auth.uid()
+    )
+    and (
+      track_id is null
+      or exists (
+        select 1
+        from public.tracks t
+        where t.id = track_id and t.user_id = auth.uid()
+      )
+    )
+  );
 
 create policy "race_engineer_memory: delete own"
   on public.race_engineer_memory for delete
@@ -235,12 +478,48 @@ create policy "telemetry_summaries: select own"
 
 create policy "telemetry_summaries: insert own"
   on public.telemetry_summaries for insert
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.sessions s
+      where s.id = session_id and s.user_id = auth.uid()
+    )
+    and exists (
+      select 1
+      from public.vehicles v
+      where v.id = vehicle_id and v.user_id = auth.uid()
+    )
+  );
 
 create policy "telemetry_summaries: update own"
   on public.telemetry_summaries for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.sessions s
+      where s.id = session_id and s.user_id = auth.uid()
+    )
+    and exists (
+      select 1
+      from public.vehicles v
+      where v.id = vehicle_id and v.user_id = auth.uid()
+    )
+  )
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.sessions s
+      where s.id = session_id and s.user_id = auth.uid()
+    )
+    and exists (
+      select 1
+      from public.vehicles v
+      where v.id = vehicle_id and v.user_id = auth.uid()
+    )
+  );
 
 create policy "telemetry_summaries: delete own"
   on public.telemetry_summaries for delete

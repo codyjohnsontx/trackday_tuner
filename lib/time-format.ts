@@ -10,12 +10,20 @@ export function parseTimeFormat(value: string | null): TimeFormat {
 
 export function readTimeFormat(): TimeFormat {
   if (typeof window === 'undefined') return '12h';
-  return parseTimeFormat(localStorage.getItem(TIME_FORMAT_STORAGE_KEY));
+  try {
+    return parseTimeFormat(localStorage.getItem(TIME_FORMAT_STORAGE_KEY));
+  } catch {
+    return '12h';
+  }
 }
 
 export function writeTimeFormat(format: TimeFormat): void {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return;
-  localStorage.setItem(TIME_FORMAT_STORAGE_KEY, format);
+  try {
+    localStorage.setItem(TIME_FORMAT_STORAGE_KEY, format);
+  } catch {
+    // Ignore storage failures so the in-memory UI state can still update.
+  }
   window.dispatchEvent(new CustomEvent<TimeFormat>(TIME_FORMAT_CHANGE_EVENT, { detail: format }));
 }
 

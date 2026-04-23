@@ -149,33 +149,46 @@ async function persistRecommendation(params: {
   }
 
   const primary = params.advice.recommended_changes[0];
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('ai_recommendations')
-    .insert({
-      user_id: params.userId,
-      session_id: params.session.id,
-      vehicle_id: params.session.vehicle_id,
-      track_id: params.session.track_id,
-      request_id: params.requestId,
-      summary: params.advice.summary,
-      component: primary.component,
-      direction: primary.direction,
-      magnitude: primary.magnitude,
-      predicted_effect: params.advice.prediction.expected_effect,
-      status: 'proposed',
-      advice: params.advice as unknown as Json,
-      context_snapshot: params.contextSnapshot,
-    })
-    .select('id')
-    .single();
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('ai_recommendations')
+      .insert({
+        user_id: params.userId,
+        session_id: params.session.id,
+        vehicle_id: params.session.vehicle_id,
+        track_id: params.session.track_id,
+        request_id: params.requestId,
+        summary: params.advice.summary,
+        component: primary.component,
+        direction: primary.direction,
+        magnitude: primary.magnitude,
+        predicted_effect: params.advice.prediction.expected_effect,
+        status: 'proposed',
+        advice: params.advice as unknown as Json,
+        context_snapshot: params.contextSnapshot,
+      })
+      .select('id')
+      .single();
 
-  if (error) {
-    console.error('[ai/tuning-advice] recommendation insert failed', error);
+    if (error) {
+      console.error('[ai/tuning-advice] recommendation insert failed', {
+        requestId: params.requestId,
+        userId: params.userId,
+        error,
+      });
+      return null;
+    }
+
+    return data?.id ?? null;
+  } catch (thrown) {
+    console.error('[ai/tuning-advice] recommendation insert threw', {
+      requestId: params.requestId,
+      userId: params.userId,
+      thrown,
+    });
     return null;
   }
-
-  return data?.id ?? null;
 }
 
 async function countRequestsSince(

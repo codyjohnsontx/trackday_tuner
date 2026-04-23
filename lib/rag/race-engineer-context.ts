@@ -151,7 +151,7 @@ export function selectSimilarSessions(params: {
     .slice(0, params.limit ?? 6);
 }
 
-function hasManualSessionData(session: Session): boolean {
+export function hasManualSessionData(session: Session): boolean {
   return Boolean(
     session.notes?.trim() ||
       session.tires.front.pressure.trim() ||
@@ -161,7 +161,7 @@ function hasManualSessionData(session: Session): boolean {
   );
 }
 
-function buildDayTrend(
+export function buildDayTrend(
   current: Session,
   currentEnv: SessionEnvironment | null,
   similar: ScoredSession[],

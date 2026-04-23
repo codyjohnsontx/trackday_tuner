@@ -223,6 +223,19 @@ export async function createSession(
         sessionId: createdSession.id,
         error: environmentError.message,
       });
+      const { error: rollbackError } = await supabase
+        .from('sessions')
+        .delete()
+        .eq('id', createdSession.id)
+        .eq('user_id', user.id);
+      if (rollbackError) {
+        console.error('[sessions] session rollback failed', {
+          userId: user.id,
+          sessionId: createdSession.id,
+          error: rollbackError.message,
+        });
+      }
+      return { ok: false, error: environmentError.message };
     }
   }
 

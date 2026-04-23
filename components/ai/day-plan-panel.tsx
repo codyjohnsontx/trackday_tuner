@@ -34,6 +34,14 @@ const DATA_USED_LABELS: Record<string, string> = {
   telemetry: 'Telemetry',
 };
 
+function getLocalIsoDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id ?? '');
   const [trackName, setTrackName] = useState('');
@@ -96,7 +104,8 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vehicle_id: vehicleId,
-          target_date: new Date().toISOString().slice(0, 10),
+          target_date: getLocalIsoDate(),
+          time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           track_name: trackName.trim() || undefined,
           ambient_temperature_c: ambient,
           track_temperature_c: track,
