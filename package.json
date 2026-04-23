@@ -18,6 +18,7 @@
     "rag:eval": "node scripts/eval-rag.mjs"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",

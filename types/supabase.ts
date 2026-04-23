@@ -11,6 +11,9 @@ export type VehicleType = 'motorcycle' | 'car';
 export type SessionCondition = 'sunny' | 'overcast' | 'rainy' | 'mixed';
 export type TireCondition = 'new' | 'scrubbed' | 'used' | 'worn';
 export type SuspensionDirection = 'in' | 'out';
+export type EnvironmentSource = 'manual' | 'forecast' | 'telemetry';
+export type FeedbackOutcome = 'better' | 'same' | 'worse' | 'unknown';
+export type RecommendationStatus = 'proposed' | 'applied' | 'rejected' | 'superseded';
 export type SuspensionEnd = {
   preload: string;
   compression: string;
@@ -79,6 +82,26 @@ export type SessionAdvancedVisibility = {
   drivetrain: boolean;
   aero: boolean;
   notes: boolean;
+};
+
+export type AdviceDataUsed = {
+  manual: boolean;
+  weather: boolean;
+  history: boolean;
+  feedback: boolean;
+  telemetry: boolean;
+};
+
+export type TelemetryMetrics = {
+  tire_pressure_start?: Json;
+  tire_pressure_end?: Json;
+  tire_pressure_delta?: Json;
+  suspension_travel?: Json;
+  lap_count?: number;
+  best_lap_ms?: number;
+  ambient_temperature_trend_c?: Json;
+  track_temperature_trend_c?: Json;
+  [key: string]: Json | undefined;
 };
 
 export type Database = {
@@ -238,6 +261,48 @@ export type Database = {
         };
         Relationships: [];
       };
+      session_environment: {
+        Row: {
+          id: string;
+          user_id: string;
+          session_id: string;
+          ambient_temperature_c: number | null;
+          track_temperature_c: number | null;
+          humidity_percent: number | null;
+          weather_condition: string | null;
+          surface_condition: string | null;
+          source: EnvironmentSource;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          session_id: string;
+          ambient_temperature_c?: number | null;
+          track_temperature_c?: number | null;
+          humidity_percent?: number | null;
+          weather_condition?: string | null;
+          surface_condition?: string | null;
+          source?: EnvironmentSource;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          session_id?: string;
+          ambient_temperature_c?: number | null;
+          track_temperature_c?: number | null;
+          humidity_percent?: number | null;
+          weather_condition?: string | null;
+          surface_condition?: string | null;
+          source?: EnvironmentSource;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       ai_requests: {
         Row: {
           id: string;
@@ -277,6 +342,183 @@ export type Database = {
           latency_ms?: number | null;
           error_message?: string | null;
           created_at?: string;
+        };
+        Relationships: [];
+      };
+      ai_recommendations: {
+        Row: {
+          id: string;
+          user_id: string;
+          session_id: string | null;
+          vehicle_id: string;
+          track_id: string | null;
+          request_id: string;
+          summary: string;
+          component: string | null;
+          direction: string | null;
+          magnitude: string | null;
+          predicted_effect: string | null;
+          status: RecommendationStatus;
+          advice: Json;
+          context_snapshot: Json;
+          outcome_session_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          session_id?: string | null;
+          vehicle_id: string;
+          track_id?: string | null;
+          request_id: string;
+          summary: string;
+          component?: string | null;
+          direction?: string | null;
+          magnitude?: string | null;
+          predicted_effect?: string | null;
+          status?: RecommendationStatus;
+          advice?: Json;
+          context_snapshot?: Json;
+          outcome_session_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          session_id?: string | null;
+          vehicle_id?: string;
+          track_id?: string | null;
+          request_id?: string;
+          summary?: string;
+          component?: string | null;
+          direction?: string | null;
+          magnitude?: string | null;
+          predicted_effect?: string | null;
+          status?: RecommendationStatus;
+          advice?: Json;
+          context_snapshot?: Json;
+          outcome_session_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      session_feedback: {
+        Row: {
+          id: string;
+          user_id: string;
+          session_id: string;
+          vehicle_id: string;
+          track_id: string | null;
+          recommendation_id: string | null;
+          outcome: FeedbackOutcome;
+          rider_confidence: number | null;
+          symptoms: string[];
+          notes: string | null;
+          lap_time_delta_ms: number | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          session_id: string;
+          vehicle_id: string;
+          track_id?: string | null;
+          recommendation_id?: string | null;
+          outcome: FeedbackOutcome;
+          rider_confidence?: number | null;
+          symptoms?: string[];
+          notes?: string | null;
+          lap_time_delta_ms?: number | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          session_id?: string;
+          vehicle_id?: string;
+          track_id?: string | null;
+          recommendation_id?: string | null;
+          outcome?: FeedbackOutcome;
+          rider_confidence?: number | null;
+          symptoms?: string[];
+          notes?: string | null;
+          lap_time_delta_ms?: number | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      race_engineer_memory: {
+        Row: {
+          id: string;
+          user_id: string;
+          vehicle_id: string;
+          track_id: string | null;
+          summary: string;
+          patterns: Json;
+          evidence_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          vehicle_id: string;
+          track_id?: string | null;
+          summary?: string;
+          patterns?: Json;
+          evidence_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          vehicle_id?: string;
+          track_id?: string | null;
+          summary?: string;
+          patterns?: Json;
+          evidence_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      telemetry_summaries: {
+        Row: {
+          id: string;
+          user_id: string;
+          session_id: string;
+          vehicle_id: string;
+          source: string;
+          summary: string | null;
+          metrics: TelemetryMetrics;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          session_id: string;
+          vehicle_id: string;
+          source?: string;
+          summary?: string | null;
+          metrics?: TelemetryMetrics;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          session_id?: string;
+          vehicle_id?: string;
+          source?: string;
+          summary?: string | null;
+          metrics?: TelemetryMetrics;
+          created_at?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };
