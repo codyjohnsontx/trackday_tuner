@@ -196,12 +196,12 @@ begin
   )
   on conflict (user_id, vehicle_id, track_id) do update
   set
-    summary = left(
+    summary = substring(
       case
         when public.race_engineer_memory.summary is null or public.race_engineer_memory.summary = '' then latest_summary
         else latest_summary || E'\n' || public.race_engineer_memory.summary
-      end,
-      1800
+      end
+      from 1 for 1800
     ),
     patterns = coalesce(public.race_engineer_memory.patterns, '{}'::jsonb)
       || jsonb_build_object('last_feedback', latest_feedback),

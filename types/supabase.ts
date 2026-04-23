@@ -575,7 +575,22 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      record_race_engineer_memory_feedback: {
+        Args: {
+          p_user_id: string;
+          p_vehicle_id: string;
+          p_track_id: string | null;
+          p_session_id: string;
+          p_track_name: string | null;
+          p_session_date: string;
+          p_outcome: FeedbackOutcome;
+          p_symptoms: string[];
+          p_notes: string | null;
+        };
+        Returns: void;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

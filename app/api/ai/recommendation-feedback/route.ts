@@ -139,13 +139,7 @@ async function updateMemory(params: {
   symptoms: string[];
   notes?: string;
 }): Promise<void> {
-  const rpcClient = params.supabase as unknown as {
-    rpc: (
-      fn: string,
-      args: Record<string, unknown>,
-    ) => PromiseLike<{ error: { message: string } | null }>;
-  };
-  const { error } = await rpcClient.rpc('record_race_engineer_memory_feedback', {
+  const { error } = await params.supabase.rpc('record_race_engineer_memory_feedback', {
     p_user_id: params.userId,
     p_vehicle_id: params.session.vehicle_id,
     p_track_id: params.session.track_id,

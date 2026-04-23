@@ -475,17 +475,18 @@ export async function POST(request: Request) {
     if (typeof value === 'number') return Number.isFinite(value);
     return typeof value === 'string' && value.trim() !== '' && value !== 'manual';
   });
+  const computedTargetDate = validated.data.target_date ?? todayIso(validated.data.time_zone);
 
   try {
     const result = await generateDayPlan({
       vehicle,
-      targetDate: validated.data.target_date ?? todayIso(validated.data.time_zone),
+      targetDate: computedTargetDate,
       trackName: validated.data.track_name,
       environment: hasEnvironment ? environment : null,
       recentSessions,
       raceEngineerContext: buildContext({
         userId: user.id,
-        targetDate: validated.data.target_date ?? todayIso(validated.data.time_zone),
+        targetDate: computedTargetDate,
         trackName: validated.data.track_name,
         recentSessions,
         recentEnvironments,
