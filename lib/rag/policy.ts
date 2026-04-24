@@ -1,5 +1,5 @@
 import type { AdviceConfidence, AdviceResponse, RecommendedChange } from '@/lib/rag/schema';
-import { buildRefusalAdvice } from '@/lib/rag/domain-guard';
+import { buildRefusalAdvice, normalizeAdviceResponse } from '@/lib/rag/domain-guard';
 
 type ComponentKey =
   | 'tire_pressure'
@@ -159,10 +159,13 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
     return {
       decision: 'force_refusal',
       violations: ['no_recommendation'],
-      advice: {
-        ...advice,
-        refusal,
-      },
+      advice: normalizeAdviceResponse({
+        advice: {
+          ...advice,
+          refusal,
+        },
+        fallbackDataUsed: advice.data_used,
+      }),
     };
   }
 

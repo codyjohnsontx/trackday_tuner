@@ -124,6 +124,14 @@ describe('evaluateAdvicePolicy', () => {
     expect(result.decision).toBe('force_refusal');
     expect(result.violations).toContain('no_recommendation');
     expect(result.advice.refusal).toBe('This request is outside setup scope.');
+    expect(result.advice.summary).toBe(
+      'I could not identify a safe, supported setup recommendation from that request.',
+    );
+    expect(result.advice.recommended_changes).toEqual([]);
+    expect(result.advice.tradeoffs).toEqual([]);
+    expect(result.advice.confidence).toBe('low');
+    expect(result.advice.citations).toEqual([]);
+    expect(result.advice.personal_evidence).toEqual([]);
   });
 
   it('accepts plural magnitude units for supported components', () => {
