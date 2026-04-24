@@ -9,11 +9,16 @@ import {
 } from '@/lib/env.server';
 import { generateTuningAdvice, UpstreamTimeoutError } from '@/lib/rag/advice';
 import {
+  createRecommendationSnapshot,
+  loadRaceEngineerContext,
+} from '@/lib/rag/race-engineer-context';
+import {
   TUNING_ADVICE_LIMITS,
   validateTuningAdviceRequest,
 } from '@/lib/rag/validation';
 import { createClient } from '@/lib/supabase/server';
-import type { Session, Vehicle } from '@/types';
+import type { Json, Session, Vehicle } from '@/types';
+import type { AdviceResponse } from '@/lib/rag/schema';
 
 export const runtime = 'nodejs';
 
@@ -129,6 +134,60 @@ async function releaseReservation(requestId: string): Promise<void> {
     // Best effort: the row will age out of the rate-limit window even if
     // this fails, but we still want to observe the failure.
     console.error('[ai/tuning-advice] releaseReservation threw', thrown);
+  }
+}
+
+async function persistRecommendation(params: {
+  userId: string;
+  requestId: string;
+  session: Session;
+  advice: AdviceResponse;
+  contextSnapshot: Json;
+}): Promise<string | null> {
+  if (params.advice.refusal || params.advice.recommended_changes.length === 0) {
+    return null;
+  }
+
+  const primary = params.advice.recommended_changes[0];
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from('ai_recommendations')
+      .insert({
+        user_id: params.userId,
+        session_id: params.session.id,
+        vehicle_id: params.session.vehicle_id,
+        track_id: params.session.track_id,
+        request_id: params.requestId,
+        summary: params.advice.summary,
+        component: primary.component,
+        direction: primary.direction,
+        magnitude: primary.magnitude,
+        predicted_effect: params.advice.prediction.expected_effect,
+        status: 'proposed',
+        advice: params.advice as unknown as Json,
+        context_snapshot: params.contextSnapshot,
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      console.error('[ai/tuning-advice] recommendation insert failed', {
+        requestId: params.requestId,
+        userId: params.userId,
+        error,
+      });
+      return null;
+    }
+
+    return data?.id ?? null;
+  } catch (thrown) {
+    console.error('[ai/tuning-advice] recommendation insert threw', {
+      requestId: params.requestId,
+      userId: params.userId,
+      thrown,
+    });
+    return null;
   }
 }
 
@@ -332,6 +391,11 @@ export async function POST(request: Request) {
   const previousSession = (previousRows?.[0] ?? null) as Session | null;
 
   try {
+    const raceEngineerContext = await loadRaceEngineerContext(supabase, {
+      userId: user.id,
+      session,
+    });
+
     const result = await generateTuningAdvice({
       session,
       previousSession,
@@ -340,6 +404,15 @@ export async function POST(request: Request) {
       symptoms: validated.data.symptoms,
       changeIntent: validated.data.change_intent,
       temperatureC: validated.data.temperature_c,
+      raceEngineerContext,
+    });
+
+    const recommendationId = await persistRecommendation({
+      userId: user.id,
+      requestId,
+      session,
+      advice: result.advice,
+      contextSnapshot: createRecommendationSnapshot(raceEngineerContext),
     });
 
     await updateRequestLog({
@@ -356,6 +429,7 @@ export async function POST(request: Request) {
       {
         ok: true,
         request_id: requestId,
+        recommendation_id: recommendationId,
         advice: result.advice,
         retrieved: result.retrieved.map(({ chunk, score }) => ({
           source: chunk.source,

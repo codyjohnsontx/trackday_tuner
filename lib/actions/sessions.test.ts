@@ -20,8 +20,8 @@ import { revalidatePath } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
-import { createSession, getPreviousSession } from '@/lib/actions/sessions';
-import type { CreateSessionInput, Session } from '@/types';
+import { createSession, getPreviousSession, getSessionEnvironments } from '@/lib/actions/sessions';
+import type { CreateSessionInput, Session, SessionEnvironment } from '@/types';
 
 type QueryResponse = {
   base?: { data?: unknown; error?: { message: string } | null; count?: number | null };
@@ -35,7 +35,9 @@ function createQuery(response: QueryResponse = {}) {
 
   query.select = vi.fn(() => query);
   query.insert = vi.fn(() => query);
+  query.delete = vi.fn(() => query);
   query.eq = vi.fn(() => query);
+  query.in = vi.fn(() => query);
   query.neq = vi.fn(() => query);
   query.or = vi.fn(() => query);
   query.order = vi.fn(() => query);
@@ -154,6 +156,58 @@ describe('sessions actions', () => {
     expect(revalidatePath).toHaveBeenCalledWith('/dashboard');
   });
 
+  it('rolls back the session when environment insert fails', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const insertQuery = createQuery({
+      single: { data: { id: 'sess-1', ...validInput }, error: null },
+    });
+    const environmentInsertQuery = createQuery({
+      base: { data: null, error: { message: 'env failed' } },
+    });
+    const rollbackQuery = createQuery({
+      base: { data: null, error: null },
+    });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('session_environment');
+        return environmentInsertQuery;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return rollbackQuery;
+      });
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await createSession({
+      ...validInput,
+      environment: {
+        ambient_temperature_c: 24,
+        source: 'manual',
+      },
+    });
+
+    expect(result).toEqual({ ok: false, error: 'env failed' });
+    expect(rollbackQuery.delete).toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[sessions] session_environment insert failed',
+      expect.objectContaining({
+        userId: 'user-1',
+        sessionId: 'sess-1',
+        error: 'env failed',
+      }),
+    );
+    errorSpy.mockRestore();
+  });
+
   it('returns the closest previous session for same day and earlier time', async () => {
     vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
 
@@ -194,5 +248,39 @@ describe('sessions actions', () => {
     const result = await getPreviousSession(current);
 
     expect(result?.id).toBe('previous');
+  });
+
+  it('returns environment rows for the requested sessions', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+
+    const environments: SessionEnvironment[] = [
+      {
+        id: 'env-1',
+        user_id: 'user-1',
+        session_id: 'session-1',
+        ambient_temperature_c: 24,
+        track_temperature_c: 36,
+        humidity_percent: 50,
+        weather_condition: 'Warming',
+        surface_condition: 'Rubbered in',
+        source: 'manual',
+        created_at: '2026-02-24T09:30:00Z',
+        updated_at: '2026-02-24T09:30:00Z',
+      },
+    ];
+
+    const environmentQuery = createQuery({
+      base: { data: environments, error: null },
+    });
+    const from = vi.fn().mockImplementation((table: string) => {
+      expect(table).toBe('session_environment');
+      return environmentQuery;
+    });
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await getSessionEnvironments(['session-1']);
+
+    expect(environmentQuery.in).toHaveBeenCalledWith('session_id', ['session-1']);
+    expect(result).toEqual(environments);
   });
 });

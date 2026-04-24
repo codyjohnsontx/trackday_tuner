@@ -1,0 +1,54 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { readTimeFormat, writeTimeFormat, type TimeFormat } from '@/lib/time-format';
+import { cn } from '@/lib/utils';
+
+export function TimeFormatSettings() {
+  const [format, setFormat] = useState<TimeFormat>('12h');
+
+  useEffect(() => {
+    setFormat(readTimeFormat());
+  }, []);
+
+  function set(next: TimeFormat) {
+    setFormat(next);
+    writeTimeFormat(next);
+  }
+
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Time display</h2>
+      <p className="mt-2 text-sm text-zinc-400">
+        How session start times and other clock times appear across the app.
+      </p>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <span className="text-sm font-medium text-zinc-200">Format</span>
+        <div role="group" aria-label="Time format" className="flex overflow-hidden rounded-xl border border-zinc-700 text-xs">
+          <button
+            type="button"
+            aria-pressed={format === '12h'}
+            onClick={() => set('12h')}
+            className={cn(
+              'rounded-xl px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80',
+              format === '12h' ? 'bg-cyan-400 text-zinc-950' : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200',
+            )}
+          >
+            12-hour
+          </button>
+          <button
+            type="button"
+            aria-pressed={format === '24h'}
+            onClick={() => set('24h')}
+            className={cn(
+              'rounded-xl px-3 py-1.5 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80',
+              format === '24h' ? 'bg-cyan-400 text-zinc-950' : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200',
+            )}
+          >
+            24-hour
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

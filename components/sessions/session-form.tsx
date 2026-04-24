@@ -77,6 +77,11 @@ interface SessionDraft {
   startTime: string;
   sessionNumber: string;
   conditions: SessionCondition;
+  ambientTemperatureC: string;
+  trackTemperatureC: string;
+  humidityPercent: string;
+  weatherCondition: string;
+  surfaceCondition: string;
   tireCondition: TireCondition;
   frontTire: typeof emptyTireEnd;
   rearTire: typeof emptyTireEnd;
@@ -137,6 +142,11 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
   const [startTime, setStartTime] = useState('');
   const [sessionNumber, setSessionNumber] = useState('');
   const [conditions, setConditions] = useState<SessionCondition>('sunny');
+  const [ambientTemperatureC, setAmbientTemperatureC] = useState('');
+  const [trackTemperatureC, setTrackTemperatureC] = useState('');
+  const [humidityPercent, setHumidityPercent] = useState('');
+  const [weatherCondition, setWeatherCondition] = useState('');
+  const [surfaceCondition, setSurfaceCondition] = useState('');
   const [tireCondition, setTireCondition] = useState<TireCondition>('scrubbed');
   const [frontTire, setFrontTire] = useState(emptyTireEnd);
   const [rearTire, setRearTire] = useState(emptyTireEnd);
@@ -196,6 +206,11 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
     setStartTime(draft.startTime ?? '');
     setSessionNumber(draft.sessionNumber ?? '');
     setConditions(draft.conditions ?? 'sunny');
+    setAmbientTemperatureC(draft.ambientTemperatureC ?? '');
+    setTrackTemperatureC(draft.trackTemperatureC ?? '');
+    setHumidityPercent(draft.humidityPercent ?? '');
+    setWeatherCondition(draft.weatherCondition ?? '');
+    setSurfaceCondition(draft.surfaceCondition ?? '');
     setTireCondition(draft.tireCondition ?? 'scrubbed');
     setFrontTire(draft.frontTire ?? emptyTireEnd);
     setRearTire(draft.rearTire ?? emptyTireEnd);
@@ -223,6 +238,11 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
       startTime,
       sessionNumber,
       conditions,
+      ambientTemperatureC,
+      trackTemperatureC,
+      humidityPercent,
+      weatherCondition,
+      surfaceCondition,
       tireCondition,
       frontTire,
       rearTire,
@@ -245,6 +265,11 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
     startTime,
     sessionNumber,
     conditions,
+    ambientTemperatureC,
+    trackTemperatureC,
+    humidityPercent,
+    weatherCondition,
+    surfaceCondition,
     tireCondition,
     frontTire,
     rearTire,
@@ -287,6 +312,16 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
   function handleSessionNumberChange(value: string) {
     const digits = value.replace(/\D/g, '');
     setSessionNumber(digits ? String(Math.max(1, Number(digits))) : '');
+  }
+
+  function parseOptionalNumber(label: string, value: string, min: number, max: number): number | null {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+      throw new Error(`${label} must be between ${min} and ${max}.`);
+    }
+    return parsed;
   }
 
   function toggleModule(module: ModuleToggleKey) {
@@ -344,6 +379,18 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
       return;
     }
 
+    let parsedAmbientTemperature: number | null;
+    let parsedTrackTemperature: number | null;
+    let parsedHumidity: number | null;
+    try {
+      parsedAmbientTemperature = parseOptionalNumber('Ambient temperature', ambientTemperatureC, -40, 70);
+      parsedTrackTemperature = parseOptionalNumber('Track temperature', trackTemperatureC, -40, 95);
+      parsedHumidity = parseOptionalNumber('Humidity', humidityPercent, 0, 100);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Invalid environment value.');
+      return;
+    }
+
     const sanitizedModules = sanitizeEnabledModules(selectedVehicleType, enabledModules);
 
     const tires: Tires = {
@@ -360,6 +407,14 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
     const alignmentData: Alignment | null =
       selectedVehicleType === 'car' && sanitizedModules.alignment ? alignment : null;
     const extraModules = buildExtraModules(sanitizedModules);
+    const trimmedWeatherCondition = weatherCondition.trim();
+    const trimmedSurfaceCondition = surfaceCondition.trim();
+    const hasEnvironmentData =
+      parsedAmbientTemperature !== null ||
+      parsedTrackTemperature !== null ||
+      parsedHumidity !== null ||
+      trimmedWeatherCondition.length > 0 ||
+      trimmedSurfaceCondition.length > 0;
 
     startTransition(async () => {
       const result = await createSession({
@@ -375,6 +430,16 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
         alignment: alignmentData,
         enabled_modules: sanitizedModules,
         extra_modules: extraModules,
+        environment: hasEnvironmentData
+          ? {
+              ambient_temperature_c: parsedAmbientTemperature,
+              track_temperature_c: parsedTrackTemperature,
+              humidity_percent: parsedHumidity,
+              weather_condition: trimmedWeatherCondition || null,
+              surface_condition: trimmedSurfaceCondition || null,
+              source: 'manual',
+            }
+          : undefined,
         notes: notes.trim() || null,
       });
 
@@ -492,6 +557,51 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
               {option.label}
             </Button>
           ))}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Input
+            label="Ambient Temp (C)"
+            type="number"
+            inputMode="decimal"
+            step="any"
+            placeholder="24"
+            value={ambientTemperatureC}
+            onChange={(event) => setAmbientTemperatureC(event.target.value)}
+          />
+          <Input
+            label="Track Temp (C)"
+            type="number"
+            inputMode="decimal"
+            step="any"
+            placeholder="36"
+            value={trackTemperatureC}
+            onChange={(event) => setTrackTemperatureC(event.target.value)}
+          />
+          <Input
+            label="Humidity (%)"
+            type="number"
+            inputMode="decimal"
+            step="any"
+            placeholder="55"
+            value={humidityPercent}
+            onChange={(event) => setHumidityPercent(event.target.value)}
+          />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Input
+            label="Weather Detail"
+            type="text"
+            placeholder="Warming, light wind"
+            value={weatherCondition}
+            onChange={(event) => setWeatherCondition(event.target.value)}
+          />
+          <Input
+            label="Surface"
+            type="text"
+            placeholder="Green, rubbered in, dusty"
+            value={surfaceCondition}
+            onChange={(event) => setSurfaceCondition(event.target.value)}
+          />
         </div>
       </div>
 

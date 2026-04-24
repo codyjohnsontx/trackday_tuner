@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { getPreviousSession, getSession } from '@/lib/actions/sessions';
+import { getPreviousSession, getSession, getSessionEnvironment } from '@/lib/actions/sessions';
 import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
 import { TimeDisplay } from '@/components/ui/time-display';
 import { SessionCompare, type CompareRow } from '@/components/sessions/session-compare';
@@ -285,7 +285,10 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
 
   if (!session) notFound();
 
-  const previousSession = await getPreviousSession(session);
+  const [previousSession, environment] = await Promise.all([
+    getPreviousSession(session),
+    getSessionEnvironment(session.id),
+  ]);
   const tier = profile?.tier ?? 'free';
   const vehicle = vehicles.find((v) => v.id === session.vehicle_id);
   const vehicleNickname = vehicle?.nickname ?? 'Unknown Vehicle';
@@ -338,6 +341,23 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
         </div>
         <DetailRow label="Conditions" value={conditionLabel[session.conditions] ?? session.conditions} />
       </SectionCard>
+
+      {environment ? (
+        <SectionCard title="Environment">
+          {environment.ambient_temperature_c != null ? (
+            <DetailRow label="Ambient Temp" value={`${environment.ambient_temperature_c}°C`} />
+          ) : null}
+          {environment.track_temperature_c != null ? (
+            <DetailRow label="Track Temp" value={`${environment.track_temperature_c}°C`} />
+          ) : null}
+          {environment.humidity_percent != null ? (
+            <DetailRow label="Humidity" value={`${environment.humidity_percent}%`} />
+          ) : null}
+          <DetailRow label="Weather" value={environment.weather_condition ?? ''} />
+          <DetailRow label="Surface" value={environment.surface_condition ?? ''} />
+          <DetailRow label="Source" value={environment.source} />
+        </SectionCard>
+      ) : null}
 
       {enabledModules.tires ? (
         <SectionCard title="Tires">

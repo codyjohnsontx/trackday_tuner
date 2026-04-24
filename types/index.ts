@@ -2,8 +2,12 @@ import type {
   AeroModule,
   Alignment,
   DrivetrainModule,
+  EnvironmentSource,
   ExtraModules,
+  FeedbackOutcome,
   GeometryModule,
+  Json,
+  RecommendationStatus,
   SessionAdvancedVisibility,
   SessionCondition,
   SessionEnabledModules,
@@ -15,6 +19,7 @@ import type {
   TireCondition,
   TireEnd,
   Tires,
+  TelemetryMetrics,
   VehicleType,
   Tables,
 } from '@/types/supabase';
@@ -23,8 +28,12 @@ export type {
   AeroModule,
   Alignment,
   DrivetrainModule,
+  EnvironmentSource,
   ExtraModules,
+  FeedbackOutcome,
   GeometryModule,
+  Json,
+  RecommendationStatus,
   SessionAdvancedVisibility,
   SessionCondition,
   SessionEnabledModules,
@@ -36,6 +45,7 @@ export type {
   TireCondition,
   TireEnd,
   Tires,
+  TelemetryMetrics,
   VehicleType,
 };
 
@@ -43,6 +53,11 @@ export type Profile = Tables<'profiles'>;
 export type Vehicle = Tables<'vehicles'>;
 export type Track = Tables<'tracks'>;
 export type Session = Tables<'sessions'>;
+export type SessionEnvironment = Tables<'session_environment'>;
+export type AiRecommendation = Tables<'ai_recommendations'>;
+export type SessionFeedback = Tables<'session_feedback'>;
+export type RaceEngineerMemory = Tables<'race_engineer_memory'>;
+export type TelemetrySummary = Tables<'telemetry_summaries'>;
 export type SagEntry = Tables<'sag_entries'>;
 
 export interface CreateVehicleInput {
@@ -80,7 +95,17 @@ export interface CreateSessionInput {
   alignment: Alignment | null;
   enabled_modules?: SessionEnabledModules | null;
   extra_modules?: ExtraModules | null;
+  environment?: CreateSessionEnvironmentInput | null;
   notes?: string | null;
+}
+
+export interface CreateSessionEnvironmentInput {
+  ambient_temperature_c?: number | null;
+  track_temperature_c?: number | null;
+  humidity_percent?: number | null;
+  weather_condition?: string | null;
+  surface_condition?: string | null;
+  source?: EnvironmentSource;
 }
 
 export interface CreateSagEntryInput {

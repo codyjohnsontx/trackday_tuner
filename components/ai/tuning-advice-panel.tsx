@@ -30,6 +30,14 @@ const INTENT_OPTIONS: Array<{ id: string; label: string }> = [
   { id: 'better_feel', label: 'Better feel' },
 ];
 
+const DATA_USED_LABELS: Record<string, string> = {
+  manual: 'Manual Input',
+  weather: 'Weather Data',
+  history: 'Session History',
+  feedback: 'Past Feedback',
+  telemetry: 'Telemetry',
+};
+
 interface TuningAdvicePanelProps {
   sessionId: string;
   vehicleId: string;
@@ -45,6 +53,7 @@ interface ApiErrorBody {
 interface ApiSuccessBody {
   ok: true;
   request_id: string;
+  recommendation_id: string | null;
   advice: AdviceResponse;
   retrieved: Array<{ source: string; heading: string; score: number }>;
 }
@@ -80,7 +89,13 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
   const [intent, setIntent] = useState<string>('');
   const [temperature, setTemperature] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackError, setFeedbackError] = useState('');
+  const [feedbackOutcome, setFeedbackOutcome] = useState<'better' | 'same' | 'worse' | 'unknown'>('better');
+  const [feedbackConfidence, setFeedbackConfidence] = useState('3');
+  const [feedbackNotes, setFeedbackNotes] = useState('');
   const [response, setResponse] = useState<ApiSuccessBody | null>(null);
 
   if (tier !== 'pro') {
@@ -96,6 +111,8 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
+    setFeedbackMessage('');
+    setFeedbackError('');
     setResponse(null);
 
     const trimmed = question.trim();
@@ -149,6 +166,42 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
       setError(err instanceof Error ? err.message : 'Unable to reach Race Engineer.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function submitFeedback(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!response?.recommendation_id) return;
+
+    setFeedbackLoading(true);
+    setFeedbackError('');
+    setFeedbackMessage('');
+    try {
+      const parsedConfidence = Number(feedbackConfidence);
+      const res = await fetch('/api/ai/recommendation-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          vehicle_id: vehicleId,
+          recommendation_id: response.recommendation_id,
+          outcome: feedbackOutcome,
+          rider_confidence: Number.isInteger(parsedConfidence) ? parsedConfidence : undefined,
+          symptoms,
+          notes: feedbackNotes.trim() || undefined,
+        }),
+      });
+      const parsed = await res.json() as { ok: boolean; error?: string };
+      if (!parsed.ok) {
+        setFeedbackError(parsed.error ?? `Feedback failed (${res.status}).`);
+        return;
+      }
+      setFeedbackMessage('Feedback saved. Race Engineer will use it as rider memory next time.');
+      setFeedbackNotes('');
+    } catch (err) {
+      setFeedbackError(err instanceof Error ? err.message : 'Unable to save feedback.');
+    } finally {
+      setFeedbackLoading(false);
     }
   }
 
@@ -302,6 +355,56 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
             </div>
           ) : null}
 
+          {advice.prediction ? (
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-100">Prediction</h3>
+              <div className="mt-2 space-y-2 rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
+                <p>{advice.prediction.expected_effect}</p>
+                <p className="text-zinc-400">{advice.prediction.day_trend}</p>
+                {advice.prediction.watch_items.length > 0 ? (
+                  <ul className="list-disc space-y-1 pl-5">
+                    {advice.prediction.watch_items.map((item, idx) => (
+                      <li key={idx}>{item}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {advice.personal_evidence.length > 0 ? (
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-100">Personal evidence</h3>
+              <ul className="mt-2 space-y-2 text-sm text-zinc-300">
+                {advice.personal_evidence.map((evidence, idx) => (
+                  <li key={idx} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
+                    <p className="font-medium text-zinc-100">{evidence.label}</p>
+                    <p className="mt-1 text-zinc-400">{evidence.detail}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div>
+            <h3 className="text-sm font-semibold text-zinc-100">Data used</h3>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {Object.entries(advice.data_used).map(([key, used]) => (
+                <span
+                  key={key}
+                  className={cn(
+                    'rounded-lg border px-2 py-1 text-xs font-medium',
+                    used
+                      ? 'border-cyan-400/50 bg-cyan-400/10 text-cyan-200'
+                      : 'border-zinc-800 bg-zinc-950 text-zinc-500',
+                  )}
+                >
+                  {DATA_USED_LABELS[key] ?? key}
+                </span>
+              ))}
+            </div>
+          </div>
+
           <div>
             <h3 className="text-sm font-semibold text-zinc-100">Safety notes</h3>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-300">
@@ -327,6 +430,68 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
 
           {response?.request_id ? (
             <p className="text-xs text-zinc-500">Request id: {response.request_id}</p>
+          ) : null}
+
+          {response?.recommendation_id && hasRecommendations ? (
+            <form className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950/60 p-3" onSubmit={submitFeedback}>
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-100">Teach Race Engineer</h3>
+                <p className="mt-1 text-xs text-zinc-500">After you try it, save how the next session felt.</p>
+              </div>
+              <div className="grid grid-cols-4 gap-2 rounded-xl bg-zinc-900 p-1">
+                {[
+                  ['better', 'Better'],
+                  ['same', 'Same'],
+                  ['worse', 'Worse'],
+                  ['unknown', 'Unsure'],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={feedbackOutcome === value}
+                    onClick={() => setFeedbackOutcome(value as typeof feedbackOutcome)}
+                    className={cn(
+                      'min-h-11 rounded-lg px-2 text-xs font-semibold transition',
+                      feedbackOutcome === value
+                        ? 'bg-cyan-400 text-zinc-950'
+                        : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <label className="block space-y-2">
+                <span className="text-xs font-medium text-zinc-300">Rider confidence</span>
+                <select
+                  value={feedbackConfidence}
+                  onChange={(event) => setFeedbackConfidence(event.target.value)}
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-3 text-sm text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+                >
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block space-y-2">
+                <span className="text-xs font-medium text-zinc-300">Feedback notes</span>
+                <textarea
+                  value={feedbackNotes}
+                  onChange={(event) => setFeedbackNotes(event.target.value)}
+                  rows={3}
+                  maxLength={1000}
+                  placeholder="Felt better on entry but rear got greasy after four laps."
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+                />
+              </label>
+              {feedbackError ? <p className="text-sm text-rose-300">{feedbackError}</p> : null}
+              {feedbackMessage ? <p className="text-sm text-emerald-300">{feedbackMessage}</p> : null}
+              <Button type="submit" variant="secondary" fullWidth loading={feedbackLoading}>
+                Save Feedback
+              </Button>
+            </form>
           ) : null}
         </div>
       ) : null}

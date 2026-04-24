@@ -1,9 +1,10 @@
 import Link from 'next/link';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
-import { getSessions } from '@/lib/actions/sessions';
+import { getSessionEnvironments, getSessions } from '@/lib/actions/sessions';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
-import { SessionCard } from '@/components/sessions/session-card';
+import { DayPlanPanel } from '@/components/ai/day-plan-panel';
 import { Button } from '@/components/ui/button';
+import { SessionHistoryList } from '@/components/sessions/session-history-list';
 
 export default async function SessionsPage() {
   const [sessions, vehicles, profile] = await Promise.all([
@@ -11,6 +12,7 @@ export default async function SessionsPage() {
     getVehicles(),
     getUserProfile(),
   ]);
+  const environments = await getSessionEnvironments(sessions.map((session) => session.id));
 
   const isFree = !profile || profile.tier === 'free';
   const atLimit = isFree && sessions.length >= 10;
@@ -20,6 +22,7 @@ export default async function SessionsPage() {
     : `Pro plan · ${sessions.length} session${sessions.length !== 1 ? 's' : ''}`;
 
   const vehicleMap = new Map(vehicles.map((v) => [v.id, v.nickname]));
+  const environmentMap = new Map(environments.map((environment) => [environment.session_id, environment]));
 
   return (
     <div className="space-y-5">
@@ -36,6 +39,8 @@ export default async function SessionsPage() {
           </Link>
         ) : null}
       </div>
+
+      <DayPlanPanel vehicles={vehicles} tier={profile?.tier ?? 'free'} />
 
       {sessions.length === 0 ? (
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 text-center">
@@ -58,15 +63,13 @@ export default async function SessionsPage() {
           )}
         </section>
       ) : (
-        <ul className="space-y-3">
-          {sessions.map((s) => (
-            <SessionCard
-              key={s.id}
-              session={s}
-              vehicleNickname={vehicleMap.get(s.vehicle_id) ?? 'Unknown Vehicle'}
-            />
-          ))}
-        </ul>
+        <SessionHistoryList
+          items={sessions.map((session) => ({
+            session,
+            vehicleNickname: vehicleMap.get(session.vehicle_id) ?? 'Unknown Vehicle',
+            environment: environmentMap.get(session.id) ?? null,
+          }))}
+        />
       )}
 
       {atLimit ? (

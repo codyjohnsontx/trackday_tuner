@@ -6,7 +6,27 @@ import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import type { TableInsert } from '@/types/supabase';
-import type { ActionResult, CreateSessionInput, Session } from '@/types';
+import type {
+  ActionResult,
+  CreateSessionEnvironmentInput,
+  CreateSessionInput,
+  Session,
+  SessionEnvironment,
+} from '@/types';
+
+function hasEnvironmentValues(environment: CreateSessionEnvironmentInput | null | undefined): boolean {
+  if (!environment) return false;
+  return [
+    environment.ambient_temperature_c,
+    environment.track_temperature_c,
+    environment.humidity_percent,
+    environment.weather_condition,
+    environment.surface_condition,
+  ].some((value) => {
+    if (typeof value === 'number') return Number.isFinite(value);
+    return Boolean(value?.trim());
+  });
+}
 
 export async function getSessions(vehicleId?: string, limit?: number): Promise<Session[]> {
   const user = await getAuthenticatedUser();
@@ -63,6 +83,35 @@ export async function getSession(id: string): Promise<Session | null> {
 
   if (error) return null;
   return data as Session;
+}
+
+export async function getSessionEnvironment(sessionId: string): Promise<SessionEnvironment | null> {
+  const user = await getAuthenticatedUser();
+  if (!user) return null;
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('session_environment')
+    .select('*')
+    .eq('session_id', sessionId)
+    .eq('user_id', user.id)
+    .limit(1);
+
+  return (data?.[0] ?? null) as SessionEnvironment | null;
+}
+
+export async function getSessionEnvironments(sessionIds: string[]): Promise<SessionEnvironment[]> {
+  const user = await getAuthenticatedUser();
+  if (!user || sessionIds.length === 0) return [];
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('session_environment')
+    .select('*')
+    .eq('user_id', user.id)
+    .in('session_id', sessionIds);
+
+  return (data ?? []) as SessionEnvironment[];
 }
 
 export async function getPreviousSession(
@@ -150,9 +199,49 @@ export async function createSession(
 
   if (error) return { ok: false, error: error.message };
 
+  const createdSession = data as Session;
+
+  if (hasEnvironmentValues(input.environment)) {
+    const environmentPayload: TableInsert<'session_environment'> = {
+      user_id: user.id,
+      session_id: createdSession.id,
+      ambient_temperature_c: input.environment?.ambient_temperature_c ?? null,
+      track_temperature_c: input.environment?.track_temperature_c ?? null,
+      humidity_percent: input.environment?.humidity_percent ?? null,
+      weather_condition: input.environment?.weather_condition?.trim() || null,
+      surface_condition: input.environment?.surface_condition?.trim() || null,
+      source: input.environment?.source ?? 'manual',
+    };
+
+    const { error: environmentError } = await supabase
+      .from('session_environment')
+      .insert(environmentPayload);
+
+    if (environmentError) {
+      console.error('[sessions] session_environment insert failed', {
+        userId: user.id,
+        sessionId: createdSession.id,
+        error: environmentError.message,
+      });
+      const { error: rollbackError } = await supabase
+        .from('sessions')
+        .delete()
+        .eq('id', createdSession.id)
+        .eq('user_id', user.id);
+      if (rollbackError) {
+        console.error('[sessions] session rollback failed', {
+          userId: user.id,
+          sessionId: createdSession.id,
+          error: rollbackError.message,
+        });
+      }
+      return { ok: false, error: environmentError.message };
+    }
+  }
+
   revalidatePath('/sessions');
   revalidatePath('/dashboard');
-  return { ok: true, data: data as Session };
+  return { ok: true, data: createdSession };
 }
 
 export async function deleteSession(id: string): Promise<ActionResult> {
