@@ -141,6 +141,25 @@ describe('evaluateAdvicePolicy', () => {
     expect(result.violations).toContain('invalid_personal_evidence');
   });
 
+  it('forces refusal when personal evidence references a session but no valid session ids are available', () => {
+    const result = evaluateAdvicePolicy({
+      advice: buildAdvice({
+        citations: [],
+        personal_evidence: [
+          {
+            label: 'Fabricated session',
+            detail: 'Claims a session that was not loaded.',
+            source_session_id: 'unknown-session',
+          },
+        ],
+      }),
+      fallbackDataUsed: buildAdvice().data_used,
+      validSessionIds: [],
+    });
+    expect(result.decision).toBe('force_refusal');
+    expect(result.violations).toContain('invalid_personal_evidence');
+  });
+
   it('forces refusal with a distinct violation when no recommendations are generated', () => {
     const result = evaluateAdvicePolicy({
       advice: buildAdvice({
