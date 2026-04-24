@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
+import { classifyRaceEngineerQuestion } from '@/lib/rag/domain-guard';
 import type { AdviceResponse } from '@/lib/rag/schema';
 import { cn } from '@/lib/utils';
 
@@ -68,6 +69,25 @@ function SafetyBanner() {
   );
 }
 
+function RefusalCard({ message }: { message: string }) {
+  return (
+    <div className="space-y-3 rounded-xl border border-zinc-700 bg-zinc-950/70 p-4">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Couldn&apos;t answer that request</p>
+        <p className="mt-1 text-sm text-zinc-200">{message}</p>
+      </div>
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-3 text-sm text-zinc-300">
+        <p className="font-medium text-zinc-100">Race Engineer can help with questions like:</p>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>Front pushed on entry after I raised pressure 1 psi. What should I try next?</li>
+          <li>Rear overheated after four laps. What is the first thing I should check?</li>
+          <li>I changed rebound and the bike started wallowing. Should I undo that or try another small step?</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function ProUpgradeCard() {
   return (
     <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
@@ -98,14 +118,49 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
   const [feedbackNotes, setFeedbackNotes] = useState('');
   const [response, setResponse] = useState<ApiSuccessBody | null>(null);
 
+  const questionAssessment = useMemo(
+    () =>
+      classifyRaceEngineerQuestion({
+        question,
+        symptoms,
+        changeIntent: intent,
+      }),
+    [question, symptoms, intent],
+  );
+  const showQuestionWarning =
+    question.trim().length >= 10 && questionAssessment.decision === 'refuse';
+
   if (tier !== 'pro') {
     return <ProUpgradeCard />;
   }
 
+  function clearActiveAdviceState() {
+    setError('');
+    setFeedbackMessage('');
+    setFeedbackError('');
+    setResponse(null);
+  }
+
+  function setQuestionValue(value: string) {
+    clearActiveAdviceState();
+    setQuestion(value);
+  }
+
   function toggleSymptom(id: string) {
+    clearActiveAdviceState();
     setSymptoms((current) =>
       current.includes(id) ? current.filter((s) => s !== id) : [...current, id],
     );
+  }
+
+  function setIntentValue(value: string) {
+    clearActiveAdviceState();
+    setIntent(value);
+  }
+
+  function setTemperatureValue(value: string) {
+    clearActiveAdviceState();
+    setTemperature(value);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -208,6 +263,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
   const advice = response?.advice ?? null;
   const refusal = advice?.refusal?.trim();
   const hasRecommendations = Boolean(advice && advice.recommended_changes.length > 0);
+  const isRefusal = Boolean(refusal);
 
   return (
     <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
@@ -224,18 +280,33 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
           <textarea
             id="race_engineer_question"
             value={question}
-            onChange={(e) => setQuestion(e.target.value)}
+            onChange={(e) => setQuestionValue(e.target.value)}
             rows={3}
             minLength={10}
             maxLength={1000}
             placeholder="Front pushed mid-corner after raising pressure 1 psi."
             className="flex w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
           />
+          <span className="text-xs text-zinc-500">
+            Ask about setup, grip, balance, pressures, damping, or what changed on track.
+          </span>
           <span className="text-xs text-zinc-500">{question.length}/1000</span>
         </label>
 
+        {showQuestionWarning ? (
+          <div
+            role="status"
+            className="rounded-xl border border-amber-500/30 bg-amber-950/20 px-3 py-2 text-sm text-amber-200"
+          >
+            Race Engineer only answers track setup questions. This looks unrelated, so it will return a refusal instead of a setup recommendation.
+          </div>
+        ) : null}
+
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium text-zinc-200">Symptoms (optional)</legend>
+          <p className="text-xs text-zinc-500">
+            Symptoms add context to a real track question, but they do not replace it.
+          </p>
           <div className="flex flex-wrap gap-2">
             {SYMPTOM_OPTIONS.map((opt) => {
               const active = symptoms.includes(opt.id);
@@ -264,7 +335,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
           <select
             id="race_engineer_intent"
             value={intent}
-            onChange={(e) => setIntent(e.target.value)}
+            onChange={(e) => setIntentValue(e.target.value)}
             className="flex w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-base text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
           >
             <option value="">No specific goal</option>
@@ -284,7 +355,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
             inputMode="decimal"
             step="any"
             value={temperature}
-            onChange={(e) => setTemperature(e.target.value)}
+            onChange={(e) => setTemperatureValue(e.target.value)}
             placeholder="24"
             min={-40}
             max={70}
@@ -307,103 +378,102 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
         <div className="space-y-4">
           <SafetyBanner />
 
-          <div>
-            <h3 className="text-sm font-semibold text-zinc-100">Summary</h3>
-            <p className="mt-1 text-sm text-zinc-200 whitespace-pre-wrap">{advice.summary}</p>
-            <p className="mt-1 text-xs uppercase tracking-wide text-zinc-500">
-              Confidence: <span className="text-zinc-300">{advice.confidence}</span>
-            </p>
-          </div>
+          {isRefusal ? <RefusalCard message={refusal!} /> : null}
 
-          {refusal ? (
-            <div className="rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-sm text-zinc-200">
-              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Refusal</p>
-              <p className="mt-1">{refusal}</p>
-            </div>
-          ) : null}
+          {!isRefusal ? (
+            <>
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-100">Summary</h3>
+                <p className="mt-1 text-sm text-zinc-200 whitespace-pre-wrap">{advice.summary}</p>
+                <p className="mt-1 text-xs uppercase tracking-wide text-zinc-500">
+                  Confidence: <span className="text-zinc-300">{advice.confidence}</span>
+                </p>
+              </div>
 
-          {hasRecommendations ? (
-            <div>
-              <h3 className="text-sm font-semibold text-zinc-100">Recommended change</h3>
-              <ul className="mt-2 space-y-3">
-                {advice.recommended_changes.map((change, idx) => (
-                  <li
-                    key={`${change.component}-${idx}`}
-                    className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3"
-                  >
-                    <p className="text-sm font-medium text-zinc-100">
-                      {change.component}
-                    </p>
-                    <p className="text-sm text-zinc-300">
-                      {change.direction} · {change.magnitude}
-                    </p>
-                    <p className="mt-1 text-sm text-zinc-400">{change.reason}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {advice.tradeoffs.length > 0 ? (
-            <div>
-              <h3 className="text-sm font-semibold text-zinc-100">Tradeoffs</h3>
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-300">
-                {advice.tradeoffs.map((t, i) => (
-                  <li key={i}>{t}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {advice.prediction ? (
-            <div>
-              <h3 className="text-sm font-semibold text-zinc-100">Prediction</h3>
-              <div className="mt-2 space-y-2 rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
-                <p>{advice.prediction.expected_effect}</p>
-                <p className="text-zinc-400">{advice.prediction.day_trend}</p>
-                {advice.prediction.watch_items.length > 0 ? (
-                  <ul className="list-disc space-y-1 pl-5">
-                    {advice.prediction.watch_items.map((item, idx) => (
-                      <li key={idx}>{item}</li>
+              {hasRecommendations ? (
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-100">Recommended change</h3>
+                  <ul className="mt-2 space-y-3">
+                    {advice.recommended_changes.map((change, idx) => (
+                      <li
+                        key={`${change.component}-${idx}`}
+                        className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3"
+                      >
+                        <p className="text-sm font-medium text-zinc-100">
+                          {change.component}
+                        </p>
+                        <p className="text-sm text-zinc-300">
+                          {change.direction} · {change.magnitude}
+                        </p>
+                        <p className="mt-1 text-sm text-zinc-400">{change.reason}</p>
+                      </li>
                     ))}
                   </ul>
-                ) : null}
+                </div>
+              ) : null}
+
+              {advice.tradeoffs.length > 0 ? (
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-100">Tradeoffs</h3>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-300">
+                    {advice.tradeoffs.map((t, i) => (
+                      <li key={i}>{t}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {advice.prediction ? (
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-100">Prediction</h3>
+                  <div className="mt-2 space-y-2 rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
+                    <p>{advice.prediction.expected_effect}</p>
+                    <p className="text-zinc-400">{advice.prediction.day_trend}</p>
+                    {advice.prediction.watch_items.length > 0 ? (
+                      <ul className="list-disc space-y-1 pl-5">
+                        {advice.prediction.watch_items.map((item, idx) => (
+                          <li key={idx}>{item}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {advice.personal_evidence.length > 0 ? (
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-100">Personal evidence</h3>
+                  <ul className="mt-2 space-y-2 text-sm text-zinc-300">
+                    {advice.personal_evidence.map((evidence, idx) => (
+                      <li key={idx} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
+                        <p className="font-medium text-zinc-100">{evidence.label}</p>
+                        <p className="mt-1 text-zinc-400">{evidence.detail}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-100">Data used</h3>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {Object.entries(advice.data_used).map(([key, used]) => (
+                    <span
+                      key={key}
+                      className={cn(
+                        'rounded-lg border px-2 py-1 text-xs font-medium',
+                        used
+                          ? 'border-cyan-400/50 bg-cyan-400/10 text-cyan-200'
+                          : 'border-zinc-800 bg-zinc-950 text-zinc-500',
+                      )}
+                    >
+                      {DATA_USED_LABELS[key] ?? key}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
+            </>
           ) : null}
-
-          {advice.personal_evidence.length > 0 ? (
-            <div>
-              <h3 className="text-sm font-semibold text-zinc-100">Personal evidence</h3>
-              <ul className="mt-2 space-y-2 text-sm text-zinc-300">
-                {advice.personal_evidence.map((evidence, idx) => (
-                  <li key={idx} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
-                    <p className="font-medium text-zinc-100">{evidence.label}</p>
-                    <p className="mt-1 text-zinc-400">{evidence.detail}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          <div>
-            <h3 className="text-sm font-semibold text-zinc-100">Data used</h3>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {Object.entries(advice.data_used).map(([key, used]) => (
-                <span
-                  key={key}
-                  className={cn(
-                    'rounded-lg border px-2 py-1 text-xs font-medium',
-                    used
-                      ? 'border-cyan-400/50 bg-cyan-400/10 text-cyan-200'
-                      : 'border-zinc-800 bg-zinc-950 text-zinc-500',
-                  )}
-                >
-                  {DATA_USED_LABELS[key] ?? key}
-                </span>
-              ))}
-            </div>
-          </div>
 
           <div>
             <h3 className="text-sm font-semibold text-zinc-100">Safety notes</h3>
@@ -414,7 +484,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
             </ul>
           </div>
 
-          {advice.citations.length > 0 ? (
+          {!isRefusal && advice.citations.length > 0 ? (
             <div>
               <h3 className="text-sm font-semibold text-zinc-100">Citations</h3>
               <ul className="mt-2 space-y-2 text-sm text-zinc-300">

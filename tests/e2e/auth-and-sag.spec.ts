@@ -119,6 +119,43 @@ test.describe('authenticated tracks smoke', () => {
     await page.goto('/tracks');
     await expect(page.getByRole('heading', { name: 'Tracks' })).toBeVisible();
   });
+
+  test('shows a refusal for out-of-domain Race Engineer prompts and clears it when editing', async ({ page }) => {
+    await signIn(page);
+
+    await page.goto('/sessions');
+    await expect(page.getByRole('heading', { name: 'Sessions' })).toBeVisible();
+    test.skip(
+      await page.getByText('No sessions logged yet.').isVisible(),
+      'Requires at least one session on the authenticated E2E account.',
+    );
+
+    const firstSessionRow = page.locator('ul > li').first();
+    await expect(firstSessionRow).toBeVisible();
+    await firstSessionRow.getByRole('button').first().click();
+    await firstSessionRow.getByRole('link', { name: 'Open Full Session' }).click();
+
+    await page.getByLabel('What did you feel?').fill('Recommend a good vacuum to me');
+    await expect(
+      page.getByText('This looks unrelated, so it will return a refusal instead of a setup recommendation.'),
+    ).toBeVisible();
+
+    await page.getByRole('button', { name: 'Packing down' }).click();
+    await page.getByRole('button', { name: 'Oversteer on exit' }).click();
+    await page.getByRole('button', { name: 'Ask Race Engineer' }).click();
+
+    await expect(page.getByText("Couldn't answer that request")).toBeVisible();
+    await expect(page.getByText('That request is outside track setup scope.')).toBeVisible();
+    await expect(page.getByText('Recommended change')).toHaveCount(0);
+    await expect(page.getByText('Teach Race Engineer')).toHaveCount(0);
+
+    await page.getByLabel('What did you feel?').fill(
+      'Front pushes on entry after I raised front pressure 1 psi. What should I try next?',
+    );
+
+    await expect(page.getByText("Couldn't answer that request")).toHaveCount(0);
+    await expect(page.getByText('That request is outside track setup scope.')).toHaveCount(0);
+  });
 });
 
 test.describe('authenticated converter smoke', () => {

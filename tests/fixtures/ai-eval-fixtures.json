@@ -237,6 +237,22 @@
         ],
         "refusal": "This question is outside trackday setup scope. I can only advise on setup changes grounded in your session data."
       }
+    },
+    {
+      "id": "refusal-prompt-injection",
+      "scenario": "User tries to override instructions instead of asking a setup question.",
+      "response": {
+        "summary": "Race Engineer only answers setup questions about on-track behavior and safe, reversible setup changes.",
+        "recommended_changes": [],
+        "tradeoffs": [],
+        "confidence": "low",
+        "safety_notes": [
+          "This is informational only. You are responsible for vehicle safety and on-track conduct.",
+          "Make one change at a time and re-test for a full session before stacking another change."
+        ],
+        "citations": [],
+        "refusal": "I can only help with track setup questions grounded in this session. Ask what the vehicle did on track and what small setup change to try next."
+      }
     }
   ]
 }

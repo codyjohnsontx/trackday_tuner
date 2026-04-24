@@ -13,12 +13,17 @@ import {
   loadRaceEngineerContext,
 } from '@/lib/rag/race-engineer-context';
 import {
+  buildRefusalAdvice,
+  classifyRaceEngineerQuestion,
+} from '@/lib/rag/domain-guard';
+import { evaluateAdvicePolicy } from '@/lib/rag/policy';
+import {
   TUNING_ADVICE_LIMITS,
   validateTuningAdviceRequest,
 } from '@/lib/rag/validation';
 import { createClient } from '@/lib/supabase/server';
 import type { Json, Session, Vehicle } from '@/types';
-import type { AdviceResponse } from '@/lib/rag/schema';
+import type { AdviceDataUsed, AdviceResponse } from '@/lib/rag/schema';
 
 export const runtime = 'nodejs';
 
@@ -26,6 +31,22 @@ interface ApiErrorBody {
   ok: false;
   error: string;
   request_id: string;
+}
+
+function buildFallbackDataUsed(params: {
+  temperatureC?: number;
+  session: Session;
+  history?: boolean;
+  feedback?: boolean;
+  telemetry?: boolean;
+}): AdviceDataUsed {
+  return {
+    manual: true,
+    weather: params.temperatureC != null,
+    history: params.history ?? false,
+    feedback: params.feedback ?? false,
+    telemetry: params.telemetry ?? false,
+  };
 }
 
 function errorResponse(
@@ -209,6 +230,26 @@ async function countRequestsSince(
   return count ?? 0;
 }
 
+async function countRequestsByStatusesSince(
+  userId: string,
+  statuses: string[],
+  sinceMs: number,
+): Promise<number> {
+  const admin = createAdminClient();
+  const sinceIso = new Date(Date.now() - sinceMs).toISOString();
+  const { count, error } = await admin
+    .from('ai_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .in('status', statuses)
+    .gte('created_at', sinceIso);
+  if (error) {
+    console.error('[ai/tuning-advice] refusal throttle count failed', error);
+    throw new RateLimitLookupError(error);
+  }
+  return count ?? 0;
+}
+
 export async function POST(request: Request) {
   const requestId = randomUUID();
 
@@ -255,6 +296,30 @@ export async function POST(request: Request) {
 
   const perHour = getAiRateLimitPerHour();
   const perMinute = getAiRateLimitPerMinute();
+
+  try {
+    const [recentPromptInjectionRefusals, recentScopeRefusals] = await Promise.all([
+      countRequestsByStatusesSince(user.id, ['completed_refusal_prompt_injection'], 10 * 60 * 1000),
+      countRequestsByStatusesSince(
+        user.id,
+        ['completed_refusal_out_of_domain', 'completed_refusal_prompt_injection'],
+        10 * 60 * 1000,
+      ),
+    ]);
+
+    if (recentPromptInjectionRefusals >= 3 || recentScopeRefusals >= 8) {
+      return errorResponse(
+        429,
+        'Too many refused Race Engineer requests in a short window. Wait a few minutes before trying again.',
+        requestId,
+        { 'retry-after': '600' },
+      );
+    }
+  } catch {
+    // Refusal-rate throttling is a secondary safeguard. If it cannot be
+    // evaluated, continue with the primary request path rather than failing
+    // closed on an observability-only dependency.
+  }
 
   // Atomically reserve a slot BEFORE counting. Every concurrent request will
   // see every other request's pending row, which closes the TOCTOU gap between
@@ -390,6 +455,41 @@ export async function POST(request: Request) {
 
   const previousSession = (previousRows?.[0] ?? null) as Session | null;
 
+  const questionAssessment = classifyRaceEngineerQuestion({
+    question: validated.data.question,
+    symptoms: validated.data.symptoms,
+    changeIntent: validated.data.change_intent,
+  });
+
+  if (questionAssessment.decision === 'refuse') {
+    const refusalReason = questionAssessment.reason ?? 'out_of_domain';
+    const advice = buildRefusalAdvice({
+      reason: refusalReason,
+      message: questionAssessment.message ?? 'This request is outside trackday setup scope.',
+      dataUsed: buildFallbackDataUsed({
+        session,
+        temperatureC: validated.data.temperature_c,
+      }),
+    });
+
+    await updateRequestLog({
+      requestId,
+      sessionId: session.id,
+      status: `completed_refusal_${refusalReason}`,
+    });
+
+    return NextResponse.json(
+      {
+        ok: true,
+        request_id: requestId,
+        recommendation_id: null,
+        advice,
+        retrieved: [],
+      },
+      { status: 200, headers: { 'x-request-id': requestId } },
+    );
+  }
+
   try {
     const raceEngineerContext = await loadRaceEngineerContext(supabase, {
       userId: user.id,
@@ -407,18 +507,36 @@ export async function POST(request: Request) {
       raceEngineerContext,
     });
 
+    const policyResult = evaluateAdvicePolicy({
+      advice: result.advice,
+      fallbackDataUsed:
+        raceEngineerContext.dataUsed ??
+        buildFallbackDataUsed({
+          session,
+          temperatureC: validated.data.temperature_c,
+          history: raceEngineerContext.similarSessions.length > 0,
+          feedback: raceEngineerContext.recentFeedback.length > 0,
+          telemetry: Boolean(raceEngineerContext.telemetrySummary),
+        }),
+    });
+    const advice = policyResult.advice;
+
     const recommendationId = await persistRecommendation({
       userId: user.id,
       requestId,
       session,
-      advice: result.advice,
+      advice,
       contextSnapshot: createRecommendationSnapshot(raceEngineerContext),
     });
 
     await updateRequestLog({
       requestId,
       sessionId: session.id,
-      status: result.advice.refusal ? 'refused' : 'ok',
+      status: advice.refusal
+        ? `completed_refusal_${policyResult.violations[0] ?? 'no_safe_answer'}`
+        : policyResult.decision === 'downgrade_confidence'
+          ? 'ok_confidence_downgraded'
+          : 'ok',
       model: result.model,
       promptTokens: result.usage.prompt_tokens,
       completionTokens: result.usage.completion_tokens,
@@ -430,7 +548,7 @@ export async function POST(request: Request) {
         ok: true,
         request_id: requestId,
         recommendation_id: recommendationId,
-        advice: result.advice,
+        advice,
         retrieved: result.retrieved.map(({ chunk, score }) => ({
           source: chunk.source,
           heading: chunk.heading,
