@@ -97,9 +97,48 @@ describe('evaluateAdvicePolicy', () => {
         personal_evidence: [],
       }),
       fallbackDataUsed: buildAdvice().data_used,
+      validSessionIds: ['session-a'],
     });
     expect(result.decision).toBe('force_refusal');
     expect(result.violations).toContain('ungrounded_recommendation');
+  });
+
+  it('allows verified personal evidence to ground a recommendation', () => {
+    const result = evaluateAdvicePolicy({
+      advice: buildAdvice({
+        citations: [],
+        personal_evidence: [
+          {
+            label: 'Prior session',
+            detail: 'This matched a previous front-push session.',
+            source_session_id: 'session-a',
+          },
+        ],
+      }),
+      fallbackDataUsed: buildAdvice().data_used,
+      validSessionIds: ['session-a'],
+    });
+    expect(result.decision).toBe('allow');
+    expect(result.violations).toEqual([]);
+  });
+
+  it('forces refusal for personal evidence that references unknown sessions', () => {
+    const result = evaluateAdvicePolicy({
+      advice: buildAdvice({
+        citations: [],
+        personal_evidence: [
+          {
+            label: 'Fabricated session',
+            detail: 'Claims a session that was not loaded.',
+            source_session_id: 'unknown-session',
+          },
+        ],
+      }),
+      fallbackDataUsed: buildAdvice().data_used,
+      validSessionIds: ['session-a'],
+    });
+    expect(result.decision).toBe('force_refusal');
+    expect(result.violations).toContain('invalid_personal_evidence');
   });
 
   it('forces refusal with a distinct violation when no recommendations are generated', () => {

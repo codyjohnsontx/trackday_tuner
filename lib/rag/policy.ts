@@ -16,6 +16,7 @@ type AdvicePolicyDecision = 'allow' | 'force_refusal' | 'downgrade_confidence';
 export type AdvicePolicyViolation =
   | 'refusal_with_changes'
   | 'no_recommendation'
+  | 'invalid_personal_evidence'
   | 'unknown_component'
   | 'unsupported_direction'
   | 'unsafe_magnitude'
@@ -31,6 +32,7 @@ export interface AdvicePolicyEvaluation {
 interface AdvicePolicyInput {
   advice: AdviceResponse;
   fallbackDataUsed: AdviceResponse['data_used'];
+  validSessionIds?: string[];
 }
 
 interface ComponentPolicy {
@@ -122,23 +124,60 @@ function changeViolations(change: RecommendedChange): AdvicePolicyViolation[] {
   return violations;
 }
 
-function grounded(advice: AdviceResponse): boolean {
-  return advice.citations.length > 0 || advice.personal_evidence.length > 0;
+function validSessionIdSet(validSessionIds: string[] | undefined): Set<string> {
+  return new Set((validSessionIds ?? []).filter(Boolean));
 }
 
-function hasSupportForHighConfidence(advice: AdviceResponse): boolean {
+function hasVerifiedPersonalEvidence(
+  advice: AdviceResponse,
+  validSessionIds: string[] | undefined,
+): boolean {
+  const allowed = validSessionIdSet(validSessionIds);
+  if (allowed.size === 0) return false;
+  return advice.personal_evidence.some(
+    (entry) => entry.source_session_id != null && allowed.has(entry.source_session_id),
+  );
+}
+
+function hasInvalidPersonalEvidence(
+  advice: AdviceResponse,
+  validSessionIds: string[] | undefined,
+): boolean {
+  const allowed = validSessionIdSet(validSessionIds);
+  if (allowed.size === 0) {
+    return advice.personal_evidence.some((entry) => entry.source_session_id != null);
+  }
+  return advice.personal_evidence.some(
+    (entry) => entry.source_session_id != null && !allowed.has(entry.source_session_id),
+  );
+}
+
+function grounded(
+  advice: AdviceResponse,
+  validSessionIds: string[] | undefined,
+): boolean {
+  return advice.citations.length > 0 || hasVerifiedPersonalEvidence(advice, validSessionIds);
+}
+
+function hasSupportForHighConfidence(
+  advice: AdviceResponse,
+  validSessionIds: string[] | undefined,
+): boolean {
   return (
     advice.citations.length > 0 &&
-    (advice.personal_evidence.length > 0 ||
+    (hasVerifiedPersonalEvidence(advice, validSessionIds) ||
       advice.data_used.history ||
       advice.data_used.feedback ||
       advice.data_used.telemetry)
   );
 }
 
-function supportedHighConfidence(advice: AdviceResponse): boolean {
+function supportedHighConfidence(
+  advice: AdviceResponse,
+  validSessionIds: string[] | undefined,
+): boolean {
   if (advice.confidence !== 'high') return true;
-  return hasSupportForHighConfidence(advice);
+  return hasSupportForHighConfidence(advice, validSessionIds);
 }
 
 function downgradeConfidence(): AdviceConfidence {
@@ -191,6 +230,19 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
     };
   }
 
+  if (hasInvalidPersonalEvidence(advice, input.validSessionIds)) {
+    return {
+      decision: 'force_refusal',
+      violations: ['invalid_personal_evidence'],
+      advice: buildRefusalAdvice({
+        reason: 'no_safe_answer',
+        message:
+          'I could not verify the historical session evidence referenced in that response, so I am not returning a setup recommendation.',
+        dataUsed: advice.data_used,
+      }),
+    };
+  }
+
   const violations = advice.recommended_changes.flatMap(changeViolations);
   if (violations.length > 0) {
     return {
@@ -205,7 +257,7 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
     };
   }
 
-  if (!grounded(advice)) {
+  if (!grounded(advice, input.validSessionIds)) {
     return {
       decision: 'force_refusal',
       violations: ['ungrounded_recommendation'],
@@ -218,7 +270,7 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
     };
   }
 
-  if (!supportedHighConfidence(advice)) {
+  if (!supportedHighConfidence(advice, input.validSessionIds)) {
     return {
       decision: 'downgrade_confidence',
       violations: ['high_confidence_without_support'],
