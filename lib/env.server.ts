@@ -29,6 +29,10 @@ export function getOpenAIApiKey(): string {
   return readEnv('OPENAI_API_KEY');
 }
 
+export function getAiRequestFingerprintSecret(): string {
+  return readEnv('AI_REQUEST_FINGERPRINT_SECRET');
+}
+
 export function getAiModel(): string {
   const value = process.env.AI_MODEL?.trim();
   return value && value.length > 0 ? value : 'gpt-4o-mini';

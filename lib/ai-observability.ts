@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 
 const MAX_PREVIEW_LENGTH = 140;
 
@@ -28,6 +28,7 @@ export function buildPromptFingerprint(params: {
   question: string;
   symptoms?: string[] | null;
   changeIntent?: string | null;
+  secret: string;
 }): string {
   const normalized = normalizeForFingerprint(
     [
@@ -38,7 +39,7 @@ export function buildPromptFingerprint(params: {
       .filter(Boolean)
       .join(' | '),
   );
-  return createHash('sha256').update(normalized).digest('hex');
+  return createHmac('sha256', params.secret).update(normalized).digest('hex');
 }
 
 export function buildPromptRedactedPreview(question: string): string {

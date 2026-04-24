@@ -8,6 +8,7 @@ import {
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import {
+  getAiRequestFingerprintSecret,
   getAiRateLimitPerHour,
   getAiRateLimitPerMinute,
 } from '@/lib/env.server';
@@ -338,6 +339,7 @@ export async function POST(request: Request) {
     question: validated.data.question,
     symptoms: validated.data.symptoms,
     changeIntent: validated.data.change_intent,
+    secret: getAiRequestFingerprintSecret(),
   });
   const promptRedactedPreview = buildPromptRedactedPreview(validated.data.question);
 
@@ -603,7 +605,7 @@ export async function POST(request: Request) {
       promptTokens: result.usage.prompt_tokens,
       completionTokens: result.usage.completion_tokens,
       latencyMs: result.latencyMs,
-      refusalReason: advice.refusal ? 'no_safe_answer' : null,
+      refusalReason: advice.refusal ? (policyResult.violations[0] ?? 'no_safe_answer') : null,
       policyResult: policyResult.decision,
       policyViolations: policyResult.violations,
       classifierStage: 'post_policy',

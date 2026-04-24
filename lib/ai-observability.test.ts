@@ -4,17 +4,21 @@ import {
   buildPromptRedactedPreview,
 } from '@/lib/ai-observability';
 
+const TEST_SECRET = 'test-observability-secret';
+
 describe('buildPromptFingerprint', () => {
   it('is stable across casing and repeated whitespace', () => {
     const a = buildPromptFingerprint({
       question: ' Front pushes on entry ',
       symptoms: ['understeer_entry'],
       changeIntent: 'sharper_turn_in',
+      secret: TEST_SECRET,
     });
     const b = buildPromptFingerprint({
       question: 'front pushes   on entry',
       symptoms: ['understeer_entry'],
       changeIntent: 'sharper_turn_in',
+      secret: TEST_SECRET,
     });
     expect(a).toBe(b);
   });
@@ -24,11 +28,29 @@ describe('buildPromptFingerprint', () => {
       question: 'Front pushes on entry',
       symptoms: ['understeer_entry'],
       changeIntent: 'sharper_turn_in',
+      secret: TEST_SECRET,
     });
     const b = buildPromptFingerprint({
       question: 'Front pushes on entry',
       symptoms: ['understeer_entry'],
       changeIntent: 'more_rear_stability',
+      secret: TEST_SECRET,
+    });
+    expect(a).not.toBe(b);
+  });
+
+  it('changes when the fingerprint secret changes', () => {
+    const a = buildPromptFingerprint({
+      question: 'Front pushes on entry',
+      symptoms: ['understeer_entry'],
+      changeIntent: 'sharper_turn_in',
+      secret: 'secret-a',
+    });
+    const b = buildPromptFingerprint({
+      question: 'Front pushes on entry',
+      symptoms: ['understeer_entry'],
+      changeIntent: 'sharper_turn_in',
+      secret: 'secret-b',
     });
     expect(a).not.toBe(b);
   });
