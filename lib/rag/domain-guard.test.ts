@@ -56,6 +56,16 @@ describe('classifyRaceEngineerQuestion', () => {
     expect(result.reason).toBe('out_of_domain');
   });
 
+  it('still refuses an out-of-domain question when racing symptoms are selected', () => {
+    const result = classifyRaceEngineerQuestion({
+      question: 'Give me a list of the best vacuum cleaners for sale right now. I want a good cheap one.',
+      symptoms: ['understeer_entry', 'low_grip_cold'],
+      changeIntent: 'sharper_turn_in',
+    });
+    expect(result.decision).toBe('refuse');
+    expect(result.reason).toBe('out_of_domain');
+  });
+
   it('allows a normal setup question', () => {
     const result = classifyRaceEngineerQuestion({
       question: 'Front pushes mid-corner after I raised pressure 1 psi. What should I try next?',

@@ -111,15 +111,15 @@ function countMatches(source: string, patterns: RegExp[]): number {
 export function classifyRaceEngineerQuestion(
   input: ClassifyRaceEngineerQuestionInput,
 ): RaceEngineerQuestionAssessment {
-  const combined = [
-    input.question,
+  const questionText = input.question.trim();
+  const supportingText = [
     ...(input.symptoms ?? []),
     input.changeIntent ?? '',
   ]
     .join(' ')
     .trim();
 
-  if (countMatches(combined, PROMPT_INJECTION_PATTERNS) > 0) {
+  if (countMatches(questionText, PROMPT_INJECTION_PATTERNS) > 0) {
     return {
       decision: 'refuse',
       reason: 'prompt_injection',
@@ -128,10 +128,27 @@ export function classifyRaceEngineerQuestion(
     };
   }
 
-  const motorsportSignals = countMatches(combined, MOTORSPORT_PATTERNS);
-  const nonDomainSignals = countMatches(combined, NON_DOMAIN_PATTERNS);
+  const questionMotorsportSignals = countMatches(questionText, MOTORSPORT_PATTERNS);
+  const questionNonDomainSignals = countMatches(questionText, NON_DOMAIN_PATTERNS);
 
-  if (motorsportSignals === 0 && nonDomainSignals > 0) {
+  // The free-text question is the primary signal for intent. Symptom chips and
+  // intent selectors are supporting context only; they must not "rescue" an
+  // obviously unrelated question into the setup domain.
+  if (questionMotorsportSignals === 0 && questionNonDomainSignals > 0) {
+    return {
+      decision: 'refuse',
+      reason: 'out_of_domain',
+      message:
+        'That request is outside track setup scope. Ask about vehicle behavior, tire pressures, chassis balance, or what setup change to try for this session.',
+    };
+  }
+
+  const combinedMotorsportSignals = countMatches(
+    [questionText, supportingText].filter(Boolean).join(' '),
+    MOTORSPORT_PATTERNS,
+  );
+
+  if (combinedMotorsportSignals === 0 && questionNonDomainSignals === 0) {
     return {
       decision: 'refuse',
       reason: 'out_of_domain',

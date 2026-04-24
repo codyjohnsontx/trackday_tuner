@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
+import { classifyRaceEngineerQuestion } from '@/lib/rag/domain-guard';
 import type { AdviceResponse } from '@/lib/rag/schema';
 import { cn } from '@/lib/utils';
 
@@ -117,14 +118,49 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
   const [feedbackNotes, setFeedbackNotes] = useState('');
   const [response, setResponse] = useState<ApiSuccessBody | null>(null);
 
+  const questionAssessment = useMemo(
+    () =>
+      classifyRaceEngineerQuestion({
+        question,
+        symptoms,
+        changeIntent: intent,
+      }),
+    [question, symptoms, intent],
+  );
+  const showQuestionWarning =
+    question.trim().length >= 10 && questionAssessment.decision === 'refuse';
+
   if (tier !== 'pro') {
     return <ProUpgradeCard />;
   }
 
+  function clearActiveAdviceState() {
+    setError('');
+    setFeedbackMessage('');
+    setFeedbackError('');
+    setResponse(null);
+  }
+
+  function setQuestionValue(value: string) {
+    clearActiveAdviceState();
+    setQuestion(value);
+  }
+
   function toggleSymptom(id: string) {
+    clearActiveAdviceState();
     setSymptoms((current) =>
       current.includes(id) ? current.filter((s) => s !== id) : [...current, id],
     );
+  }
+
+  function setIntentValue(value: string) {
+    clearActiveAdviceState();
+    setIntent(value);
+  }
+
+  function setTemperatureValue(value: string) {
+    clearActiveAdviceState();
+    setTemperature(value);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -244,18 +280,33 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
           <textarea
             id="race_engineer_question"
             value={question}
-            onChange={(e) => setQuestion(e.target.value)}
+            onChange={(e) => setQuestionValue(e.target.value)}
             rows={3}
             minLength={10}
             maxLength={1000}
             placeholder="Front pushed mid-corner after raising pressure 1 psi."
             className="flex w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
           />
+          <span className="text-xs text-zinc-500">
+            Ask about setup, grip, balance, pressures, damping, or what changed on track.
+          </span>
           <span className="text-xs text-zinc-500">{question.length}/1000</span>
         </label>
 
+        {showQuestionWarning ? (
+          <div
+            role="status"
+            className="rounded-xl border border-amber-500/30 bg-amber-950/20 px-3 py-2 text-sm text-amber-200"
+          >
+            Race Engineer only answers track setup questions. This looks unrelated, so it will return a refusal instead of a setup recommendation.
+          </div>
+        ) : null}
+
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium text-zinc-200">Symptoms (optional)</legend>
+          <p className="text-xs text-zinc-500">
+            Symptoms add context to a real track question, but they do not replace it.
+          </p>
           <div className="flex flex-wrap gap-2">
             {SYMPTOM_OPTIONS.map((opt) => {
               const active = symptoms.includes(opt.id);
@@ -284,7 +335,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
           <select
             id="race_engineer_intent"
             value={intent}
-            onChange={(e) => setIntent(e.target.value)}
+            onChange={(e) => setIntentValue(e.target.value)}
             className="flex w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-base text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
           >
             <option value="">No specific goal</option>
@@ -304,7 +355,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
             inputMode="decimal"
             step="any"
             value={temperature}
-            onChange={(e) => setTemperature(e.target.value)}
+            onChange={(e) => setTemperatureValue(e.target.value)}
             placeholder="24"
             min={-40}
             max={70}
