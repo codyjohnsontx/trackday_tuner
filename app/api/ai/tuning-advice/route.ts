@@ -15,8 +15,8 @@ import {
 import {
   buildRefusalAdvice,
   classifyRaceEngineerQuestion,
-  normalizeAdviceResponse,
 } from '@/lib/rag/domain-guard';
+import { evaluateAdvicePolicy } from '@/lib/rag/policy';
 import {
   TUNING_ADVICE_LIMITS,
   validateTuningAdviceRequest,
@@ -230,6 +230,26 @@ async function countRequestsSince(
   return count ?? 0;
 }
 
+async function countRequestsByStatusesSince(
+  userId: string,
+  statuses: string[],
+  sinceMs: number,
+): Promise<number> {
+  const admin = createAdminClient();
+  const sinceIso = new Date(Date.now() - sinceMs).toISOString();
+  const { count, error } = await admin
+    .from('ai_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .in('status', statuses)
+    .gte('created_at', sinceIso);
+  if (error) {
+    console.error('[ai/tuning-advice] refusal throttle count failed', error);
+    throw new RateLimitLookupError(error);
+  }
+  return count ?? 0;
+}
+
 export async function POST(request: Request) {
   const requestId = randomUUID();
 
@@ -276,6 +296,30 @@ export async function POST(request: Request) {
 
   const perHour = getAiRateLimitPerHour();
   const perMinute = getAiRateLimitPerMinute();
+
+  try {
+    const [recentPromptInjectionRefusals, recentScopeRefusals] = await Promise.all([
+      countRequestsByStatusesSince(user.id, ['completed_refusal_prompt_injection'], 10 * 60 * 1000),
+      countRequestsByStatusesSince(
+        user.id,
+        ['completed_refusal_out_of_domain', 'completed_refusal_prompt_injection'],
+        10 * 60 * 1000,
+      ),
+    ]);
+
+    if (recentPromptInjectionRefusals >= 3 || recentScopeRefusals >= 8) {
+      return errorResponse(
+        429,
+        'Too many refused Race Engineer requests in a short window. Wait a few minutes before trying again.',
+        requestId,
+        { 'retry-after': '600' },
+      );
+    }
+  } catch {
+    // Refusal-rate throttling is a secondary safeguard. If it cannot be
+    // evaluated, continue with the primary request path rather than failing
+    // closed on an observability-only dependency.
+  }
 
   // Atomically reserve a slot BEFORE counting. Every concurrent request will
   // see every other request's pending row, which closes the TOCTOU gap between
@@ -463,7 +507,7 @@ export async function POST(request: Request) {
       raceEngineerContext,
     });
 
-    const advice = normalizeAdviceResponse({
+    const policyResult = evaluateAdvicePolicy({
       advice: result.advice,
       fallbackDataUsed:
         raceEngineerContext.dataUsed ??
@@ -475,6 +519,7 @@ export async function POST(request: Request) {
           telemetry: Boolean(raceEngineerContext.telemetrySummary),
         }),
     });
+    const advice = policyResult.advice;
 
     const recommendationId = await persistRecommendation({
       userId: user.id,
@@ -487,7 +532,11 @@ export async function POST(request: Request) {
     await updateRequestLog({
       requestId,
       sessionId: session.id,
-      status: advice.refusal ? 'completed_refusal_no_safe_answer' : 'ok',
+      status: advice.refusal
+        ? `completed_refusal_${policyResult.violations[0] ?? 'no_safe_answer'}`
+        : policyResult.decision === 'downgrade_confidence'
+          ? 'ok_confidence_downgraded'
+          : 'ok',
       model: result.model,
       promptTokens: result.usage.prompt_tokens,
       completionTokens: result.usage.completion_tokens,
