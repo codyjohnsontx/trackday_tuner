@@ -81,17 +81,17 @@ const COMPONENT_POLICIES: Record<ComponentKey, ComponentPolicy> = {
       /\breduce negative camber\b/i,
       /\bincrease negative camber\b/i,
     ],
-    validateMagnitude: (value) => /\bdegree\b/i.test(value) && (parseRangeMax(value) ?? Infinity) <= 0.5,
+    validateMagnitude: (value) => /\bdegrees?\b/i.test(value) && (parseRangeMax(value) ?? Infinity) <= 0.5,
   },
   sprocket: {
     aliases: ['rear_sprocket', 'front_sprocket', 'rear sprocket', 'front sprocket'],
     directionPatterns: [/\bshorter gearing\b/i, /\btaller gearing\b/i, /\bincrease\b/i, /\bdecrease\b/i],
-    validateMagnitude: (value) => /\btooth\b/i.test(value) && (parseRangeMax(value) ?? Infinity) <= 2,
+    validateMagnitude: (value) => /\b(?:tooth|teeth)\b/i.test(value) && (parseRangeMax(value) ?? Infinity) <= 2,
   },
   wing_angle: {
     aliases: ['rear_wing_angle', 'front_wing_angle', 'rear wing angle', 'front wing angle'],
     directionPatterns: [/\bincrease\b/i, /\bdecrease\b/i],
-    validateMagnitude: (value) => /\bposition\b/i.test(value) && (parseRangeMax(value) ?? Infinity) <= 2,
+    validateMagnitude: (value) => /\bpositions?\b/i.test(value) && (parseRangeMax(value) ?? Infinity) <= 2,
   },
   geometry: {
     aliases: ['fork_height', 'rear_ride_height', 'fork height', 'rear ride height'],
@@ -152,6 +152,17 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
         message: refusal,
         dataUsed: advice.data_used,
       }),
+    };
+  }
+
+  if (refusal && advice.recommended_changes.length === 0) {
+    return {
+      decision: 'force_refusal',
+      violations: ['no_recommendation'],
+      advice: {
+        ...advice,
+        refusal,
+      },
     };
   }
 

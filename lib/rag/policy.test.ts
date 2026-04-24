@@ -113,6 +113,49 @@ describe('evaluateAdvicePolicy', () => {
     expect(result.violations).toContain('no_recommendation');
   });
 
+  it('preserves an existing refusal when no recommendations are generated', () => {
+    const result = evaluateAdvicePolicy({
+      advice: buildAdvice({
+        recommended_changes: [],
+        refusal: 'This request is outside setup scope.',
+      }),
+      fallbackDataUsed: buildAdvice().data_used,
+    });
+    expect(result.decision).toBe('force_refusal');
+    expect(result.violations).toContain('no_recommendation');
+    expect(result.advice.refusal).toBe('This request is outside setup scope.');
+  });
+
+  it('accepts plural magnitude units for supported components', () => {
+    const result = evaluateAdvicePolicy({
+      advice: buildAdvice({
+        recommended_changes: [
+          {
+            component: 'rear_sprocket',
+            direction: 'increase',
+            magnitude: '2 teeth',
+            reason: 'Shorten gearing slightly.',
+          },
+          {
+            component: 'rear_wing_angle',
+            direction: 'decrease',
+            magnitude: '2 positions',
+            reason: 'Trim drag a small amount.',
+          },
+          {
+            component: 'front_camber',
+            direction: 'decrease',
+            magnitude: '0.5 degrees',
+            reason: 'Reduce negative camber slightly.',
+          },
+        ],
+      }),
+      fallbackDataUsed: buildAdvice().data_used,
+    });
+    expect(result.decision).toBe('allow');
+    expect(result.violations).toEqual([]);
+  });
+
   it('downgrades unsupported high confidence', () => {
     const result = evaluateAdvicePolicy({
       advice: buildAdvice({
