@@ -13,12 +13,17 @@ import {
   loadRaceEngineerContext,
 } from '@/lib/rag/race-engineer-context';
 import {
+  buildRefusalAdvice,
+  classifyRaceEngineerQuestion,
+  normalizeAdviceResponse,
+} from '@/lib/rag/domain-guard';
+import {
   TUNING_ADVICE_LIMITS,
   validateTuningAdviceRequest,
 } from '@/lib/rag/validation';
 import { createClient } from '@/lib/supabase/server';
 import type { Json, Session, Vehicle } from '@/types';
-import type { AdviceResponse } from '@/lib/rag/schema';
+import type { AdviceDataUsed, AdviceResponse } from '@/lib/rag/schema';
 
 export const runtime = 'nodejs';
 
@@ -26,6 +31,22 @@ interface ApiErrorBody {
   ok: false;
   error: string;
   request_id: string;
+}
+
+function buildFallbackDataUsed(params: {
+  temperatureC?: number;
+  session: Session;
+  history?: boolean;
+  feedback?: boolean;
+  telemetry?: boolean;
+}): AdviceDataUsed {
+  return {
+    manual: true,
+    weather: params.temperatureC != null,
+    history: params.history ?? false,
+    feedback: params.feedback ?? false,
+    telemetry: params.telemetry ?? false,
+  };
 }
 
 function errorResponse(
@@ -390,6 +411,41 @@ export async function POST(request: Request) {
 
   const previousSession = (previousRows?.[0] ?? null) as Session | null;
 
+  const questionAssessment = classifyRaceEngineerQuestion({
+    question: validated.data.question,
+    symptoms: validated.data.symptoms,
+    changeIntent: validated.data.change_intent,
+  });
+
+  if (questionAssessment.decision === 'refuse') {
+    const refusalReason = questionAssessment.reason ?? 'out_of_domain';
+    const advice = buildRefusalAdvice({
+      reason: refusalReason,
+      message: questionAssessment.message ?? 'This request is outside trackday setup scope.',
+      dataUsed: buildFallbackDataUsed({
+        session,
+        temperatureC: validated.data.temperature_c,
+      }),
+    });
+
+    await updateRequestLog({
+      requestId,
+      sessionId: session.id,
+      status: `completed_refusal_${refusalReason}`,
+    });
+
+    return NextResponse.json(
+      {
+        ok: true,
+        request_id: requestId,
+        recommendation_id: null,
+        advice,
+        retrieved: [],
+      },
+      { status: 200, headers: { 'x-request-id': requestId } },
+    );
+  }
+
   try {
     const raceEngineerContext = await loadRaceEngineerContext(supabase, {
       userId: user.id,
@@ -407,18 +463,31 @@ export async function POST(request: Request) {
       raceEngineerContext,
     });
 
+    const advice = normalizeAdviceResponse({
+      advice: result.advice,
+      fallbackDataUsed:
+        raceEngineerContext.dataUsed ??
+        buildFallbackDataUsed({
+          session,
+          temperatureC: validated.data.temperature_c,
+          history: raceEngineerContext.similarSessions.length > 0,
+          feedback: raceEngineerContext.recentFeedback.length > 0,
+          telemetry: Boolean(raceEngineerContext.telemetrySummary),
+        }),
+    });
+
     const recommendationId = await persistRecommendation({
       userId: user.id,
       requestId,
       session,
-      advice: result.advice,
+      advice,
       contextSnapshot: createRecommendationSnapshot(raceEngineerContext),
     });
 
     await updateRequestLog({
       requestId,
       sessionId: session.id,
-      status: result.advice.refusal ? 'refused' : 'ok',
+      status: advice.refusal ? 'completed_refusal_no_safe_answer' : 'ok',
       model: result.model,
       promptTokens: result.usage.prompt_tokens,
       completionTokens: result.usage.completion_tokens,
@@ -430,7 +499,7 @@ export async function POST(request: Request) {
         ok: true,
         request_id: requestId,
         recommendation_id: recommendationId,
-        advice: result.advice,
+        advice,
         retrieved: result.retrieved.map(({ chunk, score }) => ({
           source: chunk.source,
           heading: chunk.heading,
