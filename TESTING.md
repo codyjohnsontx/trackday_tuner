@@ -9,7 +9,9 @@
 - Secondary (release candidate): iPad Safari, Desktop Chrome/Safari/Edge
 
 ## Environment
-Create `.env.test` (or export vars in your shell):
+Playwright loads the same local env files as the app via Next's env loader. Use `.env.local` for normal local runs, or override values in your shell when you need a different test target.
+
+Create `.env.test`-style shell overrides (or export vars in your shell) when needed:
 
 ```bash
 PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000
