@@ -15,6 +15,7 @@ type AdvicePolicyDecision = 'allow' | 'force_refusal' | 'downgrade_confidence';
 
 export type AdvicePolicyViolation =
   | 'refusal_with_changes'
+  | 'no_recommendation'
   | 'unknown_component'
   | 'unsupported_direction'
   | 'unsafe_magnitude'
@@ -157,7 +158,7 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
   if (advice.recommended_changes.length === 0) {
     return {
       decision: 'force_refusal',
-      violations: ['ungrounded_recommendation'],
+      violations: ['no_recommendation'],
       advice: buildRefusalAdvice({
         reason: 'no_safe_answer',
         message:

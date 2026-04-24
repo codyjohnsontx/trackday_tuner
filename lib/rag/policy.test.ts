@@ -102,6 +102,17 @@ describe('evaluateAdvicePolicy', () => {
     expect(result.violations).toContain('ungrounded_recommendation');
   });
 
+  it('forces refusal with a distinct violation when no recommendations are generated', () => {
+    const result = evaluateAdvicePolicy({
+      advice: buildAdvice({
+        recommended_changes: [],
+      }),
+      fallbackDataUsed: buildAdvice().data_used,
+    });
+    expect(result.decision).toBe('force_refusal');
+    expect(result.violations).toContain('no_recommendation');
+  });
+
   it('downgrades unsupported high confidence', () => {
     const result = evaluateAdvicePolicy({
       advice: buildAdvice({
