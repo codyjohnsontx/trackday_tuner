@@ -164,6 +164,24 @@ describe('evaluateAdvicePolicy', () => {
     expect(result.violations).toEqual([]);
   });
 
+  it('accepts top-level component keys emitted by the model', () => {
+    const result = evaluateAdvicePolicy({
+      advice: buildAdvice({
+        recommended_changes: [
+          {
+            component: 'tire_pressure',
+            direction: 'decrease',
+            magnitude: '0.5 psi',
+            reason: 'Keep the change conservative.',
+          },
+        ],
+      }),
+      fallbackDataUsed: buildAdvice().data_used,
+    });
+    expect(result.decision).toBe('allow');
+    expect(result.violations).toEqual([]);
+  });
+
   it('downgrades unsupported high confidence', () => {
     const result = evaluateAdvicePolicy({
       advice: buildAdvice({

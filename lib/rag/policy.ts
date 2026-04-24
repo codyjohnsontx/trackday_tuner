@@ -102,8 +102,8 @@ const COMPONENT_POLICIES: Record<ComponentKey, ComponentPolicy> = {
 
 function findComponentPolicy(component: string): ComponentPolicy | null {
   const normalized = component.trim().toLowerCase();
-  for (const policy of Object.values(COMPONENT_POLICIES)) {
-    if (policy.aliases.includes(normalized)) return policy;
+  for (const [key, policy] of Object.entries(COMPONENT_POLICIES) as [ComponentKey, ComponentPolicy][]) {
+    if (key === normalized || policy.aliases.includes(normalized)) return policy;
   }
   return null;
 }
@@ -126,9 +126,19 @@ function grounded(advice: AdviceResponse): boolean {
   return advice.citations.length > 0 || advice.personal_evidence.length > 0;
 }
 
+function hasSupportForHighConfidence(advice: AdviceResponse): boolean {
+  return (
+    advice.citations.length > 0 &&
+    (advice.personal_evidence.length > 0 ||
+      advice.data_used.history ||
+      advice.data_used.feedback ||
+      advice.data_used.telemetry)
+  );
+}
+
 function supportedHighConfidence(advice: AdviceResponse): boolean {
   if (advice.confidence !== 'high') return true;
-  return advice.citations.length > 0 && (advice.personal_evidence.length > 0 || advice.data_used.history || advice.data_used.feedback || advice.data_used.telemetry);
+  return hasSupportForHighConfidence(advice);
 }
 
 function downgradeConfidence(): AdviceConfidence {
