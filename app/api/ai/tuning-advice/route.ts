@@ -61,6 +61,20 @@ function errorResponse(
   );
 }
 
+function validRaceEngineerSessionIds(params: {
+  session: Session;
+  similarSessionIds: string[];
+  feedbackSessionIds: Array<string | null | undefined>;
+  recommendationSessionIds: Array<string | null | undefined>;
+}): string[] {
+  return [...new Set([
+    params.session.id,
+    ...params.similarSessionIds,
+    ...params.feedbackSessionIds,
+    ...params.recommendationSessionIds,
+  ].filter((value): value is string => Boolean(value)))];
+}
+
 class RateLimitLookupError extends Error {
   constructor(cause: unknown) {
     super('Rate limit lookup failed.');
@@ -518,6 +532,15 @@ export async function POST(request: Request) {
           feedback: raceEngineerContext.recentFeedback.length > 0,
           telemetry: Boolean(raceEngineerContext.telemetrySummary),
         }),
+      validSessionIds: validRaceEngineerSessionIds({
+        session,
+        similarSessionIds: raceEngineerContext.similarSessions.map((item) => item.session.id),
+        feedbackSessionIds: raceEngineerContext.recentFeedback.map((item) => item.session_id),
+        recommendationSessionIds: raceEngineerContext.recentRecommendations.flatMap((item) => [
+          item.session_id,
+          item.outcome_session_id,
+        ]),
+      }),
     });
     const advice = policyResult.advice;
 
