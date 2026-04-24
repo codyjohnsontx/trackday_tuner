@@ -131,9 +131,8 @@ function supportedHighConfidence(advice: AdviceResponse): boolean {
   return advice.citations.length > 0 && (advice.personal_evidence.length > 0 || advice.data_used.history || advice.data_used.feedback || advice.data_used.telemetry);
 }
 
-function downgradeConfidence(confidence: AdviceConfidence): AdviceConfidence {
-  if (confidence === 'high') return 'medium';
-  return 'low';
+function downgradeConfidence(): AdviceConfidence {
+  return 'medium';
 }
 
 export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEvaluation {
@@ -215,7 +214,7 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
       violations: ['high_confidence_without_support'],
       advice: {
         ...advice,
-        confidence: downgradeConfidence(advice.confidence),
+        confidence: downgradeConfidence(),
       },
     };
   }
