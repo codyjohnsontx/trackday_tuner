@@ -310,6 +310,12 @@ export type Database = {
           session_id: string | null;
           request_id: string;
           status: string;
+          refusal_reason: string | null;
+          policy_result: string | null;
+          policy_violations: string[];
+          prompt_fingerprint: string | null;
+          prompt_redacted_preview: string | null;
+          classifier_stage: string | null;
           model: string | null;
           prompt_tokens: number | null;
           completion_tokens: number | null;
@@ -323,6 +329,12 @@ export type Database = {
           session_id?: string | null;
           request_id: string;
           status: string;
+          refusal_reason?: string | null;
+          policy_result?: string | null;
+          policy_violations?: string[];
+          prompt_fingerprint?: string | null;
+          prompt_redacted_preview?: string | null;
+          classifier_stage?: string | null;
           model?: string | null;
           prompt_tokens?: number | null;
           completion_tokens?: number | null;
@@ -336,6 +348,12 @@ export type Database = {
           session_id?: string | null;
           request_id?: string;
           status?: string;
+          refusal_reason?: string | null;
+          policy_result?: string | null;
+          policy_violations?: string[];
+          prompt_fingerprint?: string | null;
+          prompt_redacted_preview?: string | null;
+          classifier_stage?: string | null;
           model?: string | null;
           prompt_tokens?: number | null;
           completion_tokens?: number | null;

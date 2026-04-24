@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getAuthenticatedUser } from '@/lib/auth';
+import {
+  buildPromptFingerprint,
+  buildPromptRedactedPreview,
+} from '@/lib/ai-observability';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import {
@@ -94,6 +98,8 @@ class ReservationError extends Error {
 async function reservePendingSlot(params: {
   userId: string;
   requestId: string;
+  promptFingerprint: string;
+  promptRedactedPreview: string;
 }): Promise<void> {
   const admin = createAdminClient();
   // session_id starts null: the caller has not yet confirmed the referenced
@@ -105,6 +111,8 @@ async function reservePendingSlot(params: {
     session_id: null,
     request_id: params.requestId,
     status: 'pending',
+    prompt_fingerprint: params.promptFingerprint,
+    prompt_redacted_preview: params.promptRedactedPreview,
   });
   if (error) {
     console.error('[ai/tuning-advice] reservation insert failed', error);
@@ -121,6 +129,10 @@ interface UpdateRequestLogParams {
   completionTokens?: number | null;
   latencyMs?: number | null;
   errorMessage?: string | null;
+  refusalReason?: string | null;
+  policyResult?: string | null;
+  policyViolations?: string[];
+  classifierStage?: string | null;
 }
 
 async function updateRequestLog(params: UpdateRequestLogParams): Promise<void> {
@@ -132,6 +144,18 @@ async function updateRequestLog(params: UpdateRequestLogParams): Promise<void> {
     latency_ms: params.latencyMs ?? null,
     error_message: params.errorMessage ?? null,
   };
+  if (params.refusalReason !== undefined) {
+    patch.refusal_reason = params.refusalReason;
+  }
+  if (params.policyResult !== undefined) {
+    patch.policy_result = params.policyResult;
+  }
+  if (params.policyViolations !== undefined) {
+    patch.policy_violations = params.policyViolations;
+  }
+  if (params.classifierStage !== undefined) {
+    patch.classifier_stage = params.classifierStage;
+  }
   if (params.sessionId !== undefined) {
     patch.session_id = params.sessionId;
   }
@@ -310,6 +334,12 @@ export async function POST(request: Request) {
 
   const perHour = getAiRateLimitPerHour();
   const perMinute = getAiRateLimitPerMinute();
+  const promptFingerprint = buildPromptFingerprint({
+    question: validated.data.question,
+    symptoms: validated.data.symptoms,
+    changeIntent: validated.data.change_intent,
+  });
+  const promptRedactedPreview = buildPromptRedactedPreview(validated.data.question);
 
   try {
     const [recentPromptInjectionRefusals, recentScopeRefusals] = await Promise.all([
@@ -339,7 +369,12 @@ export async function POST(request: Request) {
   // see every other request's pending row, which closes the TOCTOU gap between
   // a bare count and the subsequent insert.
   try {
-    await reservePendingSlot({ userId: user.id, requestId });
+    await reservePendingSlot({
+      userId: user.id,
+      requestId,
+      promptFingerprint,
+      promptRedactedPreview,
+    });
   } catch {
     return errorResponse(
       503,
@@ -490,6 +525,10 @@ export async function POST(request: Request) {
       requestId,
       sessionId: session.id,
       status: `completed_refusal_${refusalReason}`,
+      refusalReason,
+      policyResult: 'force_refusal',
+      policyViolations: [],
+      classifierStage: 'preflight',
     });
 
     return NextResponse.json(
@@ -564,6 +603,10 @@ export async function POST(request: Request) {
       promptTokens: result.usage.prompt_tokens,
       completionTokens: result.usage.completion_tokens,
       latencyMs: result.latencyMs,
+      refusalReason: advice.refusal ? 'no_safe_answer' : null,
+      policyResult: policyResult.decision,
+      policyViolations: policyResult.violations,
+      classifierStage: 'post_policy',
     });
 
     return NextResponse.json(
