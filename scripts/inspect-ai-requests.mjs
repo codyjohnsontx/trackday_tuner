@@ -16,7 +16,7 @@ function loadEnvFile(filename) {
   for (const line of raw.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
-    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    const match = trimmed.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
     if (!match) continue;
     const [, key, value] = match;
     if (process.env[key] !== undefined) continue;
@@ -142,8 +142,39 @@ function printTable(rows) {
   }
 }
 
-function isMissingColumnError(message) {
-  return typeof message === 'string' && message.includes('does not exist');
+function buildAiRequestsQuery(supabase, selectExpr, options) {
+  let query = supabase
+    .from('ai_requests')
+    .select(selectExpr)
+    .order('created_at', { ascending: false })
+    .limit(options.limit);
+
+  if (options.userId) {
+    query = query.eq('user_id', options.userId);
+  }
+  if (options.status) {
+    query = query.eq('status', options.status);
+  }
+
+  return query;
+}
+
+async function isMissingColumnError(supabase, error, columnName) {
+  if (!error || typeof error !== 'object') return false;
+  if (error.code === '42703' || error.code === 'PGRST204') return true;
+  if (error.code) return false;
+
+  const { data, error: schemaError } = await supabase
+    .schema('information_schema')
+    .from('columns')
+    .select('column_name')
+    .eq('table_schema', 'public')
+    .eq('table_name', 'ai_requests')
+    .eq('column_name', columnName)
+    .limit(1);
+
+  if (schemaError) return false;
+  return !Array.isArray(data) || data.length === 0;
 }
 
 async function main() {
@@ -166,38 +197,14 @@ async function main() {
   const fallbackSelect =
     'created_at,user_id,session_id,request_id,status,model,latency_ms,error_message';
 
-  let query = supabase
-    .from('ai_requests')
-    .select(fullSelect)
-    .order('created_at', { ascending: false })
-    .limit(options.limit);
-
-  if (options.userId) {
-    query = query.eq('user_id', options.userId);
-  }
-  if (options.status) {
-    query = query.eq('status', options.status);
-  }
-
+  let query = buildAiRequestsQuery(supabase, fullSelect, options);
   let { data, error } = await query;
-  if (error && isMissingColumnError(error.message)) {
+  if (error && await isMissingColumnError(supabase, error, 'refusal_reason')) {
     console.warn(
       '[ai:requests] Observability columns are missing. Apply the ai_requests observability migration to see refusal/policy metadata.',
     );
 
-    query = supabase
-      .from('ai_requests')
-      .select(fallbackSelect)
-      .order('created_at', { ascending: false })
-      .limit(options.limit);
-
-    if (options.userId) {
-      query = query.eq('user_id', options.userId);
-    }
-    if (options.status) {
-      query = query.eq('status', options.status);
-    }
-
+    query = buildAiRequestsQuery(supabase, fallbackSelect, options);
     const fallbackResult = await query;
     data = fallbackResult.data?.map((row) => ({
       ...row,
