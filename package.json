@@ -15,6 +15,7 @@
     "test": "npm run test:unit && npm run test:e2e",
     "analyze": "ANALYZE=true next build",
     "check:agent-docs": "node scripts/check-agent-docs.mjs",
+    "ai:requests": "node scripts/inspect-ai-requests.mjs",
     "rag:index": "node scripts/build-rag-index.mjs",
     "rag:eval": "node scripts/eval-rag.mjs"
   },
