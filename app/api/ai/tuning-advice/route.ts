@@ -38,6 +38,23 @@ interface ApiErrorBody {
   request_id: string;
 }
 
+const DEDUPE_WINDOW_MS = 5 * 60 * 1000;
+const HANDLED_AI_REQUEST_STATUSES = [
+  'ok',
+  'ok_confidence_downgraded',
+  'completed_refusal_out_of_domain',
+  'completed_refusal_prompt_injection',
+  'completed_refusal_refusal_with_changes',
+  'completed_refusal_no_recommendation',
+  'completed_refusal_invalid_personal_evidence',
+  'completed_refusal_unknown_component',
+  'completed_refusal_unsupported_direction',
+  'completed_refusal_unsafe_magnitude',
+  'completed_refusal_ungrounded_recommendation',
+  'completed_refusal_high_confidence_without_support',
+  'completed_refusal_no_safe_answer',
+] as const;
+
 function buildFallbackDataUsed(params: {
   temperatureC?: number;
   session: Session;
@@ -289,6 +306,40 @@ async function countRequestsByStatusesSince(
   return count ?? 0;
 }
 
+async function findRecentDuplicateRequest(params: {
+  userId: string;
+  sessionId: string;
+  requestId: string;
+  promptFingerprint: string;
+  withinMs: number;
+}): Promise<string | null> {
+  const admin = createAdminClient();
+  const sinceIso = new Date(Date.now() - params.withinMs).toISOString();
+  const { data, error } = await admin
+    .from('ai_requests')
+    .select('request_id')
+    .eq('user_id', params.userId)
+    .eq('session_id', params.sessionId)
+    .eq('prompt_fingerprint', params.promptFingerprint)
+    .neq('request_id', params.requestId)
+    .in('status', [...HANDLED_AI_REQUEST_STATUSES])
+    .gte('created_at', sinceIso)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error('[ai/tuning-advice] duplicate lookup failed', {
+      userId: params.userId,
+      sessionId: params.sessionId,
+      requestId: params.requestId,
+      error,
+    });
+    return null;
+  }
+
+  return data?.[0]?.request_id ?? null;
+}
+
 export async function POST(request: Request) {
   const requestId = randomUUID();
 
@@ -486,6 +537,47 @@ export async function POST(request: Request) {
       400,
       'Session does not belong to the provided vehicle.',
       requestId,
+    );
+  }
+
+  const duplicateRequestId = await findRecentDuplicateRequest({
+    userId: user.id,
+    sessionId: session.id,
+    requestId,
+    promptFingerprint,
+    withinMs: DEDUPE_WINDOW_MS,
+  });
+
+  if (duplicateRequestId) {
+    const advice = buildRefusalAdvice({
+      reason: 'no_safe_answer',
+      message:
+        'An identical Race Engineer request was handled recently. Review the previous result or change the question before retrying.',
+      dataUsed: buildFallbackDataUsed({
+        session,
+        temperatureC: validated.data.temperature_c,
+      }),
+    });
+
+    await updateRequestLog({
+      requestId,
+      sessionId: session.id,
+      status: 'duplicate_recent_request',
+      refusalReason: 'duplicate_recent_request',
+      policyResult: 'force_refusal',
+      policyViolations: ['duplicate_recent_request'],
+      classifierStage: 'dedupe',
+    });
+
+    return NextResponse.json(
+      {
+        ok: true,
+        request_id: requestId,
+        recommendation_id: null,
+        advice,
+        retrieved: [],
+      },
+      { status: 200, headers: { 'x-request-id': requestId } },
     );
   }
 
