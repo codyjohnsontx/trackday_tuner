@@ -20,6 +20,19 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 - Stop and report on any failure — do not retry or work around it automatically
 - Do not run any git command if the working tree is dirty — stop and tell the user to clean it up first
 
+## Instruction File Sync
+
+- `AGENTS.md` is the Codex-readable mirror of this file
+- `CLAUDE.md` and `AGENTS.md` must stay byte-for-byte identical
+- After editing either file, immediately sync the other one and run `npm run check:agent-docs`
+
+## Duplicate File Hygiene
+
+- Treat files or directories with Finder-style duplicate names such as `* 2.ts`, `* 2.tsx`, `* 2.mjs`, `* 2.sql`, `* 2.json`, or folders ending in ` 2` as accidental artifacts unless the user explicitly asked for them
+- Do not create duplicate working copies in the repo as a drafting workflow
+- If duplicate artifacts are found, stop and tell the user before proceeding with git operations
+- Remove accidental duplicates before creating a PR so they do not remain as untracked clutter across branch switches
+
 ### Creating a PR (exact steps, no deviation)
 
 1. `git status` — working tree must be clean. If not, stop and tell the user.
