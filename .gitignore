@@ -9,7 +9,6 @@ out/
 .env.*
 !.env.example
 AGENTS.md
-CLAUDE.md
 
 # Tooling / local artifacts
 .DS_Store

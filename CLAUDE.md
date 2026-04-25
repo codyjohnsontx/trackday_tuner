@@ -28,7 +28,7 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 
 ## Duplicate File Hygiene
 
-- Treat files or directories with Finder-style duplicate names such as `* 2.ts`, `* 2.tsx`, `* 2.mjs`, `* 2.sql`, `* 2.json`, or folders ending in ` 2` as accidental artifacts unless the user explicitly asked for them
+- Treat files or directories with Finder-style duplicate names such as `* 2.ts`, `* 2.tsx`, `* 2.mjs`, `* 2.sql`, `* 2.json`, or folders whose names end with a space followed by `2` as accidental artifacts unless the user explicitly asked for them
 - Do not create duplicate working copies in the repo as a drafting workflow
 - If duplicate artifacts are found, stop and tell the user before proceeding with git operations
 - Remove accidental duplicates before creating a PR so they do not remain as untracked clutter across branch switches
