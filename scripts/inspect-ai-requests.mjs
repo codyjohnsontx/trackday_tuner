@@ -63,20 +63,22 @@ function parseArgs(argv) {
       continue;
     }
     if (arg === '--user') {
-      options.userId = argv[i + 1] ?? null;
-      if (!options.userId) {
+      const value = argv[i + 1] ?? null;
+      if (!value || value.startsWith('-')) {
         console.error('[ai:requests] --user requires a value.');
         process.exit(1);
       }
+      options.userId = value;
       i += 1;
       continue;
     }
     if (arg === '--status') {
-      options.status = argv[i + 1] ?? null;
-      if (!options.status) {
+      const value = argv[i + 1] ?? null;
+      if (!value || value.startsWith('-')) {
         console.error('[ai:requests] --status requires a value.');
         process.exit(1);
       }
+      options.status = value;
       i += 1;
       continue;
     }
