@@ -7,6 +7,7 @@ const {
   createAdminClient,
   generateTuningAdvice,
   loadRaceEngineerContext,
+  evaluateAdvicePolicy,
 } = vi.hoisted(() => ({
   getAuthenticatedUser: vi.fn(),
   getUserProfile: vi.fn(),
@@ -14,6 +15,7 @@ const {
   createAdminClient: vi.fn(),
   generateTuningAdvice: vi.fn(),
   loadRaceEngineerContext: vi.fn(),
+  evaluateAdvicePolicy: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({
@@ -46,6 +48,10 @@ vi.mock('@/lib/rag/advice', () => ({
 vi.mock('@/lib/rag/race-engineer-context', () => ({
   loadRaceEngineerContext,
   createRecommendationSnapshot: vi.fn(() => ({})),
+}));
+
+vi.mock('@/lib/rag/policy', () => ({
+  evaluateAdvicePolicy,
 }));
 
 import { POST } from '@/app/api/ai/tuning-advice/route';
@@ -207,9 +213,33 @@ function createAiRequestsQuery(
   return builder;
 }
 
-function createAdminClientMock(aiRequests: AiRequestRow[]) {
+interface AdminClientMockOptions {
+  // When true, the dedupe path (`select('request_id')`) returns a thenable that
+  // rejects, simulating a transport-layer failure inside findRecentDuplicateRequest.
+  throwOnDedupeLookup?: boolean;
+  // When true, ai_recommendations.insert(...).select('id').single() resolves
+  // with a fake id so persistRecommendation can complete.
+  acceptRecommendations?: boolean;
+}
+
+function createAdminClientMock(
+  aiRequests: AiRequestRow[],
+  options: AdminClientMockOptions = {},
+) {
   return {
     from: vi.fn((table) => {
+      if (table === 'ai_recommendations' && options.acceptRecommendations) {
+        return {
+          insert: vi.fn(() => ({
+            select: vi.fn(() => ({
+              single: vi.fn(async () => ({
+                data: { id: 'rec-test' },
+                error: null,
+              })),
+            })),
+          })),
+        };
+      }
       if (table !== 'ai_requests') {
         throw new Error(`Unexpected admin table: ${table}`);
       }
@@ -233,12 +263,27 @@ function createAdminClientMock(aiRequests: AiRequestRow[]) {
         delete: vi.fn(() => ({
           eq: vi.fn(async () => ({ error: null })),
         })),
-        select: vi.fn((_fields, options = {}) =>
-          createAiRequestsQuery(aiRequests, {
-            head: Boolean(options.head),
-            count: options.count === 'exact',
-          }),
-        ),
+        select: vi.fn((fields, selectOptions = {}) => {
+          if (fields === 'request_id' && options.throwOnDedupeLookup) {
+            const throwing = {
+              eq: () => throwing,
+              neq: () => throwing,
+              in: () => throwing,
+              gte: () => throwing,
+              order: () => throwing,
+              limit: () => throwing,
+              then: (
+                _resolve: (value: unknown) => void,
+                reject: (reason?: unknown) => void,
+              ) => reject(new Error('dedupe transport failure')),
+            };
+            return throwing;
+          }
+          return createAiRequestsQuery(aiRequests, {
+            head: Boolean(selectOptions.head),
+            count: selectOptions.count === 'exact',
+          });
+        }),
       };
     }),
   };
@@ -269,6 +314,11 @@ describe('POST /api/ai/tuning-advice duplicate handling', () => {
     createClient.mockResolvedValue(createServerClient());
     loadRaceEngineerContext.mockResolvedValue(null);
     generateTuningAdvice.mockResolvedValue(null);
+    evaluateAdvicePolicy.mockImplementation((input) => ({
+      decision: 'pass',
+      violations: [],
+      advice: input.advice,
+    }));
   });
 
   it('returns a handled duplicate refusal and skips model generation', async () => {
@@ -358,5 +408,127 @@ describe('POST /api/ai/tuning-advice duplicate handling', () => {
     expect(body.ok).toBe(true);
     expect(body.advice.refusal).toContain('outside track setup scope');
     expect(generateTuningAdvice).not.toHaveBeenCalled();
+  });
+
+  it('marks the ai_requests row with duplicate_recent_request status and related fields', async () => {
+    const question = 'Front pushes on entry after I raised pressure 1 psi. What next?';
+    const aiRequests: AiRequestRow[] = [
+      {
+        request_id: 'existing-request',
+        user_id: USER_ID,
+        session_id: SESSION_ID,
+        prompt_fingerprint: fingerprintFor(question),
+        status: 'ok',
+        created_at: new Date().toISOString(),
+      },
+    ];
+    createAdminClient.mockReturnValue(createAdminClientMock(aiRequests));
+
+    const response = await POST(
+      new Request('http://127.0.0.1:3000/api/ai/tuning-advice', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(buildRequestBody(question)),
+      }),
+    );
+
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+
+    const newRow = aiRequests.find((row) => row.request_id === body.request_id);
+    expect(newRow).toBeDefined();
+    expect(newRow).toMatchObject({
+      request_id: body.request_id,
+      user_id: USER_ID,
+      session_id: SESSION_ID,
+      prompt_fingerprint: fingerprintFor(question),
+      status: 'duplicate_recent_request',
+      refusal_reason: 'duplicate_recent_request',
+      policy_result: 'force_refusal',
+      policy_violations: ['duplicate_recent_request'],
+      classifier_stage: 'dedupe',
+    });
+    expect(generateTuningAdvice).not.toHaveBeenCalled();
+  });
+
+  it('fails open and proceeds to generation when the duplicate lookup throws', async () => {
+    const question = 'Front pushes on entry after I raised pressure 1 psi. What next?';
+    const aiRequests: AiRequestRow[] = [];
+    createAdminClient.mockReturnValue(
+      createAdminClientMock(aiRequests, {
+        throwOnDedupeLookup: true,
+        acceptRecommendations: true,
+      }),
+    );
+
+    loadRaceEngineerContext.mockResolvedValue({
+      similarSessions: [],
+      sessionEnvironment: null,
+      recentFeedback: [],
+      recentRecommendations: [],
+      memory: null,
+      telemetrySummary: null,
+      dayTrend: '',
+      dataUsed: {
+        manual: true,
+        weather: false,
+        history: false,
+        feedback: false,
+        telemetry: false,
+      },
+    });
+
+    const validAdvice = {
+      summary: 'Drop front rebound one click.',
+      recommended_changes: [
+        {
+          component: 'front_rebound',
+          direction: 'softer',
+          magnitude: '1 click',
+          reason: 'reduce push on entry',
+        },
+      ],
+      tradeoffs: [],
+      confidence: 'medium' as const,
+      safety_notes: [],
+      citations: [{ source: 'manual', snippet: 'rebound advice' }],
+      prediction: {
+        expected_effect: 'less push on entry',
+        day_trend: 'stable',
+        watch_items: [],
+      },
+      personal_evidence: [],
+      data_used: {
+        manual: true,
+        weather: false,
+        history: false,
+        feedback: false,
+        telemetry: false,
+      },
+      refusal: null,
+    };
+
+    generateTuningAdvice.mockResolvedValue({
+      advice: validAdvice,
+      retrieved: [],
+      usage: { prompt_tokens: 10, completion_tokens: 5 },
+      latencyMs: 42,
+      model: 'test-model',
+    });
+
+    const response = await POST(
+      new Request('http://127.0.0.1:3000/api/ai/tuning-advice', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(buildRequestBody(question)),
+      }),
+    );
+
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(generateTuningAdvice).toHaveBeenCalledTimes(1);
+    expect(body.advice.summary).toBe('Drop front rebound one click.');
   });
 });

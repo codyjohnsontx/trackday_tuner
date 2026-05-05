@@ -313,31 +313,46 @@ async function findRecentDuplicateRequest(params: {
   promptFingerprint: string;
   withinMs: number;
 }): Promise<string | null> {
-  const admin = createAdminClient();
-  const sinceIso = new Date(Date.now() - params.withinMs).toISOString();
-  const { data, error } = await admin
-    .from('ai_requests')
-    .select('request_id')
-    .eq('user_id', params.userId)
-    .eq('session_id', params.sessionId)
-    .eq('prompt_fingerprint', params.promptFingerprint)
-    .neq('request_id', params.requestId)
-    .in('status', [...HANDLED_AI_REQUEST_STATUSES])
-    .gte('created_at', sinceIso)
-    .order('created_at', { ascending: false })
-    .limit(1);
+  // Dedupe is a best-effort optimization — fail open on any error so a flaky
+  // observability lookup never escalates into a 500 for the user.
+  try {
+    const admin = createAdminClient();
+    const sinceIso = new Date(Date.now() - params.withinMs).toISOString();
+    const { data, error } = await admin
+      .from('ai_requests')
+      .select('request_id')
+      .eq('user_id', params.userId)
+      .eq('session_id', params.sessionId)
+      .eq('prompt_fingerprint', params.promptFingerprint)
+      .neq('request_id', params.requestId)
+      .in('status', [...HANDLED_AI_REQUEST_STATUSES])
+      .gte('created_at', sinceIso)
+      .order('created_at', { ascending: false })
+      .limit(1);
 
-  if (error) {
-    console.error('[ai/tuning-advice] duplicate lookup failed', {
-      userId: params.userId,
-      sessionId: params.sessionId,
-      requestId: params.requestId,
-      error,
-    });
+    if (error) {
+      console.error('[ai/tuning-advice] duplicate lookup failed', {
+        userId: params.userId,
+        sessionId: params.sessionId,
+        requestId: params.requestId,
+        error,
+      });
+      return null;
+    }
+
+    return data?.[0]?.request_id ?? null;
+  } catch (thrown) {
+    console.error(
+      '[ai/tuning-advice] duplicate lookup threw',
+      {
+        userId: params.userId,
+        sessionId: params.sessionId,
+        requestId: params.requestId,
+      },
+      thrown,
+    );
     return null;
   }
-
-  return data?.[0]?.request_id ?? null;
 }
 
 export async function POST(request: Request) {
