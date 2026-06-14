@@ -4,9 +4,10 @@ import type { Vehicle } from '@/types';
 
 interface VehicleCardProps {
   vehicle: Vehicle;
+  demoMode?: boolean;
 }
 
-export function VehicleCard({ vehicle }: VehicleCardProps) {
+export function VehicleCard({ vehicle, demoMode = false }: VehicleCardProps) {
   const subtitle = [vehicle.year, vehicle.make, vehicle.model]
     .filter(Boolean)
     .join(' ');
@@ -35,12 +36,18 @@ export function VehicleCard({ vehicle }: VehicleCardProps) {
           <span className="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-300">
             {vehicle.type}
           </span>
-          <Link
-            href={`/garage/${vehicle.id}/edit`}
-            className="flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-semibold text-zinc-300 hover:border-zinc-500 hover:text-zinc-100"
-          >
-            Edit →
-          </Link>
+          {demoMode ? (
+            <span className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-200">
+              Sample
+            </span>
+          ) : (
+            <Link
+              href={`/garage/${vehicle.id}/edit`}
+              className="flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-semibold text-zinc-300 hover:border-zinc-500 hover:text-zinc-100"
+            >
+              Edit →
+            </Link>
+          )}
         </div>
       </div>
     </li>

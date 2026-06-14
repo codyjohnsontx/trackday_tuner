@@ -11,7 +11,7 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 - **UI**: shadcn/ui pattern — `cva` + `cn()` from `lib/utils.ts`, Radix primitives
 - **Backend/Auth**: Supabase (email/password)
 - **Payments**: Stripe (subscriptions)
-- **AI**: OpenAI (planned RAG query tool, not active in current routes)
+- **AI**: OpenAI-backed setup advice and day planning with curated RAG context
 - **Hosting**: Vercel
 
 ## Git Protocol
@@ -61,20 +61,20 @@ npm run rag:index    # build RAG index from docs/knowledge-base/
 
 ```
 app/(app)/           # authenticated routes (layout enforces auth)
-app/api/             # API routes (stripe checkout/portal/webhooks)
+app/api/             # API routes (stripe checkout/portal/webhooks/AI)
 components/ui/       # shadcn/ui-backed component wrappers
 components/layout/   # app shell, bottom nav
 components/auth/     # auth form
 components/sessions/ # session form
 components/garage/   # vehicle form
 lib/actions/         # server actions (sessions, tracks, vehicles, sag)
-# lib/rag/           # planned RAG pipeline (not currently present)
+lib/rag/             # RAG retrieval, prompt, policy, and validation helpers
 lib/supabase/        # client, server, middleware, admin clients
 lib/auth/            # getAuthenticatedUser(), isAuthenticated()
 lib/utils.ts         # cn() utility (twMerge + clsx)
 lib/billing.ts       # plan/tier helpers
 lib/plans.ts         # plan definitions
-# docs/knowledge-base/ # planned markdown source files for future RAG index
+docs/knowledge-base/ # curated markdown source files for RAG index
 data/session-logs/   # sample session log JSON
 ```
 
@@ -114,4 +114,6 @@ Tailwind v4 project tokens live in `@theme { ... }` — these are separate names
 
 ## Current AI Status
 
-RAG routes and `lib/rag` implementation are planned but not active in this checkout.
+AI routes are active for tuning advice, recommendation feedback, and day planning.
+`lib/rag/` contains retrieval, prompt, policy, validation, and schema helpers.
+Knowledge-base markdown lives in `docs/knowledge-base/` and can be indexed with `npm run rag:index`.

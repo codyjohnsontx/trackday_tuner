@@ -8,13 +8,14 @@ import type { Track } from '@/types';
 
 interface TrackListClientProps {
   tracks: Track[];
+  demoMode?: boolean;
 }
 
 function normalize(value: string) {
   return value.trim().toLowerCase();
 }
 
-export function TrackListClient({ tracks }: TrackListClientProps) {
+export function TrackListClient({ tracks, demoMode = false }: TrackListClientProps) {
   const [query, setQuery] = useState('');
 
   const filteredTracks = useMemo(() => {
@@ -66,21 +67,23 @@ export function TrackListClient({ tracks }: TrackListClientProps) {
                     Custom
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className={demoMode ? 'grid gap-2' : 'grid grid-cols-2 gap-2'}>
                   <Link
                     href={`/tracks/${track.id}`}
                     className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-center text-sm font-medium text-zinc-100 hover:bg-zinc-800"
                   >
                     View
                   </Link>
-                  <Link
-                    href={`/tracks/${track.id}`}
-                    className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-center text-sm font-medium text-zinc-100 hover:bg-zinc-800"
-                  >
-                    Edit
-                  </Link>
+                  {!demoMode ? (
+                    <Link
+                      href={`/tracks/${track.id}`}
+                      className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-center text-sm font-medium text-zinc-100 hover:bg-zinc-800"
+                    >
+                      Edit
+                    </Link>
+                  ) : null}
                 </div>
-                <TrackDeleteForm trackId={track.id} />
+                {!demoMode ? <TrackDeleteForm trackId={track.id} /> : null}
               </li>
             ))}
           </ul>

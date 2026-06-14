@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 const linkRowClass =
   'flex min-h-11 items-center rounded-lg px-3 text-sm font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80';
 
-export function HeaderAppMenu() {
+export function HeaderAppMenu({ isDemoMode = false }: { isDemoMode?: boolean }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -46,7 +46,7 @@ export function HeaderAppMenu() {
       >
           <DialogTitle className="sr-only">App menu</DialogTitle>
           <DialogDescription className="sr-only">
-            Navigate the app, open settings, or sign out.
+            Navigate the app, open settings, or {isDemoMode ? 'exit demo mode' : 'sign out'}.
           </DialogDescription>
 
           <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
@@ -103,12 +103,12 @@ export function HeaderAppMenu() {
               </li>
               <li>
                 <Link
-                  href="/logout"
+                  href={isDemoMode ? '/demo/exit' : '/logout'}
                   prefetch={false}
                   className={cn(linkRowClass, 'text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100')}
                   onClick={() => setOpen(false)}
                 >
-                  Log Out
+                  {isDemoMode ? 'Exit Demo' : 'Log Out'}
                 </Link>
               </li>
             </ul>

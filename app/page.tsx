@@ -43,7 +43,13 @@ export default function HomePage() {
       </section>
 
       {/* Auth links */}
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+      <section className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+        <Link
+          href="/demo"
+          className="block min-h-12 rounded-xl border border-cyan-400/40 bg-cyan-400/10 px-4 py-3 text-center text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/15 focus-visible:ring-2 focus-visible:ring-cyan-400/80 active:scale-[0.98]"
+        >
+          Try Demo
+        </Link>
         <Link
           href="/login"
           className="block min-h-12 rounded-xl bg-cyan-400 px-4 py-3 text-center text-sm font-semibold text-zinc-950 transition hover:bg-cyan-300 focus-visible:ring-2 focus-visible:ring-cyan-400/80 active:scale-[0.98]"

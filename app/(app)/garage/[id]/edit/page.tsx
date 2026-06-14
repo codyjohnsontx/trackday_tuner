@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import { DemoReadOnlyNotice } from '@/components/demo/read-only-notice';
 import { getVehicle } from '@/lib/actions/vehicles';
+import { isDemoMode } from '@/lib/demo/mode';
 import { VehicleForm } from '@/components/garage/vehicle-form';
 
 interface EditVehiclePageProps {
@@ -8,6 +10,10 @@ interface EditVehiclePageProps {
 }
 
 export default async function EditVehiclePage({ params }: EditVehiclePageProps) {
+  if (await isDemoMode()) {
+    return <DemoReadOnlyNotice backHref="/garage" backLabel="Back to Garage" />;
+  }
+
   const { id } = await params;
   const result = await getVehicle(id);
 

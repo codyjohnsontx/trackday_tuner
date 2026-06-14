@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { DemoBanner } from '@/components/demo/demo-banner';
 import { getTrack } from '@/lib/actions/tracks';
+import { isDemoMode } from '@/lib/demo/mode';
 import { TrackForm } from '@/components/tracks/track-form';
 import { TrackDeleteForm } from '@/components/tracks/track-delete-form';
 
@@ -10,7 +12,7 @@ interface TrackDetailPageProps {
 
 export default async function TrackDetailPage({ params }: TrackDetailPageProps) {
   const { id } = await params;
-  const result = await getTrack(id);
+  const [result, demoMode] = await Promise.all([getTrack(id), isDemoMode()]);
 
   if (!result.ok) {
     redirect('/tracks');
@@ -21,6 +23,8 @@ export default async function TrackDetailPage({ params }: TrackDetailPageProps) 
 
   return (
     <div className="space-y-5">
+      {demoMode ? <DemoBanner /> : null}
+
       <div>
         <Link href="/tracks" className="text-sm text-zinc-400 hover:text-zinc-200">
           ← Tracks
@@ -32,7 +36,7 @@ export default async function TrackDetailPage({ params }: TrackDetailPageProps) 
         </span>
       </div>
 
-      {isCustom ? (
+      {isCustom && !demoMode ? (
         <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Edit Track</h2>
           <TrackForm initialTrack={track} onSuccessPath={`/tracks/${track.id}`} />
@@ -41,7 +45,7 @@ export default async function TrackDetailPage({ params }: TrackDetailPageProps) 
       ) : (
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
           <p className="text-sm text-zinc-400">
-            This is a seeded global track and is read-only.
+            {demoMode ? 'Demo mode is read-only. Start a real account to edit tracks.' : 'This is a seeded global track and is read-only.'}
           </p>
         </section>
       )}

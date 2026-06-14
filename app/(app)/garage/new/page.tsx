@@ -1,7 +1,13 @@
 import Link from 'next/link';
+import { DemoReadOnlyNotice } from '@/components/demo/read-only-notice';
 import { VehicleForm } from '@/components/garage/vehicle-form';
+import { isDemoMode } from '@/lib/demo/mode';
 
-export default function NewVehiclePage() {
+export default async function NewVehiclePage() {
+  if (await isDemoMode()) {
+    return <DemoReadOnlyNotice backHref="/garage" backLabel="Back to Garage" />;
+  }
+
   return (
     <div className="space-y-5">
       <div>

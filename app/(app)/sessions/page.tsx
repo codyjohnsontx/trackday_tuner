@@ -1,16 +1,22 @@
 import Link from 'next/link';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
+import { DemoBanner } from '@/components/demo/demo-banner';
 import { getSessionEnvironments, getSessions } from '@/lib/actions/sessions';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
+import { isDemoMode } from '@/lib/demo/mode';
 import { DayPlanPanel } from '@/components/ai/day-plan-panel';
 import { Button } from '@/components/ui/button';
+import { deriveSessionAnalytics } from '@/lib/session-export';
+import { SessionAnalyticsPanel } from '@/components/sessions/session-analytics-panel';
+import { SessionExportPanel } from '@/components/sessions/session-export-panel';
 import { SessionHistoryList } from '@/components/sessions/session-history-list';
 
 export default async function SessionsPage() {
-  const [sessions, vehicles, profile] = await Promise.all([
+  const [sessions, vehicles, profile, demoMode] = await Promise.all([
     getSessions(),
     getVehicles(),
     getUserProfile(),
+    isDemoMode(),
   ]);
   const environments = await getSessionEnvironments(sessions.map((session) => session.id));
 
@@ -22,16 +28,26 @@ export default async function SessionsPage() {
     : `Pro plan · ${sessions.length} session${sessions.length !== 1 ? 's' : ''}`;
 
   const vehicleMap = new Map(vehicles.map((v) => [v.id, v.nickname]));
+  const vehicleRecordMap = new Map(vehicles.map((v) => [v.id, v]));
   const environmentMap = new Map(environments.map((environment) => [environment.session_id, environment]));
+  const analytics = deriveSessionAnalytics(
+    sessions.map((session) => ({
+      session,
+      vehicle: vehicleRecordMap.get(session.vehicle_id) ?? null,
+      environment: environmentMap.get(session.id) ?? null,
+    })),
+  );
 
   return (
     <div className="space-y-5">
+      {demoMode ? <DemoBanner /> : null}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-100">Sessions</h1>
           <p className="mt-0.5 text-xs text-zinc-500">{tierLabel}</p>
         </div>
-        {!atLimit ? (
+        {!atLimit && !demoMode ? (
           <Link href="/sessions/new">
             <Button variant="primary" className="min-h-10 px-3 text-sm">
               + New Session
@@ -40,7 +56,11 @@ export default async function SessionsPage() {
         ) : null}
       </div>
 
-      <DayPlanPanel vehicles={vehicles} tier={profile?.tier ?? 'free'} />
+      <DayPlanPanel vehicles={vehicles} tier={profile?.tier ?? 'free'} demoMode={demoMode} />
+
+      <SessionExportPanel vehicles={vehicles} tier={profile?.tier ?? 'free'} demoMode={demoMode} />
+
+      <SessionAnalyticsPanel analytics={analytics} tier={profile?.tier ?? 'free'} />
 
       {sessions.length === 0 ? (
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 text-center">
@@ -72,7 +92,7 @@ export default async function SessionsPage() {
         />
       )}
 
-      {atLimit ? (
+      {atLimit && !demoMode ? (
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 text-center">
           <p className="text-sm font-semibold text-zinc-200">Session limit reached</p>
           <p className="mt-1 text-sm text-zinc-400">

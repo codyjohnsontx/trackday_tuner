@@ -43,6 +43,7 @@ interface TuningAdvicePanelProps {
   sessionId: string;
   vehicleId: string;
   tier: 'free' | 'pro';
+  demoMode?: boolean;
 }
 
 interface ApiErrorBody {
@@ -103,7 +104,52 @@ function ProUpgradeCard() {
   );
 }
 
-export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePanelProps) {
+const demoTuningAdvice: AdviceResponse = {
+  summary:
+    'Return front pressure toward the baseline and undo the added rebound before making another geometry change. The worse session changed two front-end variables at once, and the better session recovered feel by moving back toward baseline.',
+  recommended_changes: [
+    {
+      component: 'Front setup',
+      direction: 'Return toward baseline',
+      magnitude: '33 psi hot front and 10-11 clicks rebound out',
+      reason: 'The demo history shows front push after raising pressure and adding rebound, then better turn-in after lowering pressure and softening compression.',
+    },
+  ],
+  tradeoffs: [
+    'Lower front pressure can improve feel, but going too far can reduce support and overheat the tire.',
+    'Undo one change at a time so the next session tells you which adjustment mattered.',
+  ],
+  confidence: 'medium',
+  safety_notes: ['Make one change at a time.', 'Confirm tire pressure targets with your tire vendor or trackside support.'],
+  citations: [
+    {
+      source: 'Demo history',
+      snippet: 'Session 2 pushed mid-corner; Session 3 improved after moving front setup back toward baseline.',
+    },
+  ],
+  prediction: {
+    expected_effect: 'The bike should finish corners more easily and need less bar pressure mid-corner.',
+    day_trend: 'If track temperature keeps climbing, watch rear grip separately instead of masking it with front-end changes.',
+    watch_items: ['Front push mid-corner', 'Rear drive after several hot laps'],
+  },
+  personal_evidence: [
+    {
+      label: 'Session 2 to Session 3',
+      detail: 'Front pressure and damping changes explain the largest feel difference in the sample data.',
+      source_session_id: 'demo-session-3',
+    },
+  ],
+  data_used: {
+    manual: true,
+    weather: false,
+    history: true,
+    feedback: false,
+    telemetry: false,
+  },
+  refusal: null,
+};
+
+export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false }: TuningAdvicePanelProps) {
   const [question, setQuestion] = useState('');
   const [symptoms, setSymptoms] = useState<string[]>([]);
   const [intent, setIntent] = useState<string>('');
@@ -132,6 +178,48 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier }: TuningAdvicePa
 
   if (tier !== 'pro') {
     return <ProUpgradeCard />;
+  }
+
+  if (demoMode) {
+    const advice = demoTuningAdvice;
+    return (
+      <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+        <div>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Race Engineer</h2>
+          <p className="mt-1 text-sm text-zinc-300">
+            Static sample advice from the demo history. Real Pro accounts can ask Race Engineer about their own sessions.
+          </p>
+        </div>
+        <SafetyBanner />
+        <div>
+          <h3 className="text-sm font-semibold text-zinc-100">Summary</h3>
+          <p className="mt-1 text-sm text-zinc-200 whitespace-pre-wrap">{advice.summary}</p>
+          <p className="mt-1 text-xs uppercase tracking-wide text-zinc-500">
+            Confidence: <span className="text-zinc-300">{advice.confidence}</span>
+          </p>
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-zinc-100">Recommended change</h3>
+          <ul className="mt-2 space-y-3">
+            {advice.recommended_changes.map((change, idx) => (
+              <li key={`${change.component}-${idx}`} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
+                <p className="text-sm font-medium text-zinc-100">{change.component}</p>
+                <p className="text-sm text-zinc-300">{change.direction} · {change.magnitude}</p>
+                <p className="mt-1 text-sm text-zinc-400">{change.reason}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-zinc-100">Tradeoffs</h3>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-300">
+            {advice.tradeoffs.map((tradeoff) => (
+              <li key={tradeoff}>{tradeoff}</li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    );
   }
 
   function clearActiveAdviceState() {

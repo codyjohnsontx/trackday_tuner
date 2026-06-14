@@ -3,6 +3,8 @@
 import { cache } from 'react';
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { getDemoTracks } from '@/lib/demo/data';
+import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimitMessage, getFreePlanLimit } from '@/lib/plans';
@@ -25,6 +27,10 @@ const getTracksForUser = cache(async (userId: string): Promise<Track[]> => {
 });
 
 export async function getTracks(): Promise<Track[]> {
+  if (await isDemoMode()) {
+    return getDemoTracks();
+  }
+
   const user = await getAuthenticatedUser();
   if (!user) return [];
 
@@ -53,6 +59,9 @@ export async function createTrack(input: {
   name: string;
   location?: string | null;
 }): Promise<ActionResult<Track>> {
+  const demoError = await assertNotDemoMode();
+  if (demoError) return demoError;
+
   const user = await getAuthenticatedUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
@@ -101,6 +110,11 @@ export async function createTrack(input: {
 }
 
 export async function getTrack(id: string): Promise<ActionResult<Track>> {
+  if (await isDemoMode()) {
+    const track = getDemoTracks().find((demoTrack) => demoTrack.id === id);
+    return track ? { ok: true, data: track } : { ok: false, error: 'Track not found.' };
+  }
+
   const user = await getAuthenticatedUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
@@ -114,6 +128,9 @@ export async function updateTrack(
   id: string,
   input: { name: string; location?: string | null },
 ): Promise<ActionResult<Track>> {
+  const demoError = await assertNotDemoMode();
+  if (demoError) return demoError;
+
   const user = await getAuthenticatedUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
@@ -148,6 +165,9 @@ export async function updateTrack(
 }
 
 export async function deleteTrack(id: string): Promise<ActionResult> {
+  const demoError = await assertNotDemoMode();
+  if (demoError) return demoError;
+
   const user = await getAuthenticatedUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 

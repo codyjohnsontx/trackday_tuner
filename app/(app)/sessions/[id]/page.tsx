@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation';
 import { getPreviousSession, getSession, getSessionEnvironment } from '@/lib/actions/sessions';
 import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
+import { DemoBanner } from '@/components/demo/demo-banner';
+import { isDemoMode } from '@/lib/demo/mode';
 import { TimeDisplay } from '@/components/ui/time-display';
 import { SessionCompare, type CompareRow } from '@/components/sessions/session-compare';
 import { TuningAdvicePanel } from '@/components/ai/tuning-advice-panel';
@@ -277,10 +279,11 @@ function buildCompareRows(
 
 export default async function SessionDetailPage({ params }: SessionDetailPageProps) {
   const { id } = await params;
-  const [session, vehicles, profile] = await Promise.all([
+  const [session, vehicles, profile, demoMode] = await Promise.all([
     getSession(id),
     getVehicles(),
     getUserProfile(),
+    isDemoMode(),
   ]);
 
   if (!session) notFound();
@@ -312,6 +315,8 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
 
   return (
     <div className="space-y-5">
+      {demoMode ? <DemoBanner /> : null}
+
       <div>
         <h1 className="text-2xl font-bold text-zinc-100">{session.track_name ?? 'Unknown Track'}</h1>
         <p className="mt-0.5 text-sm text-zinc-400">{formattedDate} · {vehicleNickname}</p>
@@ -326,7 +331,7 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
         </section>
       )}
 
-      <TuningAdvicePanel sessionId={session.id} vehicleId={session.vehicle_id} tier={tier} />
+      <TuningAdvicePanel sessionId={session.id} vehicleId={session.vehicle_id} tier={tier} demoMode={demoMode} />
 
       <SectionCard title="Session Info">
         <DetailRow label="Track" value={session.track_name ?? '—'} />

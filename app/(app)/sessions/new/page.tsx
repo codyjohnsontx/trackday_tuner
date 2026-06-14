@@ -1,11 +1,23 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import { DemoReadOnlyNotice } from '@/components/demo/read-only-notice';
+import { getLatestSessionsByVehicle } from '@/lib/actions/sessions';
 import { getVehicles } from '@/lib/actions/vehicles';
 import { getTracks } from '@/lib/actions/tracks';
+import { isDemoMode } from '@/lib/demo/mode';
 import { SessionForm } from '@/components/sessions/session-form';
 
 export default async function NewSessionPage() {
-  const [vehicles, tracks] = await Promise.all([getVehicles(), getTracks()]);
+  const [vehicles, tracks, latestSessionsByVehicle, demoMode] = await Promise.all([
+    getVehicles(),
+    getTracks(),
+    getLatestSessionsByVehicle(),
+    isDemoMode(),
+  ]);
+
+  if (demoMode) {
+    return <DemoReadOnlyNotice backHref="/sessions" backLabel="Back to Sessions" />;
+  }
 
   if (vehicles.length === 0) {
     redirect('/garage/new');
@@ -22,7 +34,7 @@ export default async function NewSessionPage() {
           </Link>
         </div>
       </div>
-      <SessionForm vehicles={vehicles} tracks={tracks} />
+      <SessionForm vehicles={vehicles} tracks={tracks} latestSessionsByVehicle={latestSessionsByVehicle} />
     </div>
   );
 }

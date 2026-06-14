@@ -1,16 +1,19 @@
 import Link from 'next/link';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
+import { DemoBanner } from '@/components/demo/demo-banner';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
 import { getSessions, getSessionCount } from '@/lib/actions/sessions';
+import { isDemoMode } from '@/lib/demo/mode';
 import { Button } from '@/components/ui/button';
 import { SessionCard } from '@/components/sessions/session-card';
 
 export default async function DashboardPage() {
-  const [vehicles, sessions, sessionCount, profile] = await Promise.all([
+  const [vehicles, sessions, sessionCount, profile, demoMode] = await Promise.all([
     getVehicles(),
     getSessions(undefined, 3),
     getSessionCount(),
     getUserProfile(),
+    isDemoMode(),
   ]);
 
   const hasVehicles = vehicles.length > 0;
@@ -21,6 +24,8 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-5">
+      {demoMode ? <DemoBanner /> : null}
+
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
         <h2 className="text-xl font-semibold">Dashboard</h2>
         {hasVehicles ? (
@@ -30,7 +35,11 @@ export default async function DashboardPage() {
               {isFree ? '10' : '∞'} sessions
             </p>
             <div className="mt-4">
-              {atSessionLimit ? (
+              {demoMode ? (
+                <Button fullWidth variant="secondary" disabled>
+                  Read-only demo
+                </Button>
+              ) : atSessionLimit ? (
                 <UpgradeToProButton fullWidth />
               ) : (
                 <Link href="/sessions/new">

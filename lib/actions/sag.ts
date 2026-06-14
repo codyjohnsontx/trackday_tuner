@@ -2,11 +2,16 @@
 
 import { revalidatePath } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
 import type { TableInsert } from '@/types/supabase';
 import type { ActionResult, CreateSagEntryInput, SagEntry } from '@/types';
 
 export async function getSagEntries(): Promise<SagEntry[]> {
+  if (await isDemoMode()) {
+    return [];
+  }
+
   const user = await getAuthenticatedUser();
   if (!user) return [];
 
@@ -23,6 +28,9 @@ export async function getSagEntries(): Promise<SagEntry[]> {
 export async function createSagEntry(
   input: CreateSagEntryInput
 ): Promise<ActionResult<SagEntry>> {
+  const demoError = await assertNotDemoMode();
+  if (demoError) return demoError;
+
   const user = await getAuthenticatedUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 

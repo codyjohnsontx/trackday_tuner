@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { Clock, Copy } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { createSession } from '@/lib/actions/sessions';
 import { clearDraft, loadDraft, saveDraft } from '@/lib/drafts';
+import { copyLastSessionSetup } from '@/lib/session-copy';
 import {
   getAvailableSessionModules,
   getDefaultAdvancedVisibility,
@@ -22,6 +24,7 @@ import type {
   SessionCondition,
   SessionEnabledModules,
   SessionModuleKey,
+  Session,
   Suspension,
   SuspensionDirection,
   TireCondition,
@@ -33,6 +36,7 @@ import type {
 interface SessionFormProps {
   vehicles: Vehicle[];
   tracks: Track[];
+  latestSessionsByVehicle?: Record<string, Session>;
 }
 
 const today = new Date().toISOString().split('T')[0];
@@ -123,7 +127,7 @@ function ModuleHeader({
   );
 }
 
-export function SessionForm({ vehicles, tracks }: SessionFormProps) {
+export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: SessionFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const hydratedRef = useRef(false);
@@ -171,6 +175,7 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
     () => vehicles.find((vehicle) => vehicle.id === vehicleId) ?? null,
     [vehicles, vehicleId],
   );
+  const latestSessionForVehicle = vehicleId ? latestSessionsByVehicle[vehicleId] ?? null : null;
 
   const selectedVehicleType = selectedVehicle?.type ?? initialVehicleType;
   const availableModules = useMemo(
@@ -312,6 +317,34 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
   function handleSessionNumberChange(value: string) {
     const digits = value.replace(/\D/g, '');
     setSessionNumber(digits ? String(Math.max(1, Number(digits))) : '');
+  }
+
+  function handleSetTimeNow() {
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    setStartTime(`${hours}:${minutes}`);
+  }
+
+  function handleCopyLastSetup() {
+    if (!latestSessionForVehicle) return;
+
+    const copied = copyLastSessionSetup(latestSessionForVehicle, selectedVehicleType);
+    setTrackId(copied.trackId);
+    setTrackQuery(copied.trackQuery);
+    setConditions(copied.conditions);
+    setTireCondition(copied.tireCondition);
+    setFrontTire(copied.frontTire);
+    setRearTire(copied.rearTire);
+    setSuspensionDirection(copied.suspensionDirection);
+    setFrontSusp(copied.frontSusp);
+    setRearSusp(copied.rearSusp);
+    setAlignment(copied.alignment);
+    setEnabledModules(copied.enabledModules);
+    setGeometry(copied.geometry);
+    setDrivetrain(copied.drivetrain);
+    setAero(copied.aero);
+    setDraftMessage('Last setup copied. Date, time, session number, environment, and notes were left unchanged.');
   }
 
   function parseOptionalNumber(label: string, value: string, min: number, max: number): number | null {
@@ -495,6 +528,18 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
           </select>
         </div>
 
+        {latestSessionForVehicle ? (
+          <Button
+            type="button"
+            variant="secondary"
+            className="min-h-11 w-full justify-center gap-2 text-sm"
+            onClick={handleCopyLastSetup}
+          >
+            <Copy className="h-4 w-4" aria-hidden />
+            Copy last setup
+          </Button>
+        ) : null}
+
         <div className="relative space-y-1">
           <label htmlFor="session-track" className="block text-sm font-medium text-zinc-300">
             Track
@@ -531,7 +576,18 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
         </div>
 
         <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
-        <Input label="Start Time" type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+          <Input label="Start Time" type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+          <Button
+            type="button"
+            variant="secondary"
+            className="min-h-11 justify-center gap-2 px-3 text-sm"
+            onClick={handleSetTimeNow}
+          >
+            <Clock className="h-4 w-4" aria-hidden />
+            Now
+          </Button>
+        </div>
         <Input
           label="Session Number (optional)"
           type="text"
@@ -884,9 +940,11 @@ export function SessionForm({ vehicles, tracks }: SessionFormProps) {
       {errorMessage ? <p className="text-sm text-rose-300">{errorMessage}</p> : null}
       {draftMessage ? <p className="text-sm text-emerald-300">{draftMessage}</p> : null}
 
-      <Button type="submit" fullWidth disabled={isPending}>
-        {isPending ? 'Saving...' : 'Save Session'}
-      </Button>
+      <div className="sticky bottom-20 z-20 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-2 shadow-lg shadow-zinc-950/40 backdrop-blur sm:bottom-4">
+        <Button type="submit" fullWidth disabled={isPending}>
+          {isPending ? 'Saving...' : 'Save Session'}
+        </Button>
+      </div>
     </form>
   );
 }
