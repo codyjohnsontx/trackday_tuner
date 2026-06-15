@@ -43,7 +43,7 @@ export function VehicleCard({ vehicle, demoMode = false }: VehicleCardProps) {
           ) : (
             <Link
               href={`/garage/${vehicle.id}/edit`}
-              className="flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-semibold text-zinc-300 hover:border-zinc-500 hover:text-zinc-100"
+              className="flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-semibold text-zinc-300 hover:border-zinc-500 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-cyan-400/80"
             >
               Edit →
             </Link>

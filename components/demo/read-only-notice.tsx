@@ -1,9 +1,8 @@
 import Link from 'next/link';
-import type { Route } from 'next';
 import { DemoBanner } from '@/components/demo/demo-banner';
 
 interface DemoReadOnlyNoticeProps {
-  backHref: Route;
+  backHref: '/garage' | '/sessions' | '/tracks';
   backLabel: string;
 }
 

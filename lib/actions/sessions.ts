@@ -79,7 +79,8 @@ export async function getLatestSessionsByVehicle(): Promise<Record<string, Sessi
     .select('*')
     .eq('user_id', user.id)
     .order('date', { ascending: false })
-    .order('start_time', { ascending: false, nullsFirst: false });
+    .order('start_time', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false });
 
   const latest: Record<string, Session> = {};
   for (const row of (data ?? []) as Session[]) {

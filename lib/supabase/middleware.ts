@@ -29,15 +29,18 @@ export async function updateSession(request: NextRequest) {
     return response;
   }
 
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
       supabase.auth.getUser(),
       new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Supabase auth timeout')), 1500);
+        timeoutId = setTimeout(() => reject(new Error('Supabase auth timeout')), 1500);
       }),
     ]);
   } catch {
     // Keep public routes available when Supabase is unreachable in local dev.
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 
   return response;

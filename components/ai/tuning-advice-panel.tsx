@@ -176,10 +176,6 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
   const showQuestionWarning =
     question.trim().length >= 10 && questionAssessment.decision === 'refuse';
 
-  if (tier !== 'pro') {
-    return <ProUpgradeCard />;
-  }
-
   if (demoMode) {
     const advice = demoTuningAdvice;
     return (
@@ -220,6 +216,10 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
         </div>
       </section>
     );
+  }
+
+  if (tier !== 'pro') {
+    return <ProUpgradeCard />;
   }
 
   function clearActiveAdviceState() {

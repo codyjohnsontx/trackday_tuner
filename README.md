@@ -197,7 +197,7 @@ Pricing rollout:
 
 (We can tune the exact limits later, but this structure matches your “free → love it → subscribe” behavior.)
 
-9. AI Setup Assistant
+1. AI Setup Assistant
    Concept
 
 After a session, user enters:

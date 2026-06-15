@@ -28,7 +28,7 @@ export default async function SettingsPage() {
           <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">
             Demo account
           </h2>
-          <p className="mt-2 text-sm text-zinc-300">
+          <p className="mt-2 text-sm text-zinc-400">
             This preview shows Pro features with sample data. Billing is disabled in demo mode.
           </p>
         </section>

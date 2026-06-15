@@ -95,6 +95,10 @@ describe('session export helpers', () => {
     expect(escapeCsvValue('a,b')).toBe('"a,b"');
     expect(escapeCsvValue('say "hi"')).toBe('"say ""hi"""');
     expect(escapeCsvValue('line\nbreak')).toBe('"line\nbreak"');
+    expect(escapeCsvValue('=SUM(A1:A2)')).toBe("'=SUM(A1:A2)");
+    expect(escapeCsvValue('+cmd')).toBe("'+cmd");
+    expect(escapeCsvValue('-10')).toBe("'-10");
+    expect(escapeCsvValue('@user')).toBe("'@user");
   });
 
   it('flattens motorcycle sessions with setup and environment data', () => {
@@ -188,5 +192,52 @@ describe('session export helpers', () => {
       latest: '32',
     });
     expect(analytics.environmentSnapshots.averageAmbientTemperatureC).toBe(25);
+  });
+
+  it('keeps tire pressure trends separate for vehicles with matching nicknames and skips disabled tires', () => {
+    const sameNameCar: Vehicle = { ...car, id: 'car-2', nickname: 'R6' };
+    const analytics = deriveSessionAnalytics([
+      { session: session({ id: 's1', vehicle_id: 'bike-1' }), vehicle: motorcycle, environment: null },
+      {
+        session: session({
+          id: 's2',
+          vehicle_id: 'car-2',
+          tires: {
+            condition: 'used',
+            front: { brand: 'Hoosier', compound: 'R7', pressure: '30' },
+            rear: { brand: 'Hoosier', compound: 'R7', pressure: '29' },
+          },
+        }),
+        vehicle: sameNameCar,
+        environment: null,
+      },
+      {
+        session: session({
+          id: 's3',
+          vehicle_id: 'bike-1',
+          tires: {
+            condition: 'used',
+            front: { brand: 'Pirelli', compound: 'SC1', pressure: '99' },
+            rear: { brand: 'Pirelli', compound: 'SC0', pressure: '88' },
+          },
+          enabled_modules: {
+            tires: false,
+            suspension: true,
+            alignment: false,
+            geometry: false,
+            drivetrain: false,
+            aero: false,
+            notes: true,
+          },
+        }),
+        vehicle: motorcycle,
+        environment: null,
+      },
+    ]);
+
+    const r6FrontTrends = analytics.tirePressureTrends.filter((item) => item.label === 'R6 front');
+    expect(r6FrontTrends).toHaveLength(2);
+    expect(r6FrontTrends.map((item) => item.first).sort()).toEqual(['30', '31']);
+    expect(analytics.tirePressureTrends.some((item) => item.first === '99')).toBe(false);
   });
 });

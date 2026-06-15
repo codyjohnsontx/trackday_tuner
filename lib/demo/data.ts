@@ -299,28 +299,34 @@ function compareSessionsDesc(a: Session, b: Session) {
   return bValue.localeCompare(aValue);
 }
 
+function clone<T>(value: T): T {
+  return structuredClone(value);
+}
+
 export function getDemoProfile(): Profile {
-  return DEMO_PROFILE;
+  return clone(DEMO_PROFILE);
 }
 
 export function getDemoVehicles(): Vehicle[] {
-  return DEMO_VEHICLES;
+  return DEMO_VEHICLES.map(clone);
 }
 
 export function getDemoTracks(): Track[] {
-  return [...DEMO_TRACKS].sort((a, b) => a.name.localeCompare(b.name));
+  return [...DEMO_TRACKS].sort((a, b) => a.name.localeCompare(b.name)).map(clone);
 }
 
 export function getDemoSessions(vehicleId?: string, limit?: number): Session[] {
   const sessions = DEMO_SESSIONS
     .filter((session) => !vehicleId || session.vehicle_id === vehicleId)
-    .sort(compareSessionsDesc);
+    .sort(compareSessionsDesc)
+    .map(clone);
 
   return typeof limit === 'number' ? sessions.slice(0, limit) : sessions;
 }
 
 export function getDemoSession(id: string): Session | null {
-  return DEMO_SESSIONS.find((session) => session.id === id) ?? null;
+  const session = DEMO_SESSIONS.find((demoSession) => demoSession.id === id);
+  return session ? clone(session) : null;
 }
 
 export function getDemoSessionCount(vehicleId?: string): number {
@@ -333,17 +339,19 @@ export function getDemoPreviousSession(currentSession: Session): Session | null 
     DEMO_SESSIONS
       .filter((session) => session.vehicle_id === currentSession.vehicle_id && session.id !== currentSession.id)
       .filter((session) => `${session.date}T${session.start_time ?? '23:59:59'}` < currentValue)
-      .sort(compareSessionsDesc)[0] ?? null
+      .sort(compareSessionsDesc)
+      .map(clone)[0] ?? null
   );
 }
 
 export function getDemoSessionEnvironment(sessionId: string): SessionEnvironment | null {
-  return DEMO_SESSION_ENVIRONMENTS.find((environment) => environment.session_id === sessionId) ?? null;
+  const environment = DEMO_SESSION_ENVIRONMENTS.find((demoEnvironment) => demoEnvironment.session_id === sessionId);
+  return environment ? clone(environment) : null;
 }
 
 export function getDemoSessionEnvironments(sessionIds: string[]): SessionEnvironment[] {
   const idSet = new Set(sessionIds);
-  return DEMO_SESSION_ENVIRONMENTS.filter((environment) => idSet.has(environment.session_id));
+  return DEMO_SESSION_ENVIRONMENTS.filter((environment) => idSet.has(environment.session_id)).map(clone);
 }
 
 export function getDemoLatestSessionsByVehicle(): Record<string, Session> {

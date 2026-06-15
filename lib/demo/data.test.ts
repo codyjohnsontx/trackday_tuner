@@ -54,4 +54,18 @@ describe('demo data', () => {
     expect(getDemoSession('missing')).toBeNull();
     expect(getDemoSessionEnvironment('missing')).toBeNull();
   });
+
+  it('returns cloned demo data so callers cannot mutate shared fixtures', () => {
+    const vehicle = getDemoVehicles()[0];
+    const session = getDemoSession('demo-session-1');
+    const environment = getDemoSessionEnvironment('demo-session-1');
+
+    vehicle!.nickname = 'Mutated';
+    session!.notes = 'Mutated notes';
+    environment!.weather_condition = 'Mutated weather';
+
+    expect(getDemoVehicles()[0]?.nickname).toBe('R6 Track Bike');
+    expect(getDemoSession('demo-session-1')?.notes).toContain('Neutral baseline');
+    expect(getDemoSessionEnvironment('demo-session-1')?.weather_condition).toBe('Clear morning');
+  });
 });

@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
 import { TrackDeleteForm } from '@/components/tracks/track-delete-form';
+import { cn } from '@/lib/utils';
 import type { Track } from '@/types';
 
 interface TrackListClientProps {
@@ -67,7 +68,7 @@ export function TrackListClient({ tracks, demoMode = false }: TrackListClientPro
                     Custom
                   </span>
                 </div>
-                <div className={demoMode ? 'grid gap-2' : 'grid grid-cols-2 gap-2'}>
+                <div className={cn('grid gap-2', !demoMode && 'grid-cols-2')}>
                   <Link
                     href={`/tracks/${track.id}`}
                     className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-center text-sm font-medium text-zinc-100 hover:bg-zinc-800"

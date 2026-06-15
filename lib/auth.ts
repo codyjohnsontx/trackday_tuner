@@ -22,19 +22,22 @@ export const getAuthenticatedUser = cache(async () => {
   }
 
   const supabase = await createClient();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
     const {
       data: { user },
     } = await Promise.race([
       supabase.auth.getUser(),
       new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Supabase auth timeout')), 1500);
+        timeoutId = setTimeout(() => reject(new Error('Supabase auth timeout')), 1500);
       }),
     ]);
 
     return user;
   } catch {
     return null;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 });
 

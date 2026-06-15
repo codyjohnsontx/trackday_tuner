@@ -121,7 +121,9 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
     setVehicleId(vehicles[0]?.id ?? '');
   }, [vehicleId, vehicles]);
 
-  if (tier !== 'pro') {
+  if (vehicles.length === 0) return null;
+
+  if (!demoMode && tier !== 'pro') {
     return (
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Morning Plan</h2>
@@ -134,8 +136,6 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
       </section>
     );
   }
-
-  if (vehicles.length === 0) return null;
 
   function parseOptionalNumber(value: string): number | undefined {
     const trimmed = value.trim();

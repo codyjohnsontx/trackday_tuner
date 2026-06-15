@@ -162,7 +162,8 @@ export function flattenSessionForExport({
 
 export function escapeCsvValue(value: string | number | boolean | null | undefined): string {
   if (value === null || value === undefined) return '';
-  const raw = String(value);
+  const stringValue = String(value);
+  const raw = /^[=+\-@]/.test(stringValue) ? `'${stringValue}` : stringValue;
   if (!/[",\r\n]/.test(raw)) return raw;
   return `"${raw.replaceAll('"', '""')}"`;
 }
@@ -248,11 +249,17 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
 
   const pressureTracks = new Map<string, string[]>();
   for (const input of ordered) {
+    const enabled = getEnabledModules(input.session, input.vehicle);
+    if (!enabled.tires) continue;
+
     const label = input.vehicle?.nickname ?? 'Unknown Vehicle';
+    const vehicleKey = `${input.session.vehicle_id}:${label}`;
+    const frontKey = `${vehicleKey} front`;
+    const rearKey = `${vehicleKey} rear`;
     const front = parsePressure(input.session.tires.front.pressure);
     const rear = parsePressure(input.session.tires.rear.pressure);
-    if (front) pressureTracks.set(`${label} front`, [...(pressureTracks.get(`${label} front`) ?? []), front]);
-    if (rear) pressureTracks.set(`${label} rear`, [...(pressureTracks.get(`${label} rear`) ?? []), rear]);
+    if (front) pressureTracks.set(frontKey, [...(pressureTracks.get(frontKey) ?? []), front]);
+    if (rear) pressureTracks.set(rearKey, [...(pressureTracks.get(rearKey) ?? []), rear]);
   }
 
   return {
@@ -275,8 +282,8 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
       }),
     tirePressureTrends: [...pressureTracks.entries()]
       .filter(([, values]) => values.length > 0)
-      .map(([label, values]) => ({
-        label,
+      .map(([key, values]) => ({
+        label: key.replace(/^[^:]+:/, ''),
         samples: values.length,
         first: values[0],
         latest: values[values.length - 1],
