@@ -1,13 +1,44 @@
 import { cache } from 'react';
+import { cookies } from 'next/headers';
+import { DEMO_USER_ID, isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
 
-export const getAuthenticatedUser = cache(async () => {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+function hasSupabaseAuthCookie(cookieStore: Awaited<ReturnType<typeof cookies>>) {
+  return cookieStore.getAll().some(({ name }) => name.startsWith('sb-') && name.includes('auth-token'));
+}
 
-  return user;
+export const getAuthenticatedUser = cache(async () => {
+  if (await isDemoMode()) {
+    return {
+      id: DEMO_USER_ID,
+      email: 'demo@trackdaytuner.local',
+    };
+  }
+
+  const cookieStore = await cookies();
+
+  if (!hasSupabaseAuthCookie(cookieStore)) {
+    return null;
+  }
+
+  const supabase = await createClient();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const {
+      data: { user },
+    } = await Promise.race([
+      supabase.auth.getUser(),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Supabase auth timeout')), 1500);
+      }),
+    ]);
+
+    return user;
+  } catch {
+    return null;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 });
 
 export async function isAuthenticated(): Promise<boolean> {

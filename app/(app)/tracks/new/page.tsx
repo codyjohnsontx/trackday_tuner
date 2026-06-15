@@ -1,7 +1,13 @@
 import Link from 'next/link';
+import { DemoReadOnlyNotice } from '@/components/demo/read-only-notice';
 import { TrackForm } from '@/components/tracks/track-form';
+import { isDemoMode } from '@/lib/demo/mode';
 
-export default function NewTrackPage() {
+export default async function NewTrackPage() {
+  if (await isDemoMode()) {
+    return <DemoReadOnlyNotice backHref="/tracks" backLabel="Back to Tracks" />;
+  }
+
   return (
     <div className="space-y-5">
       <div>

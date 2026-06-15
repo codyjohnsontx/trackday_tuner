@@ -2,12 +2,18 @@
 
 import { revalidatePath } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { getDemoProfile, getDemoVehicles } from '@/lib/demo/data';
+import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import type { TableInsert } from '@/types/supabase';
 import type { ActionResult, CreateVehicleInput, UpdateVehicleInput, Profile, Vehicle } from '@/types';
 
 export async function getVehicles(): Promise<Vehicle[]> {
+  if (await isDemoMode()) {
+    return getDemoVehicles();
+  }
+
   const user = await getAuthenticatedUser();
   if (!user) return [];
 
@@ -22,6 +28,10 @@ export async function getVehicles(): Promise<Vehicle[]> {
 }
 
 export async function getUserProfile(): Promise<Profile | null> {
+  if (await isDemoMode()) {
+    return getDemoProfile();
+  }
+
   const user = await getAuthenticatedUser();
   if (!user) return null;
 
@@ -38,6 +48,9 @@ export async function getUserProfile(): Promise<Profile | null> {
 export async function createVehicle(
   input: CreateVehicleInput,
 ): Promise<ActionResult<Vehicle>> {
+  const demoError = await assertNotDemoMode();
+  if (demoError) return demoError;
+
   const user = await getAuthenticatedUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
@@ -83,6 +96,11 @@ export async function createVehicle(
 }
 
 export async function getVehicle(id: string): Promise<ActionResult<Vehicle>> {
+  if (await isDemoMode()) {
+    const vehicle = getDemoVehicles().find((demoVehicle) => demoVehicle.id === id);
+    return vehicle ? { ok: true, data: vehicle } : { ok: false, error: 'Vehicle not found.' };
+  }
+
   const user = await getAuthenticatedUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
@@ -102,6 +120,9 @@ export async function updateVehicle(
   id: string,
   input: UpdateVehicleInput,
 ): Promise<ActionResult<Vehicle>> {
+  const demoError = await assertNotDemoMode();
+  if (demoError) return demoError;
+
   const user = await getAuthenticatedUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
@@ -127,6 +148,9 @@ export async function updateVehicle(
 }
 
 export async function deleteVehicle(id: string): Promise<ActionResult> {
+  const demoError = await assertNotDemoMode();
+  if (demoError) return demoError;
+
   const user = await getAuthenticatedUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 

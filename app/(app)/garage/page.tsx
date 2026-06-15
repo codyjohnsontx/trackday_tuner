@@ -1,11 +1,13 @@
 import Link from 'next/link';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
+import { DemoBanner } from '@/components/demo/demo-banner';
+import { isDemoMode } from '@/lib/demo/mode';
 import { VehicleCard } from '@/components/garage/vehicle-card';
 import { Button } from '@/components/ui/button';
 
 export default async function GaragePage() {
-  const [vehicles, profile] = await Promise.all([getVehicles(), getUserProfile()]);
+  const [vehicles, profile, demoMode] = await Promise.all([getVehicles(), getUserProfile(), isDemoMode()]);
 
   const isFree = !profile || profile.tier === 'free';
   const atLimit = isFree && vehicles.length >= 1;
@@ -16,12 +18,14 @@ export default async function GaragePage() {
 
   return (
     <div className="space-y-5">
+      {demoMode ? <DemoBanner /> : null}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-100">Garage</h1>
           <p className="mt-0.5 text-xs text-zinc-500">{tierLabel}</p>
         </div>
-        {!atLimit ? (
+        {!atLimit && !demoMode ? (
           <Link href="/garage/new">
             <Button variant="primary" className="min-h-10 px-3 text-sm">
               + Add Vehicle
@@ -43,12 +47,12 @@ export default async function GaragePage() {
       ) : (
         <ul className="space-y-3">
           {vehicles.map((v) => (
-            <VehicleCard key={v.id} vehicle={v} />
+            <VehicleCard key={v.id} vehicle={v} demoMode={demoMode} />
           ))}
         </ul>
       )}
 
-      {atLimit ? (
+      {atLimit && !demoMode ? (
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 text-center">
           <p className="text-sm font-semibold text-zinc-200">Want more vehicles?</p>
           <p className="mt-1 text-sm text-zinc-400">

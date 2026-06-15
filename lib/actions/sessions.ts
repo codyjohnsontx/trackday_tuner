@@ -2,6 +2,16 @@
 
 import { revalidatePath } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
+import {
+  getDemoLatestSessionsByVehicle,
+  getDemoPreviousSession,
+  getDemoSession,
+  getDemoSessionCount,
+  getDemoSessionEnvironment,
+  getDemoSessionEnvironments,
+  getDemoSessions,
+} from '@/lib/demo/data';
+import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
@@ -29,6 +39,10 @@ function hasEnvironmentValues(environment: CreateSessionEnvironmentInput | null 
 }
 
 export async function getSessions(vehicleId?: string, limit?: number): Promise<Session[]> {
+  if (await isDemoMode()) {
+    return getDemoSessions(vehicleId, limit);
+  }
+
   const user = await getAuthenticatedUser();
   if (!user) return [];
 
@@ -51,7 +65,38 @@ export async function getSessions(vehicleId?: string, limit?: number): Promise<S
   return (data ?? []) as Session[];
 }
 
+export async function getLatestSessionsByVehicle(): Promise<Record<string, Session>> {
+  if (await isDemoMode()) {
+    return getDemoLatestSessionsByVehicle();
+  }
+
+  const user = await getAuthenticatedUser();
+  if (!user) return {};
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('sessions')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('date', { ascending: false })
+    .order('start_time', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false });
+
+  const latest: Record<string, Session> = {};
+  for (const row of (data ?? []) as Session[]) {
+    if (!latest[row.vehicle_id]) {
+      latest[row.vehicle_id] = row;
+    }
+  }
+
+  return latest;
+}
+
 export async function getSessionCount(vehicleId?: string): Promise<number> {
+  if (await isDemoMode()) {
+    return getDemoSessionCount(vehicleId);
+  }
+
   const user = await getAuthenticatedUser();
   if (!user) return 0;
 
@@ -70,6 +115,10 @@ export async function getSessionCount(vehicleId?: string): Promise<number> {
 }
 
 export async function getSession(id: string): Promise<Session | null> {
+  if (await isDemoMode()) {
+    return getDemoSession(id);
+  }
+
   const user = await getAuthenticatedUser();
   if (!user) return null;
 
@@ -86,6 +135,10 @@ export async function getSession(id: string): Promise<Session | null> {
 }
 
 export async function getSessionEnvironment(sessionId: string): Promise<SessionEnvironment | null> {
+  if (await isDemoMode()) {
+    return getDemoSessionEnvironment(sessionId);
+  }
+
   const user = await getAuthenticatedUser();
   if (!user) return null;
 
@@ -101,6 +154,10 @@ export async function getSessionEnvironment(sessionId: string): Promise<SessionE
 }
 
 export async function getSessionEnvironments(sessionIds: string[]): Promise<SessionEnvironment[]> {
+  if (await isDemoMode()) {
+    return getDemoSessionEnvironments(sessionIds);
+  }
+
   const user = await getAuthenticatedUser();
   if (!user || sessionIds.length === 0) return [];
 
@@ -117,6 +174,10 @@ export async function getSessionEnvironments(sessionIds: string[]): Promise<Sess
 export async function getPreviousSession(
   currentSession: Session,
 ): Promise<Session | null> {
+  if (await isDemoMode()) {
+    return getDemoPreviousSession(currentSession);
+  }
+
   const user = await getAuthenticatedUser();
   if (!user) return null;
 
@@ -141,6 +202,9 @@ export async function getPreviousSession(
 export async function createSession(
   input: CreateSessionInput,
 ): Promise<ActionResult<Session>> {
+  const demoError = await assertNotDemoMode();
+  if (demoError) return demoError;
+
   const user = await getAuthenticatedUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
@@ -245,6 +309,9 @@ export async function createSession(
 }
 
 export async function deleteSession(id: string): Promise<ActionResult> {
+  const demoError = await assertNotDemoMode();
+  if (demoError) return demoError;
+
   const user = await getAuthenticatedUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 

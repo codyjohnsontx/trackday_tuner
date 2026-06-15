@@ -2,7 +2,7 @@ Track Tuner PRD v1.0
 
 1. One-liner
 
-A mobile-first motorsport setup logger for motorcycles + cars with free + paid tiers, designed to help drivers record sessions, compare changes, and eventually get AI guidance based on what they felt and what they changed.
+A mobile-first motorsport setup logger for motorcycles + cars with free + paid tiers, designed to help drivers record sessions, compare changes, and get AI guidance based on what they felt and what they changed.
 
 2. Goals
 
@@ -173,7 +173,7 @@ Session detail view
 
 3 tracks
 
-20 sessions total
+10 sessions total
 
 Core logging + notes
 
@@ -189,7 +189,7 @@ Exports (CSV)
 
 Analytics views (simple charts later)
 
-AI Setup Assistant (when launched)
+AI Setup Assistant
 
 Pricing rollout:
 - Pro base price: `$2.99/month`
@@ -197,7 +197,7 @@ Pricing rollout:
 
 (We can tune the exact limits later, but this structure matches your “free → love it → subscribe” behavior.)
 
-9. AI Setup Assistant (planned, not MVP)
+1. AI Setup Assistant
    Concept
 
 After a session, user enters:
@@ -324,12 +324,12 @@ Free → Pro conversion rate (after hitting limits / wanting compare/export/AI)
 - Session history and compare-with-previous workflow.
 - Stripe checkout + customer portal + webhook sync for entitlements.
 - Trackside tools: sag calculator and unit converter.
+- AI tuning advice, recommendation feedback, day planning, curated RAG helpers, and RAG evaluation/index scripts.
 
 ### Planned
 
-- AI tuning assistant (RAG-backed Q&A and guided recommendations).
-- Knowledge-base indexing and AI response evaluation workflows.
 - Expanded analytics and export features.
+- More knowledge-base coverage and AI evaluation fixtures.
 
 ## Local Run
 

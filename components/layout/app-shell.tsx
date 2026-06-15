@@ -4,21 +4,27 @@ import { HeaderAppMenu } from '@/components/layout/header-app-menu';
 interface AppShellProps {
   children: React.ReactNode;
   isAuthenticated: boolean;
+  isDemoMode?: boolean;
 }
 
-export function AppShell({ children, isAuthenticated }: AppShellProps) {
+export function AppShell({ children, isAuthenticated, isDemoMode = false }: AppShellProps) {
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col bg-zinc-950 text-zinc-100">
       <header className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950/95 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
         <div className="flex items-center justify-between gap-3">
           <Link
-            href={isAuthenticated ? '/dashboard' : '/'}
+            href={isAuthenticated || isDemoMode ? '/dashboard' : '/'}
             className="text-lg font-bold text-cyan-400 tracking-tight focus-visible:ring-2 focus-visible:ring-cyan-400/80"
           >
             Trackday Tuner
           </Link>
           <div className="flex shrink-0 items-center gap-2">
-            {isAuthenticated && <HeaderAppMenu />}
+            {isDemoMode ? (
+              <span className="rounded-lg border border-cyan-400/40 bg-cyan-400/10 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-200">
+                Demo
+              </span>
+            ) : null}
+            {isAuthenticated && <HeaderAppMenu isDemoMode={isDemoMode} />}
             {!isAuthenticated && (
               <Link
                 href="/login"

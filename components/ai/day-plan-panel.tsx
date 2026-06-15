@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 interface DayPlanPanelProps {
   vehicles: Vehicle[];
   tier: 'free' | 'pro';
+  demoMode?: boolean;
 }
 
 interface DayPlanSuccess {
@@ -57,7 +58,50 @@ function isDayPlanSuccess(value: DayPlanResponse): value is DayPlanSuccess {
   );
 }
 
-export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
+const demoDayPlanAdvice: AdviceResponse = {
+  summary:
+    'Start from the Session 3 baseline because it recovered front feel without adding another geometry variable. Expect rear grip to fall off as track temperature climbs.',
+  recommended_changes: [
+    {
+      component: 'Tire pressures',
+      direction: 'Monitor rear hot pressure',
+      magnitude: 'Bleed back toward 26 psi hot if it climbs above target',
+      reason: 'The hottest demo session lost exit drive as rear pressure and track temperature rose together.',
+    },
+    {
+      component: 'Front damping',
+      direction: 'Keep Session 3 setting',
+      magnitude: 'Do not add rebound until the front push returns',
+      reason: 'Session 2 combined more front pressure with more rebound and felt worse mid-corner.',
+    },
+  ],
+  tradeoffs: ['Chasing rear grip with pressure may reduce carcass support if taken too far.'],
+  confidence: 'medium',
+  safety_notes: ['Make one change at a time and verify tire pressures with a reliable gauge.'],
+  citations: [],
+  prediction: {
+    expected_effect: 'The bike should keep the improved turn-in from Session 3 while reducing late-session rear greasiness.',
+    day_trend: 'Track temperature is the main watch item as the day heats up.',
+    watch_items: ['Rear drive after lap four', 'Front push through long right-handers'],
+  },
+  personal_evidence: [
+    {
+      label: 'Session 3',
+      detail: 'Lower front pressure and softer compression improved turn-in and front compliance.',
+      source_session_id: 'demo-session-3',
+    },
+  ],
+  data_used: {
+    manual: true,
+    weather: true,
+    history: true,
+    feedback: false,
+    telemetry: false,
+  },
+  refusal: null,
+};
+
+export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelProps) {
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id ?? '');
   const [trackName, setTrackName] = useState('');
   const [ambientTemperatureC, setAmbientTemperatureC] = useState('');
@@ -77,7 +121,9 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
     setVehicleId(vehicles[0]?.id ?? '');
   }, [vehicleId, vehicles]);
 
-  if (tier !== 'pro') {
+  if (vehicles.length === 0) return null;
+
+  if (!demoMode && tier !== 'pro') {
     return (
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Morning Plan</h2>
@@ -91,8 +137,6 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
     );
   }
 
-  if (vehicles.length === 0) return null;
-
   function parseOptionalNumber(value: string): number | undefined {
     const trimmed = value.trim();
     if (!trimmed) return undefined;
@@ -102,6 +146,8 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (demoMode) return;
+
     setError('');
     setResponse(null);
 
@@ -160,7 +206,7 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
     }
   }
 
-  const advice = response?.advice ?? null;
+  const advice = demoMode ? demoDayPlanAdvice : response?.advice ?? null;
 
   return (
     <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
@@ -238,10 +284,22 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
           <p className="text-xs text-zinc-500">Planning for {selectedVehicle.nickname}.</p>
         ) : null}
 
-        <Button type="submit" fullWidth loading={loading} disabled={!vehicleId}>
-          {loading ? 'Planning...' : 'Generate Morning Plan'}
+        <Button type="submit" fullWidth loading={loading} disabled={!vehicleId || demoMode}>
+          {demoMode ? 'Sample plan shown' : loading ? 'Planning...' : 'Generate Morning Plan'}
         </Button>
       </form>
+
+      {demoMode ? (
+        <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-3 text-sm text-cyan-100">
+          This is a static sample plan. Real Pro accounts can generate plans from their own history and current conditions.
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-400">
+          Building a plan from your vehicle history and today&apos;s inputs.
+        </div>
+      ) : null}
 
       {error ? (
         <div role="alert" className="rounded-xl border border-rose-800 bg-rose-950/40 p-3 text-sm text-rose-200">
@@ -268,28 +326,48 @@ export function DayPlanPanel({ vehicles, tier }: DayPlanPanelProps) {
                 </li>
               ))}
             </ul>
-          ) : null}
+          ) : (
+            <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-950/40 p-3 text-sm text-zinc-500">
+              No specific setup change recommended yet. Establish a baseline and log feedback after the next session.
+            </div>
+          )}
           {advice.prediction ? (
             <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
               <p>{advice.prediction.expected_effect}</p>
               <p className="mt-1 text-zinc-500">{advice.prediction.day_trend}</p>
             </div>
           ) : null}
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(advice.data_used).map(([key, used]) => (
-              <span
-                key={key}
-                className={cn(
-                  'rounded-lg border px-2 py-1 text-xs font-medium',
-                  used
-                    ? 'border-cyan-400/50 bg-cyan-400/10 text-cyan-200'
-                    : 'border-zinc-800 bg-zinc-950 text-zinc-500',
-                )}
-              >
-                {DATA_USED_LABELS[key] ?? key}
-              </span>
-            ))}
+          <div>
+            <h3 className="text-sm font-semibold text-zinc-100">Data used</h3>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {Object.entries(advice.data_used).map(([key, used]) => (
+                <span
+                  key={key}
+                  className={cn(
+                    'rounded-lg border px-2 py-1 text-xs font-medium',
+                    used
+                      ? 'border-cyan-400/50 bg-cyan-400/10 text-cyan-200'
+                      : 'border-zinc-800 bg-zinc-950 text-zinc-500',
+                  )}
+                >
+                  {DATA_USED_LABELS[key] ?? key}
+                </span>
+              ))}
+            </div>
           </div>
+          {advice.citations.length > 0 ? (
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-100">Citations</h3>
+              <ul className="mt-2 space-y-2">
+                {advice.citations.map((citation, idx) => (
+                  <li key={`${citation.source}-${idx}`} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-2">
+                    <p className="font-mono text-xs text-zinc-400">{citation.source}</p>
+                    <p className="mt-1 text-sm text-zinc-300">{citation.snippet}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>
