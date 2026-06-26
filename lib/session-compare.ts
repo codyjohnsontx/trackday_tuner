@@ -1,6 +1,8 @@
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import type { Session, SessionEnvironment, TelemetrySummary, VehicleType } from '@/types';
 
+export const COMPARABLE_SESSION_LIMIT = 20;
+
 export type ComparisonStrength = 'strong' | 'useful' | 'weak';
 
 export interface LapMetrics {
@@ -65,9 +67,33 @@ function validNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 }
 
-function sameTrack(a: Session, b: Session): boolean {
-  if (a.track_id || b.track_id) return a.track_id === b.track_id;
+export function sessionsMatchTrack(a: Session, b: Session): boolean {
+  if (a.track_id && b.track_id) return a.track_id === b.track_id;
   return (a.track_name ?? '') === (b.track_name ?? '');
+}
+
+function sessionTimeValue(session: Session): string {
+  return `${session.date}T${session.start_time ?? '00:00:00'}`;
+}
+
+export function compareSessionsDesc(a: Session, b: Session): number {
+  const timeComparison = sessionTimeValue(b).localeCompare(sessionTimeValue(a));
+  if (timeComparison !== 0) return timeComparison;
+
+  const createdAtComparison = b.created_at.localeCompare(a.created_at);
+  if (createdAtComparison !== 0) return createdAtComparison;
+
+  return b.id.localeCompare(a.id);
+}
+
+export function isSessionBefore(candidate: Session, current: Session): boolean {
+  const timeComparison = sessionTimeValue(candidate).localeCompare(sessionTimeValue(current));
+  if (timeComparison !== 0) return timeComparison < 0;
+
+  const createdAtComparison = candidate.created_at.localeCompare(current.created_at);
+  if (createdAtComparison !== 0) return createdAtComparison < 0;
+
+  return candidate.id.localeCompare(current.id) < 0;
 }
 
 function sessionLabel(session: Session): string {
@@ -256,7 +282,7 @@ export function buildContextFlags(context: BuildContext, currentLapMetrics: LapM
   const { currentSession, baselineSession, currentEnvironment, baselineEnvironment } = context;
   const flags: ContextFlag[] = [];
 
-  if (!sameTrack(currentSession, baselineSession)) {
+  if (!sessionsMatchTrack(currentSession, baselineSession)) {
     flags.push({
       key: 'track-mismatch',
       severity: 'critical',
@@ -360,7 +386,7 @@ export function buildContextFlags(context: BuildContext, currentLapMetrics: LapM
 }
 
 export function assignComparisonStrength(context: BuildContext, flags: ContextFlag[]): ComparisonStrength {
-  if (!sameTrack(context.currentSession, context.baselineSession)) return 'weak';
+  if (!sessionsMatchTrack(context.currentSession, context.baselineSession)) return 'weak';
 
   const criticalCount = flags.filter((flag) => flag.severity === 'critical').length;
   const warningCount = flags.filter((flag) => flag.severity === 'warning').length;
@@ -382,9 +408,9 @@ export function generateComparisonSummary(context: BuildContext, strength: Compa
     context.vehicleType,
   ).some((row) => row.changed);
 
-  const constraint = flags.find((flag) =>
-    ['track-mismatch', 'track-temperature-delta', 'ambient-temperature-delta', 'condition-mismatch', 'lap-data-missing'].includes(flag.key),
-  );
+  const constraint =
+    flags.find((flag) => flag.severity === 'critical' || flag.severity === 'warning') ??
+    flags.find((flag) => flag.key === 'lap-data-missing');
 
   const firstSentence = `${currentLabel} is a ${strength} comparison signal against ${baseline}.`;
   const setupSentence = setupChangesVisible

@@ -1,4 +1,5 @@
 import { DEMO_USER_ID } from '@/lib/demo/mode';
+import { compareSessionsDesc, isSessionBefore, sessionsMatchTrack } from '@/lib/session-compare';
 import type {
   Profile,
   Session,
@@ -365,12 +366,6 @@ export const DEMO_TELEMETRY_SUMMARIES: TelemetrySummary[] = [
   },
 ];
 
-function compareSessionsDesc(a: Session, b: Session) {
-  const aValue = `${a.date}T${a.start_time ?? '00:00:00'}`;
-  const bValue = `${b.date}T${b.start_time ?? '00:00:00'}`;
-  return bValue.localeCompare(aValue);
-}
-
 function clone<T>(value: T): T {
   return structuredClone(value);
 }
@@ -406,11 +401,10 @@ export function getDemoSessionCount(vehicleId?: string): number {
 }
 
 export function getDemoPreviousSession(currentSession: Session): Session | null {
-  const currentValue = `${currentSession.date}T${currentSession.start_time ?? '23:59:59'}`;
   return (
     DEMO_SESSIONS
       .filter((session) => session.vehicle_id === currentSession.vehicle_id && session.id !== currentSession.id)
-      .filter((session) => `${session.date}T${session.start_time ?? '23:59:59'}` < currentValue)
+      .filter((session) => isSessionBefore(session, currentSession))
       .sort(compareSessionsDesc)
       .map(clone)[0] ?? null
   );
@@ -420,8 +414,8 @@ export function getDemoComparableSessions(currentSession: Session): Session[] {
   return DEMO_SESSIONS
     .filter((session) => session.vehicle_id === currentSession.vehicle_id && session.id !== currentSession.id)
     .sort((a, b) => {
-      const aSameTrack = a.track_id === currentSession.track_id && a.track_name === currentSession.track_name;
-      const bSameTrack = b.track_id === currentSession.track_id && b.track_name === currentSession.track_name;
+      const aSameTrack = sessionsMatchTrack(a, currentSession);
+      const bSameTrack = sessionsMatchTrack(b, currentSession);
       if (aSameTrack !== bSameTrack) return aSameTrack ? -1 : 1;
       return compareSessionsDesc(a, b);
     })

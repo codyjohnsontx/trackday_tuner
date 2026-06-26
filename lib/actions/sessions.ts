@@ -14,6 +14,7 @@ import {
   getDemoTelemetrySummaries,
 } from '@/lib/demo/data';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
+import { COMPARABLE_SESSION_LIMIT, compareSessionsDesc, sessionsMatchTrack } from '@/lib/session-compare';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
@@ -202,17 +203,6 @@ export async function getPreviousSession(
   return (data?.[0] ?? null) as Session | null;
 }
 
-function isSameTrack(a: Session, b: Session): boolean {
-  if (a.track_id || b.track_id) return a.track_id === b.track_id;
-  return (a.track_name ?? '') === (b.track_name ?? '');
-}
-
-function compareSessionsDesc(a: Session, b: Session): number {
-  const aValue = `${a.date}T${a.start_time ?? '00:00:00'}`;
-  const bValue = `${b.date}T${b.start_time ?? '00:00:00'}`;
-  return bValue.localeCompare(aValue);
-}
-
 export async function getComparableSessions(currentSession: Session): Promise<Session[]> {
   if (await isDemoMode()) {
     return getDemoComparableSessions(currentSession);
@@ -230,11 +220,12 @@ export async function getComparableSessions(currentSession: Session): Promise<Se
     .neq('id', currentSession.id)
     .order('date', { ascending: false })
     .order('start_time', { ascending: false, nullsFirst: false })
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(COMPARABLE_SESSION_LIMIT);
 
   return ((data ?? []) as Session[]).sort((a, b) => {
-    const aSameTrack = isSameTrack(a, currentSession);
-    const bSameTrack = isSameTrack(b, currentSession);
+    const aSameTrack = sessionsMatchTrack(a, currentSession);
+    const bSameTrack = sessionsMatchTrack(b, currentSession);
     if (aSameTrack !== bSameTrack) return aSameTrack ? -1 : 1;
     return compareSessionsDesc(a, b);
   });

@@ -26,9 +26,9 @@ Roadmap work ships one item per PR. Each item should be reviewed, merged, and le
 
 ## Active Item: Session Comparison v1
 
-Session Comparison v1 adds a Pro comparison page for choosing a baseline session from the same vehicle and reviewing deterministic comparison signals across setup, environment, context, and available telemetry summary metrics. Free users keep the existing previous-session comparison on the session detail page.
+Session Comparison v1 adds a Pro comparison page for choosing a baseline session from the same vehicle and reviewing deterministic comparison signals across setup, environment, and context. Free users keep the existing previous-session comparison on the session detail page.
 
-PR 1 does not add manual lap-time entry, saved takeaways, AI comparison summaries, charting, telemetry import, a comparison database model, or cross-vehicle comparisons.
+PR 1 does not add manual lap-time entry, AI comparison summaries, telemetry import, a comparison database model, or cross-vehicle comparisons.
 
 ## Not Active Yet
 

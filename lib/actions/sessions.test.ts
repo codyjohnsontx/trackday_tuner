@@ -26,7 +26,14 @@ import { getAuthenticatedUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { DEMO_COOKIE_NAME } from '@/lib/demo/mode';
-import { createSession, getPreviousSession, getSessionEnvironments, getTelemetrySummaries } from '@/lib/actions/sessions';
+import {
+  createSession,
+  getComparableSessions,
+  getPreviousSession,
+  getSessionEnvironments,
+  getTelemetrySummaries,
+} from '@/lib/actions/sessions';
+import { COMPARABLE_SESSION_LIMIT } from '@/lib/session-compare';
 import type { CreateSessionInput, Session, SessionEnvironment, TelemetrySummary } from '@/types';
 
 type QueryResponse = {
@@ -255,6 +262,48 @@ describe('sessions actions', () => {
     const result = await getPreviousSession(current);
 
     expect(result?.id).toBe('previous');
+  });
+
+  it('caps comparable sessions before returning the sorted candidate list', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+
+    const current: Session = {
+      id: 'current',
+      user_id: 'user-1',
+      vehicle_id: 'veh-1',
+      track_id: 'track-1',
+      track_name: 'MSR Cresson',
+      date: '2026-02-24',
+      start_time: '12:00:00',
+      session_number: 2,
+      conditions: 'sunny',
+      tires: validInput.tires,
+      suspension: validInput.suspension,
+      alignment: null,
+      enabled_modules: validInput.enabled_modules ?? null,
+      extra_modules: null,
+      notes: null,
+      created_at: '2026-02-24T12:00:00Z',
+      updated_at: '2026-02-24T12:00:00Z',
+    };
+    const comparableRows: Session[] = [
+      { ...current, id: 'other-track', track_id: 'track-2', track_name: 'COTA', created_at: '2026-02-24T11:30:00Z' },
+      { ...current, id: 'same-track', created_at: '2026-02-24T11:00:00Z' },
+    ];
+
+    const comparableQuery = createQuery({
+      base: { data: comparableRows, error: null },
+    });
+    const from = vi.fn().mockImplementation((table: string) => {
+      expect(table).toBe('sessions');
+      return comparableQuery;
+    });
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await getComparableSessions(current);
+
+    expect(comparableQuery.limit).toHaveBeenCalledWith(COMPARABLE_SESSION_LIMIT);
+    expect(result.map((session) => session.id)).toEqual(['same-track', 'other-track']);
   });
 
   it('returns environment rows for the requested sessions', async () => {

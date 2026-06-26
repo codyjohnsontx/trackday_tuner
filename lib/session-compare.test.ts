@@ -4,8 +4,11 @@ import {
   buildContextFlags,
   buildSessionComparisonModel,
   buildSetupCompareRows,
+  compareSessionsDesc,
   extractLapMetrics,
   formatLapTime,
+  isSessionBefore,
+  sessionsMatchTrack,
 } from '@/lib/session-compare';
 import type { Session, SessionEnvironment, TelemetrySummary } from '@/types';
 
@@ -192,6 +195,33 @@ describe('session compare helpers', () => {
     expect(assignComparisonStrength({ currentSession: current, baselineSession: session({ track_id: 'track-2' }) }, weakFlags)).toBe('weak');
   });
 
+  it('matches tracks by name when only one session has track_id', () => {
+    expect(
+      sessionsMatchTrack(
+        session({ id: 'current', track_id: 'track-1', track_name: 'MSR Cresson' }),
+        session({ id: 'baseline', track_id: null, track_name: 'MSR Cresson' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('uses created_at as a session ordering tie-breaker', () => {
+    const newer = session({
+      id: 'newer',
+      date: '2026-02-24',
+      start_time: '09:00:00',
+      created_at: '2026-02-24T09:30:00Z',
+    });
+    const older = session({
+      id: 'older',
+      date: '2026-02-24',
+      start_time: '09:00:00',
+      created_at: '2026-02-24T09:15:00Z',
+    });
+
+    expect(isSessionBefore(older, newer)).toBe(true);
+    expect(compareSessionsDesc(newer, older)).toBeLessThan(0);
+  });
+
   it('flags large ambient and track temperature deltas', () => {
     const flags = buildContextFlags(
       {
@@ -262,5 +292,27 @@ describe('session compare helpers', () => {
 
     expect(model.summary).toContain('comparison signal');
     expect(model.summary.toLowerCase()).not.toMatch(/caused|because of|due to/);
+  });
+
+  it('uses tire and notes warnings in the summary constraint sentence', () => {
+    const model = buildSessionComparisonModel({
+      currentSession: session({
+        id: 'current',
+        session_number: 4,
+        tires: {
+          condition: 'used',
+          front: { brand: 'Pirelli', compound: 'SC2', pressure: '33 psi' },
+          rear: { brand: 'Pirelli', compound: 'SC3', pressure: '26 psi' },
+        },
+        notes: 'Traffic in the middle of the run.',
+      }),
+      baselineSession: session({ id: 'baseline', session_number: 3 }),
+      currentEnvironment: baseEnvironment,
+      baselineEnvironment: baseEnvironment,
+      currentTelemetry: telemetry({ best_lap_ms: 95000 }),
+      baselineTelemetry: telemetry({ best_lap_ms: 96000 }),
+    });
+
+    expect(model.summary).toContain('Tire condition mismatch weakens the read.');
   });
 });

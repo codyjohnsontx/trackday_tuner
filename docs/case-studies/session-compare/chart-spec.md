@@ -164,7 +164,8 @@ Display behavior:
 
 Empty state:
 
-- If context is missing, label the comparison as "Useful with missing context" rather than hiding the warning.
+- If context is missing, keep the label within the normal Strong, Useful, or Weak comparison vocabulary.
+- Surface missing-context detail in the supporting copy near the top of the comparison instead of changing the label.
 
 Warning state:
 

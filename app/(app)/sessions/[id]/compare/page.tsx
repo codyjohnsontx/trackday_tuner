@@ -14,7 +14,13 @@ import { SessionComparePicker, type SessionComparePickerOption } from '@/compone
 import { SessionCompareSetupDeltas } from '@/components/sessions/session-compare-setup-deltas';
 import { SessionCompareStrengthBanner } from '@/components/sessions/session-compare-strength-banner';
 import { SessionCompareUpgradeCard } from '@/components/sessions/session-compare-upgrade-card';
-import { buildSessionComparisonModel, extractLapMetrics, formatLapTime } from '@/lib/session-compare';
+import {
+  buildSessionComparisonModel,
+  extractLapMetrics,
+  formatLapTime,
+  isSessionBefore,
+  sessionsMatchTrack,
+} from '@/lib/session-compare';
 import { isDemoMode } from '@/lib/demo/mode';
 import type { Session, SessionEnvironment, TelemetrySummary } from '@/types';
 
@@ -40,20 +46,7 @@ function formatDateLabel(dateString: string): string {
 }
 
 function sessionLabel(session: Session): string {
-  return session.session_number ? `Session ${session.session_number}` : 'Session';
-}
-
-function sessionSortValue(session: Session): string {
-  return `${session.date}T${session.start_time ?? '23:59:59'}`;
-}
-
-function isBeforeSession(candidate: Session, current: Session): boolean {
-  return sessionSortValue(candidate) < sessionSortValue(current);
-}
-
-function isSameTrack(a: Session, b: Session): boolean {
-  if (a.track_id || b.track_id) return a.track_id === b.track_id;
-  return (a.track_name ?? '') === (b.track_name ?? '');
+  return session.session_number ? `Session ${session.session_number}` : 'Current session';
 }
 
 function getBaselineParam(value: string | string[] | undefined): string | null {
@@ -62,9 +55,9 @@ function getBaselineParam(value: string | string[] | undefined): string | null {
 }
 
 function chooseDefaultBaseline(current: Session, candidates: Session[]): Session | null {
-  const previousCandidates = candidates.filter((candidate) => isBeforeSession(candidate, current));
+  const previousCandidates = candidates.filter((candidate) => isSessionBefore(candidate, current));
   return (
-    previousCandidates.find((candidate) => isSameTrack(candidate, current)) ??
+    previousCandidates.find((candidate) => sessionsMatchTrack(candidate, current)) ??
     previousCandidates[0] ??
     null
   );
@@ -88,7 +81,7 @@ function buildPickerOptions(
       sessionLabel: sessionLabel(candidate),
       conditionLabel: conditionLabel[candidate.conditions] ?? candidate.conditions,
       bestLapLabel: bestLapMs !== null ? formatLapTime(bestLapMs) : null,
-      sameTrack: isSameTrack(candidate, current),
+      sameTrack: sessionsMatchTrack(candidate, current),
     };
   });
 }
