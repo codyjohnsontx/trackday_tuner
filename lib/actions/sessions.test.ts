@@ -33,7 +33,7 @@ import {
   getSessionEnvironments,
   getTelemetrySummaries,
 } from '@/lib/actions/sessions';
-import { COMPARABLE_SESSION_LIMIT } from '@/lib/session-compare';
+import { COMPARABLE_SESSION_FETCH_LIMIT, COMPARABLE_SESSION_LIMIT } from '@/lib/session-compare';
 import type { CreateSessionInput, Session, SessionEnvironment, TelemetrySummary } from '@/types';
 
 type QueryResponse = {
@@ -264,7 +264,7 @@ describe('sessions actions', () => {
     expect(result?.id).toBe('previous');
   });
 
-  it('caps comparable sessions before returning the sorted candidate list', async () => {
+  it('prioritizes same-track comparable sessions before applying the final cap', async () => {
     vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const current: Session = {
@@ -286,10 +286,19 @@ describe('sessions actions', () => {
       created_at: '2026-02-24T12:00:00Z',
       updated_at: '2026-02-24T12:00:00Z',
     };
-    const comparableRows: Session[] = [
-      { ...current, id: 'other-track', track_id: 'track-2', track_name: 'COTA', created_at: '2026-02-24T11:30:00Z' },
-      { ...current, id: 'same-track', created_at: '2026-02-24T11:00:00Z' },
-    ];
+    const offTrackRows: Session[] = Array.from({ length: COMPARABLE_SESSION_LIMIT + 1 }, (_, index) => ({
+      ...current,
+      id: `other-track-${index}`,
+      track_id: `track-${index + 2}`,
+      track_name: `Other Track ${index}`,
+      created_at: `2026-02-24T11:${String(59 - index).padStart(2, '0')}:00Z`,
+    }));
+    const sameTrackBeyondFinalCap: Session = {
+      ...current,
+      id: 'same-track-beyond-final-cap',
+      created_at: '2026-02-24T10:30:00Z',
+    };
+    const comparableRows: Session[] = [...offTrackRows, sameTrackBeyondFinalCap];
 
     const comparableQuery = createQuery({
       base: { data: comparableRows, error: null },
@@ -302,8 +311,10 @@ describe('sessions actions', () => {
 
     const result = await getComparableSessions(current);
 
-    expect(comparableQuery.limit).toHaveBeenCalledWith(COMPARABLE_SESSION_LIMIT);
-    expect(result.map((session) => session.id)).toEqual(['same-track', 'other-track']);
+    expect(comparableQuery.limit).toHaveBeenCalledWith(COMPARABLE_SESSION_FETCH_LIMIT);
+    expect(result).toHaveLength(COMPARABLE_SESSION_LIMIT);
+    expect(result.map((session) => session.id)).toContain('same-track-beyond-final-cap');
+    expect(result[0]?.id).toBe('same-track-beyond-final-cap');
   });
 
   it('returns environment rows for the requested sessions', async () => {

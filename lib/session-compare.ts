@@ -2,6 +2,7 @@ import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import type { Session, SessionEnvironment, TelemetrySummary, VehicleType } from '@/types';
 
 export const COMPARABLE_SESSION_LIMIT = 20;
+export const COMPARABLE_SESSION_FETCH_LIMIT = COMPARABLE_SESSION_LIMIT * 3;
 
 export type ComparisonStrength = 'strong' | 'useful' | 'weak';
 
@@ -69,7 +70,10 @@ function validNumber(value: unknown): number | null {
 
 export function sessionsMatchTrack(a: Session, b: Session): boolean {
   if (a.track_id && b.track_id) return a.track_id === b.track_id;
-  return (a.track_name ?? '') === (b.track_name ?? '');
+
+  const aTrackName = a.track_name?.trim();
+  const bTrackName = b.track_name?.trim();
+  return Boolean(aTrackName && bTrackName && aTrackName === bTrackName);
 }
 
 function sessionTimeValue(session: Session): string {

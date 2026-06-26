@@ -204,6 +204,15 @@ describe('session compare helpers', () => {
     ).toBe(true);
   });
 
+  it('does not match sessions with no track metadata', () => {
+    expect(
+      sessionsMatchTrack(
+        session({ id: 'current', track_id: null, track_name: null }),
+        session({ id: 'baseline', track_id: null, track_name: null }),
+      ),
+    ).toBe(false);
+  });
+
   it('uses created_at as a session ordering tie-breaker', () => {
     const newer = session({
       id: 'newer',

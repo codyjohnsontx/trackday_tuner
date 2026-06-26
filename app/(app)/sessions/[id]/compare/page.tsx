@@ -45,8 +45,10 @@ function formatDateLabel(dateString: string): string {
   });
 }
 
-function sessionLabel(session: Session): string {
-  return session.session_number ? `Session ${session.session_number}` : 'Current session';
+function sessionLabel(session: Session, currentSessionId: string): string {
+  if (session.session_number) return `Session ${session.session_number}`;
+  if (session.id === currentSessionId) return 'Current session';
+  return 'Session';
 }
 
 function getBaselineParam(value: string | string[] | undefined): string | null {
@@ -78,7 +80,7 @@ function buildPickerOptions(
       id: candidate.id,
       trackName: candidate.track_name ?? 'Unknown Track',
       dateLabel: formatDateLabel(candidate.date),
-      sessionLabel: sessionLabel(candidate),
+      sessionLabel: sessionLabel(candidate, current.id),
       conditionLabel: conditionLabel[candidate.conditions] ?? candidate.conditions,
       bestLapLabel: bestLapMs !== null ? formatLapTime(bestLapMs) : null,
       sameTrack: sessionsMatchTrack(candidate, current),
@@ -117,7 +119,7 @@ export default async function SessionComparePage({ params, searchParams }: Sessi
       <SessionComparePageHeader
         sessionId={session.id}
         trackName={trackName}
-        sessionLabel={sessionLabel(session)}
+        sessionLabel={sessionLabel(session, session.id)}
         dateLabel={formatDateLabel(session.date)}
       />
     </>

@@ -14,7 +14,12 @@ import {
   getDemoTelemetrySummaries,
 } from '@/lib/demo/data';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
-import { COMPARABLE_SESSION_LIMIT, compareSessionsDesc, sessionsMatchTrack } from '@/lib/session-compare';
+import {
+  COMPARABLE_SESSION_FETCH_LIMIT,
+  COMPARABLE_SESSION_LIMIT,
+  compareSessionsDesc,
+  sessionsMatchTrack,
+} from '@/lib/session-compare';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
@@ -221,14 +226,14 @@ export async function getComparableSessions(currentSession: Session): Promise<Se
     .order('date', { ascending: false })
     .order('start_time', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
-    .limit(COMPARABLE_SESSION_LIMIT);
+    .limit(COMPARABLE_SESSION_FETCH_LIMIT);
 
   return ((data ?? []) as Session[]).sort((a, b) => {
     const aSameTrack = sessionsMatchTrack(a, currentSession);
     const bSameTrack = sessionsMatchTrack(b, currentSession);
     if (aSameTrack !== bSameTrack) return aSameTrack ? -1 : 1;
     return compareSessionsDesc(a, b);
-  });
+  }).slice(0, COMPARABLE_SESSION_LIMIT);
 }
 
 export async function getTelemetrySummaries(sessionIds: string[]): Promise<TelemetrySummary[]> {
