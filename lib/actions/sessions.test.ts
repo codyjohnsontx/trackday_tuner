@@ -4,6 +4,10 @@ vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
 }));
 
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({ get: vi.fn(() => undefined) })),
+}));
+
 vi.mock('@/lib/auth', () => ({
   getAuthenticatedUser: vi.fn(),
 }));
@@ -17,11 +21,20 @@ vi.mock('@/lib/actions/vehicles', () => ({
 }));
 
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
-import { createSession, getPreviousSession, getSessionEnvironments } from '@/lib/actions/sessions';
-import type { CreateSessionInput, Session, SessionEnvironment } from '@/types';
+import { DEMO_COOKIE_NAME } from '@/lib/demo/mode';
+import {
+  createSession,
+  getComparableSessions,
+  getPreviousSession,
+  getSessionEnvironments,
+  getTelemetrySummaries,
+} from '@/lib/actions/sessions';
+import { COMPARABLE_SESSION_FETCH_LIMIT, COMPARABLE_SESSION_LIMIT } from '@/lib/session-compare';
+import type { CreateSessionInput, Session, SessionEnvironment, TelemetrySummary } from '@/types';
 
 type QueryResponse = {
   base?: { data?: unknown; error?: { message: string } | null; count?: number | null };
@@ -82,6 +95,7 @@ const validInput: CreateSessionInput = {
 describe('sessions actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(cookies).mockResolvedValue({ get: vi.fn(() => undefined) } as never);
   });
 
   it('returns auth error when creating session while logged out', async () => {
@@ -250,6 +264,59 @@ describe('sessions actions', () => {
     expect(result?.id).toBe('previous');
   });
 
+  it('prioritizes same-track comparable sessions before applying the final cap', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+
+    const current: Session = {
+      id: 'current',
+      user_id: 'user-1',
+      vehicle_id: 'veh-1',
+      track_id: 'track-1',
+      track_name: 'MSR Cresson',
+      date: '2026-02-24',
+      start_time: '12:00:00',
+      session_number: 2,
+      conditions: 'sunny',
+      tires: validInput.tires,
+      suspension: validInput.suspension,
+      alignment: null,
+      enabled_modules: validInput.enabled_modules ?? null,
+      extra_modules: null,
+      notes: null,
+      created_at: '2026-02-24T12:00:00Z',
+      updated_at: '2026-02-24T12:00:00Z',
+    };
+    const offTrackRows: Session[] = Array.from({ length: COMPARABLE_SESSION_LIMIT + 1 }, (_, index) => ({
+      ...current,
+      id: `other-track-${index}`,
+      track_id: `track-${index + 2}`,
+      track_name: `Other Track ${index}`,
+      created_at: `2026-02-24T11:${String(59 - index).padStart(2, '0')}:00Z`,
+    }));
+    const sameTrackBeyondFinalCap: Session = {
+      ...current,
+      id: 'same-track-beyond-final-cap',
+      created_at: '2026-02-24T10:30:00Z',
+    };
+    const comparableRows: Session[] = [...offTrackRows, sameTrackBeyondFinalCap];
+
+    const comparableQuery = createQuery({
+      base: { data: comparableRows, error: null },
+    });
+    const from = vi.fn().mockImplementation((table: string) => {
+      expect(table).toBe('sessions');
+      return comparableQuery;
+    });
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await getComparableSessions(current);
+
+    expect(comparableQuery.limit).toHaveBeenCalledWith(COMPARABLE_SESSION_FETCH_LIMIT);
+    expect(result).toHaveLength(COMPARABLE_SESSION_LIMIT);
+    expect(result.map((session) => session.id)).toContain('same-track-beyond-final-cap');
+    expect(result[0]?.id).toBe('same-track-beyond-final-cap');
+  });
+
   it('returns environment rows for the requested sessions', async () => {
     vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
 
@@ -282,5 +349,54 @@ describe('sessions actions', () => {
 
     expect(environmentQuery.in).toHaveBeenCalledWith('session_id', ['session-1']);
     expect(result).toEqual(environments);
+  });
+
+  it('returns telemetry summaries for requested session ids', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+
+    const summaries: TelemetrySummary[] = [
+      {
+        id: 'telemetry-1',
+        user_id: 'user-1',
+        session_id: 'session-1',
+        vehicle_id: 'veh-1',
+        source: 'test',
+        summary: null,
+        metrics: { best_lap_ms: 95000 },
+        created_at: '2026-02-24T09:30:00Z',
+        updated_at: '2026-02-24T09:30:00Z',
+      },
+    ];
+
+    const telemetryQuery = createQuery({
+      base: { data: summaries, error: null },
+    });
+    const from = vi.fn().mockImplementation((table: string) => {
+      expect(table).toBe('telemetry_summaries');
+      return telemetryQuery;
+    });
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await getTelemetrySummaries(['session-1']);
+
+    expect(telemetryQuery.in).toHaveBeenCalledWith('session_id', ['session-1']);
+    expect(result).toEqual(summaries);
+  });
+
+  it('returns no telemetry summaries for empty input', async () => {
+    const result = await getTelemetrySummaries([]);
+
+    expect(result).toEqual([]);
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it('returns demo telemetry summaries without calling Supabase', async () => {
+    vi.mocked(cookies).mockResolvedValue({ get: vi.fn(() => ({ value: '1', name: DEMO_COOKIE_NAME })) } as never);
+
+    const result = await getTelemetrySummaries(['demo-session-4']);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.session_id).toBe('demo-session-4');
+    expect(createClient).not.toHaveBeenCalled();
   });
 });

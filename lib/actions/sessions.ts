@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
 import {
+  getDemoComparableSessions,
   getDemoLatestSessionsByVehicle,
   getDemoPreviousSession,
   getDemoSession,
@@ -10,8 +11,15 @@ import {
   getDemoSessionEnvironment,
   getDemoSessionEnvironments,
   getDemoSessions,
+  getDemoTelemetrySummaries,
 } from '@/lib/demo/data';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
+import {
+  COMPARABLE_SESSION_FETCH_LIMIT,
+  COMPARABLE_SESSION_LIMIT,
+  compareSessionsDesc,
+  sessionsMatchTrack,
+} from '@/lib/session-compare';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
@@ -22,6 +30,7 @@ import type {
   CreateSessionInput,
   Session,
   SessionEnvironment,
+  TelemetrySummary,
 } from '@/types';
 
 function hasEnvironmentValues(environment: CreateSessionEnvironmentInput | null | undefined): boolean {
@@ -197,6 +206,54 @@ export async function getPreviousSession(
   if (error || !data || data.length === 0) return null;
 
   return (data?.[0] ?? null) as Session | null;
+}
+
+export async function getComparableSessions(currentSession: Session): Promise<Session[]> {
+  if (await isDemoMode()) {
+    return getDemoComparableSessions(currentSession);
+  }
+
+  const user = await getAuthenticatedUser();
+  if (!user) return [];
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('sessions')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('vehicle_id', currentSession.vehicle_id)
+    .neq('id', currentSession.id)
+    .order('date', { ascending: false })
+    .order('start_time', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+    .limit(COMPARABLE_SESSION_FETCH_LIMIT);
+
+  return ((data ?? []) as Session[]).sort((a, b) => {
+    const aSameTrack = sessionsMatchTrack(a, currentSession);
+    const bSameTrack = sessionsMatchTrack(b, currentSession);
+    if (aSameTrack !== bSameTrack) return aSameTrack ? -1 : 1;
+    return compareSessionsDesc(a, b);
+  }).slice(0, COMPARABLE_SESSION_LIMIT);
+}
+
+export async function getTelemetrySummaries(sessionIds: string[]): Promise<TelemetrySummary[]> {
+  if (sessionIds.length === 0) return [];
+
+  if (await isDemoMode()) {
+    return getDemoTelemetrySummaries(sessionIds);
+  }
+
+  const user = await getAuthenticatedUser();
+  if (!user) return [];
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('telemetry_summaries')
+    .select('*')
+    .eq('user_id', user.id)
+    .in('session_id', sessionIds);
+
+  return (data ?? []) as TelemetrySummary[];
 }
 
 export async function createSession(

@@ -7,6 +7,7 @@ import {
   getDemoSessionEnvironment,
   getDemoSessionEnvironments,
   getDemoSessions,
+  getDemoTelemetrySummaries,
   getDemoTracks,
   getDemoVehicles,
 } from '@/lib/demo/data';
@@ -50,6 +51,18 @@ describe('demo data', () => {
     expect(getDemoSessionEnvironments(['demo-session-1', 'missing'])).toHaveLength(1);
   });
 
+  it('returns demo telemetry summaries for requested sessions', () => {
+    const summaries = getDemoTelemetrySummaries(['demo-session-4', 'demo-session-3']);
+
+    expect(summaries).toHaveLength(2);
+    expect(summaries.map((summary) => summary.session_id)).toEqual(['demo-session-4', 'demo-session-3']);
+    expect(summaries[0]?.metrics.best_lap_ms).toBe(103640);
+  });
+
+  it('returns no demo telemetry summaries for missing ids', () => {
+    expect(getDemoTelemetrySummaries(['missing'])).toEqual([]);
+  });
+
   it('returns null for unknown ids', () => {
     expect(getDemoSession('missing')).toBeNull();
     expect(getDemoSessionEnvironment('missing')).toBeNull();
@@ -59,13 +72,16 @@ describe('demo data', () => {
     const vehicle = getDemoVehicles()[0];
     const session = getDemoSession('demo-session-1');
     const environment = getDemoSessionEnvironment('demo-session-1');
+    const telemetry = getDemoTelemetrySummaries(['demo-session-1'])[0];
 
     vehicle!.nickname = 'Mutated';
     session!.notes = 'Mutated notes';
     environment!.weather_condition = 'Mutated weather';
+    telemetry!.metrics.best_lap_ms = 1;
 
     expect(getDemoVehicles()[0]?.nickname).toBe('R6 Track Bike');
     expect(getDemoSession('demo-session-1')?.notes).toContain('Neutral baseline');
     expect(getDemoSessionEnvironment('demo-session-1')?.weather_condition).toBe('Clear morning');
+    expect(getDemoTelemetrySummaries(['demo-session-1'])[0]?.metrics.best_lap_ms).toBe(104740);
   });
 });
