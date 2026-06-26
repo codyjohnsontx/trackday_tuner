@@ -4,6 +4,10 @@ vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
 }));
 
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({ get: vi.fn(() => undefined) })),
+}));
+
 vi.mock('@/lib/auth', () => ({
   getAuthenticatedUser: vi.fn(),
 }));
@@ -17,11 +21,13 @@ vi.mock('@/lib/actions/vehicles', () => ({
 }));
 
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
-import { createSession, getPreviousSession, getSessionEnvironments } from '@/lib/actions/sessions';
-import type { CreateSessionInput, Session, SessionEnvironment } from '@/types';
+import { DEMO_COOKIE_NAME } from '@/lib/demo/mode';
+import { createSession, getPreviousSession, getSessionEnvironments, getTelemetrySummaries } from '@/lib/actions/sessions';
+import type { CreateSessionInput, Session, SessionEnvironment, TelemetrySummary } from '@/types';
 
 type QueryResponse = {
   base?: { data?: unknown; error?: { message: string } | null; count?: number | null };
@@ -82,6 +88,7 @@ const validInput: CreateSessionInput = {
 describe('sessions actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(cookies).mockResolvedValue({ get: vi.fn(() => undefined) } as never);
   });
 
   it('returns auth error when creating session while logged out', async () => {
@@ -282,5 +289,54 @@ describe('sessions actions', () => {
 
     expect(environmentQuery.in).toHaveBeenCalledWith('session_id', ['session-1']);
     expect(result).toEqual(environments);
+  });
+
+  it('returns telemetry summaries for requested session ids', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+
+    const summaries: TelemetrySummary[] = [
+      {
+        id: 'telemetry-1',
+        user_id: 'user-1',
+        session_id: 'session-1',
+        vehicle_id: 'veh-1',
+        source: 'test',
+        summary: null,
+        metrics: { best_lap_ms: 95000 },
+        created_at: '2026-02-24T09:30:00Z',
+        updated_at: '2026-02-24T09:30:00Z',
+      },
+    ];
+
+    const telemetryQuery = createQuery({
+      base: { data: summaries, error: null },
+    });
+    const from = vi.fn().mockImplementation((table: string) => {
+      expect(table).toBe('telemetry_summaries');
+      return telemetryQuery;
+    });
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await getTelemetrySummaries(['session-1']);
+
+    expect(telemetryQuery.in).toHaveBeenCalledWith('session_id', ['session-1']);
+    expect(result).toEqual(summaries);
+  });
+
+  it('returns no telemetry summaries for empty input', async () => {
+    const result = await getTelemetrySummaries([]);
+
+    expect(result).toEqual([]);
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it('returns demo telemetry summaries without calling Supabase', async () => {
+    vi.mocked(cookies).mockResolvedValue({ get: vi.fn(() => ({ value: '1', name: DEMO_COOKIE_NAME })) } as never);
+
+    const result = await getTelemetrySummaries(['demo-session-4']);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.session_id).toBe('demo-session-4');
+    expect(createClient).not.toHaveBeenCalled();
   });
 });

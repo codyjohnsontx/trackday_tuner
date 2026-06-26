@@ -99,6 +99,9 @@ export type TelemetryMetrics = {
   suspension_travel?: Json;
   lap_count?: number;
   best_lap_ms?: number;
+  lap_times_ms?: number[];
+  average_lap_ms?: number;
+  consistency_spread_ms?: number;
   ambient_temperature_trend_c?: Json;
   track_temperature_trend_c?: Json;
   [key: string]: Json | undefined;

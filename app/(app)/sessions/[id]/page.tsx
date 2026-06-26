@@ -1,8 +1,11 @@
 import { notFound } from 'next/navigation';
+import Link from 'next/link';
+import { BarChart3 } from 'lucide-react';
 import { getPreviousSession, getSession, getSessionEnvironment } from '@/lib/actions/sessions';
 import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
 import { DemoBanner } from '@/components/demo/demo-banner';
 import { isDemoMode } from '@/lib/demo/mode';
+import { Button } from '@/components/ui/button';
 import { TimeDisplay } from '@/components/ui/time-display';
 import { SessionCompare, type CompareRow } from '@/components/sessions/session-compare';
 import { TuningAdvicePanel } from '@/components/ai/tuning-advice-panel';
@@ -322,14 +325,22 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
         <p className="mt-0.5 text-sm text-zinc-400">{formattedDate} · {vehicleNickname}</p>
       </div>
 
-      {previousSession ? (
-        <SessionCompare rows={compareRows} previousDateLabel={formatDateLabel(previousSession.date)} />
-      ) : (
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Compare with Previous Session</h2>
-          <p className="mt-2 text-sm text-zinc-400">No earlier session found for this vehicle.</p>
-        </section>
-      )}
+      <div className="space-y-3">
+        {previousSession ? (
+          <SessionCompare rows={compareRows} previousDateLabel={formatDateLabel(previousSession.date)} />
+        ) : (
+          <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Compare with Previous Session</h2>
+            <p className="mt-2 text-sm text-zinc-400">No earlier session found for this vehicle.</p>
+          </section>
+        )}
+        <Button asChild variant="secondary" fullWidth>
+          <Link href={`/sessions/${session.id}/compare`}>
+            <BarChart3 className="mr-2 h-4 w-4" aria-hidden="true" />
+            Compare Sessions
+          </Link>
+        </Button>
+      </div>
 
       <TuningAdvicePanel sessionId={session.id} vehicleId={session.vehicle_id} tier={tier} demoMode={demoMode} />
 

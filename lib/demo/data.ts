@@ -4,6 +4,7 @@ import type {
   Session,
   SessionEnvironment,
   SessionEnabledModules,
+  TelemetrySummary,
   Track,
   Vehicle,
 } from '@/types';
@@ -293,6 +294,77 @@ export const DEMO_SESSION_ENVIRONMENTS: SessionEnvironment[] = [
   },
 ];
 
+export const DEMO_TELEMETRY_SUMMARIES: TelemetrySummary[] = [
+  {
+    id: 'demo-telemetry-4',
+    user_id: DEMO_USER_ID,
+    session_id: 'demo-session-4',
+    vehicle_id: 'demo-r6',
+    source: 'demo',
+    summary: 'Hotter session with rear grip fading after the early laps.',
+    metrics: {
+      lap_times_ms: [103920, 103640, 103880, 104510, 105120, 105380],
+      lap_count: 6,
+      best_lap_ms: 103640,
+      average_lap_ms: 104408,
+      consistency_spread_ms: 1740,
+    },
+    created_at: '2026-05-18T19:45:00.000Z',
+    updated_at: '2026-05-18T19:45:00.000Z',
+  },
+  {
+    id: 'demo-telemetry-3',
+    user_id: DEMO_USER_ID,
+    session_id: 'demo-session-3',
+    vehicle_id: 'demo-r6',
+    source: 'demo',
+    summary: 'Best same-track signal from the day with stable pace.',
+    metrics: {
+      lap_times_ms: [104620, 104110, 103980, 104250, 104430, 104690],
+      lap_count: 6,
+      best_lap_ms: 103980,
+      average_lap_ms: 104347,
+      consistency_spread_ms: 710,
+    },
+    created_at: '2026-05-18T16:55:00.000Z',
+    updated_at: '2026-05-18T16:55:00.000Z',
+  },
+  {
+    id: 'demo-telemetry-2',
+    user_id: DEMO_USER_ID,
+    session_id: 'demo-session-2',
+    vehicle_id: 'demo-r6',
+    source: 'demo',
+    summary: 'Front push made pace less consistent.',
+    metrics: {
+      lap_times_ms: [105800, 105220, 105430, 106010, 106440],
+      lap_count: 5,
+      best_lap_ms: 105220,
+      average_lap_ms: 105780,
+      consistency_spread_ms: 1220,
+    },
+    created_at: '2026-05-18T15:35:00.000Z',
+    updated_at: '2026-05-18T15:35:00.000Z',
+  },
+  {
+    id: 'demo-telemetry-1',
+    user_id: DEMO_USER_ID,
+    session_id: 'demo-session-1',
+    vehicle_id: 'demo-r6',
+    source: 'demo',
+    summary: 'Baseline pace on a cooler morning track.',
+    metrics: {
+      lap_times_ms: [105120, 104740, 104860, 105020, 105310],
+      lap_count: 5,
+      best_lap_ms: 104740,
+      average_lap_ms: 105010,
+      consistency_spread_ms: 570,
+    },
+    created_at: '2026-05-18T14:10:00.000Z',
+    updated_at: '2026-05-18T14:10:00.000Z',
+  },
+];
+
 function compareSessionsDesc(a: Session, b: Session) {
   const aValue = `${a.date}T${a.start_time ?? '00:00:00'}`;
   const bValue = `${b.date}T${b.start_time ?? '00:00:00'}`;
@@ -344,6 +416,18 @@ export function getDemoPreviousSession(currentSession: Session): Session | null 
   );
 }
 
+export function getDemoComparableSessions(currentSession: Session): Session[] {
+  return DEMO_SESSIONS
+    .filter((session) => session.vehicle_id === currentSession.vehicle_id && session.id !== currentSession.id)
+    .sort((a, b) => {
+      const aSameTrack = a.track_id === currentSession.track_id && a.track_name === currentSession.track_name;
+      const bSameTrack = b.track_id === currentSession.track_id && b.track_name === currentSession.track_name;
+      if (aSameTrack !== bSameTrack) return aSameTrack ? -1 : 1;
+      return compareSessionsDesc(a, b);
+    })
+    .map(clone);
+}
+
 export function getDemoSessionEnvironment(sessionId: string): SessionEnvironment | null {
   const environment = DEMO_SESSION_ENVIRONMENTS.find((demoEnvironment) => demoEnvironment.session_id === sessionId);
   return environment ? clone(environment) : null;
@@ -352,6 +436,11 @@ export function getDemoSessionEnvironment(sessionId: string): SessionEnvironment
 export function getDemoSessionEnvironments(sessionIds: string[]): SessionEnvironment[] {
   const idSet = new Set(sessionIds);
   return DEMO_SESSION_ENVIRONMENTS.filter((environment) => idSet.has(environment.session_id)).map(clone);
+}
+
+export function getDemoTelemetrySummaries(sessionIds: string[]): TelemetrySummary[] {
+  const idSet = new Set(sessionIds);
+  return DEMO_TELEMETRY_SUMMARIES.filter((summary) => idSet.has(summary.session_id)).map(clone);
 }
 
 export function getDemoLatestSessionsByVehicle(): Record<string, Session> {
