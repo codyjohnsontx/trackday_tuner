@@ -8,6 +8,7 @@ import type {
   TelemetrySummary,
   Track,
   Vehicle,
+  VehicleBaseline,
 } from '@/types';
 
 const createdAt = '2026-05-18T14:00:00.000Z';
@@ -240,6 +241,31 @@ export const DEMO_SESSIONS: Session[] = [
   },
 ];
 
+const demoBaselineSource = DEMO_SESSIONS.find((session) => session.id === 'demo-session-3')!;
+
+export const DEMO_VEHICLE_BASELINES: VehicleBaseline[] = [
+  {
+    id: 'demo-baseline-r6',
+    user_id: DEMO_USER_ID,
+    vehicle_id: 'demo-r6',
+    source_session_id: demoBaselineSource.id,
+    source_track_id: demoBaselineSource.track_id,
+    source_track_name: demoBaselineSource.track_name,
+    source_date: demoBaselineSource.date,
+    source_start_time: demoBaselineSource.start_time,
+    source_session_number: demoBaselineSource.session_number,
+    source_conditions: demoBaselineSource.conditions,
+    tires: demoBaselineSource.tires,
+    suspension: demoBaselineSource.suspension,
+    alignment: demoBaselineSource.alignment,
+    enabled_modules: demoBaselineSource.enabled_modules ?? {},
+    extra_modules: demoBaselineSource.extra_modules,
+    notes: demoBaselineSource.notes,
+    created_at: demoBaselineSource.created_at,
+    updated_at: demoBaselineSource.updated_at,
+  },
+];
+
 export const DEMO_SESSION_ENVIRONMENTS: SessionEnvironment[] = [
   {
     id: 'demo-env-4',
@@ -420,6 +446,16 @@ export function getDemoComparableSessions(currentSession: Session): Session[] {
       return compareSessionsDesc(a, b);
     })
     .map(clone);
+}
+
+export function getDemoVehicleBaseline(vehicleId: string): VehicleBaseline | null {
+  const baseline = DEMO_VEHICLE_BASELINES.find((demoBaseline) => demoBaseline.vehicle_id === vehicleId);
+  return baseline ? clone(baseline) : null;
+}
+
+export function getDemoVehicleBaselines(vehicleIds: string[]): VehicleBaseline[] {
+  const idSet = new Set(vehicleIds);
+  return DEMO_VEHICLE_BASELINES.filter((baseline) => idSet.has(baseline.vehicle_id)).map(clone);
 }
 
 export function getDemoSessionEnvironment(sessionId: string): SessionEnvironment | null {

@@ -1,19 +1,27 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import type { Vehicle } from '@/types';
+import { VehicleBaselineSummary } from '@/components/garage/vehicle-baseline-summary';
+import type { Vehicle, VehicleBaseline } from '@/types';
 
 interface VehicleCardProps {
   vehicle: Vehicle;
+  baseline?: VehicleBaseline | null;
+  baselineLocked?: boolean;
   demoMode?: boolean;
 }
 
-export function VehicleCard({ vehicle, demoMode = false }: VehicleCardProps) {
+export function VehicleCard({
+  vehicle,
+  baseline = null,
+  baselineLocked = false,
+  demoMode = false,
+}: VehicleCardProps) {
   const subtitle = [vehicle.year, vehicle.make, vehicle.model]
     .filter(Boolean)
     .join(' ');
 
   return (
-    <li className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+    <li className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           {vehicle.photo_url ? (
@@ -50,6 +58,7 @@ export function VehicleCard({ vehicle, demoMode = false }: VehicleCardProps) {
           )}
         </div>
       </div>
+      <VehicleBaselineSummary baseline={baseline} locked={baselineLocked} />
     </li>
   );
 }

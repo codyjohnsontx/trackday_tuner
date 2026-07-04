@@ -10,6 +10,7 @@ export interface SessionComparePickerOption {
   conditionLabel: string;
   bestLapLabel: string | null;
   sameTrack: boolean;
+  isVehicleBaseline?: boolean;
 }
 
 interface SessionComparePickerProps {
@@ -50,6 +51,7 @@ export function SessionComparePicker({ options, selectedId }: SessionComparePick
           <option value="">Choose a baseline</option>
           {options.map((option) => (
             <option key={option.id} value={option.id}>
+              {option.isVehicleBaseline ? 'Vehicle baseline · ' : ''}
               {option.sameTrack ? 'Same track · ' : 'Other track · '}
               {option.trackName} · {option.dateLabel} · {option.sessionLabel} · {option.conditionLabel}
               {option.bestLapLabel ? ` · Best ${option.bestLapLabel}` : ''}

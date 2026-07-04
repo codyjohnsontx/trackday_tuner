@@ -9,6 +9,8 @@ import {
   getDemoSessions,
   getDemoTelemetrySummaries,
   getDemoTracks,
+  getDemoVehicleBaseline,
+  getDemoVehicleBaselines,
   getDemoVehicles,
 } from '@/lib/demo/data';
 
@@ -59,6 +61,25 @@ describe('demo data', () => {
     expect(summaries[0]?.metrics.best_lap_ms).toBe(103640);
   });
 
+  it('returns the demo vehicle baseline for the R6', () => {
+    const baseline = getDemoVehicleBaseline('demo-r6');
+
+    expect(baseline?.vehicle_id).toBe('demo-r6');
+    expect(baseline?.source_session_id).toBe('demo-session-3');
+    expect(baseline?.source_track_name).toBe('MSR Cresson 1.7');
+  });
+
+  it('filters demo baselines by vehicle ids', () => {
+    expect(getDemoVehicleBaselines(['demo-r6', 'missing']).map((baseline) => baseline.vehicle_id)).toEqual([
+      'demo-r6',
+    ]);
+  });
+
+  it('returns no demo baseline for missing vehicle ids', () => {
+    expect(getDemoVehicleBaseline('missing')).toBeNull();
+    expect(getDemoVehicleBaselines(['missing'])).toEqual([]);
+  });
+
   it('returns no demo telemetry summaries for missing ids', () => {
     expect(getDemoTelemetrySummaries(['missing'])).toEqual([]);
   });
@@ -73,15 +94,18 @@ describe('demo data', () => {
     const session = getDemoSession('demo-session-1');
     const environment = getDemoSessionEnvironment('demo-session-1');
     const telemetry = getDemoTelemetrySummaries(['demo-session-1'])[0];
+    const baseline = getDemoVehicleBaseline('demo-r6');
 
     vehicle!.nickname = 'Mutated';
     session!.notes = 'Mutated notes';
     environment!.weather_condition = 'Mutated weather';
     telemetry!.metrics.best_lap_ms = 1;
+    baseline!.tires.front.pressure = 'Mutated pressure';
 
     expect(getDemoVehicles()[0]?.nickname).toBe('R6 Track Bike');
     expect(getDemoSession('demo-session-1')?.notes).toContain('Neutral baseline');
     expect(getDemoSessionEnvironment('demo-session-1')?.weather_condition).toBe('Clear morning');
     expect(getDemoTelemetrySummaries(['demo-session-1'])[0]?.metrics.best_lap_ms).toBe(104740);
+    expect(getDemoVehicleBaseline('demo-r6')?.tires.front.pressure).toBe('33 psi hot');
   });
 });

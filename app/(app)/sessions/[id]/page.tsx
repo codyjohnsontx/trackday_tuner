@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { BarChart3 } from 'lucide-react';
+import { getVehicleBaseline } from '@/lib/actions/baselines';
 import { getPreviousSession, getSession, getSessionEnvironment } from '@/lib/actions/sessions';
 import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
 import { DemoBanner } from '@/components/demo/demo-banner';
@@ -8,6 +9,7 @@ import { isDemoMode } from '@/lib/demo/mode';
 import { Button } from '@/components/ui/button';
 import { TimeDisplay } from '@/components/ui/time-display';
 import { SessionCompare, type CompareRow } from '@/components/sessions/session-compare';
+import { SessionBaselinePanel } from '@/components/sessions/session-baseline-panel';
 import { TuningAdvicePanel } from '@/components/ai/tuning-advice-panel';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import type { ExtraModules, Session } from '@/types';
@@ -291,9 +293,10 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
 
   if (!session) notFound();
 
-  const [previousSession, environment] = await Promise.all([
+  const [previousSession, environment, baseline] = await Promise.all([
     getPreviousSession(session),
     getSessionEnvironment(session.id),
+    getVehicleBaseline(session.vehicle_id),
   ]);
   const tier = profile?.tier ?? 'free';
   const vehicle = vehicles.find((v) => v.id === session.vehicle_id);
@@ -340,6 +343,7 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
             Compare Sessions
           </Link>
         </Button>
+        <SessionBaselinePanel session={session} baseline={baseline} tier={tier} demoMode={demoMode} />
       </div>
 
       <TuningAdvicePanel sessionId={session.id} vehicleId={session.vehicle_id} tier={tier} demoMode={demoMode} />
