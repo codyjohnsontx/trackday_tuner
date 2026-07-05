@@ -1,6 +1,7 @@
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { ClearVehicleBaselineButton } from '@/components/sessions/clear-vehicle-baseline-button';
 import { SetVehicleBaselineButton } from '@/components/sessions/set-vehicle-baseline-button';
+import { baselineSourceLabel } from '@/lib/baseline-format';
 import type { Session, Tier, VehicleBaseline } from '@/types';
 
 interface SessionBaselinePanelProps {
@@ -8,25 +9,6 @@ interface SessionBaselinePanelProps {
   baseline: VehicleBaseline | null;
   tier: Tier;
   demoMode: boolean;
-}
-
-function formatDateLabel(dateString: string): string {
-  const date = new Date(`${dateString}T00:00:00`);
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
-
-function baselineSourceLabel(baseline: VehicleBaseline): string {
-  return [
-    baseline.source_track_name ?? 'Unknown Track',
-    formatDateLabel(baseline.source_date),
-    baseline.source_session_number ? `Session ${baseline.source_session_number}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
 }
 
 export function SessionBaselinePanel({ session, baseline, tier, demoMode }: SessionBaselinePanelProps) {
@@ -75,12 +57,13 @@ export function SessionBaselinePanel({ session, baseline, tier, demoMode }: Sess
 
       <div className="mt-4">
         {isCurrentBaseline ? (
-          <ClearVehicleBaselineButton vehicleId={session.vehicle_id} />
+          <ClearVehicleBaselineButton vehicleId={session.vehicle_id} disabled={demoMode} />
         ) : (
           <SetVehicleBaselineButton
             sessionId={session.id}
             hasExistingBaseline={hasExistingBaseline}
             isCurrentBaseline={isCurrentBaseline}
+            disabled={demoMode}
           />
         )}
       </div>

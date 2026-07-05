@@ -1,28 +1,10 @@
 import Link from 'next/link';
+import { baselineSourceLabel } from '@/lib/baseline-format';
 import type { VehicleBaseline } from '@/types';
 
 interface VehicleBaselineSummaryProps {
   baseline: VehicleBaseline | null;
   locked?: boolean;
-}
-
-function formatDateLabel(dateString: string): string {
-  const date = new Date(`${dateString}T00:00:00`);
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
-
-function sourceLabel(baseline: VehicleBaseline): string {
-  const parts = [
-    baseline.source_track_name ?? 'Unknown Track',
-    formatDateLabel(baseline.source_date),
-    baseline.source_session_number ? `Session ${baseline.source_session_number}` : null,
-  ].filter(Boolean);
-
-  return parts.join(' · ');
 }
 
 export function VehicleBaselineSummary({ baseline, locked = false }: VehicleBaselineSummaryProps) {
@@ -39,7 +21,7 @@ export function VehicleBaselineSummary({ baseline, locked = false }: VehicleBase
     );
   }
 
-  const label = sourceLabel(baseline);
+  const label = baselineSourceLabel(baseline);
 
   return (
     <div className="border-t border-zinc-800 pt-3">

@@ -241,7 +241,10 @@ export const DEMO_SESSIONS: Session[] = [
   },
 ];
 
-const demoBaselineSource = DEMO_SESSIONS.find((session) => session.id === 'demo-session-3')!;
+const demoBaselineSource = DEMO_SESSIONS.find((session) => session.id === 'demo-session-3');
+if (!demoBaselineSource) {
+  throw new Error("Demo data misconfigured: DEMO_VEHICLE_BASELINES requires a 'demo-session-3' entry in DEMO_SESSIONS.");
+}
 
 export const DEMO_VEHICLE_BASELINES: VehicleBaseline[] = [
   {

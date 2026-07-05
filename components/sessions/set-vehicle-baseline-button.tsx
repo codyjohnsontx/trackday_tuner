@@ -9,12 +9,14 @@ interface SetVehicleBaselineButtonProps {
   sessionId: string;
   hasExistingBaseline: boolean;
   isCurrentBaseline: boolean;
+  disabled?: boolean;
 }
 
 export function SetVehicleBaselineButton({
   sessionId,
   hasExistingBaseline,
   isCurrentBaseline,
+  disabled = false,
 }: SetVehicleBaselineButtonProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -23,25 +25,34 @@ export function SetVehicleBaselineButton({
   if (isCurrentBaseline) return null;
 
   async function handleSetBaseline() {
+    if (disabled) {
+      return;
+    }
+
     if (hasExistingBaseline && !window.confirm('Replace the current vehicle baseline with this session?')) {
       return;
     }
 
     setLoading(true);
     setError('');
-    const result = await setVehicleBaselineFromSession(sessionId);
-    if (!result.ok) {
-      setError(result.error);
-      setLoading(false);
-      return;
-    }
+    try {
+      const result = await setVehicleBaselineFromSession(sessionId);
+      if (!result.ok) {
+        setError(result.error);
+        setLoading(false);
+        return;
+      }
 
-    router.refresh();
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to set baseline.');
+      setLoading(false);
+    }
   }
 
   return (
     <div className="space-y-2">
-      <Button type="button" fullWidth onClick={handleSetBaseline} loading={loading}>
+      <Button type="button" fullWidth onClick={handleSetBaseline} loading={loading} disabled={disabled}>
         Set as Vehicle Baseline
       </Button>
       {error ? <p className="text-sm text-rose-300">{error}</p> : null}
