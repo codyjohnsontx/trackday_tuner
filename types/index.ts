@@ -9,6 +9,8 @@ import type {
   Json,
   RecommendationStatus,
   SessionAdvancedVisibility,
+  SessionChangeEntry,
+  SessionChangeReferenceKind,
   SessionCondition,
   SessionEnabledModules,
   SessionModuleKey,
@@ -35,6 +37,8 @@ export type {
   Json,
   RecommendationStatus,
   SessionAdvancedVisibility,
+  SessionChangeEntry,
+  SessionChangeReferenceKind,
   SessionCondition,
   SessionEnabledModules,
   SessionModuleKey,
@@ -55,6 +59,7 @@ export type Track = Tables<'tracks'>;
 export type Session = Tables<'sessions'>;
 export type SessionEnvironment = Tables<'session_environment'>;
 export type VehicleBaseline = Tables<'vehicle_baselines'>;
+export type SessionChange = Tables<'session_changes'>;
 export type AiRecommendation = Tables<'ai_recommendations'>;
 export type SessionFeedback = Tables<'session_feedback'>;
 export type RaceEngineerMemory = Tables<'race_engineer_memory'>;
