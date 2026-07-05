@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { getVehicleBaselines } from '@/lib/actions/baselines';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { DemoBanner } from '@/components/demo/demo-banner';
@@ -8,6 +9,8 @@ import { Button } from '@/components/ui/button';
 
 export default async function GaragePage() {
   const [vehicles, profile, demoMode] = await Promise.all([getVehicles(), getUserProfile(), isDemoMode()]);
+  const baselines = await getVehicleBaselines(vehicles.map((vehicle) => vehicle.id));
+  const baselineByVehicleId = new Map(baselines.map((baseline) => [baseline.vehicle_id, baseline]));
 
   const isFree = !profile || profile.tier === 'free';
   const atLimit = isFree && vehicles.length >= 1;
@@ -47,7 +50,13 @@ export default async function GaragePage() {
       ) : (
         <ul className="space-y-3">
           {vehicles.map((v) => (
-            <VehicleCard key={v.id} vehicle={v} demoMode={demoMode} />
+            <VehicleCard
+              key={v.id}
+              vehicle={v}
+              baseline={baselineByVehicleId.get(v.id) ?? null}
+              baselineLocked={isFree}
+              demoMode={demoMode}
+            />
           ))}
         </ul>
       )}

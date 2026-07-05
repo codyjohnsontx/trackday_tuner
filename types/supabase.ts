@@ -306,6 +306,69 @@ export type Database = {
         };
         Relationships: [];
       };
+      vehicle_baselines: {
+        Row: {
+          id: string;
+          user_id: string;
+          vehicle_id: string;
+          source_session_id: string | null;
+          source_track_id: string | null;
+          source_track_name: string | null;
+          source_date: string;
+          source_start_time: string | null;
+          source_session_number: number | null;
+          source_conditions: SessionCondition;
+          tires: Tires;
+          suspension: Suspension;
+          alignment: Alignment | null;
+          enabled_modules: SessionEnabledModules | Record<string, never>;
+          extra_modules: ExtraModules | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          vehicle_id: string;
+          source_session_id?: string | null;
+          source_track_id?: string | null;
+          source_track_name?: string | null;
+          source_date: string;
+          source_start_time?: string | null;
+          source_session_number?: number | null;
+          source_conditions: SessionCondition;
+          tires?: Tires;
+          suspension?: Suspension;
+          alignment?: Alignment | null;
+          enabled_modules?: SessionEnabledModules | Record<string, never>;
+          extra_modules?: ExtraModules | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          vehicle_id?: string;
+          source_session_id?: string | null;
+          source_track_id?: string | null;
+          source_track_name?: string | null;
+          source_date?: string;
+          source_start_time?: string | null;
+          source_session_number?: number | null;
+          source_conditions?: SessionCondition;
+          tires?: Tires;
+          suspension?: Suspension;
+          alignment?: Alignment | null;
+          enabled_modules?: SessionEnabledModules | Record<string, never>;
+          extra_modules?: ExtraModules | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       ai_requests: {
         Row: {
           id: string;

@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { getVehicleBaseline } from '@/lib/actions/baselines';
 import {
   getComparableSessions,
   getSession,
@@ -22,7 +23,7 @@ import {
   sessionsMatchTrack,
 } from '@/lib/session-compare';
 import { isDemoMode } from '@/lib/demo/mode';
-import type { Session, SessionEnvironment, TelemetrySummary } from '@/types';
+import type { Session, SessionEnvironment, TelemetrySummary, VehicleBaseline } from '@/types';
 
 interface SessionComparePageProps {
   params: Promise<{ id: string }>;
@@ -73,7 +74,10 @@ function buildPickerOptions(
   current: Session,
   candidates: Session[],
   telemetryBySessionId: Map<string, TelemetrySummary>,
+  baseline: VehicleBaseline | null,
 ): SessionComparePickerOption[] {
+  const originalOrder = new Map(candidates.map((candidate, index) => [candidate.id, index]));
+
   return candidates.map((candidate) => {
     const bestLapMs = extractLapMetrics(telemetryBySessionId.get(candidate.id)).bestLapMs;
     return {
@@ -84,7 +88,14 @@ function buildPickerOptions(
       conditionLabel: conditionLabel[candidate.conditions] ?? candidate.conditions,
       bestLapLabel: bestLapMs !== null ? formatLapTime(bestLapMs) : null,
       sameTrack: sessionsMatchTrack(candidate, current),
+      isVehicleBaseline: baseline?.source_session_id === candidate.id,
     };
+  }).sort((a, b) => {
+    if (a.sameTrack !== b.sameTrack) return a.sameTrack ? -1 : 1;
+    if (a.sameTrack && a.isVehicleBaseline !== b.isVehicleBaseline) {
+      return a.isVehicleBaseline ? -1 : 1;
+    }
+    return (originalOrder.get(a.id) ?? 0) - (originalOrder.get(b.id) ?? 0);
   });
 }
 
@@ -134,14 +145,17 @@ export default async function SessionComparePage({ params, searchParams }: Sessi
     );
   }
 
-  const candidates = await getComparableSessions(session);
+  const [candidates, baseline] = await Promise.all([
+    getComparableSessions(session),
+    getVehicleBaseline(session.vehicle_id),
+  ]);
   const telemetryRows = await getTelemetrySummaries([session.id, ...candidates.map((candidate) => candidate.id)]);
   const telemetryBySessionId = mapBySessionId(telemetryRows);
   const requestedBaselineId = getBaselineParam(resolvedSearchParams.baseline);
   const selectedBaseline =
     candidates.find((candidate) => candidate.id === requestedBaselineId) ??
     chooseDefaultBaseline(session, candidates);
-  const pickerOptions = buildPickerOptions(session, candidates, telemetryBySessionId);
+  const pickerOptions = buildPickerOptions(session, candidates, telemetryBySessionId, baseline);
 
   if (!selectedBaseline) {
     return (
