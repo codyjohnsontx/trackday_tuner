@@ -16,7 +16,7 @@ export function ClearVehicleBaselineButton({ vehicleId, disabled = false }: Clea
   const [error, setError] = useState('');
 
   async function handleClearBaseline() {
-    if (disabled || !window.confirm('Clear this vehicle baseline?')) {
+    if (disabled || loading) {
       return;
     }
 
@@ -43,11 +43,13 @@ export function ClearVehicleBaselineButton({ vehicleId, disabled = false }: Clea
         type="button"
         variant="destructive"
         fullWidth
-        onClick={handleClearBaseline}
+        holdToConfirm
+        holdingLabel="Keep holding…"
+        onConfirm={handleClearBaseline}
         loading={loading}
         disabled={disabled}
       >
-        Clear Baseline
+        Hold to clear baseline
       </Button>
       {error ? <p className="text-sm text-rose-300">{error}</p> : null}
     </div>

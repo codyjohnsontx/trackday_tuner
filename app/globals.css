@@ -44,3 +44,54 @@ button:focus-visible {
   outline: 2px solid #22d3ee;
   outline-offset: 2px;
 }
+
+/* ── Motion system (Trackday Motion Studio) ─────────────────────────── */
+
+/* Ripple that grows from the press point (Button `ripple`). */
+@keyframes tt-ripple-grow {
+  from {
+    transform: scale(0);
+    opacity: 0.55;
+  }
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* Checkmark that pops in on a confirmed save (Button `success`). */
+@keyframes tt-btn-pop {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.tt-ripple {
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  animation: tt-ripple-grow 0.6s ease-out forwards;
+}
+
+.tt-btn-pop {
+  display: inline-flex;
+  animation: tt-btn-pop 0.4s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tt-ripple {
+    display: none;
+  }
+  .tt-btn-pop {
+    animation: none;
+  }
+}

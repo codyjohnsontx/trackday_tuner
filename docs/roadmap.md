@@ -10,8 +10,8 @@ Roadmap work ships one item per PR. Each item should be reviewed, merged, and le
 
 1. Session comparison v1 - Complete
 2. Baseline setup per vehicle - Complete
-3. **Change tracking** - Active
-4. Recommendation follow-up
+3. Change tracking - Complete
+4. **Recommendation follow-up** - Active
 5. AI guardrail tightening for day plans
 6. Vehicle-specific memory
 7. Track-specific notes
@@ -24,12 +24,12 @@ Roadmap work ships one item per PR. Each item should be reviewed, merged, and le
 14. Coach/share mode
 15. Event mode
 
-## Active Item: Change Tracking
+## Active Item: Recommendation Follow-up
 
-Change Tracking preserves what changed on each session. At session creation it computes deterministic per-session change records against both the previous session (same vehicle) and the vehicle's active baseline snapshot, capturing the baseline that was active at that moment. Records are written for all tiers but displayed Pro-only on session detail. Sessions that predate the feature derive their change sets on the fly at read time against the current previous session and baseline, and the session that is itself the baseline source is never compared to a snapshot of itself. All diffs reuse the existing session-comparison engine and are limited to physical setup groups (Tires, Suspension, Alignment, Geometry, Drivetrain, Aero) — session context, environment, and free-text notes are excluded.
+Recommendation Follow-up closes the setup-learning loop by capturing whether a change actually helped. Building on the per-session change records from item 3 (Change tracking) and the existing `ai_recommendations` and `session_feedback` data, it lets a rider record an outcome for a prior AI recommendation or setup change — the "did it help" state that was intentionally deferred out of PR 3 — and surfaces that outcome history where the recommendation is shown, so future advice can lean on what has and has not worked.
 
-PR 3 does not add change annotation, recommendation outcome state (item 4), a setup timeline UI (item 8), AI interpretation of changes, historical backfill of records for existing sessions, or change display on session-list or garage cards.
+The concrete PR 4 scope — outcome-capture UI, which surfaces it attaches to, tier gating, and how outcomes feed later advice — is still to be decided before implementation starts, following the operating model above. Until then, PR 4 should stay focused on a single reviewable slice and avoid pulling later roadmap items forward.
 
 ## Not Active Yet
 
-Future roadmap items are intentionally out of scope until Change Tracking is reviewed and merged. Do not add recommendation follow-up state, new memory systems, track note surfaces, setup timelines, planner upgrades, debrief flows, import flows, tire lifecycle tracking, templates, sharing, or event mode in PR 3.
+Future roadmap items are intentionally out of scope until Recommendation Follow-up is reviewed and merged. Do not add new memory systems, track note surfaces, setup timelines, planner upgrades, debrief flows, import flows, tire lifecycle tracking, templates, sharing, or event mode in PR 4.
