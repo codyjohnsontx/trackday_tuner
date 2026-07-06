@@ -16,8 +16,7 @@ export function TrackDeleteForm({ trackId, redirectPath = '/tracks' }: TrackDele
   const [errorMessage, setErrorMessage] = useState('');
 
   function handleDelete() {
-    const confirmed = window.confirm('Delete this custom track? This cannot be undone.');
-    if (!confirmed) return;
+    if (isPending) return;
 
     setErrorMessage('');
     startTransition(async () => {
@@ -36,12 +35,15 @@ export function TrackDeleteForm({ trackId, redirectPath = '/tracks' }: TrackDele
     <div className="space-y-2">
       <Button
         type="button"
-        variant="secondary"
-        className="w-full border-rose-800 bg-rose-950/40 text-rose-200 hover:bg-rose-900/50"
-        onClick={handleDelete}
+        variant="destructive"
+        fullWidth
+        holdToConfirm
+        holdingLabel="Keep holding…"
+        onConfirm={handleDelete}
+        loading={isPending}
         disabled={isPending}
       >
-        {isPending ? 'Deleting...' : 'Delete Track'}
+        {isPending ? 'Deleting…' : 'Hold to delete track'}
       </Button>
       {errorMessage ? <p className="text-sm text-rose-300">{errorMessage}</p> : null}
     </div>

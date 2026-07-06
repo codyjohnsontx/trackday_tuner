@@ -130,6 +130,8 @@ function ModuleHeader({
 export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: SessionFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [saved, setSaved] = useState(false);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hydratedRef = useRef(false);
   const previousEnabledModulesRef = useRef<Pick<SessionEnabledModules, 'geometry' | 'drivetrain' | 'aero'> | null>(
     null,
@@ -193,6 +195,13 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setEnabledModules((current) => sanitizeEnabledModules(selectedVehicleType, current));
     setShowAdvancedModules((current) => sanitizeAdvancedVisibility(selectedVehicleType, current));
   }, [selectedVehicleType]);
+
+  useEffect(
+    () => () => {
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     const draft = loadDraft<SessionDraft>(sessionDraftKey);
@@ -482,8 +491,14 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       }
 
       clearDraft(sessionDraftKey);
-      router.push('/sessions');
-      router.refresh();
+      setSaved(true);
+      // Hold the confirmed checkmark briefly before leaving the form. Tracked so
+      // it can be cancelled on unmount and never fire a redirect after teardown.
+      redirectTimerRef.current = setTimeout(() => {
+        redirectTimerRef.current = null;
+        router.push('/sessions');
+        router.refresh();
+      }, 700);
     });
   }
 
@@ -941,8 +956,8 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       {draftMessage ? <p className="text-sm text-emerald-300">{draftMessage}</p> : null}
 
       <div className="sticky bottom-20 z-20 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-2 shadow-lg shadow-zinc-950/40 backdrop-blur sm:bottom-4">
-        <Button type="submit" fullWidth disabled={isPending}>
-          {isPending ? 'Saving...' : 'Save Session'}
+        <Button type="submit" fullWidth disabled={isPending || saved} loading={isPending} success={saved}>
+          {saved ? 'Saved' : isPending ? 'Saving…' : 'Save Session'}
         </Button>
       </div>
     </form>
