@@ -207,8 +207,10 @@ describe('sessions actions', () => {
         expect(table).toBe('sessions');
         return insertQuery;
       })
-      // Change-tracking follow-up queries: no previous session or baseline to compare.
-      .mockImplementation(() => createQuery({ base: { data: [], error: null }, single: { data: null, error: null } }));
+      // Change-tracking follow-up queries: resolvable vehicle type, no previous session or baseline.
+      .mockImplementation(() =>
+        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
+      );
     vi.mocked(createClient).mockResolvedValue({ from } as never);
 
     const result = await createSession({
@@ -412,6 +414,36 @@ describe('sessions actions', () => {
         sessionId: 'sess-1',
         error: 'changes failed',
       }),
+    );
+    errorSpy.mockRestore();
+  });
+
+  it('skips persisting change records when the vehicle type cannot be resolved', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const insertQuery = createQuery({ single: { data: createdSession, error: null } });
+    const vehicleQuery = createQuery({ single: { data: null, error: { message: 'not found' } } });
+    const previousQuery = createQuery({ base: { data: [previousSession], error: null } });
+    const baselineQuery = createQuery({ base: { data: [changeBaseline], error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => insertQuery)
+      .mockImplementationOnce(() => vehicleQuery)
+      .mockImplementationOnce(() => previousQuery)
+      .mockImplementationOnce(() => baselineQuery);
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await createSession(validInput);
+
+    expect(result).toEqual({ ok: true, data: createdSession });
+    expect(from).toHaveBeenCalledTimes(4);
+    expect(from).not.toHaveBeenCalledWith('session_changes');
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[sessions] session_changes skipped: unresolved vehicle type',
+      expect.objectContaining({ userId: 'user-1', sessionId: 'sess-1', vehicleId: 'veh-1' }),
     );
     errorSpy.mockRestore();
   });

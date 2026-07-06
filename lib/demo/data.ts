@@ -276,8 +276,6 @@ export const DEMO_VEHICLE_BASELINES: VehicleBaseline[] = [
   },
 ];
 
-const demoR6Type = DEMO_VEHICLES[0].type;
-
 function requireDemoSession(id: string): Session {
   const session = DEMO_SESSIONS.find((demoSession) => demoSession.id === id);
   if (!session) {
@@ -289,7 +287,17 @@ function requireDemoSession(id: string): Session {
 const demoSession4 = requireDemoSession('demo-session-4');
 const demoSession3 = requireDemoSession('demo-session-3');
 const demoSession2 = requireDemoSession('demo-session-2');
-const demoBaseline = DEMO_VEHICLE_BASELINES[0];
+
+// Resolve the vehicle type and baseline by the session's vehicle_id rather than by
+// array position so the demo change records stay correct if the fixtures are reordered.
+const demoVehicleForChanges = DEMO_VEHICLES.find((vehicle) => vehicle.id === demoSession4.vehicle_id);
+const demoBaseline = DEMO_VEHICLE_BASELINES.find((baseline) => baseline.vehicle_id === demoSession4.vehicle_id);
+if (!demoVehicleForChanges || !demoBaseline) {
+  throw new Error(
+    `Demo data misconfigured: DEMO_SESSION_CHANGES requires a vehicle and baseline for '${demoSession4.vehicle_id}'.`,
+  );
+}
+const demoR6Type = demoVehicleForChanges.type;
 
 // Built programmatically from the same diff engine as the write path so the demo
 // change records can never drift from DEMO_SESSIONS. Session 4 has both a previous

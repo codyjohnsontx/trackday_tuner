@@ -23,6 +23,11 @@ create index if not exists session_changes_user_session_idx
 create index if not exists session_changes_user_vehicle_created_idx
   on public.session_changes(user_id, vehicle_id, created_at desc);
 
+-- Supports the reference_session_id foreign key so deleting a session does not
+-- force a sequential scan of session_changes to apply `on delete set null`.
+create index if not exists session_changes_reference_session_idx
+  on public.session_changes(reference_session_id);
+
 drop trigger if exists session_changes_set_updated_at on public.session_changes;
 create trigger session_changes_set_updated_at
   before update on public.session_changes
@@ -36,12 +41,36 @@ create policy "session_changes: select own"
 
 create policy "session_changes: insert own"
   on public.session_changes for insert
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.sessions s
+      where s.id = session_id and s.user_id = auth.uid() and s.vehicle_id = session_changes.vehicle_id
+    )
+    and exists (
+      select 1
+      from public.vehicles v
+      where v.id = vehicle_id and v.user_id = auth.uid()
+    )
+  );
 
 create policy "session_changes: update own"
   on public.session_changes for update
   using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.sessions s
+      where s.id = session_id and s.user_id = auth.uid() and s.vehicle_id = session_changes.vehicle_id
+    )
+    and exists (
+      select 1
+      from public.vehicles v
+      where v.id = vehicle_id and v.user_id = auth.uid()
+    )
+  );
 
 create policy "session_changes: delete own"
   on public.session_changes for delete
