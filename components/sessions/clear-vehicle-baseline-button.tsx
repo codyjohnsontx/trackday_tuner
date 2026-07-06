@@ -49,7 +49,7 @@ export function ClearVehicleBaselineButton({ vehicleId, disabled = false }: Clea
         loading={loading}
         disabled={disabled}
       >
-        Hold to clear baseline
+        {loading ? 'Clearing…' : 'Hold to clear baseline'}
       </Button>
       {error ? <p className="text-sm text-rose-300">{error}</p> : null}
     </div>

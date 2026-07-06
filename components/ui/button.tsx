@@ -2,6 +2,7 @@
 
 import {
   ButtonHTMLAttributes,
+  KeyboardEvent,
   MouseEvent,
   PointerEvent,
   ReactNode,
@@ -143,6 +144,8 @@ export function Button({
   onPointerUp,
   onPointerLeave,
   onPointerCancel,
+  onKeyDown,
+  onKeyUp,
   ...props
 }: ButtonProps) {
   const isDisabled = disabled || loading;
@@ -152,6 +155,7 @@ export function Button({
   const [ripples, setRipples] = useState<Ripple[]>([]);
   const rippleId = useRef(0);
   const [holding, setHolding] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearHold = useCallback(() => {
@@ -162,6 +166,15 @@ export function Button({
   }, []);
 
   useEffect(() => clearHold, [clearHold]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   const spawnRipple = useCallback((event: PointerEvent<HTMLButtonElement>) => {
     if (prefersReducedMotion()) return;
@@ -180,6 +193,17 @@ export function Button({
     clearHold();
     setHolding(false);
   }, [clearHold]);
+
+  const startHold = useCallback(() => {
+    if (isDisabled) return;
+    clearHold();
+    setHolding(true);
+    holdTimer.current = setTimeout(() => {
+      holdTimer.current = null;
+      setHolding(false);
+      onConfirm?.();
+    }, holdDurationMs);
+  }, [clearHold, holdDurationMs, isDisabled, onConfirm]);
 
   // asChild renders through a Slot (e.g. a Link) — keep it purely presentational.
   if (asChild) {
@@ -234,13 +258,14 @@ export function Button({
         spawnRipple(event);
       }
       if (holdToConfirm) {
-        setHolding(true);
-        clearHold();
-        holdTimer.current = setTimeout(() => {
-          holdTimer.current = null;
-          setHolding(false);
-          onConfirm?.();
-        }, holdDurationMs);
+        // Keep the gesture pinned to this element so a finger drift or an OS
+        // long-press callout can't interrupt the confirm timer mid-hold.
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // setPointerCapture can throw if the pointer is already gone — ignore.
+        }
+        startHold();
       }
     }
     onPointerDown?.(event);
@@ -261,6 +286,24 @@ export function Button({
     onPointerCancel?.(event);
   };
 
+  // Keyboard parity for hold-to-confirm: hold Enter/Space to confirm, release to
+  // cancel. preventDefault suppresses the native click so the hold drives it.
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (holdToConfirm && !isDisabled && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      if (!event.repeat && !holdTimer.current) startHold();
+    }
+    onKeyDown?.(event);
+  };
+
+  const handleKeyUp = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (holdToConfirm && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      endHold();
+    }
+    onKeyUp?.(event);
+  };
+
   const label = holdToConfirm && holding && holdingLabel != null ? holdingLabel : children;
 
   return (
@@ -268,11 +311,18 @@ export function Button({
       type={type}
       disabled={isDisabled}
       aria-busy={loading}
-      className={cn(buttonVariants({ variant, size }), fullWidth && 'w-full', className)}
+      className={cn(
+        buttonVariants({ variant, size }),
+        fullWidth && 'w-full',
+        holdToConfirm && 'touch-none select-none',
+        className,
+      )}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
       onPointerCancel={handlePointerCancel}
+      onKeyDown={handleKeyDown}
+      onKeyUp={handleKeyUp}
       {...props}
     >
       {/* Decorative layers sit at z-index -1 (below the label) inside the button's
@@ -284,7 +334,12 @@ export function Button({
           style={{
             width: holding ? '100%' : '0%',
             background: HOLD_FILL[resolvedVariant],
-            transition: holding ? `width ${holdDurationMs}ms linear` : 'width 0.25s ease',
+            // Respect prefers-reduced-motion: no animated sweep, the fill just snaps.
+            transition: reducedMotion
+              ? 'none'
+              : holding
+                ? `width ${holdDurationMs}ms linear`
+                : 'width 0.25s ease',
           }}
         />
       )}

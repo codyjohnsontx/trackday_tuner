@@ -131,6 +131,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hydratedRef = useRef(false);
   const previousEnabledModulesRef = useRef<Pick<SessionEnabledModules, 'geometry' | 'drivetrain' | 'aero'> | null>(
     null,
@@ -194,6 +195,13 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setEnabledModules((current) => sanitizeEnabledModules(selectedVehicleType, current));
     setShowAdvancedModules((current) => sanitizeAdvancedVisibility(selectedVehicleType, current));
   }, [selectedVehicleType]);
+
+  useEffect(
+    () => () => {
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     const draft = loadDraft<SessionDraft>(sessionDraftKey);
@@ -484,8 +492,10 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
 
       clearDraft(sessionDraftKey);
       setSaved(true);
-      // Hold the confirmed checkmark briefly before leaving the form.
-      setTimeout(() => {
+      // Hold the confirmed checkmark briefly before leaving the form. Tracked so
+      // it can be cancelled on unmount and never fire a redirect after teardown.
+      redirectTimerRef.current = setTimeout(() => {
+        redirectTimerRef.current = null;
         router.push('/sessions');
         router.refresh();
       }, 700);
