@@ -2,6 +2,7 @@
 
 import {
   ButtonHTMLAttributes,
+  FocusEvent,
   KeyboardEvent,
   MouseEvent,
   PointerEvent,
@@ -146,6 +147,7 @@ export function Button({
   onPointerCancel,
   onKeyDown,
   onKeyUp,
+  onBlur,
   ...props
 }: ButtonProps) {
   const isDisabled = disabled || loading;
@@ -304,6 +306,13 @@ export function Button({
     onKeyUp?.(event);
   };
 
+  // Losing focus mid-hold means key release will land elsewhere, so cancel here
+  // — onConfirm must require an uninterrupted hold on the button itself.
+  const handleBlur = (event: FocusEvent<HTMLButtonElement>) => {
+    if (holdToConfirm) endHold();
+    onBlur?.(event);
+  };
+
   const label = holdToConfirm && holding && holdingLabel != null ? holdingLabel : children;
 
   return (
@@ -323,6 +332,7 @@ export function Button({
       onPointerCancel={handlePointerCancel}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
+      onBlur={handleBlur}
       {...props}
     >
       {/* Decorative layers sit at z-index -1 (below the label) inside the button's
