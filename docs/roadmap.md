@@ -9,8 +9,8 @@ Roadmap work ships one item per PR. Each item should be reviewed, merged, and le
 ## Ordered Roadmap
 
 1. Session comparison v1 - Complete
-2. **Baseline setup per vehicle** - Active
-3. Change tracking
+2. Baseline setup per vehicle - Complete
+3. **Change tracking** - Active
 4. Recommendation follow-up
 5. AI guardrail tightening for day plans
 6. Vehicle-specific memory
@@ -24,12 +24,12 @@ Roadmap work ships one item per PR. Each item should be reviewed, merged, and le
 14. Coach/share mode
 15. Event mode
 
-## Active Item: Baseline Setup Per Vehicle
+## Active Item: Change Tracking
 
-Baseline Setup Per Vehicle adds one Pro-managed active baseline per vehicle, sourced from an existing session and stored as a stable setup snapshot with source metadata. Users manage the baseline from session detail, see baseline status on garage cards and session detail, and get a baseline-source label in the existing session comparison picker when that source session is available.
+Change Tracking preserves what changed on each session. At session creation it computes deterministic per-session change records against both the previous session (same vehicle) and the vehicle's active baseline snapshot, capturing the baseline that was active at that moment. Records are written for all tiers but displayed Pro-only on session detail. Sessions that predate the feature derive their change sets on the fly at read time against the current previous session and baseline, and the session that is itself the baseline source is never compared to a snapshot of itself. All diffs reuse the existing session-comparison engine and are limited to physical setup groups (Tires, Suspension, Alignment, Geometry, Drivetrain, Aero) — session context, environment, and free-text notes are excluded.
 
-PR 2 does not add baseline editing, track-specific baselines, baseline history, setup timeline, change tracking, AI baseline selection, or applying a baseline to prefill new sessions.
+PR 3 does not add change annotation, recommendation outcome state (item 4), a setup timeline UI (item 8), AI interpretation of changes, historical backfill of records for existing sessions, or change display on session-list or garage cards.
 
 ## Not Active Yet
 
-Future roadmap items are intentionally out of scope until Baseline Setup Per Vehicle is reviewed and merged. Do not add change-tracking workflows, recommendation follow-up state, new memory systems, track note surfaces, setup timelines, planner upgrades, debrief flows, import flows, tire lifecycle tracking, templates, sharing, or event mode in PR 2.
+Future roadmap items are intentionally out of scope until Change Tracking is reviewed and merged. Do not add recommendation follow-up state, new memory systems, track note surfaces, setup timelines, planner upgrades, debrief flows, import flows, tire lifecycle tracking, templates, sharing, or event mode in PR 3.

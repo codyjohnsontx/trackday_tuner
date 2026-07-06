@@ -65,6 +65,13 @@ export type ExtraModules = {
   drivetrain?: DrivetrainModule;
   aero?: AeroModule;
 };
+export type SessionChangeReferenceKind = 'previous' | 'baseline';
+export type SessionChangeEntry = {
+  group: string;
+  label: string;
+  from: string;
+  to: string;
+};
 export type SessionModuleKey =
   | 'tires'
   | 'suspension'
@@ -364,6 +371,48 @@ export type Database = {
           enabled_modules?: SessionEnabledModules | Record<string, never>;
           extra_modules?: ExtraModules | null;
           notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      session_changes: {
+        Row: {
+          id: string;
+          user_id: string;
+          session_id: string;
+          vehicle_id: string;
+          reference_kind: SessionChangeReferenceKind;
+          reference_session_id: string | null;
+          reference_label: string;
+          reference_date: string | null;
+          changes: SessionChangeEntry[];
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          session_id: string;
+          vehicle_id: string;
+          reference_kind: SessionChangeReferenceKind;
+          reference_session_id?: string | null;
+          reference_label: string;
+          reference_date?: string | null;
+          changes?: SessionChangeEntry[];
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          session_id?: string;
+          vehicle_id?: string;
+          reference_kind?: SessionChangeReferenceKind;
+          reference_session_id?: string | null;
+          reference_label?: string;
+          reference_date?: string | null;
+          changes?: SessionChangeEntry[];
           created_at?: string;
           updated_at?: string;
         };

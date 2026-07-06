@@ -3,6 +3,7 @@ import {
   getDemoLatestSessionsByVehicle,
   getDemoPreviousSession,
   getDemoSession,
+  getDemoSessionChanges,
   getDemoSessionCount,
   getDemoSessionEnvironment,
   getDemoSessionEnvironments,
@@ -13,6 +14,7 @@ import {
   getDemoVehicleBaselines,
   getDemoVehicles,
 } from '@/lib/demo/data';
+import { computeSetupChanges } from '@/lib/session-changes';
 
 describe('demo data', () => {
   it('returns the sample garage, tracks, and session count', () => {
@@ -82,6 +84,43 @@ describe('demo data', () => {
 
   it('returns no demo telemetry summaries for missing ids', () => {
     expect(getDemoTelemetrySummaries(['missing'])).toEqual([]);
+  });
+
+  it('builds demo change records from the same diff engine as the write path', () => {
+    const session4 = getDemoSession('demo-session-4')!;
+    const session3 = getDemoSession('demo-session-3')!;
+    const baseline = getDemoVehicleBaseline('demo-r6')!;
+
+    const records = getDemoSessionChanges('demo-session-4');
+
+    expect(records.map((record) => record.reference_kind)).toEqual(['previous', 'baseline']);
+
+    const previousRecord = records.find((record) => record.reference_kind === 'previous')!;
+    const baselineRecord = records.find((record) => record.reference_kind === 'baseline')!;
+
+    expect(previousRecord.changes).toEqual(computeSetupChanges(session4, session3, 'motorcycle'));
+    expect(previousRecord.changes.length).toBeGreaterThan(0);
+    expect(baselineRecord.reference_session_id).toBe(baseline.source_session_id);
+  });
+
+  it('returns only the previous reference for the baseline-source session', () => {
+    expect(getDemoSessionChanges('demo-session-3').map((record) => record.reference_kind)).toEqual(['previous']);
+  });
+
+  it('returns no demo change records for unknown ids', () => {
+    expect(getDemoSessionChanges('missing')).toEqual([]);
+  });
+
+  it('clones demo change records so callers cannot mutate shared fixtures', () => {
+    const originalLength = getDemoSessionChanges('demo-session-4')[0]!.changes.length;
+    const mutable = getDemoSessionChanges('demo-session-4');
+
+    mutable[0]!.reference_label = 'Mutated';
+    mutable[0]!.changes.push({ group: 'x', label: 'y', from: 'a', to: 'b' });
+
+    const fresh = getDemoSessionChanges('demo-session-4');
+    expect(fresh[0]?.reference_label).not.toBe('Mutated');
+    expect(fresh[0]?.changes).toHaveLength(originalLength);
   });
 
   it('returns null for unknown ids', () => {

@@ -34,7 +34,13 @@ import {
   getTelemetrySummaries,
 } from '@/lib/actions/sessions';
 import { COMPARABLE_SESSION_FETCH_LIMIT, COMPARABLE_SESSION_LIMIT } from '@/lib/session-compare';
-import type { CreateSessionInput, Session, SessionEnvironment, TelemetrySummary } from '@/types';
+import type {
+  CreateSessionInput,
+  Session,
+  SessionEnvironment,
+  TelemetrySummary,
+  VehicleBaseline,
+} from '@/types';
 
 type QueryResponse = {
   base?: { data?: unknown; error?: { message: string } | null; count?: number | null };
@@ -92,6 +98,59 @@ const validInput: CreateSessionInput = {
   notes: 'baseline',
 };
 
+const createdSession: Session = {
+  id: 'sess-1',
+  user_id: 'user-1',
+  vehicle_id: 'veh-1',
+  track_id: null,
+  track_name: null,
+  date: '2026-02-24',
+  start_time: '09:30:00',
+  session_number: 2,
+  conditions: 'sunny',
+  tires: validInput.tires,
+  suspension: validInput.suspension,
+  alignment: null,
+  enabled_modules: validInput.enabled_modules ?? null,
+  extra_modules: null,
+  notes: 'baseline',
+  created_at: '2026-02-24T09:30:00Z',
+  updated_at: '2026-02-24T09:30:00Z',
+};
+
+const previousSession: Session = {
+  ...createdSession,
+  id: 'sess-0',
+  date: '2026-02-23',
+  start_time: '15:00:00',
+  session_number: 1,
+  tires: {
+    ...validInput.tires,
+    front: { ...validInput.tires.front, pressure: '33' },
+  },
+};
+
+const changeBaseline: VehicleBaseline = {
+  id: 'baseline-1',
+  user_id: 'user-1',
+  vehicle_id: 'veh-1',
+  source_session_id: 'baseline-source',
+  source_track_id: null,
+  source_track_name: 'MSR Cresson',
+  source_date: '2026-02-20',
+  source_start_time: '10:00:00',
+  source_session_number: 4,
+  source_conditions: 'sunny',
+  tires: previousSession.tires,
+  suspension: validInput.suspension,
+  alignment: null,
+  enabled_modules: validInput.enabled_modules ?? {},
+  extra_modules: null,
+  notes: null,
+  created_at: '2026-02-20T10:00:00Z',
+  updated_at: '2026-02-20T10:00:00Z',
+};
+
 describe('sessions actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -147,7 +206,11 @@ describe('sessions actions', () => {
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
         return insertQuery;
-      });
+      })
+      // Change-tracking follow-up queries: resolvable vehicle type, no previous session or baseline.
+      .mockImplementation(() =>
+        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
+      );
     vi.mocked(createClient).mockResolvedValue({ from } as never);
 
     const result = await createSession({
@@ -218,6 +281,169 @@ describe('sessions actions', () => {
         sessionId: 'sess-1',
         error: 'env failed',
       }),
+    );
+    errorSpy.mockRestore();
+  });
+
+  it('persists change records against the previous session and the active baseline', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const insertQuery = createQuery({ single: { data: createdSession, error: null } });
+    const vehicleQuery = createQuery({ single: { data: { type: 'motorcycle' }, error: null } });
+    const previousQuery = createQuery({ base: { data: [previousSession], error: null } });
+    const baselineQuery = createQuery({ base: { data: [changeBaseline], error: null } });
+    const changesInsertQuery = createQuery({ base: { data: null, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('vehicles');
+        return vehicleQuery;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return previousQuery;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('vehicle_baselines');
+        return baselineQuery;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('session_changes');
+        return changesInsertQuery;
+      });
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await createSession(validInput);
+
+    expect(result.ok).toBe(true);
+    expect(changesInsertQuery.insert).toHaveBeenCalledTimes(1);
+    const insertedRows = vi.mocked(changesInsertQuery.insert as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as Array<Record<string, unknown>>;
+    expect(insertedRows).toHaveLength(2);
+    expect(insertedRows.map((row) => row.reference_kind)).toEqual(['previous', 'baseline']);
+    expect(insertedRows[0]).toMatchObject({ session_id: 'sess-1', reference_session_id: 'sess-0' });
+    expect(insertedRows[1]).toMatchObject({ session_id: 'sess-1', reference_session_id: 'baseline-source' });
+  });
+
+  it('persists a single change record when only a previous session exists', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const insertQuery = createQuery({ single: { data: createdSession, error: null } });
+    const vehicleQuery = createQuery({ single: { data: { type: 'motorcycle' }, error: null } });
+    const previousQuery = createQuery({ base: { data: [previousSession], error: null } });
+    const baselineQuery = createQuery({ base: { data: [], error: null } });
+    const changesInsertQuery = createQuery({ base: { data: null, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => insertQuery)
+      .mockImplementationOnce(() => vehicleQuery)
+      .mockImplementationOnce(() => previousQuery)
+      .mockImplementationOnce(() => baselineQuery)
+      .mockImplementationOnce(() => changesInsertQuery);
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await createSession(validInput);
+
+    expect(result.ok).toBe(true);
+    const insertedRows = vi.mocked(changesInsertQuery.insert as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as Array<Record<string, unknown>>;
+    expect(insertedRows.map((row) => row.reference_kind)).toEqual(['previous']);
+  });
+
+  it('writes no change records when there is no reference to compare against', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const insertQuery = createQuery({ single: { data: createdSession, error: null } });
+    const vehicleQuery = createQuery({ single: { data: { type: 'motorcycle' }, error: null } });
+    const previousQuery = createQuery({ base: { data: [], error: null } });
+    const baselineQuery = createQuery({ base: { data: [], error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => insertQuery)
+      .mockImplementationOnce(() => vehicleQuery)
+      .mockImplementationOnce(() => previousQuery)
+      .mockImplementationOnce(() => baselineQuery);
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await createSession(validInput);
+
+    expect(result.ok).toBe(true);
+    expect(from).toHaveBeenCalledTimes(4);
+    expect(from).not.toHaveBeenCalledWith('session_changes');
+  });
+
+  it('still succeeds without rollback when the change-record insert fails', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const insertQuery = createQuery({ single: { data: createdSession, error: null } });
+    const vehicleQuery = createQuery({ single: { data: { type: 'motorcycle' }, error: null } });
+    const previousQuery = createQuery({ base: { data: [previousSession], error: null } });
+    const baselineQuery = createQuery({ base: { data: [changeBaseline], error: null } });
+    const changesInsertQuery = createQuery({ base: { data: null, error: { message: 'changes failed' } } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => insertQuery)
+      .mockImplementationOnce(() => vehicleQuery)
+      .mockImplementationOnce(() => previousQuery)
+      .mockImplementationOnce(() => baselineQuery)
+      .mockImplementationOnce(() => changesInsertQuery);
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await createSession(validInput);
+
+    expect(result).toEqual({ ok: true, data: createdSession });
+    expect(from).toHaveBeenCalledTimes(5);
+    expect(insertQuery.delete).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[sessions] session_changes insert failed',
+      expect.objectContaining({
+        userId: 'user-1',
+        sessionId: 'sess-1',
+        error: 'changes failed',
+      }),
+    );
+    errorSpy.mockRestore();
+  });
+
+  it('skips persisting change records when the vehicle type cannot be resolved', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const insertQuery = createQuery({ single: { data: createdSession, error: null } });
+    const vehicleQuery = createQuery({ single: { data: null, error: { message: 'not found' } } });
+    const previousQuery = createQuery({ base: { data: [previousSession], error: null } });
+    const baselineQuery = createQuery({ base: { data: [changeBaseline], error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => insertQuery)
+      .mockImplementationOnce(() => vehicleQuery)
+      .mockImplementationOnce(() => previousQuery)
+      .mockImplementationOnce(() => baselineQuery);
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await createSession(validInput);
+
+    expect(result).toEqual({ ok: true, data: createdSession });
+    expect(from).toHaveBeenCalledTimes(4);
+    expect(from).not.toHaveBeenCalledWith('session_changes');
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[sessions] session_changes skipped: unresolved vehicle type',
+      expect.objectContaining({ userId: 'user-1', sessionId: 'sess-1', vehicleId: 'veh-1' }),
     );
     errorSpy.mockRestore();
   });

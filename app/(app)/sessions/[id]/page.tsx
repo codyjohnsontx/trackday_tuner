@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { BarChart3 } from 'lucide-react';
 import { getVehicleBaseline } from '@/lib/actions/baselines';
+import { getSessionChangeRecords } from '@/lib/actions/session-changes';
 import { getPreviousSession, getSession, getSessionEnvironment } from '@/lib/actions/sessions';
 import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
 import { DemoBanner } from '@/components/demo/demo-banner';
@@ -10,7 +11,9 @@ import { Button } from '@/components/ui/button';
 import { TimeDisplay } from '@/components/ui/time-display';
 import { SessionCompare, type CompareRow } from '@/components/sessions/session-compare';
 import { SessionBaselinePanel } from '@/components/sessions/session-baseline-panel';
+import { SessionChangesPanel } from '@/components/sessions/session-changes-panel';
 import { TuningAdvicePanel } from '@/components/ai/tuning-advice-panel';
+import { deriveChangeSets, toChangeSets } from '@/lib/session-changes';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import type { ExtraModules, Session } from '@/types';
 
@@ -293,16 +296,23 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
 
   if (!session) notFound();
 
-  const [previousSession, environment, baseline] = await Promise.all([
+  const [previousSession, environment, baseline, changeRecords] = await Promise.all([
     getPreviousSession(session),
     getSessionEnvironment(session.id),
     getVehicleBaseline(session.vehicle_id),
+    getSessionChangeRecords(session.id),
   ]);
   const tier = profile?.tier ?? 'free';
   const vehicle = vehicles.find((v) => v.id === session.vehicle_id);
   const vehicleNickname = vehicle?.nickname ?? 'Unknown Vehicle';
   const vehicleType = vehicle?.type ?? 'motorcycle';
   const enabledModules = resolveSessionEnabledModules(session, vehicleType);
+  const changeSets =
+    tier === 'pro'
+      ? changeRecords.length > 0
+        ? toChangeSets(changeRecords)
+        : deriveChangeSets(session, previousSession, baseline, vehicleType)
+      : [];
   const previousEnabledModules = previousSession
     ? resolveSessionEnabledModules(previousSession, vehicleType)
     : null;
@@ -344,6 +354,7 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
           </Link>
         </Button>
         <SessionBaselinePanel session={session} baseline={baseline} tier={tier} demoMode={demoMode} />
+        <SessionChangesPanel changeSets={changeSets} tier={tier} />
       </div>
 
       <TuningAdvicePanel sessionId={session.id} vehicleId={session.vehicle_id} tier={tier} demoMode={demoMode} />

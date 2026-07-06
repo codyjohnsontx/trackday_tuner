@@ -9,7 +9,12 @@ function formatDateLabel(dateString: string): string {
   });
 }
 
-export function baselineSourceLabel(baseline: VehicleBaseline): string {
+type BaselineSourceFields = Pick<
+  VehicleBaseline,
+  'source_track_name' | 'source_date' | 'source_session_number'
+>;
+
+export function baselineSourceLabel(baseline: BaselineSourceFields): string {
   return [
     baseline.source_track_name ?? 'Unknown Track',
     formatDateLabel(baseline.source_date),

@@ -1,8 +1,15 @@
 import { DEMO_USER_ID } from '@/lib/demo/mode';
+import {
+  baselineReferenceLabel,
+  baselineToComparableSession,
+  computeSetupChanges,
+  sessionReferenceLabel,
+} from '@/lib/session-changes';
 import { compareSessionsDesc, isSessionBefore, sessionsMatchTrack } from '@/lib/session-compare';
 import type {
   Profile,
   Session,
+  SessionChange,
   SessionEnvironment,
   SessionEnabledModules,
   TelemetrySummary,
@@ -269,6 +276,75 @@ export const DEMO_VEHICLE_BASELINES: VehicleBaseline[] = [
   },
 ];
 
+function requireDemoSession(id: string): Session {
+  const session = DEMO_SESSIONS.find((demoSession) => demoSession.id === id);
+  if (!session) {
+    throw new Error(`Demo data misconfigured: DEMO_SESSION_CHANGES requires a '${id}' entry in DEMO_SESSIONS.`);
+  }
+  return session;
+}
+
+const demoSession4 = requireDemoSession('demo-session-4');
+const demoSession3 = requireDemoSession('demo-session-3');
+const demoSession2 = requireDemoSession('demo-session-2');
+
+// Resolve the vehicle type and baseline by the session's vehicle_id rather than by
+// array position so the demo change records stay correct if the fixtures are reordered.
+const demoVehicleForChanges = DEMO_VEHICLES.find((vehicle) => vehicle.id === demoSession4.vehicle_id);
+const demoBaseline = DEMO_VEHICLE_BASELINES.find((baseline) => baseline.vehicle_id === demoSession4.vehicle_id);
+if (!demoVehicleForChanges || !demoBaseline) {
+  throw new Error(
+    `Demo data misconfigured: DEMO_SESSION_CHANGES requires a vehicle and baseline for '${demoSession4.vehicle_id}'.`,
+  );
+}
+const demoR6Type = demoVehicleForChanges.type;
+
+// Built programmatically from the same diff engine as the write path so the demo
+// change records can never drift from DEMO_SESSIONS. Session 4 has both a previous
+// session and a baseline; session 3 is the baseline source, so it only gets the
+// previous reference (matching the write-path baseline-source guard).
+export const DEMO_SESSION_CHANGES: SessionChange[] = [
+  {
+    id: 'demo-changes-4-previous',
+    user_id: DEMO_USER_ID,
+    session_id: demoSession4.id,
+    vehicle_id: demoSession4.vehicle_id,
+    reference_kind: 'previous',
+    reference_session_id: demoSession3.id,
+    reference_label: sessionReferenceLabel(demoSession3),
+    reference_date: demoSession3.date,
+    changes: computeSetupChanges(demoSession4, demoSession3, demoR6Type),
+    created_at: demoSession4.created_at,
+    updated_at: demoSession4.updated_at,
+  },
+  {
+    id: 'demo-changes-4-baseline',
+    user_id: DEMO_USER_ID,
+    session_id: demoSession4.id,
+    vehicle_id: demoSession4.vehicle_id,
+    reference_kind: 'baseline',
+    reference_session_id: demoBaseline.source_session_id,
+    reference_label: baselineReferenceLabel(demoBaseline),
+    reference_date: demoBaseline.source_date,
+    changes: computeSetupChanges(demoSession4, baselineToComparableSession(demoBaseline), demoR6Type),
+    created_at: demoSession4.created_at,
+    updated_at: demoSession4.updated_at,
+  },
+  {
+    id: 'demo-changes-3-previous',
+    user_id: DEMO_USER_ID,
+    session_id: demoSession3.id,
+    vehicle_id: demoSession3.vehicle_id,
+    reference_kind: 'previous',
+    reference_session_id: demoSession2.id,
+    reference_label: sessionReferenceLabel(demoSession2),
+    reference_date: demoSession2.date,
+    changes: computeSetupChanges(demoSession3, demoSession2, demoR6Type),
+    created_at: demoSession3.created_at,
+    updated_at: demoSession3.updated_at,
+  },
+];
+
 export const DEMO_SESSION_ENVIRONMENTS: SessionEnvironment[] = [
   {
     id: 'demo-env-4',
@@ -459,6 +535,10 @@ export function getDemoVehicleBaseline(vehicleId: string): VehicleBaseline | nul
 export function getDemoVehicleBaselines(vehicleIds: string[]): VehicleBaseline[] {
   const idSet = new Set(vehicleIds);
   return DEMO_VEHICLE_BASELINES.filter((baseline) => idSet.has(baseline.vehicle_id)).map(clone);
+}
+
+export function getDemoSessionChanges(sessionId: string): SessionChange[] {
+  return DEMO_SESSION_CHANGES.filter((record) => record.session_id === sessionId).map(clone);
 }
 
 export function getDemoSessionEnvironment(sessionId: string): SessionEnvironment | null {

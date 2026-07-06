@@ -23,6 +23,12 @@ import {
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
+import {
+  baselineReferenceLabel,
+  baselineToComparableSession,
+  computeSetupChanges,
+  sessionReferenceLabel,
+} from '@/lib/session-changes';
 import type { TableInsert } from '@/types/supabase';
 import type {
   ActionResult,
@@ -31,6 +37,8 @@ import type {
   Session,
   SessionEnvironment,
   TelemetrySummary,
+  VehicleBaseline,
+  VehicleType,
 } from '@/types';
 
 function hasEnvironmentValues(environment: CreateSessionEnvironmentInput | null | undefined): boolean {
@@ -358,6 +366,104 @@ export async function createSession(
       }
       return { ok: false, error: environmentError.message };
     }
+  }
+
+  // Persist deterministic change records against the previous session and the active
+  // baseline. Best effort only — a failure here never fails session creation. The
+  // vehicle, previous-session, and baseline lookups are independent, so run them in
+  // parallel to keep this off the critical path of session creation.
+  try {
+    const [vehicleResult, previousResult, baselineResult] = await Promise.all([
+      supabase
+        .from('vehicles')
+        .select('type')
+        .eq('id', createdSession.vehicle_id)
+        .eq('user_id', user.id)
+        .single(),
+      supabase
+        .from('sessions')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('vehicle_id', createdSession.vehicle_id)
+        .neq('id', createdSession.id)
+        .or(
+          `date.lt.${createdSession.date},and(date.eq.${createdSession.date},start_time.lt.${createdSession.start_time ?? '23:59:59'})`,
+        )
+        .order('date', { ascending: false })
+        .order('start_time', { ascending: false, nullsFirst: false })
+        .limit(1),
+      supabase
+        .from('vehicle_baselines')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('vehicle_id', createdSession.vehicle_id)
+        .limit(1),
+    ]);
+
+    const vehicleRow = vehicleResult.data;
+    const previousRows = previousResult.data;
+    const baselineRows = baselineResult.data;
+
+    // The vehicle type drives module resolution and is persisted into each diff, so it
+    // must never be guessed. If it cannot be resolved, skip persistence and let the
+    // read path derive changes later against the vehicle's real type.
+    const vehicleType = (vehicleRow?.type ?? null) as VehicleType | null;
+    if (!vehicleType) {
+      console.error('[sessions] session_changes skipped: unresolved vehicle type', {
+        userId: user.id,
+        sessionId: createdSession.id,
+        vehicleId: createdSession.vehicle_id,
+      });
+    } else {
+      const previousSession = ((previousRows ?? [])[0] ?? null) as Session | null;
+      const baseline = ((baselineRows ?? [])[0] ?? null) as VehicleBaseline | null;
+
+      const changeRows: TableInsert<'session_changes'>[] = [];
+
+      if (previousSession) {
+        changeRows.push({
+          user_id: user.id,
+          session_id: createdSession.id,
+          vehicle_id: createdSession.vehicle_id,
+          reference_kind: 'previous',
+          reference_session_id: previousSession.id,
+          reference_label: sessionReferenceLabel(previousSession),
+          reference_date: previousSession.date,
+          changes: computeSetupChanges(createdSession, previousSession, vehicleType),
+        });
+      }
+
+      if (baseline && baseline.source_session_id !== createdSession.id) {
+        changeRows.push({
+          user_id: user.id,
+          session_id: createdSession.id,
+          vehicle_id: createdSession.vehicle_id,
+          reference_kind: 'baseline',
+          reference_session_id: baseline.source_session_id,
+          reference_label: baselineReferenceLabel(baseline),
+          reference_date: baseline.source_date,
+          changes: computeSetupChanges(createdSession, baselineToComparableSession(baseline), vehicleType),
+        });
+      }
+
+      if (changeRows.length > 0) {
+        const { error: changesError } = await supabase.from('session_changes').insert(changeRows);
+        if (changesError) {
+          console.error('[sessions] session_changes insert failed', {
+            userId: user.id,
+            sessionId: createdSession.id,
+            error: changesError.message,
+          });
+        }
+      }
+    }
+  } catch (changeTrackingError) {
+    console.error('[sessions] session_changes computation failed', {
+      userId: user.id,
+      sessionId: createdSession.id,
+      error:
+        changeTrackingError instanceof Error ? changeTrackingError.message : String(changeTrackingError),
+    });
   }
 
   revalidatePath('/sessions');
