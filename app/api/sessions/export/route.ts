@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
+import { resolveUserAccess } from '@/lib/access';
 import { buildSessionExportCsv } from '@/lib/session-export';
 import { createClient } from '@/lib/supabase/server';
 import type { Session, SessionEnvironment, Vehicle } from '@/types';
@@ -24,7 +25,7 @@ export async function GET(request: Request) {
   }
 
   const profile = await getUserProfile();
-  if ((profile?.tier ?? 'free') !== 'pro') {
+  if (!resolveUserAccess(profile).hasProAccess) {
     return NextResponse.json({ error: 'CSV export requires Pro.' }, { status: 403 });
   }
 

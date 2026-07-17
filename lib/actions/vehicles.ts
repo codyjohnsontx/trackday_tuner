@@ -6,6 +6,7 @@ import { getDemoProfile, getDemoVehicles } from '@/lib/demo/data';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
+import { resolveUserAccess } from '@/lib/access';
 import type { TableInsert } from '@/types/supabase';
 import type { ActionResult, CreateVehicleInput, UpdateVehicleInput, Profile, Vehicle } from '@/types';
 
@@ -57,9 +58,7 @@ export async function createVehicle(
   const supabase = await createClient();
 
   const profile = await getUserProfile();
-  const tier = profile?.tier ?? 'free';
-
-  if (tier === 'free') {
+  if (!resolveUserAccess(profile).hasProAccess) {
     const { count } = await supabase
       .from('vehicles')
       .select('id', { count: 'exact', head: true })

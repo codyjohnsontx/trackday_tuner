@@ -14,6 +14,17 @@ export type SuspensionDirection = 'in' | 'out';
 export type EnvironmentSource = 'manual' | 'forecast' | 'telemetry';
 export type FeedbackOutcome = 'better' | 'same' | 'worse' | 'unknown';
 export type RecommendationStatus = 'proposed' | 'applied' | 'rejected' | 'superseded';
+export type SessionLapSource = 'manual' | 'import';
+export type ProductEventName =
+  | 'beta_signup_completed'
+  | 'vehicle_created'
+  | 'session_created'
+  | 'lap_data_saved'
+  | 'comparison_viewed'
+  | 'session_outcome_prompt_viewed'
+  | 'session_outcome_saved'
+  | 'recommendation_linked_to_outcome'
+  | 'beta_survey_submitted';
 export type SuspensionEnd = {
   preload: string;
   compression: string;
@@ -96,6 +107,7 @@ export type AdviceDataUsed = {
   weather: boolean;
   history: boolean;
   feedback: boolean;
+  lap_data: boolean;
   telemetry: boolean;
 };
 
@@ -105,10 +117,10 @@ export type TelemetryMetrics = {
   tire_pressure_delta?: Json;
   suspension_travel?: Json;
   lap_count?: number;
-  best_lap_ms?: number;
+  best_lap_ms?: number | null;
   lap_times_ms?: number[];
-  average_lap_ms?: number;
-  consistency_spread_ms?: number;
+  average_lap_ms?: number | null;
+  consistency_spread_ms?: number | null;
   ambient_temperature_trend_c?: Json;
   track_temperature_trend_c?: Json;
   [key: string]: Json | undefined;
@@ -121,6 +133,9 @@ export type Database = {
         Row: {
           id: string;
           tier: Tier;
+          beta_cohort: string | null;
+          beta_access_started_at: string | null;
+          beta_access_expires_at: string | null;
           stripe_customer_id: string | null;
           stripe_subscription_id: string | null;
           stripe_price_id: string | null;
@@ -129,6 +144,9 @@ export type Database = {
         Insert: {
           id: string;
           tier?: Tier;
+          beta_cohort?: string | null;
+          beta_access_started_at?: string | null;
+          beta_access_expires_at?: string | null;
           stripe_customer_id?: string | null;
           stripe_subscription_id?: string | null;
           stripe_price_id?: string | null;
@@ -137,6 +155,9 @@ export type Database = {
         Update: {
           id?: string;
           tier?: Tier;
+          beta_cohort?: string | null;
+          beta_access_started_at?: string | null;
+          beta_access_expires_at?: string | null;
           stripe_customer_id?: string | null;
           stripe_subscription_id?: string | null;
           stripe_price_id?: string | null;
@@ -543,6 +564,7 @@ export type Database = {
           id: string;
           user_id: string;
           session_id: string;
+          reference_session_id: string | null;
           vehicle_id: string;
           track_id: string | null;
           recommendation_id: string | null;
@@ -551,6 +573,7 @@ export type Database = {
           symptoms: string[];
           notes: string | null;
           lap_time_delta_ms: number | null;
+          recommendation_helpfulness: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -558,6 +581,7 @@ export type Database = {
           id?: string;
           user_id: string;
           session_id: string;
+          reference_session_id?: string | null;
           vehicle_id: string;
           track_id?: string | null;
           recommendation_id?: string | null;
@@ -566,6 +590,7 @@ export type Database = {
           symptoms?: string[];
           notes?: string | null;
           lap_time_delta_ms?: number | null;
+          recommendation_helpfulness?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -573,6 +598,7 @@ export type Database = {
           id?: string;
           user_id?: string;
           session_id?: string;
+          reference_session_id?: string | null;
           vehicle_id?: string;
           track_id?: string | null;
           recommendation_id?: string | null;
@@ -581,6 +607,7 @@ export type Database = {
           symptoms?: string[];
           notes?: string | null;
           lap_time_delta_ms?: number | null;
+          recommendation_helpfulness?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -658,6 +685,156 @@ export type Database = {
         };
         Relationships: [];
       };
+      session_laps: {
+        Row: {
+          id: string;
+          user_id: string;
+          session_id: string;
+          lap_number: number;
+          lap_time_ms: number;
+          included: boolean;
+          source: SessionLapSource;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          session_id: string;
+          lap_number: number;
+          lap_time_ms: number;
+          included?: boolean;
+          source?: SessionLapSource;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          session_id?: string;
+          lap_number?: number;
+          lap_time_ms?: number;
+          included?: boolean;
+          source?: SessionLapSource;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      beta_waitlist: {
+        Row: {
+          id: string;
+          email: string;
+          email_normalized: string;
+          vehicle_interest: 'motorcycle' | 'car' | 'both';
+          activity_type: 'track_day' | 'hpde' | 'club_racing';
+          experience_level: 'beginner' | 'intermediate' | 'advanced';
+          current_tracking_method: 'paper' | 'phone_notes' | 'spreadsheet' | 'other_app' | 'none';
+          upcoming_track_days: 'zero' | 'one' | 'two_or_more';
+          optional_context: string | null;
+          consent_at: string;
+          status: 'waitlisted' | 'invited' | 'accepted' | 'declined';
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          email: string;
+          email_normalized: string;
+          vehicle_interest: 'motorcycle' | 'car' | 'both';
+          activity_type: 'track_day' | 'hpde' | 'club_racing';
+          experience_level: 'beginner' | 'intermediate' | 'advanced';
+          current_tracking_method: 'paper' | 'phone_notes' | 'spreadsheet' | 'other_app' | 'none';
+          upcoming_track_days: 'zero' | 'one' | 'two_or_more';
+          optional_context?: string | null;
+          consent_at: string;
+          status?: 'waitlisted' | 'invited' | 'accepted' | 'declined';
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['beta_waitlist']['Insert']>;
+        Relationships: [];
+      };
+      beta_invites: {
+        Row: {
+          id: string;
+          waitlist_id: string | null;
+          email_normalized: string;
+          code_hash: string;
+          cohort: string;
+          status: 'active' | 'redeemed' | 'revoked' | 'expired';
+          expires_at: string;
+          redeemed_at: string | null;
+          redeemed_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          waitlist_id?: string | null;
+          email_normalized: string;
+          code_hash: string;
+          cohort?: string;
+          status?: 'active' | 'redeemed' | 'revoked' | 'expired';
+          expires_at: string;
+          redeemed_at?: string | null;
+          redeemed_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['beta_invites']['Insert']>;
+        Relationships: [];
+      };
+      product_events: {
+        Row: {
+          id: string;
+          event_id: string;
+          user_id: string;
+          event_name: ProductEventName;
+          session_id: string | null;
+          vehicle_id: string | null;
+          properties: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          event_id: string;
+          user_id: string;
+          event_name: ProductEventName;
+          session_id?: string | null;
+          vehicle_id?: string | null;
+          properties?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['product_events']['Insert']>;
+        Relationships: [];
+      };
+      beta_feedback: {
+        Row: {
+          id: string;
+          user_id: string;
+          comparison_usefulness: number;
+          ai_guidance_usefulness: number;
+          disappointment: 'very' | 'somewhat' | 'not';
+          biggest_problem: string | null;
+          interview_opt_in: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          comparison_usefulness: number;
+          ai_guidance_usefulness: number;
+          disappointment: 'very' | 'somewhat' | 'not';
+          biggest_problem?: string | null;
+          interview_opt_in?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['beta_feedback']['Insert']>;
+        Relationships: [];
+      };
       sag_entries: {
         Row: {
           id: string;
@@ -722,6 +899,20 @@ export type Database = {
           p_notes: string | null;
         };
         Returns: void;
+      };
+      save_session_outcome: {
+        Args: {
+          p_user_id: string;
+          p_session_id: string;
+          p_reference_session_id: string;
+          p_recommendation_id: string | null;
+          p_outcome: FeedbackOutcome;
+          p_rider_confidence: number | null;
+          p_symptoms: string[];
+          p_notes: string | null;
+          p_recommendation_helpfulness: number | null;
+        };
+        Returns: Json;
       };
     };
     Enums: Record<string, never>;

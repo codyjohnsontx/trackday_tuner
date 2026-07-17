@@ -31,6 +31,7 @@ export interface RaceEngineerContext {
     weather: boolean;
     history: boolean;
     feedback: boolean;
+    lap_data: boolean;
     telemetry: boolean;
   };
 }
@@ -358,7 +359,8 @@ export async function loadRaceEngineerContext(
       weather: Boolean(sessionEnvironment),
       history: similarSessions.length > 0,
       feedback: recentFeedback.length > 0 || recentRecommendations.some((r) => r.status !== 'proposed'),
-      telemetry: Boolean(telemetrySummary),
+      lap_data: telemetrySummary?.source === 'manual',
+      telemetry: Boolean(telemetrySummary && telemetrySummary.source !== 'manual'),
     },
   };
 }

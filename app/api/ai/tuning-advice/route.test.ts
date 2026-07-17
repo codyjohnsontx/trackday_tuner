@@ -475,6 +475,7 @@ describe('POST /api/ai/tuning-advice duplicate handling', () => {
         weather: false,
         history: false,
         feedback: false,
+        lap_data: false,
         telemetry: false,
       },
     });
@@ -504,6 +505,7 @@ describe('POST /api/ai/tuning-advice duplicate handling', () => {
         weather: false,
         history: false,
         feedback: false,
+        lap_data: false,
         telemetry: false,
       },
       refusal: null,

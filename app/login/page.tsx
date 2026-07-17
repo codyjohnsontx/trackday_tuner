@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { AuthForm } from '@/components/auth/auth-form';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getOAuthProviders } from '@/lib/auth/providers';
+import { isBetaInviteOnly } from '@/lib/env.server';
 
 export default async function LoginPage() {
   const user = await getAuthenticatedUser();
@@ -14,5 +15,5 @@ export default async function LoginPage() {
   // (dynamic process.env[key] access doesn't inline on the client bundle)
   const providers = getOAuthProviders();
 
-  return <AuthForm providers={providers} />;
+  return <AuthForm providers={providers} inviteOnly={isBetaInviteOnly()} />;
 }

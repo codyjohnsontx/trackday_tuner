@@ -33,6 +33,9 @@ const allMotorcycleModules: SessionEnabledModules = {
 export const DEMO_PROFILE: Profile = {
   id: DEMO_USER_ID,
   tier: 'pro',
+  beta_cohort: null,
+  beta_access_started_at: null,
+  beta_access_expires_at: null,
   stripe_customer_id: null,
   stripe_subscription_id: null,
   stripe_price_id: null,

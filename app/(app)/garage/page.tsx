@@ -6,13 +6,14 @@ import { DemoBanner } from '@/components/demo/demo-banner';
 import { isDemoMode } from '@/lib/demo/mode';
 import { VehicleCard } from '@/components/garage/vehicle-card';
 import { Button } from '@/components/ui/button';
+import { resolveUserAccess } from '@/lib/access';
 
 export default async function GaragePage() {
   const [vehicles, profile, demoMode] = await Promise.all([getVehicles(), getUserProfile(), isDemoMode()]);
   const baselines = await getVehicleBaselines(vehicles.map((vehicle) => vehicle.id));
   const baselineByVehicleId = new Map(baselines.map((baseline) => [baseline.vehicle_id, baseline]));
 
-  const isFree = !profile || profile.tier === 'free';
+  const isFree = !resolveUserAccess(profile).hasProAccess;
   const atLimit = isFree && vehicles.length >= 1;
 
   const tierLabel = isFree

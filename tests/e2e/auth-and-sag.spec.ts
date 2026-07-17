@@ -3,6 +3,7 @@ import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 
 const GOOGLE_ENABLED = (process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED ?? 'true') === 'true';
 const APPLE_ENABLED = (process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED ?? 'false') === 'true';
+const BETA_INVITE_ONLY = (process.env.BETA_INVITE_ONLY ?? 'true') === 'true';
 
 test.describe('unauthenticated route guards', () => {
   test('redirects /dashboard to /login', async ({ page }) => {
@@ -20,22 +21,31 @@ test.describe('unauthenticated route guards', () => {
     await expect(page.getByRole('heading', { name: 'Get on track' })).toBeVisible();
     const googleButton = page.getByRole('button', { name: 'Continue with Google' });
     const appleButton = page.getByRole('button', { name: 'Continue with Apple' });
-    await expect(googleButton).toBeVisible();
-    await expect(appleButton).toBeVisible();
-    if (GOOGLE_ENABLED) {
-      await expect(googleButton).toBeEnabled();
+    if (BETA_INVITE_ONLY) {
+      await expect(googleButton).toHaveCount(0);
+      await expect(appleButton).toHaveCount(0);
+      await page.getByRole('button', { name: /^Sign Up$/ }).click();
+      await expect(page.getByLabel('Invitation code')).toBeVisible();
+      await expect(page.getByText('Founding Beta access for invited riders.')).toBeVisible();
     } else {
-      await expect(googleButton).toBeDisabled();
-    }
-    if (APPLE_ENABLED) {
-      await expect(appleButton).toBeEnabled();
-    } else {
-      await expect(appleButton).toBeDisabled();
+      await expect(googleButton).toBeVisible();
+      await expect(appleButton).toBeVisible();
+      if (GOOGLE_ENABLED) await expect(googleButton).toBeEnabled();
+      else await expect(googleButton).toBeDisabled();
+      if (APPLE_ENABLED) await expect(appleButton).toBeEnabled();
+      else await expect(appleButton).toBeDisabled();
     }
     await expect(page.getByLabel('Email')).toBeVisible();
     await expect(page.getByLabel('Password')).toBeVisible();
     await expect(page.getByRole('button', { name: /^Sign In$/ }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: /^Sign Up$/ })).toBeVisible();
+  });
+
+  test('positions the public page around outcomes and exposes the waitlist', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Know what changed. Learn what worked.' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Two track days. One honest outcome loop.' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Join the Founding Beta' })).toBeVisible();
   });
 });
 

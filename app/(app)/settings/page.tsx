@@ -6,10 +6,12 @@ import { DemoBanner } from '@/components/demo/demo-banner';
 import { TimeFormatSettings } from '@/components/settings/time-format-settings';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { isDemoMode } from '@/lib/demo/mode';
+import { resolveUserAccess } from '@/lib/access';
 
 export default async function SettingsPage() {
   const [profile, demoMode] = await Promise.all([getUserProfile(), isDemoMode()]);
-  const isPro = profile?.tier === 'pro';
+  const access = resolveUserAccess(profile);
+  const isPro = access.hasProAccess;
   const billingRenewal = profile?.stripe_current_period_end
     ? new Date(profile.stripe_current_period_end).toLocaleDateString()
     : null;
@@ -38,9 +40,16 @@ export default async function SettingsPage() {
           Billing
         </h2>
         <p className="mt-2 text-sm text-zinc-300">
-          Plan: <span className="font-medium uppercase">{isPro ? 'Pro' : 'Free'}</span>
+          Plan:{' '}
+          <span className="font-medium uppercase">
+            {access.source === 'beta' ? 'Founding Beta' : isPro ? 'Pro' : 'Free'}
+          </span>
         </p>
-        {isPro ? (
+        {access.source === 'beta' && access.betaAccessExpiresAt ? (
+          <p className="mt-1 text-sm text-cyan-200">
+            Full access through {new Date(access.betaAccessExpiresAt).toLocaleDateString()}.
+          </p>
+        ) : isPro ? (
           <p className="mt-1 text-sm text-zinc-400">
             {billingRenewal ? `Renews on ${billingRenewal}.` : 'Active subscription.'}
           </p>
@@ -49,9 +58,11 @@ export default async function SettingsPage() {
             Upgrade to unlock unlimited vehicles, tracks, and sessions.
           </p>
         )}
-        <div className="mt-4">
-          {isPro ? <ManageBillingButton fullWidth /> : <UpgradeToProButton fullWidth />}
-        </div>
+        {access.source !== 'beta' ? (
+          <div className="mt-4">
+            {isPro ? <ManageBillingButton fullWidth /> : <UpgradeToProButton fullWidth />}
+          </div>
+        ) : null}
       </section>
       )}
 

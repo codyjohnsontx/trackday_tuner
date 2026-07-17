@@ -6,8 +6,10 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
+import { LapTimeEditor } from '@/components/sessions/lap-time-editor';
 import { createSession } from '@/lib/actions/sessions';
 import { clearDraft, loadDraft, saveDraft } from '@/lib/drafts';
+import { trackProductEvent } from '@/lib/product-events.client';
 import { copyLastSessionSetup } from '@/lib/session-copy';
 import {
   getAvailableSessionModules,
@@ -31,6 +33,7 @@ import type {
   Tires,
   Track,
   Vehicle,
+  CreateSessionLapInput,
 } from '@/types';
 
 interface SessionFormProps {
@@ -99,6 +102,7 @@ interface SessionDraft {
   drivetrain: typeof emptyDrivetrain;
   aero: typeof emptyAero;
   notes: string;
+  laps: CreateSessionLapInput[];
 }
 
 function ModuleHeader({
@@ -133,6 +137,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const [saved, setSaved] = useState(false);
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hydratedRef = useRef(false);
+  const formOpenedAtRef = useRef(Date.now());
   const previousEnabledModulesRef = useRef<Pick<SessionEnabledModules, 'geometry' | 'drivetrain' | 'aero'> | null>(
     null,
   );
@@ -170,6 +175,8 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const [drivetrain, setDrivetrain] = useState(emptyDrivetrain);
   const [aero, setAero] = useState(emptyAero);
   const [notes, setNotes] = useState('');
+  const [laps, setLaps] = useState<CreateSessionLapInput[]>([]);
+  const [lapValidationMessage, setLapValidationMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [draftMessage, setDraftMessage] = useState('');
 
@@ -238,6 +245,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setDrivetrain(draft.drivetrain ?? emptyDrivetrain);
     setAero(draft.aero ?? emptyAero);
     setNotes(draft.notes ?? '');
+    setLaps(draft.laps ?? []);
     setDraftMessage('Draft restored from this device.');
     hydratedRef.current = true;
   }, [initialVehicleType, vehicles]);
@@ -270,6 +278,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       drivetrain,
       aero,
       notes,
+      laps,
     });
   }, [
     vehicleId,
@@ -297,6 +306,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     drivetrain,
     aero,
     notes,
+    laps,
   ]);
 
   useEffect(() => {
@@ -412,6 +422,11 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       return;
     }
 
+    if (lapValidationMessage) {
+      setErrorMessage('Resolve the lap-time parsing message before saving.');
+      return;
+    }
+
     const parsedSessionNumber = sessionNumber.trim() ? Number(sessionNumber.trim()) : null;
     if (
       parsedSessionNumber !== null &&
@@ -483,6 +498,8 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
             }
           : undefined,
         notes: notes.trim() || null,
+        laps,
+        capture_duration_ms: Date.now() - formOpenedAtRef.current,
       });
 
       if (!result.ok) {
@@ -491,12 +508,24 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       }
 
       clearDraft(sessionDraftKey);
+      trackProductEvent('session_created', {
+        session_id: result.data.id,
+        vehicle_id: result.data.vehicle_id,
+        properties: { capture_duration_ms: Date.now() - formOpenedAtRef.current, lap_count: laps.length },
+      });
+      if (laps.length > 0) {
+        trackProductEvent('lap_data_saved', {
+          session_id: result.data.id,
+          vehicle_id: result.data.vehicle_id,
+          properties: { lap_count: laps.length, source: 'session_create' },
+        });
+      }
       setSaved(true);
       // Hold the confirmed checkmark briefly before leaving the form. Tracked so
       // it can be cancelled on unmount and never fire a redirect after teardown.
       redirectTimerRef.current = setTimeout(() => {
         redirectTimerRef.current = null;
-        router.push('/sessions');
+        router.push(`/sessions/${result.data.id}`);
         router.refresh();
       }, 700);
     });
@@ -937,6 +966,12 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
           ) : null}
         </div>
       ) : null}
+
+      <LapTimeEditor
+        value={laps}
+        onChange={setLaps}
+        onValidationChange={setLapValidationMessage}
+      />
 
       <div className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
         <label htmlFor="session-notes" className="block text-xs font-semibold uppercase tracking-wider text-zinc-500">

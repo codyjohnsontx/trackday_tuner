@@ -6,19 +6,25 @@ import { getSessions, getSessionCount } from '@/lib/actions/sessions';
 import { isDemoMode } from '@/lib/demo/mode';
 import { Button } from '@/components/ui/button';
 import { SessionCard } from '@/components/sessions/session-card';
+import { resolveUserAccess } from '@/lib/access';
+import { getBetaFeedback, hasTwoDistinctTrackDays } from '@/lib/actions/beta';
+import { BetaSurvey } from '@/components/beta/beta-survey';
 
 export default async function DashboardPage() {
-  const [vehicles, sessions, sessionCount, profile, demoMode] = await Promise.all([
+  const [vehicles, sessions, sessionCount, profile, demoMode, betaFeedback, hasTwoTrackDays] = await Promise.all([
     getVehicles(),
     getSessions(undefined, 3),
     getSessionCount(),
     getUserProfile(),
     isDemoMode(),
+    getBetaFeedback(),
+    hasTwoDistinctTrackDays(),
   ]);
 
   const hasVehicles = vehicles.length > 0;
-  const isFree = !profile || profile.tier === 'free';
+  const isFree = !resolveUserAccess(profile).hasProAccess;
   const atSessionLimit = isFree && sessionCount >= 10;
+  const access = resolveUserAccess(profile);
 
   const vehicleMap = new Map(vehicles.map((v) => [v.id, v.nickname]));
 
@@ -83,6 +89,8 @@ export default async function DashboardPage() {
           </ul>
         </div>
       ) : null}
+
+      {access.source === 'beta' && hasTwoTrackDays && !betaFeedback ? <BetaSurvey /> : null}
     </div>
   );
 }

@@ -32,6 +32,7 @@ export interface AdviceDataUsed {
   weather: boolean;
   history: boolean;
   feedback: boolean;
+  lap_data: boolean;
   telemetry: boolean;
 }
 
@@ -138,12 +139,13 @@ export const adviceResponseJsonSchema = {
       data_used: {
         type: 'object',
         additionalProperties: false,
-        required: ['manual', 'weather', 'history', 'feedback', 'telemetry'],
+        required: ['manual', 'weather', 'history', 'feedback', 'lap_data', 'telemetry'],
         properties: {
           manual: { type: 'boolean' },
           weather: { type: 'boolean' },
           history: { type: 'boolean' },
           feedback: { type: 'boolean' },
+          lap_data: { type: 'boolean' },
           telemetry: { type: 'boolean' },
         },
       },
@@ -190,7 +192,7 @@ const RECOMMENDED_CHANGE_KEYS = ['component', 'direction', 'magnitude', 'reason'
 const CITATION_KEYS = ['source', 'snippet'] as const;
 const PREDICTION_KEYS = ['expected_effect', 'day_trend', 'watch_items'] as const;
 const PERSONAL_EVIDENCE_KEYS = ['label', 'detail', 'source_session_id'] as const;
-const DATA_USED_KEYS = ['manual', 'weather', 'history', 'feedback', 'telemetry'] as const;
+const DATA_USED_KEYS = ['manual', 'weather', 'history', 'feedback', 'lap_data', 'telemetry'] as const;
 
 function isRecommendedChange(value: unknown): value is RecommendedChange {
   if (!isPlainObject(value)) return false;
@@ -246,6 +248,7 @@ const EMPTY_DATA_USED: AdviceDataUsed = {
   weather: false,
   history: false,
   feedback: false,
+  lap_data: false,
   telemetry: false,
 };
 

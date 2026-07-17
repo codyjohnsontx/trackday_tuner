@@ -7,6 +7,7 @@ import {
 } from '@/lib/ai-observability';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getUserProfile } from '@/lib/actions/vehicles';
+import { resolveUserAccess } from '@/lib/access';
 import {
   getAiRequestFingerprintSecret,
   getAiRateLimitPerHour,
@@ -60,6 +61,7 @@ function buildFallbackDataUsed(params: {
   session: Session;
   history?: boolean;
   feedback?: boolean;
+  lapData?: boolean;
   telemetry?: boolean;
 }): AdviceDataUsed {
   return {
@@ -67,6 +69,7 @@ function buildFallbackDataUsed(params: {
     weather: params.temperatureC != null,
     history: params.history ?? false,
     feedback: params.feedback ?? false,
+    lap_data: params.lapData ?? false,
     telemetry: params.telemetry ?? false,
   };
 }
@@ -391,7 +394,7 @@ export async function POST(request: Request) {
   }
 
   const profile = await getUserProfile();
-  if ((profile?.tier ?? 'free') !== 'pro') {
+  if (!resolveUserAccess(profile).hasProAccess) {
     return errorResponse(
       402,
       'Race Engineer is a Pro feature. Upgrade to continue.',
@@ -671,15 +674,7 @@ export async function POST(request: Request) {
 
     const policyResult = evaluateAdvicePolicy({
       advice: result.advice,
-      fallbackDataUsed:
-        raceEngineerContext.dataUsed ??
-        buildFallbackDataUsed({
-          session,
-          temperatureC: validated.data.temperature_c,
-          history: raceEngineerContext.similarSessions.length > 0,
-          feedback: raceEngineerContext.recentFeedback.length > 0,
-          telemetry: Boolean(raceEngineerContext.telemetrySummary),
-        }),
+      fallbackDataUsed: raceEngineerContext.dataUsed,
       validSessionIds: validRaceEngineerSessionIds({
         session,
         similarSessionIds: raceEngineerContext.similarSessions.map((item) => item.session.id),

@@ -62,3 +62,19 @@ export function getAiRateLimitPerMinute(): number {
   }
   return Math.floor(parsed);
 }
+
+export function isBetaInviteOnly(): boolean {
+  const value = process.env.BETA_INVITE_ONLY?.trim();
+  if (!value) return true;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`Invalid BETA_INVITE_ONLY: ${value}`);
+}
+
+export function getBetaInviteSecret(): string {
+  return readEnv('BETA_INVITE_SECRET');
+}
+
+export function getBetaFormRateLimitSecret(): string {
+  return process.env.BETA_FORM_RATE_LIMIT_SECRET?.trim() || getBetaInviteSecret();
+}
