@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
+import { readBoundedJson } from '@/lib/http/bounded-json';
 import type { Json, ProductEventName } from '@/types/supabase';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -13,8 +14,10 @@ const CLIENT_EVENTS = new Set<ProductEventName>([
 export async function POST(request: Request) {
   const user = await getAuthenticatedUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Not authenticated.' }, { status: 401 });
-  let input: unknown;
-  try { input = await request.json(); } catch { return NextResponse.json({ ok: false, error: 'Invalid JSON.' }, { status: 400 }); }
+  const parsed = await readBoundedJson(request, 20_000);
+  if (!parsed.ok && parsed.reason === 'too_large') return NextResponse.json({ ok: false, error: 'Request too large.' }, { status: 413 });
+  if (!parsed.ok) return NextResponse.json({ ok: false, error: 'Invalid JSON.' }, { status: 400 });
+  const input = parsed.value;
   if (!input || typeof input !== 'object' || Array.isArray(input)) return NextResponse.json({ ok: false, error: 'Invalid event.' }, { status: 400 });
   const body = input as Record<string, unknown>;
   if (typeof body.event_id !== 'string' || !UUID.test(body.event_id)) return NextResponse.json({ ok: false, error: 'Invalid event ID.' }, { status: 400 });

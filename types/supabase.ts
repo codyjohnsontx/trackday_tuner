@@ -886,6 +886,14 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      consume_beta_rate_limit: {
+        Args: {
+          p_key_hash: string;
+          p_limit: number;
+          p_window_seconds: number;
+        };
+        Returns: boolean;
+      };
       record_race_engineer_memory_feedback: {
         Args: {
           p_user_id: string;
@@ -913,6 +921,14 @@ export type Database = {
           p_recommendation_helpfulness: number | null;
         };
         Returns: Json;
+      };
+      replace_session_laps: {
+        Args: {
+          p_user_id: string;
+          p_session_id: string;
+          p_laps: Json;
+        };
+        Returns: void;
       };
     };
     Enums: Record<string, never>;

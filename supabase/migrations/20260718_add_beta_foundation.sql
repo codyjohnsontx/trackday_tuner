@@ -79,6 +79,61 @@ create table if not exists public.beta_feedback (
   constraint beta_feedback_problem_check check (biggest_problem is null or char_length(biggest_problem) <= 1000)
 );
 
+create table if not exists public.beta_rate_limits (
+  key_hash text primary key,
+  request_count integer not null,
+  window_expires_at timestamptz not null,
+  updated_at timestamptz not null default now(),
+  constraint beta_rate_limits_count_check check (request_count > 0)
+);
+
+create index if not exists beta_rate_limits_expiry_idx
+  on public.beta_rate_limits(window_expires_at);
+
+create or replace function public.consume_beta_rate_limit(
+  p_key_hash text,
+  p_limit integer,
+  p_window_seconds integer
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  limited boolean;
+begin
+  if p_key_hash is null or p_key_hash = '' or p_limit < 1 or p_window_seconds < 1 then
+    raise exception 'invalid rate-limit arguments';
+  end if;
+
+  insert into public.beta_rate_limits (
+    key_hash, request_count, window_expires_at, updated_at
+  ) values (
+    p_key_hash, 1, now() + make_interval(secs => p_window_seconds), now()
+  )
+  on conflict (key_hash) do update set
+    request_count = case
+      when beta_rate_limits.window_expires_at <= now() then 1
+      else beta_rate_limits.request_count + 1
+    end,
+    window_expires_at = case
+      when beta_rate_limits.window_expires_at <= now()
+        then now() + make_interval(secs => p_window_seconds)
+      else beta_rate_limits.window_expires_at
+    end,
+    updated_at = now()
+  returning request_count > p_limit into limited;
+
+  return limited;
+end;
+$$;
+
+revoke all on function public.consume_beta_rate_limit(text, integer, integer)
+  from public, anon, authenticated;
+grant execute on function public.consume_beta_rate_limit(text, integer, integer)
+  to service_role;
+
 drop trigger if exists beta_waitlist_set_updated_at on public.beta_waitlist;
 create trigger beta_waitlist_set_updated_at before update on public.beta_waitlist
   for each row execute function public.set_updated_at();
@@ -93,6 +148,7 @@ alter table public.beta_waitlist enable row level security;
 alter table public.beta_invites enable row level security;
 alter table public.product_events enable row level security;
 alter table public.beta_feedback enable row level security;
+alter table public.beta_rate_limits enable row level security;
 
 -- Waitlist and invite operations use the server-only service-role client.
 create policy "product_events: select own" on public.product_events for select

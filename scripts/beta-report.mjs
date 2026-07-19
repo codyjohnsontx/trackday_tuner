@@ -1,19 +1,8 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs';
-import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
+import { loadEnvFiles } from './lib/env.mjs';
 
-for (const filename of ['.env.local', '.env']) {
-  const filePath = path.resolve(process.cwd(), filename);
-  if (!existsSync(filePath)) continue;
-  for (const line of readFileSync(filePath, 'utf8').split(/\r?\n/)) {
-    const match = line.trim().match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (!match || process.env[match[1]] !== undefined) continue;
-    let value = match[2].trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
-    process.env[match[1]] = value;
-  }
-}
+loadEnvFiles();
 function required(name) { const value = process.env[name]?.trim(); if (!value) { console.error(`[beta:report] Missing ${name}.`); process.exit(1); } return value; }
 const supabase = createClient(required('NEXT_PUBLIC_SUPABASE_URL'), required('SUPABASE_SERVICE_ROLE_KEY'), { auth: { persistSession: false } });
 const [{ data: profiles, error: profileError }, { data: sessions, error: sessionError }, { data: outcomes, error: outcomeError }, { data: feedback, error: feedbackError }] = await Promise.all([
@@ -32,7 +21,10 @@ const retained = [...daysByUser.values()].filter((dates) => dates.size >= 2).len
 const betaOutcomes = (outcomes ?? []).filter((row) => betaIds.has(row.user_id));
 const linked = betaOutcomes.filter((row) => row.recommendation_id).length;
 const surveys = (feedback ?? []).filter((row) => betaIds.has(row.user_id));
-const average = (key) => surveys.length ? (surveys.reduce((sum, row) => sum + row[key], 0) / surveys.length).toFixed(1) : '—';
+const average = (key) => {
+  const values = surveys.map((row) => row[key]).filter((value) => typeof value === 'number' && Number.isFinite(value));
+  return values.length ? (values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1) : '—';
+};
 const veryDisappointed = surveys.length ? Math.round(100 * surveys.filter((row) => row.disappointment === 'very').length / surveys.length) : 0;
 const invited = betaIds.size;
 console.log('Founding Beta Decision Report');

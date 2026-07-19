@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
+import { readBoundedJson } from '@/lib/http/bounded-json';
 
 export async function POST(request: Request) {
   const user = await getAuthenticatedUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Not authenticated.' }, { status: 401 });
-  let input: unknown;
-  try { input = await request.json(); } catch { return NextResponse.json({ ok: false, error: 'Invalid JSON.' }, { status: 400 }); }
+  const parsed = await readBoundedJson(request, 20_000);
+  if (!parsed.ok && parsed.reason === 'too_large') return NextResponse.json({ ok: false, error: 'Request too large.' }, { status: 413 });
+  if (!parsed.ok) return NextResponse.json({ ok: false, error: 'Invalid JSON.' }, { status: 400 });
+  const input = parsed.value;
   if (!input || typeof input !== 'object' || Array.isArray(input)) return NextResponse.json({ ok: false, error: 'Invalid feedback.' }, { status: 400 });
   const body = input as Record<string, unknown>;
   const comparison = Number(body.comparison_usefulness);

@@ -65,28 +65,32 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
     }
 
     if (inviteOnly) {
-      const response = await fetch('/api/beta/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, invite_code: inviteCode }),
-      });
-      const result = await response.json() as { ok: boolean; error?: string };
-      if (!response.ok || !result.ok) {
-        setErrorMessage(result.error ?? 'Unable to create your account.');
-        setLoading(false);
-        return;
-      }
+      try {
+        const response = await fetch('/api/beta/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, invite_code: inviteCode }),
+        });
+        const result = await response.json() as { ok: boolean; error?: string };
+        if (!response.ok || !result.ok) {
+          setErrorMessage(result.error ?? 'Unable to create your account.');
+          return;
+        }
 
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        setInfoMessage('Account created. Sign in with your email and password.');
-        setMode('sign-in');
+        const supabase = createClient();
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+          setInfoMessage('Account created. Sign in with your email and password.');
+          setMode('sign-in');
+          return;
+        }
+        router.replace('/dashboard');
+        router.refresh();
+      } catch {
+        setErrorMessage('Unable to create your account right now. Please try again.');
+      } finally {
         setLoading(false);
-        return;
       }
-      router.replace('/dashboard');
-      router.refresh();
       return;
     }
 

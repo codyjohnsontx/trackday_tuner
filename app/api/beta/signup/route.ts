@@ -6,6 +6,21 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+async function cleanupAuthUser(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  reason: 'profile_setup' | 'invite_redemption',
+) {
+  const { error } = await admin.auth.admin.deleteUser(userId);
+  if (error) {
+    console.error('[beta/signup] auth-user cleanup failed', {
+      userId,
+      reason,
+      error: error.message,
+    });
+  }
+}
+
 export async function POST(request: Request) {
   if (!isBetaInviteOnly()) {
     return NextResponse.json({ ok: false, error: 'Invitation signup is not enabled.' }, { status: 404 });
@@ -38,7 +53,7 @@ export async function POST(request: Request) {
 
   const admin = createAdminClient();
   const now = new Date();
-  const { data: invite } = await admin
+  const { data: invite, error: inviteError } = await admin
     .from('beta_invites')
     .select('*')
     .eq('code_hash', hashBetaInviteCode(code))
@@ -46,6 +61,11 @@ export async function POST(request: Request) {
     .eq('status', 'active')
     .gt('expires_at', now.toISOString())
     .maybeSingle();
+
+  if (inviteError) {
+    console.error('[beta/signup] invite query failed', { email, error: inviteError.message });
+    return NextResponse.json({ ok: false, error: 'Unable to finish account setup.' }, { status: 500 });
+  }
 
   if (!invite) {
     return NextResponse.json({ ok: false, error: 'That invitation is invalid or has expired.' }, { status: 400 });
@@ -71,7 +91,7 @@ export async function POST(request: Request) {
   });
 
   if (profileError) {
-    await admin.auth.admin.deleteUser(userId);
+    await cleanupAuthUser(admin, userId, 'profile_setup');
     return NextResponse.json({ ok: false, error: 'Unable to finish account setup.' }, { status: 500 });
   }
 
@@ -84,7 +104,7 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (redeemError || !redeemedInvite) {
-    await admin.auth.admin.deleteUser(userId);
+    await cleanupAuthUser(admin, userId, 'invite_redemption');
     return NextResponse.json({ ok: false, error: 'That invitation was already used.' }, { status: 409 });
   }
 

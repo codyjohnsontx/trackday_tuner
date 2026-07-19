@@ -2,9 +2,9 @@ import { createHmac } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { normalizeBetaEmail } from '@/lib/beta';
 import { getBetaFormRateLimitSecret } from '@/lib/env.server';
+import { readBoundedJson } from '@/lib/http/bounded-json';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-const attempts = new Map<string, { count: number; resetAt: number }>();
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const allowed = {
   vehicle_interest: new Set(['motorcycle', 'car', 'both']),
@@ -14,25 +14,42 @@ const allowed = {
   upcoming_track_days: new Set(['zero', 'one', 'two_or_more']),
 };
 
-function rateLimited(request: Request): boolean {
-  const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-  const key = createHmac('sha256', getBetaFormRateLimitSecret()).update(forwarded).digest('hex');
-  const now = Date.now();
-  const current = attempts.get(key);
-  if (!current || current.resetAt <= now) {
-    attempts.set(key, { count: 1, resetAt: now + 60 * 60 * 1000 });
-    return false;
-  }
-  current.count += 1;
-  return current.count > 5;
+function trustedClientIdentifier(request: Request): string {
+  const vercelForwarded = request.headers.get('x-vercel-forwarded-for');
+  const developmentForwarded = process.env.VERCEL
+    ? null
+    : request.headers.get('x-forwarded-for');
+  return (vercelForwarded ?? developmentForwarded)?.split(',')[0]?.trim() || 'unknown';
+}
+
+async function rateLimited(
+  admin: ReturnType<typeof createAdminClient>,
+  request: Request,
+): Promise<{ limited: boolean; error: string | null }> {
+  const key = createHmac('sha256', getBetaFormRateLimitSecret())
+    .update(`waitlist:${trustedClientIdentifier(request)}`)
+    .digest('hex');
+  const { data, error } = await admin.rpc('consume_beta_rate_limit', {
+    p_key_hash: key,
+    p_limit: 5,
+    p_window_seconds: 3600,
+  });
+  return { limited: data === true, error: error?.message ?? null };
 }
 
 export async function POST(request: Request) {
-  if (Number(request.headers.get('content-length') ?? 0) > 20_000) return NextResponse.json({ ok: false, error: 'Request too large.' }, { status: 413 });
-  if (rateLimited(request)) return NextResponse.json({ ok: false, error: 'Too many requests. Try again later.' }, { status: 429 });
+  const admin = createAdminClient();
+  const rateLimit = await rateLimited(admin, request);
+  if (rateLimit.error) {
+    console.error('[beta/waitlist] rate-limit lookup failed', { error: rateLimit.error });
+    return NextResponse.json({ ok: false, error: 'Unable to join right now.' }, { status: 500 });
+  }
+  if (rateLimit.limited) return NextResponse.json({ ok: false, error: 'Too many requests. Try again later.' }, { status: 429 });
 
-  let input: unknown;
-  try { input = await request.json(); } catch { return NextResponse.json({ ok: false, error: 'Request body must be valid JSON.' }, { status: 400 }); }
+  const parsed = await readBoundedJson(request, 20_000);
+  if (!parsed.ok && parsed.reason === 'too_large') return NextResponse.json({ ok: false, error: 'Request too large.' }, { status: 413 });
+  if (!parsed.ok) return NextResponse.json({ ok: false, error: 'Request body must be valid JSON.' }, { status: 400 });
+  const input = parsed.value;
   if (!input || typeof input !== 'object' || Array.isArray(input)) return NextResponse.json({ ok: false, error: 'Request body must be an object.' }, { status: 400 });
   const body = input as Record<string, unknown>;
   if (body.website) return NextResponse.json({ ok: true });
@@ -45,7 +62,6 @@ export async function POST(request: Request) {
   const optionalContext = typeof body.optional_context === 'string' ? body.optional_context.trim() : '';
   if (optionalContext.length > 500) return NextResponse.json({ ok: false, error: 'Context must be at most 500 characters.' }, { status: 400 });
 
-  const admin = createAdminClient();
   const { error } = await admin.from('beta_waitlist').upsert({
     email,
     email_normalized: email,

@@ -27,6 +27,7 @@ export async function PUT(request: Request, context: RouteContext) {
   if (typeof body.outcome !== 'string' || !OUTCOMES.has(body.outcome as FeedbackOutcome)) return NextResponse.json({ ok: false, error: 'Invalid outcome.' }, { status: 400 });
   if (body.rider_confidence != null && (!Number.isInteger(body.rider_confidence) || Number(body.rider_confidence) < 1 || Number(body.rider_confidence) > 5)) return NextResponse.json({ ok: false, error: 'rider_confidence must be 1–5.' }, { status: 400 });
   if (body.recommendation_helpfulness != null && (!Number.isInteger(body.recommendation_helpfulness) || Number(body.recommendation_helpfulness) < 1 || Number(body.recommendation_helpfulness) > 5)) return NextResponse.json({ ok: false, error: 'recommendation_helpfulness must be 1–5.' }, { status: 400 });
+  if (body.recommendation_id == null && body.recommendation_helpfulness != null) return NextResponse.json({ ok: false, error: 'recommendation_helpfulness requires recommendation_id.' }, { status: 400 });
   if (!Array.isArray(body.symptoms) || body.symptoms.length > 8 || !body.symptoms.every((item) => typeof item === 'string' && item.length <= 64)) return NextResponse.json({ ok: false, error: 'symptoms must contain up to 8 short strings.' }, { status: 400 });
   if (body.notes != null && (typeof body.notes !== 'string' || body.notes.length > 1000)) return NextResponse.json({ ok: false, error: 'notes must be at most 1000 characters.' }, { status: 400 });
 

@@ -32,6 +32,7 @@ import {
   getPreviousSession,
   getSessionEnvironments,
   getTelemetrySummaries,
+  replaceSessionLaps,
 } from '@/lib/actions/sessions';
 import { COMPARABLE_SESSION_FETCH_LIMIT, COMPARABLE_SESSION_LIMIT } from '@/lib/session-compare';
 import type {
@@ -176,7 +177,7 @@ describe('sessions actions', () => {
       expect(table).toBe('sessions');
       return countQuery;
     });
-    vi.mocked(createClient).mockResolvedValue({ from } as never);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
     const result = await createSession(validInput);
 
@@ -211,7 +212,7 @@ describe('sessions actions', () => {
       .mockImplementation(() =>
         createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
       );
-    vi.mocked(createClient).mockResolvedValue({ from } as never);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
     const result = await createSession({
       ...validInput,
@@ -262,7 +263,7 @@ describe('sessions actions', () => {
         expect(table).toBe('sessions');
         return rollbackQuery;
       });
-    vi.mocked(createClient).mockResolvedValue({ from } as never);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
     const result = await createSession({
       ...validInput,
@@ -317,7 +318,7 @@ describe('sessions actions', () => {
         expect(table).toBe('session_changes');
         return changesInsertQuery;
       });
-    vi.mocked(createClient).mockResolvedValue({ from } as never);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
     const result = await createSession(validInput);
 
@@ -348,7 +349,7 @@ describe('sessions actions', () => {
       .mockImplementationOnce(() => previousQuery)
       .mockImplementationOnce(() => baselineQuery)
       .mockImplementationOnce(() => changesInsertQuery);
-    vi.mocked(createClient).mockResolvedValue({ from } as never);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
     const result = await createSession(validInput);
 
@@ -373,7 +374,7 @@ describe('sessions actions', () => {
       .mockImplementationOnce(() => vehicleQuery)
       .mockImplementationOnce(() => previousQuery)
       .mockImplementationOnce(() => baselineQuery);
-    vi.mocked(createClient).mockResolvedValue({ from } as never);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
     const result = await createSession(validInput);
 
@@ -400,7 +401,7 @@ describe('sessions actions', () => {
       .mockImplementationOnce(() => previousQuery)
       .mockImplementationOnce(() => baselineQuery)
       .mockImplementationOnce(() => changesInsertQuery);
-    vi.mocked(createClient).mockResolvedValue({ from } as never);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
     const result = await createSession(validInput);
 
@@ -434,7 +435,7 @@ describe('sessions actions', () => {
       .mockImplementationOnce(() => vehicleQuery)
       .mockImplementationOnce(() => previousQuery)
       .mockImplementationOnce(() => baselineQuery);
-    vi.mocked(createClient).mockResolvedValue({ from } as never);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
     const result = await createSession(validInput);
 
@@ -483,7 +484,7 @@ describe('sessions actions', () => {
       expect(table).toBe('sessions');
       return previousQuery;
     });
-    vi.mocked(createClient).mockResolvedValue({ from } as never);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
     const result = await getPreviousSession(current);
 
@@ -533,7 +534,7 @@ describe('sessions actions', () => {
       expect(table).toBe('sessions');
       return comparableQuery;
     });
-    vi.mocked(createClient).mockResolvedValue({ from } as never);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
     const result = await getComparableSessions(current);
 
@@ -569,7 +570,7 @@ describe('sessions actions', () => {
       expect(table).toBe('session_environment');
       return environmentQuery;
     });
-    vi.mocked(createClient).mockResolvedValue({ from } as never);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
     const result = await getSessionEnvironments(['session-1']);
 
@@ -601,7 +602,7 @@ describe('sessions actions', () => {
       expect(table).toBe('telemetry_summaries');
       return telemetryQuery;
     });
-    vi.mocked(createClient).mockResolvedValue({ from } as never);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
     const result = await getTelemetrySummaries(['session-1']);
 
@@ -614,6 +615,40 @@ describe('sessions actions', () => {
 
     expect(result).toEqual([]);
     expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it('aborts lap replacement when the session lookup fails', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    const sessionQuery = createQuery({
+      single: { data: null, error: { message: 'snapshot failed' } },
+    });
+    const from = vi.fn(() => sessionQuery);
+    const rpc = vi.fn();
+    vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
+
+    const result = await replaceSessionLaps('session-1', []);
+
+    expect(result).toEqual({ ok: false, error: 'snapshot failed' });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('returns the transactional RPC error when lap replacement fails', async () => {
+    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    const sessionQuery = createQuery({
+      single: { data: createdSession, error: null },
+    });
+    const from = vi.fn(() => sessionQuery);
+    const rpc = vi.fn(async () => ({ data: null, error: { message: 'lap transaction failed' } }));
+    vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
+
+    const result = await replaceSessionLaps('sess-1', []);
+
+    expect(result).toEqual({ ok: false, error: 'lap transaction failed' });
+    expect(rpc).toHaveBeenCalledWith('replace_session_laps', {
+      p_user_id: 'user-1',
+      p_session_id: 'sess-1',
+      p_laps: [],
+    });
   });
 
   it('returns demo telemetry summaries without calling Supabase', async () => {

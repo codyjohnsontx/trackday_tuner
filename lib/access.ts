@@ -14,9 +14,12 @@ export function resolveUserAccess(
     };
   }
 
+  const betaAccessStartedAt = profile?.beta_access_started_at ?? null;
   const betaAccessExpiresAt = profile?.beta_access_expires_at ?? null;
   const betaActive = Boolean(
-    betaAccessExpiresAt && new Date(betaAccessExpiresAt).getTime() > now.getTime(),
+    betaAccessExpiresAt &&
+      new Date(betaAccessExpiresAt).getTime() > now.getTime() &&
+      (!betaAccessStartedAt || new Date(betaAccessStartedAt).getTime() <= now.getTime()),
   );
 
   return {

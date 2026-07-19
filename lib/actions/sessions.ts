@@ -24,7 +24,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
-import { aggregateLaps, validateLaps } from '@/lib/lap-times';
+import { validateLaps } from '@/lib/lap-times';
 import {
   baselineReferenceLabel,
   baselineToComparableSession,
@@ -41,7 +41,7 @@ import type {
   SessionEnvironment,
   SessionLap,
   TelemetrySummary,
-  TelemetryMetrics,
+  Json,
   VehicleBaseline,
   VehicleType,
 } from '@/types';
@@ -65,51 +65,14 @@ async function persistSessionLaps(params: {
   userId: string;
   session: Session;
   laps: CreateSessionLapInput[];
-  clearWhenEmpty?: boolean;
 }): Promise<string | null> {
   const validationError = validateLaps(params.laps);
   if (validationError) return validationError;
-
-  if (params.laps.length > 0) {
-    const rows: TableInsert<'session_laps'>[] = params.laps.map((lap) => ({
-      user_id: params.userId,
-      session_id: params.session.id,
-      lap_number: lap.lap_number,
-      lap_time_ms: lap.lap_time_ms,
-      included: lap.included,
-      source: 'manual',
-    }));
-    const { error } = await params.supabase.from('session_laps').insert(rows);
-    if (error) return error.message;
-  }
-
-  const metrics = aggregateLaps(params.laps);
-  if (params.laps.length === 0) {
-    if (!params.clearWhenEmpty) return null;
-    const { error } = await params.supabase
-      .from('telemetry_summaries')
-      .delete()
-      .eq('user_id', params.userId)
-      .eq('session_id', params.session.id)
-      .eq('source', 'manual');
-    return error?.message ?? null;
-  }
-
-  const telemetryMetrics: TelemetryMetrics = {
-    lap_count: metrics.lap_count,
-    best_lap_ms: metrics.best_lap_ms,
-    average_lap_ms: metrics.average_lap_ms,
-    consistency_spread_ms: metrics.consistency_spread_ms,
-    lap_times_ms: metrics.lap_times_ms,
-  };
-  const { error } = await params.supabase.from('telemetry_summaries').upsert({
-    user_id: params.userId,
-    session_id: params.session.id,
-    vehicle_id: params.session.vehicle_id,
-    source: 'manual',
-    summary: `${metrics.lap_count} included manual laps`,
-    metrics: telemetryMetrics,
-  }, { onConflict: 'session_id' });
+  const { error } = await params.supabase.rpc('replace_session_laps', {
+    p_user_id: params.userId,
+    p_session_id: params.session.id,
+    p_laps: params.laps as unknown as Json,
+  });
   return error?.message ?? null;
 }
 
@@ -425,7 +388,18 @@ export async function createSession(
     laps: input.laps ?? [],
   });
   if (lapError) {
-    await supabase.from('sessions').delete().eq('id', createdSession.id).eq('user_id', user.id);
+    const { error: rollbackError } = await supabase
+      .from('sessions')
+      .delete()
+      .eq('id', createdSession.id)
+      .eq('user_id', user.id);
+    if (rollbackError) {
+      console.error('[sessions] session rollback after lap failure failed', {
+        userId: user.id,
+        sessionId: createdSession.id,
+        error: rollbackError.message,
+      });
+    }
     return { ok: false, error: lapError };
   }
 
@@ -582,47 +556,23 @@ export async function replaceSessionLaps(
   const user = await getAuthenticatedUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
   const supabase = await createClient();
-  const { data: sessionRow } = await supabase
+  const { data: sessionRow, error: sessionError } = await supabase
     .from('sessions')
     .select('*')
     .eq('id', sessionId)
     .eq('user_id', user.id)
     .single();
-  if (!sessionRow) return { ok: false, error: 'Session not found.' };
-
-  const { data: previousRows } = await supabase
-    .from('session_laps')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('session_id', sessionId);
-
-  const { error: deleteError } = await supabase
-    .from('session_laps')
-    .delete()
-    .eq('user_id', user.id)
-    .eq('session_id', sessionId);
-  if (deleteError) return { ok: false, error: deleteError.message };
+  if (sessionError || !sessionRow) {
+    return { ok: false, error: sessionError?.message ?? 'Session not found.' };
+  }
 
   const persistError = await persistSessionLaps({
     supabase,
     userId: user.id,
     session: sessionRow as Session,
     laps,
-    clearWhenEmpty: true,
   });
-  if (persistError) {
-    if ((previousRows ?? []).length > 0) {
-      await supabase.from('session_laps').insert((previousRows ?? []).map((row) => ({
-        user_id: row.user_id,
-        session_id: row.session_id,
-        lap_number: row.lap_number,
-        lap_time_ms: row.lap_time_ms,
-        included: row.included,
-        source: row.source,
-      })));
-    }
-    return { ok: false, error: persistError };
-  }
+  if (persistError) return { ok: false, error: persistError };
 
   revalidatePath(`/sessions/${sessionId}`);
   const updated = await getSessionLaps(sessionId);

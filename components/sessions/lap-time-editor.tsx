@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { aggregateLaps, formatLapTimeInput, parseLapList, parseLapTime } from '@/lib/lap-times';
+import { aggregateLaps, formatLapTimeInput, parseLapList, parseLapTime, validateLaps } from '@/lib/lap-times';
 import type { CreateSessionLapInput } from '@/types';
 
 interface LapTimeEditorProps {
@@ -38,6 +38,10 @@ export function LapTimeEditor({ value, onChange, onValidationChange }: LapTimeEd
   function addPastedLaps() {
     const parsed = parseLapList(pasteValue);
     const errors = parsed.flatMap((line) => (line.error ? [line.error] : []));
+    if (errors.length > 0) {
+      report(errors.join(' '));
+      return;
+    }
     const existingNumbers = new Set(value.map((lap) => lap.lap_number));
     let nextNumber = value.reduce((max, lap) => Math.max(max, lap.lap_number), 0) + 1;
     const valid = parsed.flatMap((line) => {
@@ -47,11 +51,13 @@ export function LapTimeEditor({ value, onChange, onValidationChange }: LapTimeEd
       existingNumbers.add(lapNumber);
       return [{ ...line.lap, lap_number: lapNumber }];
     });
-    if (valid.length > 0) onChange([...value, ...valid].sort((a, b) => a.lap_number - b.lap_number));
-    if (errors.length > 0) {
-      report(`${valid.length} valid lap${valid.length === 1 ? '' : 's'} added. ${errors.join(' ')}`);
+    const candidate = [...value, ...valid].sort((a, b) => a.lap_number - b.lap_number);
+    const validationError = validateLaps(candidate);
+    if (validationError) {
+      report(validationError);
       return;
     }
+    onChange(candidate);
     setPasteValue('');
     report('');
   }

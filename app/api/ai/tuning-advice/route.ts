@@ -674,7 +674,11 @@ export async function POST(request: Request) {
 
     const policyResult = evaluateAdvicePolicy({
       advice: result.advice,
-      fallbackDataUsed: raceEngineerContext.dataUsed,
+      fallbackDataUsed: {
+        ...raceEngineerContext.dataUsed,
+        weather:
+          validated.data.temperature_c != null || raceEngineerContext.dataUsed.weather,
+      },
       validSessionIds: validRaceEngineerSessionIds({
         session,
         similarSessionIds: raceEngineerContext.similarSessions.map((item) => item.session.id),

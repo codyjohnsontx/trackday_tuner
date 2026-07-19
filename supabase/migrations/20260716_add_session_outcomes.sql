@@ -1,3 +1,8 @@
+alter table public.profiles
+  add column if not exists beta_cohort text,
+  add column if not exists beta_access_started_at timestamptz,
+  add column if not exists beta_access_expires_at timestamptz;
+
 alter table public.session_feedback
   add column if not exists reference_session_id uuid references public.sessions(id) on delete set null,
   add column if not exists recommendation_helpfulness smallint;
@@ -59,11 +64,27 @@ declare
   saved_feedback public.session_feedback%rowtype;
   outcome_best integer;
   reference_best integer;
+  tracks_match boolean;
   latest_summary text;
   feedback_count integer;
 begin
   if auth.uid() is null or auth.uid() <> p_user_id then
     raise exception 'save_session_outcome caller mismatch';
+  end if;
+
+  if not exists (
+    select 1
+    from public.profiles p
+    where p.id = p_user_id
+      and (
+        p.tier = 'pro'
+        or (
+          p.beta_access_expires_at > now()
+          and (p.beta_access_started_at is null or p.beta_access_started_at <= now())
+        )
+      )
+  ) then
+    raise exception 'save_session_outcome requires pro access';
   end if;
 
   if p_outcome not in ('better', 'same', 'worse', 'unknown') then
@@ -85,6 +106,16 @@ begin
   if outcome_session.vehicle_id <> reference_session.vehicle_id then
     raise exception 'session vehicle mismatch';
   end if;
+
+  tracks_match := (
+    outcome_session.track_id is not null
+    and reference_session.track_id is not null
+    and outcome_session.track_id = reference_session.track_id
+  ) or (
+    (outcome_session.track_id is null or reference_session.track_id is null)
+    and nullif(lower(btrim(coalesce(outcome_session.track_name, ''))), '') is not null
+    and lower(btrim(outcome_session.track_name)) = lower(btrim(reference_session.track_name))
+  );
 
   if (reference_session.date, coalesce(reference_session.start_time, '00:00'::time), reference_session.created_at)
      >= (outcome_session.date, coalesce(outcome_session.start_time, '00:00'::time), outcome_session.created_at) then
@@ -154,7 +185,7 @@ begin
     p_rider_confidence,
     coalesce(p_symptoms, '{}'::text[]),
     nullif(btrim(coalesce(p_notes, '')), ''),
-    case when outcome_best is not null and reference_best is not null
+    case when tracks_match and outcome_best is not null and reference_best is not null
       then outcome_best - reference_best else null end,
     p_recommendation_helpfulness,
     now()

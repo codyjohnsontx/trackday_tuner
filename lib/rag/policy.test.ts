@@ -268,6 +268,28 @@ describe('evaluateAdvicePolicy', () => {
     expect(result.advice.confidence).toBe('medium');
   });
 
+  it('allows high confidence when citations and structured lap data provide support', () => {
+    const advice = buildAdvice({
+      confidence: 'high',
+      personal_evidence: [],
+      data_used: {
+        manual: true,
+        weather: false,
+        history: false,
+        feedback: false,
+        lap_data: true,
+        telemetry: false,
+      },
+    });
+    const result = evaluateAdvicePolicy({
+      advice,
+      fallbackDataUsed: advice.data_used,
+    });
+    expect(result.decision).toBe('allow');
+    expect(result.advice.confidence).toBe('high');
+    expect(result.violations).toEqual([]);
+  });
+
   it('forces refusal when refusal and changes both exist', () => {
     const result = evaluateAdvicePolicy({
       advice: buildAdvice({

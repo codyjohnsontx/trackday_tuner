@@ -1,20 +1,9 @@
 #!/usr/bin/env node
 import { createHmac, randomBytes } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
+import { loadEnvFiles } from './lib/env.mjs';
 
-for (const filename of ['.env.local', '.env']) {
-  const filePath = path.resolve(process.cwd(), filename);
-  if (!existsSync(filePath)) continue;
-  for (const line of readFileSync(filePath, 'utf8').split(/\r?\n/)) {
-    const match = line.trim().match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (!match || process.env[match[1]] !== undefined) continue;
-    let value = match[2].trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
-    process.env[match[1]] = value;
-  }
-}
+loadEnvFiles();
 
 function required(name) {
   const value = process.env[name]?.trim();
@@ -46,7 +35,16 @@ const expires = new Date(); expires.setUTCDate(expires.getUTCDate() + days);
 const { data: waitlist } = await supabase.from('beta_waitlist').select('id').eq('email_normalized', email).maybeSingle();
 const { error } = await supabase.from('beta_invites').insert({ waitlist_id: waitlist?.id ?? null, email_normalized: email, code_hash: codeHash, cohort, expires_at: expires.toISOString() });
 if (error) { console.error(`[beta:invite] ${error.message}`); process.exit(1); }
-if (waitlist) await supabase.from('beta_waitlist').update({ status: 'invited' }).eq('id', waitlist.id);
+if (waitlist) {
+  const { error: waitlistUpdateError } = await supabase
+    .from('beta_waitlist')
+    .update({ status: 'invited' })
+    .eq('id', waitlist.id);
+  if (waitlistUpdateError) {
+    console.error(`[beta:invite] ${waitlistUpdateError.message}`);
+    process.exit(1);
+  }
+}
 console.log(`Invitation created for ${email}`);
 console.log(`Code: ${code}`);
 console.log(`Expires: ${expires.toISOString()}`);

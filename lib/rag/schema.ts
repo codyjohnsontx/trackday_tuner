@@ -263,6 +263,12 @@ export function parseAdviceResponse(value: unknown): ParseResult<AdviceResponse>
     return { ok: false, error: 'Response is not an object.' };
   }
   const v = value as Record<string, unknown>;
+  const normalizedDataUsed =
+    v.data_used === undefined
+      ? EMPTY_DATA_USED
+      : isPlainObject(v.data_used) && !Object.prototype.hasOwnProperty.call(v.data_used, 'lap_data')
+        ? { ...v.data_used, lap_data: false }
+        : v.data_used;
 
   if (!isString(v.summary)) return { ok: false, error: 'summary must be a string.' };
   if (!Array.isArray(v.recommended_changes) || !v.recommended_changes.every(isRecommendedChange)) {
@@ -293,7 +299,7 @@ export function parseAdviceResponse(value: unknown): ParseResult<AdviceResponse>
   ) {
     return { ok: false, error: 'personal_evidence must be an array of evidence objects.' };
   }
-  if (v.data_used !== undefined && !isAdviceDataUsed(v.data_used)) {
+  if (!isAdviceDataUsed(normalizedDataUsed)) {
     return { ok: false, error: 'data_used must be a valid data-used object.' };
   }
   if (v.refusal !== undefined && !isNullableString(v.refusal)) {
@@ -311,7 +317,7 @@ export function parseAdviceResponse(value: unknown): ParseResult<AdviceResponse>
       citations: v.citations as AdviceCitation[],
       prediction: (v.prediction ?? EMPTY_PREDICTION) as AdvicePrediction,
       personal_evidence: (v.personal_evidence ?? []) as PersonalEvidence[],
-      data_used: (v.data_used ?? EMPTY_DATA_USED) as AdviceDataUsed,
+      data_used: normalizedDataUsed,
       refusal: (v.refusal ?? null) as string | null,
     },
   };

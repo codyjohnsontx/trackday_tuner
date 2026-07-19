@@ -31,6 +31,13 @@ describe('resolveUserAccess', () => {
     expect(resolveUserAccess(profile({ beta_access_expires_at: now.toISOString() }), now).hasProAccess).toBe(false);
   });
 
+  it('denies beta access before a future start timestamp', () => {
+    expect(resolveUserAccess(profile({
+      beta_access_started_at: '2026-07-17T12:00:00.000Z',
+      beta_access_expires_at: '2026-08-01T00:00:00.000Z',
+    }), now).hasProAccess).toBe(false);
+  });
+
   it('keeps Stripe Pro active after beta expiration', () => {
     expect(resolveUserAccess(profile({ tier: 'pro', beta_access_expires_at: '2026-01-01T00:00:00.000Z' }), now)).toMatchObject({
       hasProAccess: true,

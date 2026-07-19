@@ -311,7 +311,7 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
     getComparableSessions(session),
     getSessionOutcome(session.id),
     getVehicleOutcomeHistory(session.vehicle_id),
-    getOutstandingRecommendations({ vehicleId: session.vehicle_id, beforeSessionId: session.id, beforeDate: session.date }),
+    getOutstandingRecommendations({ vehicleId: session.vehicle_id, beforeSessionId: session.id }),
   ]);
   const tier = effectiveTier(profile);
   const vehicle = vehicles.find((v) => v.id === session.vehicle_id);

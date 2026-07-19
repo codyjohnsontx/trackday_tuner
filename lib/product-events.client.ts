@@ -2,9 +2,11 @@
 
 import type { Json, ProductEventName } from '@/types/supabase';
 
+export type ProductEventProperties = { [key: string]: Json | undefined };
+
 export function trackProductEvent(
   eventName: ProductEventName,
-  details: { session_id?: string; vehicle_id?: string; properties?: Json } = {},
+  details: { session_id?: string; vehicle_id?: string; properties?: ProductEventProperties } = {},
 ) {
   if (eventName === 'beta_signup_completed') return;
   void fetch('/api/events', {
