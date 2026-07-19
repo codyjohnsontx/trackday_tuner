@@ -6,11 +6,12 @@ import { DemoBanner } from '@/components/demo/demo-banner';
 import { isDemoMode } from '@/lib/demo/mode';
 import { TrackListClient } from '@/components/tracks/track-list-client';
 import { Button } from '@/components/ui/button';
+import { resolveUserAccess } from '@/lib/access';
 
 export default async function TracksPage() {
   const [tracks, profile, demoMode] = await Promise.all([getTracks(), getUserProfile(), isDemoMode()]);
   const customTracks = tracks.filter((track) => !track.is_seeded);
-  const isFree = !profile || profile.tier === 'free';
+  const isFree = !resolveUserAccess(profile).hasProAccess;
   const atTrackLimit = isFree && customTracks.length >= 3;
 
   return (

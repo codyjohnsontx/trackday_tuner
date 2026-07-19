@@ -11,13 +11,15 @@ type AuthMode = 'sign-in' | 'sign-up';
 
 interface AuthFormProps {
   providers: OAuthProviderConfig[];
+  inviteOnly?: boolean;
 }
 
-export function AuthForm({ providers: oauthProviders }: AuthFormProps) {
+export function AuthForm({ providers: oauthProviders, inviteOnly = false }: AuthFormProps) {
   const router = useRouter();
   const [mode, setMode] = useState<AuthMode>('sign-in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -47,9 +49,8 @@ export function AuthForm({ providers: oauthProviders }: AuthFormProps) {
     setErrorMessage('');
     setInfoMessage('');
 
-    const supabase = createClient();
-
     if (mode === 'sign-in') {
+      const supabase = createClient();
       const { error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
@@ -62,6 +63,38 @@ export function AuthForm({ providers: oauthProviders }: AuthFormProps) {
       router.refresh();
       return;
     }
+
+    if (inviteOnly) {
+      try {
+        const response = await fetch('/api/beta/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, invite_code: inviteCode }),
+        });
+        const result = await response.json() as { ok: boolean; error?: string };
+        if (!response.ok || !result.ok) {
+          setErrorMessage(result.error ?? 'Unable to create your account.');
+          return;
+        }
+
+        const supabase = createClient();
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+          setInfoMessage('Account created. Sign in with your email and password.');
+          setMode('sign-in');
+          return;
+        }
+        router.replace('/dashboard');
+        router.refresh();
+      } catch {
+        setErrorMessage('Unable to create your account right now. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    const supabase = createClient();
 
     const { data, error } = await supabase.auth.signUp({ email, password });
 
@@ -84,9 +117,11 @@ export function AuthForm({ providers: oauthProviders }: AuthFormProps) {
   return (
     <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
       <h1 className="text-2xl font-bold text-zinc-100">Get on track</h1>
-      <p className="text-sm text-zinc-400">Log setups, compare sessions, dial in your ride.</p>
+      <p className="text-sm text-zinc-400">
+        {inviteOnly ? 'Founding Beta access for invited riders.' : 'Log setups, compare sessions, dial in your ride.'}
+      </p>
 
-      <div className="space-y-2">
+      {!inviteOnly ? <div className="space-y-2">
         {oauthProviders.map((provider) => (
           <div key={provider.id} className="space-y-1">
             <Button
@@ -104,13 +139,13 @@ export function AuthForm({ providers: oauthProviders }: AuthFormProps) {
             ) : null}
           </div>
         ))}
-      </div>
+      </div> : null}
 
-      <div className="flex items-center gap-2">
+      {!inviteOnly ? <div className="flex items-center gap-2">
         <span className="h-px flex-1 bg-zinc-800" />
         <span className="text-xs uppercase tracking-wide text-zinc-400">or</span>
         <span className="h-px flex-1 bg-zinc-800" />
-      </div>
+      </div> : null}
 
       <div className="grid grid-cols-2 gap-2 rounded-xl bg-zinc-950 p-1">
         <Button
@@ -139,6 +174,16 @@ export function AuthForm({ providers: oauthProviders }: AuthFormProps) {
           placeholder="you@tracktuner.app"
           required
         />
+        {mode === 'sign-up' && inviteOnly ? (
+          <Input
+            label="Invitation code"
+            value={inviteCode}
+            onChange={(event) => setInviteCode(event.target.value)}
+            autoComplete="one-time-code"
+            placeholder="Your beta invitation code"
+            required
+          />
+        ) : null}
         <Input
           label="Password"
           type="password"
@@ -157,6 +202,9 @@ export function AuthForm({ providers: oauthProviders }: AuthFormProps) {
 
       {errorMessage ? <p className="text-sm text-rose-300">{errorMessage}</p> : null}
       {infoMessage ? <p className="text-sm text-emerald-300">{infoMessage}</p> : null}
+      {inviteOnly && mode === 'sign-up' ? (
+        <p className="text-xs text-zinc-500">No invitation yet? Join the waitlist from the home page.</p>
+      ) : null}
     </section>
   );
 }

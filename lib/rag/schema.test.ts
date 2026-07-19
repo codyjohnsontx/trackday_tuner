@@ -34,6 +34,21 @@ describe('parseAdviceResponse', () => {
     if (result.ok) expect(result.data.refusal).toBeNull();
   });
 
+  it('normalizes legacy data_used objects that predate lap_data', () => {
+    const result = parseAdviceResponse({
+      ...validResponse,
+      data_used: {
+        manual: true,
+        weather: false,
+        history: false,
+        feedback: false,
+        telemetry: false,
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.data_used.lap_data).toBe(false);
+  });
+
   it('rejects missing summary', () => {
     const broken: Record<string, unknown> = { ...validResponse };
     delete broken.summary;

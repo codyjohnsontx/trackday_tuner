@@ -32,6 +32,7 @@ export interface AdviceDataUsed {
   weather: boolean;
   history: boolean;
   feedback: boolean;
+  lap_data: boolean;
   telemetry: boolean;
 }
 
@@ -138,12 +139,13 @@ export const adviceResponseJsonSchema = {
       data_used: {
         type: 'object',
         additionalProperties: false,
-        required: ['manual', 'weather', 'history', 'feedback', 'telemetry'],
+        required: ['manual', 'weather', 'history', 'feedback', 'lap_data', 'telemetry'],
         properties: {
           manual: { type: 'boolean' },
           weather: { type: 'boolean' },
           history: { type: 'boolean' },
           feedback: { type: 'boolean' },
+          lap_data: { type: 'boolean' },
           telemetry: { type: 'boolean' },
         },
       },
@@ -190,7 +192,7 @@ const RECOMMENDED_CHANGE_KEYS = ['component', 'direction', 'magnitude', 'reason'
 const CITATION_KEYS = ['source', 'snippet'] as const;
 const PREDICTION_KEYS = ['expected_effect', 'day_trend', 'watch_items'] as const;
 const PERSONAL_EVIDENCE_KEYS = ['label', 'detail', 'source_session_id'] as const;
-const DATA_USED_KEYS = ['manual', 'weather', 'history', 'feedback', 'telemetry'] as const;
+const DATA_USED_KEYS = ['manual', 'weather', 'history', 'feedback', 'lap_data', 'telemetry'] as const;
 
 function isRecommendedChange(value: unknown): value is RecommendedChange {
   if (!isPlainObject(value)) return false;
@@ -246,6 +248,7 @@ const EMPTY_DATA_USED: AdviceDataUsed = {
   weather: false,
   history: false,
   feedback: false,
+  lap_data: false,
   telemetry: false,
 };
 
@@ -260,6 +263,12 @@ export function parseAdviceResponse(value: unknown): ParseResult<AdviceResponse>
     return { ok: false, error: 'Response is not an object.' };
   }
   const v = value as Record<string, unknown>;
+  const normalizedDataUsed =
+    v.data_used === undefined
+      ? EMPTY_DATA_USED
+      : isPlainObject(v.data_used) && !Object.prototype.hasOwnProperty.call(v.data_used, 'lap_data')
+        ? { ...v.data_used, lap_data: false }
+        : v.data_used;
 
   if (!isString(v.summary)) return { ok: false, error: 'summary must be a string.' };
   if (!Array.isArray(v.recommended_changes) || !v.recommended_changes.every(isRecommendedChange)) {
@@ -290,7 +299,7 @@ export function parseAdviceResponse(value: unknown): ParseResult<AdviceResponse>
   ) {
     return { ok: false, error: 'personal_evidence must be an array of evidence objects.' };
   }
-  if (v.data_used !== undefined && !isAdviceDataUsed(v.data_used)) {
+  if (!isAdviceDataUsed(normalizedDataUsed)) {
     return { ok: false, error: 'data_used must be a valid data-used object.' };
   }
   if (v.refusal !== undefined && !isNullableString(v.refusal)) {
@@ -308,7 +317,7 @@ export function parseAdviceResponse(value: unknown): ParseResult<AdviceResponse>
       citations: v.citations as AdviceCitation[],
       prediction: (v.prediction ?? EMPTY_PREDICTION) as AdvicePrediction,
       personal_evidence: (v.personal_evidence ?? []) as PersonalEvidence[],
-      data_used: (v.data_used ?? EMPTY_DATA_USED) as AdviceDataUsed,
+      data_used: normalizedDataUsed,
       refusal: (v.refusal ?? null) as string | null,
     },
   };

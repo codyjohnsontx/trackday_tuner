@@ -32,6 +32,7 @@ const DATA_USED_LABELS: Record<string, string> = {
   weather: 'Weather Data',
   history: 'Session History',
   feedback: 'Past Feedback',
+  lap_data: 'Lap Data',
   telemetry: 'Telemetry',
 };
 
@@ -96,6 +97,7 @@ const demoDayPlanAdvice: AdviceResponse = {
     weather: true,
     history: true,
     feedback: false,
+    lap_data: false,
     telemetry: false,
   },
   refusal: null,

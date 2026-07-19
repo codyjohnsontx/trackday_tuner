@@ -168,6 +168,7 @@ function hasSupportForHighConfidence(
     (hasVerifiedPersonalEvidence(advice, validSessionIds) ||
       advice.data_used.history ||
       advice.data_used.feedback ||
+      advice.data_used.lap_data ||
       advice.data_used.telemetry)
   );
 }

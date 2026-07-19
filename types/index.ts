@@ -14,6 +14,8 @@ import type {
   SessionCondition,
   SessionEnabledModules,
   SessionModuleKey,
+  SessionLapSource,
+  ProductEventName,
   Suspension,
   SuspensionDirection,
   SuspensionEnd,
@@ -42,6 +44,8 @@ export type {
   SessionCondition,
   SessionEnabledModules,
   SessionModuleKey,
+  SessionLapSource,
+  ProductEventName,
   Suspension,
   SuspensionDirection,
   SuspensionEnd,
@@ -64,6 +68,11 @@ export type AiRecommendation = Tables<'ai_recommendations'>;
 export type SessionFeedback = Tables<'session_feedback'>;
 export type RaceEngineerMemory = Tables<'race_engineer_memory'>;
 export type TelemetrySummary = Tables<'telemetry_summaries'>;
+export type SessionLap = Tables<'session_laps'>;
+export type BetaWaitlistEntry = Tables<'beta_waitlist'>;
+export type BetaInvite = Tables<'beta_invites'>;
+export type ProductEvent = Tables<'product_events'>;
+export type BetaFeedback = Tables<'beta_feedback'>;
 export type SagEntry = Tables<'sag_entries'>;
 
 export interface CreateVehicleInput {
@@ -103,6 +112,21 @@ export interface CreateSessionInput {
   extra_modules?: ExtraModules | null;
   environment?: CreateSessionEnvironmentInput | null;
   notes?: string | null;
+  laps?: CreateSessionLapInput[];
+  capture_duration_ms?: number | null;
+}
+
+export interface CreateSessionLapInput {
+  lap_number: number;
+  lap_time_ms: number;
+  included: boolean;
+}
+
+export interface UserAccess {
+  billingTier: Tier;
+  hasProAccess: boolean;
+  source: 'free' | 'stripe' | 'beta';
+  betaAccessExpiresAt: string | null;
 }
 
 export interface CreateSessionEnvironmentInput {

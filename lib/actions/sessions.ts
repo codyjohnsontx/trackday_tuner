@@ -23,6 +23,8 @@ import {
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
+import { resolveUserAccess } from '@/lib/access';
+import { validateLaps } from '@/lib/lap-times';
 import {
   baselineReferenceLabel,
   baselineToComparableSession,
@@ -34,9 +36,12 @@ import type {
   ActionResult,
   CreateSessionEnvironmentInput,
   CreateSessionInput,
+  CreateSessionLapInput,
   Session,
   SessionEnvironment,
+  SessionLap,
   TelemetrySummary,
+  Json,
   VehicleBaseline,
   VehicleType,
 } from '@/types';
@@ -53,6 +58,22 @@ function hasEnvironmentValues(environment: CreateSessionEnvironmentInput | null 
     if (typeof value === 'number') return Number.isFinite(value);
     return Boolean(value?.trim());
   });
+}
+
+async function persistSessionLaps(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  userId: string;
+  session: Session;
+  laps: CreateSessionLapInput[];
+}): Promise<string | null> {
+  const validationError = validateLaps(params.laps);
+  if (validationError) return validationError;
+  const { error } = await params.supabase.rpc('replace_session_laps', {
+    p_user_id: params.userId,
+    p_session_id: params.session.id,
+    p_laps: params.laps as unknown as Json,
+  });
+  return error?.message ?? null;
 }
 
 export async function getSessions(vehicleId?: string, limit?: number): Promise<Session[]> {
@@ -264,6 +285,35 @@ export async function getTelemetrySummaries(sessionIds: string[]): Promise<Telem
   return (data ?? []) as TelemetrySummary[];
 }
 
+export async function getSessionLaps(sessionId: string): Promise<SessionLap[]> {
+  if (await isDemoMode()) {
+    const summary = getDemoTelemetrySummaries([sessionId])[0];
+    const times = summary?.metrics.lap_times_ms ?? [];
+    return times.map((lapTime, index) => ({
+      id: `demo-lap-${sessionId}-${index + 1}`,
+      user_id: '00000000-0000-0000-0000-000000000001',
+      session_id: sessionId,
+      lap_number: index + 1,
+      lap_time_ms: lapTime,
+      included: true,
+      source: 'manual',
+      created_at: new Date(0).toISOString(),
+      updated_at: new Date(0).toISOString(),
+    }));
+  }
+
+  const user = await getAuthenticatedUser();
+  if (!user) return [];
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('session_laps')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('session_id', sessionId)
+    .order('lap_number');
+  return (data ?? []) as SessionLap[];
+}
+
 export async function createSession(
   input: CreateSessionInput,
 ): Promise<ActionResult<Session>> {
@@ -275,10 +325,11 @@ export async function createSession(
 
   const supabase = await createClient();
 
-  const profile = await getUserProfile();
-  const tier = profile?.tier ?? 'free';
+  const lapValidationError = validateLaps(input.laps ?? []);
+  if (lapValidationError) return { ok: false, error: lapValidationError };
 
-  if (tier === 'free') {
+  const profile = await getUserProfile();
+  if (!resolveUserAccess(profile).hasProAccess) {
     const { count } = await supabase
       .from('sessions')
       .select('id', { count: 'exact', head: true })
@@ -329,6 +380,28 @@ export async function createSession(
   if (error) return { ok: false, error: error.message };
 
   const createdSession = data as Session;
+
+  const lapError = await persistSessionLaps({
+    supabase,
+    userId: user.id,
+    session: createdSession,
+    laps: input.laps ?? [],
+  });
+  if (lapError) {
+    const { error: rollbackError } = await supabase
+      .from('sessions')
+      .delete()
+      .eq('id', createdSession.id)
+      .eq('user_id', user.id);
+    if (rollbackError) {
+      console.error('[sessions] session rollback after lap failure failed', {
+        userId: user.id,
+        sessionId: createdSession.id,
+        error: rollbackError.message,
+      });
+    }
+    return { ok: false, error: lapError };
+  }
 
   if (hasEnvironmentValues(input.environment)) {
     const environmentPayload: TableInsert<'session_environment'> = {
@@ -469,6 +542,41 @@ export async function createSession(
   revalidatePath('/sessions');
   revalidatePath('/dashboard');
   return { ok: true, data: createdSession };
+}
+
+export async function replaceSessionLaps(
+  sessionId: string,
+  laps: CreateSessionLapInput[],
+): Promise<ActionResult<SessionLap[]>> {
+  const demoError = await assertNotDemoMode();
+  if (demoError) return demoError;
+  const validationError = validateLaps(laps);
+  if (validationError) return { ok: false, error: validationError };
+
+  const user = await getAuthenticatedUser();
+  if (!user) return { ok: false, error: 'Not authenticated.' };
+  const supabase = await createClient();
+  const { data: sessionRow, error: sessionError } = await supabase
+    .from('sessions')
+    .select('*')
+    .eq('id', sessionId)
+    .eq('user_id', user.id)
+    .single();
+  if (sessionError || !sessionRow) {
+    return { ok: false, error: sessionError?.message ?? 'Session not found.' };
+  }
+
+  const persistError = await persistSessionLaps({
+    supabase,
+    userId: user.id,
+    session: sessionRow as Session,
+    laps,
+  });
+  if (persistError) return { ok: false, error: persistError };
+
+  revalidatePath(`/sessions/${sessionId}`);
+  const updated = await getSessionLaps(sessionId);
+  return { ok: true, data: updated };
 }
 
 export async function deleteSession(id: string): Promise<ActionResult> {

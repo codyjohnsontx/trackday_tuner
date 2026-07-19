@@ -36,6 +36,7 @@ function buildAdvice(overrides: Partial<AdviceResponse> = {}): AdviceResponse {
       weather: false,
       history: false,
       feedback: false,
+      lap_data: false,
       telemetry: false,
     },
     refusal: null,
@@ -256,6 +257,7 @@ describe('evaluateAdvicePolicy', () => {
           weather: false,
           history: false,
           feedback: false,
+          lap_data: false,
           telemetry: false,
         },
       }),
@@ -264,6 +266,28 @@ describe('evaluateAdvicePolicy', () => {
     expect(result.decision).toBe('downgrade_confidence');
     expect(result.violations).toContain('high_confidence_without_support');
     expect(result.advice.confidence).toBe('medium');
+  });
+
+  it('allows high confidence when citations and structured lap data provide support', () => {
+    const advice = buildAdvice({
+      confidence: 'high',
+      personal_evidence: [],
+      data_used: {
+        manual: true,
+        weather: false,
+        history: false,
+        feedback: false,
+        lap_data: true,
+        telemetry: false,
+      },
+    });
+    const result = evaluateAdvicePolicy({
+      advice,
+      fallbackDataUsed: advice.data_used,
+    });
+    expect(result.decision).toBe('allow');
+    expect(result.advice.confidence).toBe('high');
+    expect(result.violations).toEqual([]);
   });
 
   it('forces refusal when refusal and changes both exist', () => {

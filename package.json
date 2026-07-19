@@ -17,7 +17,9 @@
     "check:agent-docs": "node scripts/check-agent-docs.mjs",
     "ai:requests": "node scripts/inspect-ai-requests.mjs",
     "rag:index": "node scripts/build-rag-index.mjs",
-    "rag:eval": "node scripts/eval-rag.mjs"
+    "rag:eval": "node scripts/eval-rag.mjs",
+    "beta:invite": "node scripts/beta-invites.mjs",
+    "beta:report": "node scripts/beta-report.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

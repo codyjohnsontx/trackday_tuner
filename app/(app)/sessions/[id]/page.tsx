@@ -3,7 +3,8 @@ import Link from 'next/link';
 import { BarChart3 } from 'lucide-react';
 import { getVehicleBaseline } from '@/lib/actions/baselines';
 import { getSessionChangeRecords } from '@/lib/actions/session-changes';
-import { getPreviousSession, getSession, getSessionEnvironment } from '@/lib/actions/sessions';
+import { getComparableSessions, getPreviousSession, getSession, getSessionEnvironment, getSessionLaps } from '@/lib/actions/sessions';
+import { getOutstandingRecommendations, getSessionOutcome, getVehicleOutcomeHistory } from '@/lib/actions/outcomes';
 import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
 import { DemoBanner } from '@/components/demo/demo-banner';
 import { isDemoMode } from '@/lib/demo/mode';
@@ -13,8 +14,13 @@ import { SessionCompare, type CompareRow } from '@/components/sessions/session-c
 import { SessionBaselinePanel } from '@/components/sessions/session-baseline-panel';
 import { SessionChangesPanel } from '@/components/sessions/session-changes-panel';
 import { TuningAdvicePanel } from '@/components/ai/tuning-advice-panel';
+import { SessionLapsPanel } from '@/components/sessions/session-laps-panel';
+import { SessionOutcomePanel } from '@/components/sessions/session-outcome-panel';
+import { VehicleOutcomeHistory } from '@/components/sessions/vehicle-outcome-history';
+import { effectiveTier } from '@/lib/access';
 import { deriveChangeSets, toChangeSets } from '@/lib/session-changes';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
+import { isSessionBefore } from '@/lib/session-compare';
 import type { ExtraModules, Session } from '@/types';
 
 interface SessionDetailPageProps {
@@ -296,13 +302,18 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
 
   if (!session) notFound();
 
-  const [previousSession, environment, baseline, changeRecords] = await Promise.all([
+  const [previousSession, environment, baseline, changeRecords, sessionLaps, comparableSessions, existingOutcome, outcomeHistory, recommendations] = await Promise.all([
     getPreviousSession(session),
     getSessionEnvironment(session.id),
     getVehicleBaseline(session.vehicle_id),
     getSessionChangeRecords(session.id),
+    getSessionLaps(session.id),
+    getComparableSessions(session),
+    getSessionOutcome(session.id),
+    getVehicleOutcomeHistory(session.vehicle_id),
+    getOutstandingRecommendations({ vehicleId: session.vehicle_id, beforeSessionId: session.id }),
   ]);
-  const tier = profile?.tier ?? 'free';
+  const tier = effectiveTier(profile);
   const vehicle = vehicles.find((v) => v.id === session.vehicle_id);
   const vehicleNickname = vehicle?.nickname ?? 'Unknown Vehicle';
   const vehicleType = vehicle?.type ?? 'motorcycle';
@@ -357,7 +368,21 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
         <SessionChangesPanel changeSets={changeSets} tier={tier} />
       </div>
 
+      {tier === 'pro' ? (
+        <SessionOutcomePanel
+          session={session}
+          references={comparableSessions.filter((candidate) => isSessionBefore(candidate, session))}
+          recommendations={recommendations}
+          existing={existingOutcome}
+          disabled={demoMode}
+        />
+      ) : null}
+
+      <VehicleOutcomeHistory outcomes={outcomeHistory} />
+
       <TuningAdvicePanel sessionId={session.id} vehicleId={session.vehicle_id} tier={tier} demoMode={demoMode} />
+
+      <SessionLapsPanel sessionId={session.id} vehicleId={session.vehicle_id} initialLaps={sessionLaps} demoMode={demoMode} />
 
       <SectionCard title="Session Info">
         <DetailRow label="Track" value={session.track_name ?? '—'} />

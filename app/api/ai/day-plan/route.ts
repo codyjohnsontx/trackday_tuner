@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
+import { resolveUserAccess } from '@/lib/access';
 import { createClient } from '@/lib/supabase/server';
 import { generateDayPlan, UpstreamTimeoutError } from '@/lib/rag/advice';
 import {
@@ -264,6 +265,7 @@ function buildContext(params: {
         weather: Boolean(params.environment),
         history: false,
         feedback: params.feedback.length > 0,
+        lap_data: false,
         telemetry: false,
       },
     };
@@ -307,6 +309,7 @@ function buildContext(params: {
       weather: Boolean(currentEnvironment),
       history: similarSessions.length > 0,
       feedback: params.feedback.length > 0,
+      lap_data: false,
       telemetry: false,
     },
   };
@@ -404,7 +407,7 @@ export async function POST(request: Request) {
   }
 
   const profile = await getUserProfile();
-  if ((profile?.tier ?? 'free') !== 'pro') {
+  if (!resolveUserAccess(profile).hasProAccess) {
     return errorResponse(402, 'Race Engineer is a Pro feature. Upgrade to continue.', requestId);
   }
 

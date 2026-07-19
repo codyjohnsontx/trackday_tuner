@@ -34,6 +34,7 @@ const baseAdvice: AdviceResponse = {
     weather: false,
     history: true,
     feedback: false,
+    lap_data: false,
     telemetry: false,
   },
   refusal: null,
@@ -126,6 +127,7 @@ describe('buildRefusalAdvice', () => {
         weather: true,
         history: false,
         feedback: false,
+        lap_data: false,
         telemetry: false,
       },
     });

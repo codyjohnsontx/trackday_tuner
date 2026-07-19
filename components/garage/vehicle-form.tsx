@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { createVehicle, updateVehicle } from '@/lib/actions/vehicles';
 import { createClient } from '@/lib/supabase/client';
+import { trackProductEvent } from '@/lib/product-events.client';
 import type { Vehicle, VehicleType } from '@/types';
 
 interface VehicleFormProps {
@@ -99,6 +100,7 @@ export function VehicleForm({ vehicle }: VehicleFormProps) {
           setErrorMessage(result.error);
           return;
         }
+        trackProductEvent('vehicle_created', { vehicle_id: result.data.id, properties: { type } });
       }
 
       router.push('/garage');

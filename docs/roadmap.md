@@ -1,35 +1,68 @@
 # Trackday Tuner Roadmap
 
-Trackday Tuner is moving toward a tighter setup-learning loop: capture each session, compare the signal against relevant baselines, preserve what changed, and turn that history into safer, more specific planning and recommendations.
+Trackday Tuner is building one tight learning loop for track-day riders: capture a
+session, compare it with relevant history, record whether the result improved, and
+use that evidence to make the next recommendation safer and more specific.
+
+## Launch Focus
+
+The founding beta is positioned for intermediate and advanced motorcycle
+track-day riders who adjust tires or suspension and expect to attend at least two
+track days in a 90-day period. Cars remain supported by the product and the public
+waitlist accepts every motorsport segment, but motorcycle riders are the first
+acquisition and validation cohort.
+
+The product promise is:
+
+> Know what changed, whether it helped, and what to try next.
 
 ## Operating Model
 
-Roadmap work ships one item per PR. Each item should be reviewed, merged, and learned from before the next roadmap item starts. PRs should stay focused on the active item and avoid pulling future roadmap scope forward.
+Roadmap work ships one item per PR. Each item should be reviewed, merged, and
+learned from before the next item starts. PRs stay focused on the active item and
+do not pull later roadmap scope forward.
 
 ## Ordered Roadmap
 
-1. Session comparison v1 - Complete
+1. Session comparison v1 - Complete; structured performance capture is item 5
 2. Baseline setup per vehicle - Complete
 3. Change tracking - Complete
-4. **Recommendation follow-up** - Active
-5. AI guardrail tightening for day plans
-6. Vehicle-specific memory
-7. Track-specific notes
-8. Setup timeline
-9. Smarter day planner
-10. Post-session debrief flow
-11. CSV / telemetry import
+4. Recommendation outcome loop - Built; pending live validation
+5. Structured manual lap capture - Built; pending live validation
+6. Founding beta access and acquisition - Built; pending live validation
+7. Beta measurement and validation - Built; pending live validation
+8. **Evidence-based next roadmap decision** - Active after the beta gate
+9. AI day-plan guardrails
+10. Vehicle- and track-specific memory improvements
+11. CSV and lap-timer import
 12. Tire lifecycle tracking
 13. Setup templates
 14. Coach/share mode
 15. Event mode
 
-## Active Item: Recommendation Follow-up
+## Current Product Loop
 
-Recommendation Follow-up closes the setup-learning loop by capturing whether a change actually helped. Building on the per-session change records from item 3 (Change tracking) and the existing `ai_recommendations` and `session_feedback` data, it lets a rider record an outcome for a prior AI recommendation or setup change — the "did it help" state that was intentionally deferred out of PR 3 — and surfaces that outcome history where the recommendation is shown, so future advice can lean on what has and has not worked.
+Recommendation Outcome Loop records how a later session compared with a prior
+reference session and optionally links the AI recommendation tested between them.
+The outcome belongs to the later session, remains editable, appears in vehicle
+history, and becomes grounded evidence for future Race Engineer guidance.
 
-The concrete PR 4 scope — outcome-capture UI, which surfaces it attaches to, tier gating, and how outcomes feed later advice — is still to be decided before implementation starts, following the operating model above. Until then, PR 4 should stay focused on a single reviewable slice and avoid pulling later roadmap items forward.
+The implemented slice includes outcome capture, recommendation linking, history
+visibility, idempotent memory updates, tier access, and automated coverage. It does
+not include imports, tire lifecycle, templates, team workflows, or event mode.
 
-## Not Active Yet
+The product is now in validation mode. New roadmap scope should respond to
+observed rider behavior and interviews rather than expand the feature surface.
 
-Future roadmap items are intentionally out of scope until Recommendation Follow-up is reviewed and merged. Do not add new memory systems, track note surfaces, setup timelines, planner upgrades, debrief flows, import flows, tire lifecycle tracking, templates, sharing, or event mode in PR 4.
+## Founding Beta Gate
+
+Review the beta when either twelve riders have registered and eight have logged
+sessions on two distinct track dates, or ninety days have elapsed. Expansion is
+based on repeat session logging, comparison use, recommendation follow-up,
+helpfulness, trackside entry speed, and AI safety—not signup count alone.
+
+Do not start car-specific expansion, coach mode, event mode, tire lifecycle, or
+team sharing before this review.
+
+Use `npm run beta:report` for the decision snapshot and follow
+[`docs/beta-runbook.md`](./beta-runbook.md) for cohort operations.

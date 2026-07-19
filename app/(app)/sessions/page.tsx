@@ -10,6 +10,7 @@ import { deriveSessionAnalytics } from '@/lib/session-export';
 import { SessionAnalyticsPanel } from '@/components/sessions/session-analytics-panel';
 import { SessionExportPanel } from '@/components/sessions/session-export-panel';
 import { SessionHistoryList } from '@/components/sessions/session-history-list';
+import { effectiveTier, resolveUserAccess } from '@/lib/access';
 
 export default async function SessionsPage() {
   const [sessions, vehicles, profile, demoMode] = await Promise.all([
@@ -20,7 +21,8 @@ export default async function SessionsPage() {
   ]);
   const environments = await getSessionEnvironments(sessions.map((session) => session.id));
 
-  const isFree = !profile || profile.tier === 'free';
+  const isFree = !resolveUserAccess(profile).hasProAccess;
+  const accessTier = effectiveTier(profile);
   const atLimit = isFree && sessions.length >= 10;
 
   const tierLabel = isFree
@@ -56,11 +58,11 @@ export default async function SessionsPage() {
         ) : null}
       </div>
 
-      <DayPlanPanel vehicles={vehicles} tier={profile?.tier ?? 'free'} demoMode={demoMode} />
+      <DayPlanPanel vehicles={vehicles} tier={accessTier} demoMode={demoMode} />
 
-      <SessionExportPanel vehicles={vehicles} tier={profile?.tier ?? 'free'} demoMode={demoMode} />
+      <SessionExportPanel vehicles={vehicles} tier={accessTier} demoMode={demoMode} />
 
-      <SessionAnalyticsPanel analytics={analytics} tier={profile?.tier ?? 'free'} />
+      <SessionAnalyticsPanel analytics={analytics} tier={accessTier} />
 
       {sessions.length === 0 ? (
         <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 text-center">

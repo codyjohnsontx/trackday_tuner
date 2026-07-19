@@ -31,6 +31,7 @@ export interface RaceEngineerContext {
     weather: boolean;
     history: boolean;
     feedback: boolean;
+    lap_data: boolean;
     telemetry: boolean;
   };
 }
@@ -247,6 +248,7 @@ export async function loadRaceEngineerContext(
     recommendationResult,
     memoryResult,
     telemetryResult,
+    lapResult,
   ] = await Promise.all([
     supabase
       .from('session_environment')
@@ -282,6 +284,13 @@ export async function loadRaceEngineerContext(
       .eq('user_id', userId)
       .eq('session_id', session.id)
       .limit(1),
+    supabase
+      .from('session_laps')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('session_id', session.id)
+      .eq('included', true)
+      .limit(1),
   ]);
 
   const degradedContext =
@@ -289,7 +298,8 @@ export async function loadRaceEngineerContext(
     Boolean(feedbackResult.error) ||
     Boolean(recommendationResult.error) ||
     Boolean(memoryResult.error) ||
-    Boolean(telemetryResult.error);
+    Boolean(telemetryResult.error) ||
+    Boolean(lapResult.error);
 
   if (environmentResult.error) {
     console.error('[race-engineer-context] session_environment query failed', {
@@ -326,6 +336,13 @@ export async function loadRaceEngineerContext(
       error: telemetryResult.error.message,
     });
   }
+  if (lapResult.error) {
+    console.error('[race-engineer-context] session_laps query failed', {
+      userId,
+      sessionId: session.id,
+      error: lapResult.error.message,
+    });
+  }
 
   const environments = (environmentResult.data ?? []) as SessionEnvironment[];
   const sessionEnvironment = environmentFor(session.id, environments);
@@ -358,7 +375,8 @@ export async function loadRaceEngineerContext(
       weather: Boolean(sessionEnvironment),
       history: similarSessions.length > 0,
       feedback: recentFeedback.length > 0 || recentRecommendations.some((r) => r.status !== 'proposed'),
-      telemetry: Boolean(telemetrySummary),
+      lap_data: (lapResult.data ?? []).length > 0,
+      telemetry: Boolean(telemetrySummary && telemetrySummary.source !== 'manual'),
     },
   };
 }

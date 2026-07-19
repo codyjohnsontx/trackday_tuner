@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
+import { resolveUserAccess } from '@/lib/access';
 import { getDemoVehicleBaseline, getDemoVehicleBaselines } from '@/lib/demo/data';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
@@ -56,7 +57,7 @@ export async function setVehicleBaselineFromSession(sessionId: string): Promise<
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const profile = await getUserProfile();
-  if ((profile?.tier ?? 'free') !== 'pro') {
+  if (!resolveUserAccess(profile).hasProAccess) {
     return { ok: false, error: 'Vehicle baselines are a Pro feature.' };
   }
 
@@ -122,7 +123,7 @@ export async function clearVehicleBaseline(vehicleId: string): Promise<ActionRes
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const profile = await getUserProfile();
-  if ((profile?.tier ?? 'free') !== 'pro') {
+  if (!resolveUserAccess(profile).hasProAccess) {
     return { ok: false, error: 'Vehicle baselines are a Pro feature.' };
   }
 

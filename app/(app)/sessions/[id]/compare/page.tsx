@@ -24,6 +24,8 @@ import {
 } from '@/lib/session-compare';
 import { isDemoMode } from '@/lib/demo/mode';
 import type { Session, SessionEnvironment, TelemetrySummary, VehicleBaseline } from '@/types';
+import { resolveUserAccess } from '@/lib/access';
+import { ProductEventView } from '@/components/beta/product-event-view';
 
 interface SessionComparePageProps {
   params: Promise<{ id: string }>;
@@ -136,7 +138,7 @@ export default async function SessionComparePage({ params, searchParams }: Sessi
     </>
   );
 
-  if ((profile?.tier ?? 'free') === 'free') {
+  if (!resolveUserAccess(profile).hasProAccess) {
     return (
       <div className="space-y-5">
         {header}
@@ -182,6 +184,7 @@ export default async function SessionComparePage({ params, searchParams }: Sessi
 
   return (
     <div className="space-y-5">
+      <ProductEventView eventName="comparison_viewed" sessionId={session.id} vehicleId={session.vehicle_id} properties={{ baseline_session_id: selectedBaseline.id }} />
       {header}
       <SessionComparePicker options={pickerOptions} selectedId={selectedBaseline.id} />
       <SessionCompareStrengthBanner strength={model.strength} summary={model.summary} />
