@@ -90,6 +90,49 @@ create table if not exists public.beta_rate_limits (
 create index if not exists beta_rate_limits_expiry_idx
   on public.beta_rate_limits(window_expires_at);
 
+create or replace function public.create_beta_invite(
+  p_waitlist_id uuid,
+  p_email_normalized text,
+  p_code_hash text,
+  p_cohort text,
+  p_expires_at timestamptz
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  invite_id uuid;
+  updated_waitlist_count integer;
+begin
+  insert into public.beta_invites (
+    waitlist_id, email_normalized, code_hash, cohort, expires_at
+  ) values (
+    p_waitlist_id, p_email_normalized, p_code_hash, p_cohort, p_expires_at
+  )
+  returning id into invite_id;
+
+  if p_waitlist_id is not null then
+    update public.beta_waitlist
+    set status = 'invited'
+    where id = p_waitlist_id and email_normalized = p_email_normalized;
+
+    get diagnostics updated_waitlist_count = row_count;
+    if updated_waitlist_count <> 1 then
+      raise exception 'matching waitlist entry not found';
+    end if;
+  end if;
+
+  return invite_id;
+end;
+$$;
+
+revoke all on function public.create_beta_invite(uuid, text, text, text, timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.create_beta_invite(uuid, text, text, text, timestamptz)
+  to service_role;
+
 create or replace function public.consume_beta_rate_limit(
   p_key_hash text,
   p_limit integer,

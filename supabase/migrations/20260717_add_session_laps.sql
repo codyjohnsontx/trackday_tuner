@@ -147,7 +147,8 @@ begin
     source = excluded.source,
     summary = excluded.summary,
     metrics = excluded.metrics,
-    updated_at = now();
+    updated_at = now()
+  where telemetry_summaries.source = 'manual';
 end;
 $$;
 

@@ -835,6 +835,27 @@ export type Database = {
         Update: Partial<Database['public']['Tables']['beta_feedback']['Insert']>;
         Relationships: [];
       };
+      beta_rate_limits: {
+        Row: {
+          key_hash: string;
+          request_count: number;
+          window_expires_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          key_hash: string;
+          request_count: number;
+          window_expires_at: string;
+          updated_at?: string;
+        };
+        Update: {
+          key_hash?: string;
+          request_count?: number;
+          window_expires_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       sag_entries: {
         Row: {
           id: string;
@@ -886,6 +907,16 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      create_beta_invite: {
+        Args: {
+          p_waitlist_id: string | null;
+          p_email_normalized: string;
+          p_code_hash: string;
+          p_cohort: string;
+          p_expires_at: string;
+        };
+        Returns: string;
+      };
       consume_beta_rate_limit: {
         Args: {
           p_key_hash: string;

@@ -32,19 +32,16 @@ const supabase = createClient(required('NEXT_PUBLIC_SUPABASE_URL'), required('SU
 const code = randomBytes(12).toString('base64url');
 const codeHash = createHmac('sha256', secret).update(code).digest('hex');
 const expires = new Date(); expires.setUTCDate(expires.getUTCDate() + days);
-const { data: waitlist } = await supabase.from('beta_waitlist').select('id').eq('email_normalized', email).maybeSingle();
-const { error } = await supabase.from('beta_invites').insert({ waitlist_id: waitlist?.id ?? null, email_normalized: email, code_hash: codeHash, cohort, expires_at: expires.toISOString() });
+const { data: waitlist, error: waitlistError } = await supabase.from('beta_waitlist').select('id').eq('email_normalized', email).maybeSingle();
+if (waitlistError) { console.error(`[beta:invite] ${waitlistError.message}`); process.exit(1); }
+const { error } = await supabase.rpc('create_beta_invite', {
+  p_waitlist_id: waitlist?.id ?? null,
+  p_email_normalized: email,
+  p_code_hash: codeHash,
+  p_cohort: cohort,
+  p_expires_at: expires.toISOString(),
+});
 if (error) { console.error(`[beta:invite] ${error.message}`); process.exit(1); }
-if (waitlist) {
-  const { error: waitlistUpdateError } = await supabase
-    .from('beta_waitlist')
-    .update({ status: 'invited' })
-    .eq('id', waitlist.id);
-  if (waitlistUpdateError) {
-    console.error(`[beta:invite] ${waitlistUpdateError.message}`);
-    process.exit(1);
-  }
-}
 console.log(`Invitation created for ${email}`);
 console.log(`Code: ${code}`);
 console.log(`Expires: ${expires.toISOString()}`);
