@@ -73,6 +73,12 @@ console.table([
   { metric: 'AI guidance usefulness', actual: average('ai_guidance_usefulness'), target: '≥4.0' },
   { metric: 'Very disappointed', actual: `${veryDisappointed}%`, target: '≥40%' },
 ]);
+console.log('Within-day loops per rider');
+console.table(
+  [...betaIds]
+    .map((rider) => ({ rider, loops: loops.loopsByRider.get(rider) ?? 0 }))
+    .sort((a, b) => b.loops - a.loops),
+);
 const continueGate = decideGate({
   acceptedRiders: invited,
   ridersWithLoop: loops.ridersWithLoop,
