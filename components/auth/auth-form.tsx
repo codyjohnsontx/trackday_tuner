@@ -116,11 +116,6 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
 
   return (
     <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-      <h1 className="text-2xl font-bold text-zinc-100">Get on track</h1>
-      <p className="text-sm text-zinc-400">
-        {inviteOnly ? 'Founding Beta access for invited riders.' : 'Log setups, compare sessions, dial in your ride.'}
-      </p>
-
       {!inviteOnly ? <div className="space-y-2">
         {oauthProviders.map((provider) => (
           <div key={provider.id} className="space-y-1">
