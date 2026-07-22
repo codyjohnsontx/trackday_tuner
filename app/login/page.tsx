@@ -27,7 +27,7 @@ export default async function LoginPage() {
           fill
           priority
           sizes="(min-width: 1024px) 1024px, 100vw"
-          className="object-cover object-[65%_45%]"
+          className="object-cover object-[65%_45%] opacity-60"
         />
         <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-zinc-950/80 to-transparent" />
         <div className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-zinc-950 via-zinc-950/45 to-transparent" />
