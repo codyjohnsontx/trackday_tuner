@@ -26,10 +26,10 @@ const [
   { data: comparisonEvents, error: eventError },
   { data: aiRequests, error: aiRequestError },
 ] = await Promise.all([
-  supabase.from('sessions').select('id,user_id,date,start_time,created_at'),
-  supabase.from('session_changes').select('user_id,session_id,changes'),
-  supabase.from('session_feedback').select('user_id,session_id,reference_session_id,recommendation_id,outcome'),
-  supabase.from('beta_feedback').select('user_id,comparison_usefulness,ai_guidance_usefulness,disappointment,interview_opt_in'),
+  supabase.from('sessions').select('id,user_id,date,start_time,created_at').in('user_id', [...betaIds]),
+  supabase.from('session_changes').select('user_id,session_id,changes').in('user_id', [...betaIds]),
+  supabase.from('session_feedback').select('user_id,session_id,reference_session_id,recommendation_id,outcome').in('user_id', [...betaIds]),
+  supabase.from('beta_feedback').select('user_id,comparison_usefulness,ai_guidance_usefulness,disappointment,interview_opt_in').in('user_id', [...betaIds]),
   supabase.from('product_events').select('user_id,event_name,properties').eq('event_name', 'comparison_viewed').in('user_id', [...betaIds]),
   supabase.from('ai_requests').select('user_id,status').in('user_id', [...betaIds]),
 ]);
