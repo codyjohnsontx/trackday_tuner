@@ -292,9 +292,12 @@ describe('decideGate', () => {
     expect(decideGate(passing)).toBe(true);
   });
 
-  it('gates on within-day loop completion', () => {
+  it('gates on every target independently', () => {
+    expect(decideGate({ ...passing, acceptedRiders: 11 })).toBe(false);
     expect(decideGate({ ...passing, ridersWithLoop: 7 })).toBe(false);
     expect(decideGate({ ...passing, ridersWithRepeatLoops: 2 })).toBe(false);
+    expect(decideGate({ ...passing, comparisonUsefulness: '3.9' })).toBe(false);
+    expect(decideGate({ ...passing, veryDisappointedPct: 39 })).toBe(false);
   });
 
   it('fails on missing survey data', () => {

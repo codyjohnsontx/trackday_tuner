@@ -12,8 +12,13 @@ import {
 loadEnvFiles();
 function required(name) { const value = process.env[name]?.trim(); if (!value) { console.error(`[beta:report] Missing ${name}.`); process.exit(1); } return value; }
 const supabase = createClient(required('NEXT_PUBLIC_SUPABASE_URL'), required('SUPABASE_SERVICE_ROLE_KEY'), { auth: { persistSession: false } });
+const { data: profiles, error: profileError } = await supabase
+  .from('profiles')
+  .select('id,beta_cohort,beta_access_started_at')
+  .not('beta_cohort', 'is', null);
+if (profileError) { console.error(`[beta:report] ${profileError.message}`); process.exit(1); }
+const betaIds = new Set((profiles ?? []).map((row) => row.id));
 const [
-  { data: profiles, error: profileError },
   { data: sessions, error: sessionError },
   { data: changes, error: changeError },
   { data: outcomes, error: outcomeError },
@@ -21,17 +26,15 @@ const [
   { data: comparisonEvents, error: eventError },
   { data: aiRequests, error: aiRequestError },
 ] = await Promise.all([
-  supabase.from('profiles').select('id,beta_cohort,beta_access_started_at').not('beta_cohort', 'is', null),
   supabase.from('sessions').select('id,user_id,date,start_time,created_at'),
   supabase.from('session_changes').select('user_id,session_id,changes'),
   supabase.from('session_feedback').select('user_id,session_id,reference_session_id,recommendation_id,outcome'),
   supabase.from('beta_feedback').select('user_id,comparison_usefulness,ai_guidance_usefulness,disappointment,interview_opt_in'),
-  supabase.from('product_events').select('user_id,event_name,properties').eq('event_name', 'comparison_viewed'),
-  supabase.from('ai_requests').select('user_id,status'),
+  supabase.from('product_events').select('user_id,event_name,properties').eq('event_name', 'comparison_viewed').in('user_id', [...betaIds]),
+  supabase.from('ai_requests').select('user_id,status').in('user_id', [...betaIds]),
 ]);
-const error = profileError ?? sessionError ?? changeError ?? outcomeError ?? feedbackError ?? eventError ?? aiRequestError;
+const error = sessionError ?? changeError ?? outcomeError ?? feedbackError ?? eventError ?? aiRequestError;
 if (error) { console.error(`[beta:report] ${error.message}`); process.exit(1); }
-const betaIds = new Set((profiles ?? []).map((row) => row.id));
 const daysByUser = new Map();
 for (const row of sessions ?? []) if (betaIds.has(row.user_id)) { const dates = daysByUser.get(row.user_id) ?? new Set(); dates.add(row.date); daysByUser.set(row.user_id, dates); }
 const activated = [...daysByUser.values()].filter((dates) => dates.size >= 1).length;
