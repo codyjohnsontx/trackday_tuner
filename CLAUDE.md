@@ -35,6 +35,8 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 
 ### Creating a PR (exact steps, no deviation)
 
+- PRs are ready for review by default. Create a draft PR only when the user explicitly asks for a draft.
+
 1. `git status` — working tree must be clean. If not, stop and tell the user.
 2. `ls .git/index.lock 2>/dev/null` — if lock exists, stop and tell the user. Do not delete it.
 3. `gh pr list --head <branch>` — if a PR already exists, show it to the user and stop.
