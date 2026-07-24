@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { AuthForm } from '@/components/auth/auth-form';
@@ -47,12 +46,12 @@ export default async function LoginPage() {
 
       <div className="px-4 pt-4 pb-2 sm:px-5 md:px-6">
         <AuthForm providers={providers} inviteOnly={inviteOnly} />
-        <Link
+        <a
           href="/demo"
           className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900/60 px-4 text-sm font-semibold text-zinc-100 transition hover:border-cyan-400/50 hover:bg-zinc-900 focus-visible:ring-2 focus-visible:ring-cyan-400/80"
         >
           Explore the demo
-        </Link>
+        </a>
       </div>
     </div>
   );
