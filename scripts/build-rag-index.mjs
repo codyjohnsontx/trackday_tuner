@@ -1,15 +1,24 @@
 #!/usr/bin/env node
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import OpenAI from 'openai';
+import { loadEnvFiles } from './lib/env.mjs';
+import {
+  computeSourceHash,
+  dataDir,
+  indexPath as outputPath,
+  INDEX_VERSION,
+  kbDir,
+  repoRoot,
+  roundEmbedding,
+  toRelPath,
+  walkMarkdown,
+} from './lib/rag-index-meta.mjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, '..');
-const kbDir = path.join(repoRoot, 'docs', 'knowledge-base');
-const dataDir = path.join(repoRoot, 'data');
-const outputPath = path.join(dataDir, 'rag-index.json');
+// Without this the script silently falls through to the zero-vector path when
+// OPENAI_API_KEY lives in .env.local rather than the shell, producing an index
+// that looks valid and retrieves nonsense.
+loadEnvFiles(repoRoot);
 
 const TARGET_TOKENS = 500;
 const OVERLAP_TOKENS = 50;
@@ -17,26 +26,6 @@ const OVERLAP_TOKENS = 50;
 const CHARS_PER_TOKEN = 4;
 const TARGET_CHARS = TARGET_TOKENS * CHARS_PER_TOKEN;
 const OVERLAP_CHARS = OVERLAP_TOKENS * CHARS_PER_TOKEN;
-
-async function walkMarkdown(dir) {
-  const results = [];
-  let entries;
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch (err) {
-    if (err.code === 'ENOENT') return results;
-    throw err;
-  }
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...(await walkMarkdown(full)));
-    } else if (entry.isFile() && entry.name.endsWith('.md')) {
-      results.push(full);
-    }
-  }
-  return results.sort();
-}
 
 function parseFrontMatter(raw) {
   const lines = raw.split(/\r?\n/);
@@ -180,7 +169,7 @@ async function main() {
 
   const allChunks = [];
   for (const absPath of files) {
-    const relPath = path.relative(repoRoot, absPath).split(path.sep).join('/');
+    const relPath = toRelPath(absPath);
     const raw = await fs.readFile(absPath, 'utf8');
     const { data, body } = parseFrontMatter(raw);
     const chunks = chunkDocument({ relPath, data, body });
@@ -214,18 +203,35 @@ async function main() {
     }
   }
 
-  const chunks = allChunks.map((chunk, idx) => ({ ...chunk, embedding: embeddings[idx] }));
+  const chunks = allChunks.map((chunk, idx) => ({
+    ...chunk,
+    embedding: roundEmbedding(embeddings[idx]),
+  }));
   const payload = {
-    version: 1,
+    version: INDEX_VERSION,
     model: apiKey ? embeddingModel : 'zero-vector',
     dimension: embeddings[0]?.length ?? 0,
     generated_at: new Date().toISOString(),
+    source_hash: await computeSourceHash(files),
     chunks,
   };
 
   await fs.mkdir(dataDir, { recursive: true });
-  await fs.writeFile(outputPath, JSON.stringify(payload, null, 2));
-  console.log(`[rag:index] Wrote ${chunks.length} chunks to ${path.relative(repoRoot, outputPath)}`);
+  // Compact rather than pretty-printed: the index is committed and shipped inside
+  // the deployment, and indentation alone accounts for roughly a third of the file.
+  await fs.writeFile(outputPath, JSON.stringify(payload));
+  const sizeMb = ((await fs.stat(outputPath)).size / 1024 / 1024).toFixed(2);
+  console.log(
+    `[rag:index] Wrote ${chunks.length} chunks (${sizeMb} MB) to ${toRelPath(outputPath)}`,
+  );
+
+  if (!apiKey) {
+    console.error(
+      '[rag:index] Refusing to exit clean: this index holds zero-vector embeddings and ' +
+        'will fail the build check. Set OPENAI_API_KEY and rerun.',
+    );
+    process.exit(1);
+  }
 }
 
 main().catch((err) => {

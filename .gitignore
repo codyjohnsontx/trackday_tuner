@@ -18,8 +18,11 @@ test-results/
 playwright-report/
 tsconfig.tsbuildinfo
 
-# RAG build artifacts (rebuild via `npm run rag:index`)
-data/rag-index.json
+# data/rag-index.json is intentionally committed. The Race Engineer reads it from
+# disk at request time, and Vercel deploys from git, so ignoring it shipped a
+# build where every AI call returned 500. Rebuild with `npm run rag:index` after
+# editing docs/knowledge-base/; `npm run rag:check` runs on prebuild and fails the
+# build if it is missing or stale.
 
 # Cursor / local agent settings (optional)
 .claude/
