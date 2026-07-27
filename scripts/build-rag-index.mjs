@@ -1,15 +1,24 @@
 #!/usr/bin/env node
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import OpenAI from 'openai';
+import { loadEnvFiles } from './lib/env.mjs';
+import {
+  computeSourceHash,
+  dataDir,
+  indexPath as outputPath,
+  INDEX_VERSION,
+  kbDir,
+  repoRoot,
+  roundEmbedding,
+  toRelPath,
+  walkMarkdown,
+} from './lib/rag-index-meta.mjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, '..');
-const kbDir = path.join(repoRoot, 'docs', 'knowledge-base');
-const dataDir = path.join(repoRoot, 'data');
-const outputPath = path.join(dataDir, 'rag-index.json');
+// Without this the script silently falls through to the zero-vector path when
+// OPENAI_API_KEY lives in .env.local rather than the shell, producing an index
+// that looks valid and retrieves nonsense.
+loadEnvFiles(repoRoot);
 
 const TARGET_TOKENS = 500;
 const OVERLAP_TOKENS = 50;
@@ -17,26 +26,6 @@ const OVERLAP_TOKENS = 50;
 const CHARS_PER_TOKEN = 4;
 const TARGET_CHARS = TARGET_TOKENS * CHARS_PER_TOKEN;
 const OVERLAP_CHARS = OVERLAP_TOKENS * CHARS_PER_TOKEN;
-
-async function walkMarkdown(dir) {
-  const results = [];
-  let entries;
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch (err) {
-    if (err.code === 'ENOENT') return results;
-    throw err;
-  }
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...(await walkMarkdown(full)));
-    } else if (entry.isFile() && entry.name.endsWith('.md')) {
-      results.push(full);
-    }
-  }
-  return results.sort();
-}
 
 function parseFrontMatter(raw) {
   const lines = raw.split(/\r?\n/);
@@ -152,25 +141,21 @@ async function embedBatch(client, model, texts) {
   return response.data.map((item) => item.embedding);
 }
 
-const KNOWN_EMBEDDING_DIMENSIONS = {
-  'text-embedding-3-small': 1536,
-  'text-embedding-3-large': 3072,
-  'text-embedding-ada-002': 1536,
-};
-const FALLBACK_EMBEDDING_DIM = 1536;
-
-function getEmbeddingDim(embeddingModel) {
-  const known = KNOWN_EMBEDDING_DIMENSIONS[embeddingModel];
-  if (known) return known;
-  console.warn(
-    `[rag:index] Unknown embedding model '${embeddingModel}'; using fallback dim ${FALLBACK_EMBEDDING_DIM}.`,
-  );
-  return FALLBACK_EMBEDDING_DIM;
-}
-
 async function main() {
   const apiKey = process.env.OPENAI_API_KEY;
   const embeddingModel = process.env.AI_EMBEDDING_MODEL ?? 'text-embedding-3-small';
+
+  // Checked before any work so a keyless run cannot overwrite the committed index
+  // with zero-vector embeddings. data/rag-index.json ships in the deployment, so a
+  // destructive rewrite here is worse than refusing to run.
+  if (!apiKey) {
+    console.error(
+      '[rag:index] OPENAI_API_KEY is not set. Refusing to run: writing zero-vector ' +
+        'embeddings would clobber the committed index and fail the build check. ' +
+        'Set OPENAI_API_KEY and rerun.',
+    );
+    process.exit(1);
+  }
 
   const files = await walkMarkdown(kbDir);
   if (files.length === 0) {
@@ -180,7 +165,7 @@ async function main() {
 
   const allChunks = [];
   for (const absPath of files) {
-    const relPath = path.relative(repoRoot, absPath).split(path.sep).join('/');
+    const relPath = toRelPath(absPath);
     const raw = await fs.readFile(absPath, 'utf8');
     const { data, body } = parseFrontMatter(raw);
     const chunks = chunkDocument({ relPath, data, body });
@@ -189,43 +174,42 @@ async function main() {
 
   console.log(`[rag:index] Prepared ${allChunks.length} chunks from ${files.length} docs.`);
 
-  let embeddings;
-  if (!apiKey) {
-    const zeroDim = getEmbeddingDim(embeddingModel);
-    console.warn(
-      `[rag:index] OPENAI_API_KEY not set; writing index with zero-vector embeddings (dim=${zeroDim}). ` +
-        'Retrieval will return arbitrary results until the index is rebuilt with a real key.',
+  const client = new OpenAI({ apiKey });
+  const embeddings = [];
+  const batchSize = 32;
+  for (let i = 0; i < allChunks.length; i += batchSize) {
+    const slice = allChunks.slice(i, i + batchSize);
+    const inputs = slice.map(
+      (chunk) => `${chunk.source}\n${chunk.heading}\n\n${chunk.text}`,
     );
-    embeddings = allChunks.map(() => new Array(zeroDim).fill(0));
-  } else {
-    const client = new OpenAI({ apiKey });
-    embeddings = [];
-    const batchSize = 32;
-    for (let i = 0; i < allChunks.length; i += batchSize) {
-      const slice = allChunks.slice(i, i + batchSize);
-      const inputs = slice.map(
-        (chunk) => `${chunk.source}\n${chunk.heading}\n\n${chunk.text}`,
-      );
-      const batch = await embedBatch(client, embeddingModel, inputs);
-      embeddings.push(...batch);
-      console.log(
-        `[rag:index] Embedded ${Math.min(i + batchSize, allChunks.length)}/${allChunks.length}`,
-      );
-    }
+    const batch = await embedBatch(client, embeddingModel, inputs);
+    embeddings.push(...batch);
+    console.log(
+      `[rag:index] Embedded ${Math.min(i + batchSize, allChunks.length)}/${allChunks.length}`,
+    );
   }
 
-  const chunks = allChunks.map((chunk, idx) => ({ ...chunk, embedding: embeddings[idx] }));
+  const chunks = allChunks.map((chunk, idx) => ({
+    ...chunk,
+    embedding: roundEmbedding(embeddings[idx]),
+  }));
   const payload = {
-    version: 1,
-    model: apiKey ? embeddingModel : 'zero-vector',
+    version: INDEX_VERSION,
+    model: embeddingModel,
     dimension: embeddings[0]?.length ?? 0,
     generated_at: new Date().toISOString(),
+    source_hash: await computeSourceHash(files),
     chunks,
   };
 
   await fs.mkdir(dataDir, { recursive: true });
-  await fs.writeFile(outputPath, JSON.stringify(payload, null, 2));
-  console.log(`[rag:index] Wrote ${chunks.length} chunks to ${path.relative(repoRoot, outputPath)}`);
+  // Compact rather than pretty-printed: the index is committed and shipped inside
+  // the deployment, and indentation alone accounts for roughly a third of the file.
+  await fs.writeFile(outputPath, JSON.stringify(payload));
+  const sizeMb = ((await fs.stat(outputPath)).size / 1024 / 1024).toFixed(2);
+  console.log(
+    `[rag:index] Wrote ${chunks.length} chunks (${sizeMb} MB) to ${toRelPath(outputPath)}`,
+  );
 }
 
 main().catch((err) => {
