@@ -36,7 +36,9 @@ export class MissingKnowledgeIndexError extends Error {
     super(
       `RAG index not found at ${indexPath}. It is committed to the repo and pulled into the ` +
         'serverless bundle by `outputFileTracingIncludes` in next.config.ts; if it is missing ' +
-        'here, one of those two is broken. `npm run rag:check` reproduces this at build time.',
+        'here, one of those two is broken. `npm run rag:check` only validates the copy in the ' +
+        'repository, so it can pass while the file is still absent from a deployed bundle — ' +
+        'if the repo copy is present, check the deployment output rather than rerunning it.',
     );
     this.name = 'MissingKnowledgeIndexError';
   }

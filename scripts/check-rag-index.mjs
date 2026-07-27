@@ -72,12 +72,24 @@ async function main() {
     fail(`${rel} declares an invalid dimension: ${index.dimension}.`);
   }
 
-  const mismatched = chunks.findIndex(
-    (chunk) => !Array.isArray(chunk.embedding) || chunk.embedding.length !== index.dimension,
-  );
+  // Shape alone is not enough. A vector of NaN still has the right length, and an
+  // all-zero vector scores identically against every query, so both would sail past
+  // a length check and quietly return arbitrary chunks at request time. The
+  // `model === 'zero-vector'` guard above only catches an index that admits to it.
+  const mismatched = chunks.findIndex((chunk) => {
+    if (!Array.isArray(chunk.embedding) || chunk.embedding.length !== index.dimension) {
+      return true;
+    }
+    let sumSquares = 0;
+    for (const value of chunk.embedding) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return true;
+      sumSquares += value * value;
+    }
+    return sumSquares === 0;
+  });
   if (mismatched !== -1) {
     fail(
-      `${rel} chunk ${mismatched} (${chunks[mismatched]?.id ?? 'unknown'}) does not match the declared dimension ${index.dimension}.`,
+      `${rel} chunk ${mismatched} (${chunks[mismatched]?.id ?? 'unknown'}) has an invalid embedding: expected ${index.dimension} finite numbers with a nonzero norm.`,
     );
   }
 

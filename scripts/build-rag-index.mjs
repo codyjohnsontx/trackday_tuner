@@ -141,25 +141,21 @@ async function embedBatch(client, model, texts) {
   return response.data.map((item) => item.embedding);
 }
 
-const KNOWN_EMBEDDING_DIMENSIONS = {
-  'text-embedding-3-small': 1536,
-  'text-embedding-3-large': 3072,
-  'text-embedding-ada-002': 1536,
-};
-const FALLBACK_EMBEDDING_DIM = 1536;
-
-function getEmbeddingDim(embeddingModel) {
-  const known = KNOWN_EMBEDDING_DIMENSIONS[embeddingModel];
-  if (known) return known;
-  console.warn(
-    `[rag:index] Unknown embedding model '${embeddingModel}'; using fallback dim ${FALLBACK_EMBEDDING_DIM}.`,
-  );
-  return FALLBACK_EMBEDDING_DIM;
-}
-
 async function main() {
   const apiKey = process.env.OPENAI_API_KEY;
   const embeddingModel = process.env.AI_EMBEDDING_MODEL ?? 'text-embedding-3-small';
+
+  // Checked before any work so a keyless run cannot overwrite the committed index
+  // with zero-vector embeddings. data/rag-index.json ships in the deployment, so a
+  // destructive rewrite here is worse than refusing to run.
+  if (!apiKey) {
+    console.error(
+      '[rag:index] OPENAI_API_KEY is not set. Refusing to run: writing zero-vector ' +
+        'embeddings would clobber the committed index and fail the build check. ' +
+        'Set OPENAI_API_KEY and rerun.',
+    );
+    process.exit(1);
+  }
 
   const files = await walkMarkdown(kbDir);
   if (files.length === 0) {
@@ -178,29 +174,19 @@ async function main() {
 
   console.log(`[rag:index] Prepared ${allChunks.length} chunks from ${files.length} docs.`);
 
-  let embeddings;
-  if (!apiKey) {
-    const zeroDim = getEmbeddingDim(embeddingModel);
-    console.warn(
-      `[rag:index] OPENAI_API_KEY not set; writing index with zero-vector embeddings (dim=${zeroDim}). ` +
-        'Retrieval will return arbitrary results until the index is rebuilt with a real key.',
+  const client = new OpenAI({ apiKey });
+  const embeddings = [];
+  const batchSize = 32;
+  for (let i = 0; i < allChunks.length; i += batchSize) {
+    const slice = allChunks.slice(i, i + batchSize);
+    const inputs = slice.map(
+      (chunk) => `${chunk.source}\n${chunk.heading}\n\n${chunk.text}`,
     );
-    embeddings = allChunks.map(() => new Array(zeroDim).fill(0));
-  } else {
-    const client = new OpenAI({ apiKey });
-    embeddings = [];
-    const batchSize = 32;
-    for (let i = 0; i < allChunks.length; i += batchSize) {
-      const slice = allChunks.slice(i, i + batchSize);
-      const inputs = slice.map(
-        (chunk) => `${chunk.source}\n${chunk.heading}\n\n${chunk.text}`,
-      );
-      const batch = await embedBatch(client, embeddingModel, inputs);
-      embeddings.push(...batch);
-      console.log(
-        `[rag:index] Embedded ${Math.min(i + batchSize, allChunks.length)}/${allChunks.length}`,
-      );
-    }
+    const batch = await embedBatch(client, embeddingModel, inputs);
+    embeddings.push(...batch);
+    console.log(
+      `[rag:index] Embedded ${Math.min(i + batchSize, allChunks.length)}/${allChunks.length}`,
+    );
   }
 
   const chunks = allChunks.map((chunk, idx) => ({
@@ -209,7 +195,7 @@ async function main() {
   }));
   const payload = {
     version: INDEX_VERSION,
-    model: apiKey ? embeddingModel : 'zero-vector',
+    model: embeddingModel,
     dimension: embeddings[0]?.length ?? 0,
     generated_at: new Date().toISOString(),
     source_hash: await computeSourceHash(files),
@@ -224,14 +210,6 @@ async function main() {
   console.log(
     `[rag:index] Wrote ${chunks.length} chunks (${sizeMb} MB) to ${toRelPath(outputPath)}`,
   );
-
-  if (!apiKey) {
-    console.error(
-      '[rag:index] Refusing to exit clean: this index holds zero-vector embeddings and ' +
-        'will fail the build check. Set OPENAI_API_KEY and rerun.',
-    );
-    process.exit(1);
-  }
 }
 
 main().catch((err) => {
