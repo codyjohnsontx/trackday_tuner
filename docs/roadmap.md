@@ -96,13 +96,13 @@ and execution order may legitimately diverge; the reason is recorded there.
    demo identity. Deleting the old name is what forces the choice: reaching for "the
    user" in a new route now lands on a function that cannot hand back a fake one.
 
-   Those 42 became a rename with identical semantics, and the 2 page callers handle
-   the union. The remaining 2 changed behaviour, and they are the point: the write
-   routes `R1` had missed by enumeration, `/api/beta/feedback` and
-   `/api/sessions/export`, stopped serving a demo user without either being named.
-   That is the demonstration of why the type change outranks the guards.
-   `beta/feedback` has since been given an `assertNotDemoRoute()` guard too, so it
-   refuses with the read-only message rather than a misleading 401.
+   Those 42 became a rename with identical semantics, and the two page-level
+   callers handle the union. The remaining 2 changed behaviour, and they are the
+   point: the write routes `R1` had missed by enumeration, `/api/beta/feedback`
+   and `/api/sessions/export`, stopped serving a demo user without either being
+   named. That is the demonstration of why the type change outranks the guards.
+   `beta/feedback` has since been given an `assertNotDemoRoute()` guard too,
+   so it refuses with the read-only message rather than a misleading 401.
 
    Demo mode also takes precedence over a live session inside `getRealUser()`.
    Entering the demo does not sign a rider out, so a signed-in rider carries both
