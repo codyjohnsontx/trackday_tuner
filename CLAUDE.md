@@ -47,6 +47,15 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 
 **Never** run extra staging, committing, stashing, or branch operations unless explicitly asked. If the push is slow, wait — do not retry or run a second push in parallel.
 
+### How PRs land
+
+- PRs merge with a **merge commit** — `gh pr merge <n> --merge`. Squash merging is disabled on the repository; rebase merging is allowed but is not the default
+- Every commit on the branch lands on `main`, so each one must stand on its own. No `wip`, no `fix typo`, no commits that only make sense next to the one after them
+- Review-response work is a normal commit describing what changed and why, not an amendment to the original
+- `git log --first-parent` gives the one-line-per-PR view of `main`; plain `git log` gives the full detail
+- The remote branch is deleted automatically on merge. Clean up locally with `git checkout main`, `git pull --ff-only`, `git branch -d <branch>`, `git remote prune origin`
+- Merging is the user's call. Open the PR, report it, and stop
+
 ## Commands
 
 ```bash
