@@ -43,8 +43,9 @@ and execution order may legitimately diverge; the reason is recorded there.
 
 ### 1 to 4 - live defects
 
-1. **Unauthenticated Stripe checkout through demo mode** - `R1` - `GET /demo` is
-   public and sets a cookie that makes `getAuthenticatedUser()` return a synthetic
+1. **Unauthenticated Stripe checkout through demo mode** - `R1` - **Reproduced and
+   fixed in the repo on 2026-07-27; production stays exposed until it deploys.**
+   `GET /demo` is public and sets a cookie that makes `getAuthenticatedUser()` return a synthetic
    `demo-user`, which `DEMO_PROFILE` marks as `tier: 'pro'`. A `POST` to
    `/api/stripe/checkout` carrying only that cookie returns a real Checkout Session
    URL and creates a real Stripe Customer. The follow-up profile write fails on the
@@ -54,14 +55,35 @@ and execution order may legitimately diverge; the reason is recorded there.
    the only item where a rider can lose money and an outsider can act on the live
    Stripe account. Gate the write routes today; the durable fix is `R2`.
 
+   Reproduced against a running dev server: `GET /demo` with no credentials, then
+   `POST /api/stripe/checkout` carrying only that cookie, returned a real Checkout
+   Session URL. `assertNotDemoRoute()` now refuses demo requests with a 403 before
+   any handler acts on the synthetic user, applied to checkout, portal, events, the
+   session outcome route, and both AI routes. `beta/*` stays public by design and
+   the Stripe webhook is signature-verified rather than cookie-based, so neither is
+   gated. The swallowed `profiles` write is now verified by the row the update
+   returns rather than by the absence of an error, because a missing row or an RLS
+   denial updates nothing and reports no error, and a checkout that proceeds without
+   a linked customer id takes a payment the webhook can never match. The unlinked
+   Stripe customer is deleted on that path so failed attempts cannot pile up.
+
+   Remaining: checkout is still unrate-limited for authenticated riders. A
+   demo-cookie request is now refused with a 403 before authentication runs, and a
+   request carrying neither a demo cookie nor a real session gets a 401, so the
+   remaining exposure is a signed-in rider hammering the route. Enforcing the demo
+   distinction at each call site through the type system is `R2`.
+
 2. **Demo identity is indistinguishable from a real session** - `R2` - all fourteen
-   route handlers were audited and none check demo mode, while server actions
-   consistently call `assertNotDemoMode()`. Handing route handlers a fake user
-   object makes the distinction invisible to every downstream caller, so each new
-   route inherits the bug. Change `getAuthenticatedUser()` to return a discriminated
-   result so the type system forces the decision at each call site. Second because
-   `R1` returns the next time a route is added until this lands, and `R6` cannot be
-   fixed cleanly without it.
+   route handlers were audited at the time of the audit and none checked demo mode,
+   while server actions consistently call `assertNotDemoMode()`. `R1` has since
+   added `assertNotDemoRoute()` to the six write routes, which closes the live
+   exposure but leaves the safeguard as a convention a reviewer has to remember
+   rather than a rule the compiler enforces. Handing route handlers a fake user
+   object keeps the distinction invisible to every downstream caller, so each new
+   route still inherits the bug. Change `getAuthenticatedUser()` to return a
+   discriminated result so the type system forces the decision at each call site.
+   Second because `R1` returns the next time a route is added until this lands, and
+   `R6` cannot be fixed cleanly without it.
 
 3. **RAG index is absent from deployments** - `R3` - **Confirmed and fixed in the
    repo on 2026-07-26; production stays broken until the fix is deployed.**

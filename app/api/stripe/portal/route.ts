@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
+import { assertNotDemoRoute } from '@/lib/demo/mode';
 import { getAppBaseUrl, getStripeClient } from '@/lib/stripe/server';
 
 export async function POST(request: Request) {
   try {
+    const demoResponse = await assertNotDemoRoute();
+    if (demoResponse) return demoResponse;
+
     const user = await getAuthenticatedUser();
     if (!user) {
       return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });

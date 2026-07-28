@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
+import { assertNotDemoRoute } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
 import { generateDayPlan, UpstreamTimeoutError } from '@/lib/rag/advice';
 import {
@@ -393,6 +394,9 @@ async function loadPreferredMemory(params: {
 
 export async function POST(request: Request) {
   const requestId = randomUUID();
+
+  const demoResponse = await assertNotDemoRoute();
+  if (demoResponse) return demoResponse;
 
   let parsedJson: unknown;
   try {
