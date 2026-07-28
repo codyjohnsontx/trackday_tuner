@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
+import { assertNotDemoRoute } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
 import type { FeedbackOutcome, Json, SessionFeedback } from '@/types';
 
@@ -11,6 +12,9 @@ const OUTCOMES = new Set<FeedbackOutcome>(['better', 'same', 'worse', 'unknown']
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function PUT(request: Request, context: RouteContext) {
+  const demoResponse = await assertNotDemoRoute();
+  if (demoResponse) return demoResponse;
+
   const { id: sessionId } = await context.params;
   if (!UUID.test(sessionId)) return NextResponse.json({ ok: false, error: 'Invalid session id.' }, { status: 400 });
 

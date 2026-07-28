@@ -43,8 +43,9 @@ and execution order may legitimately diverge; the reason is recorded there.
 
 ### 1 to 4 - live defects
 
-1. **Unauthenticated Stripe checkout through demo mode** - `R1` - `GET /demo` is
-   public and sets a cookie that makes `getAuthenticatedUser()` return a synthetic
+1. **Unauthenticated Stripe checkout through demo mode** - `R1` - **Reproduced and
+   fixed in the repo on 2026-07-27; production stays exposed until it deploys.**
+   `GET /demo` is public and sets a cookie that makes `getAuthenticatedUser()` return a synthetic
    `demo-user`, which `DEMO_PROFILE` marks as `tier: 'pro'`. A `POST` to
    `/api/stripe/checkout` carrying only that cookie returns a real Checkout Session
    URL and creates a real Stripe Customer. The follow-up profile write fails on the
@@ -53,6 +54,20 @@ and execution order may legitimately diverge; the reason is recorded there.
    unrate-limited, so Customer objects can be created in bulk. First because it is
    the only item where a rider can lose money and an outsider can act on the live
    Stripe account. Gate the write routes today; the durable fix is `R2`.
+
+   Reproduced against a running dev server: `GET /demo` with no credentials, then
+   `POST /api/stripe/checkout` carrying only that cookie, returned a real Checkout
+   Session URL. `assertNotDemoRoute()` now refuses demo requests with a 403 before
+   any handler acts on the synthetic user, applied to checkout, portal, events, the
+   session outcome route, and both AI routes. `beta/*` stays public by design and
+   the Stripe webhook is signature-verified rather than cookie-based, so neither is
+   gated. The swallowed `profiles` write is now checked and fails the request,
+   because a checkout that proceeds without a linked customer id takes a payment the
+   webhook can never match.
+
+   Remaining: checkout is still unrate-limited for authenticated riders, though
+   closing the demo hole means an outsider now gets a 401 there. Enforcing this at
+   each call site through the type system is `R2`.
 
 2. **Demo identity is indistinguishable from a real session** - `R2` - all fourteen
    route handlers were audited and none check demo mode, while server actions

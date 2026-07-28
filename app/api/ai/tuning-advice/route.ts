@@ -5,6 +5,7 @@ import {
   buildPromptFingerprint,
   buildPromptRedactedPreview,
 } from '@/lib/ai-observability';
+import { assertNotDemoRoute } from '@/lib/demo/mode';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
@@ -360,6 +361,9 @@ async function findRecentDuplicateRequest(params: {
 
 export async function POST(request: Request) {
   const requestId = randomUUID();
+
+  const demoResponse = await assertNotDemoRoute();
+  if (demoResponse) return demoResponse;
 
   const contentLength = request.headers.get('content-length');
   if (contentLength && Number(contentLength) > TUNING_ADVICE_LIMITS.MAX_BODY_BYTES) {

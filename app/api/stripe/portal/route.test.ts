@@ -2,6 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createPortalSession = vi.fn();
 
+const cookieValue = vi.hoisted(() => ({ value: undefined as string | undefined }));
+
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({
+    get: (name: string) =>
+      name === 'trackday_tuner_demo' && cookieValue.value ? { value: cookieValue.value } : undefined,
+  })),
+}));
+
 vi.mock('@/lib/auth', () => ({
   getAuthenticatedUser: vi.fn(),
 }));
@@ -24,6 +33,7 @@ import { POST } from '@/app/api/stripe/portal/route';
 describe('POST /api/stripe/portal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    cookieValue.value = undefined;
   });
 
   it('returns 401 when unauthenticated', async () => {
@@ -55,5 +65,14 @@ describe('POST /api/stripe/portal', () => {
       }),
     );
     expect(body.url).toBe('https://billing.stripe.com/session/123');
+  });
+
+  it('refuses demo mode without touching Stripe', async () => {
+    cookieValue.value = '1';
+
+    const response = await POST(new Request('http://127.0.0.1:3000/api/stripe/portal', { method: 'POST' }));
+
+    expect(response.status).toBe(403);
+    expect(createPortalSession).not.toHaveBeenCalled();
   });
 });
