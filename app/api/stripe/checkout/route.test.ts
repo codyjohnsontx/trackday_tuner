@@ -135,5 +135,6 @@ describe('POST /api/stripe/checkout', () => {
 
     expect(response.status).toBe(500);
     expect(createSession).not.toHaveBeenCalled();
+    expect(deleteCustomer).toHaveBeenCalledWith('cus_123');
   });
 });

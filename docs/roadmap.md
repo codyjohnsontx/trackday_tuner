@@ -74,13 +74,16 @@ and execution order may legitimately diverge; the reason is recorded there.
    distinction at each call site through the type system is `R2`.
 
 2. **Demo identity is indistinguishable from a real session** - `R2` - all fourteen
-   route handlers were audited and none check demo mode, while server actions
-   consistently call `assertNotDemoMode()`. Handing route handlers a fake user
-   object makes the distinction invisible to every downstream caller, so each new
-   route inherits the bug. Change `getAuthenticatedUser()` to return a discriminated
-   result so the type system forces the decision at each call site. Second because
-   `R1` returns the next time a route is added until this lands, and `R6` cannot be
-   fixed cleanly without it.
+   route handlers were audited at the time of the audit and none checked demo mode,
+   while server actions consistently call `assertNotDemoMode()`. `R1` has since
+   added `assertNotDemoRoute()` to the six write routes, which closes the live
+   exposure but leaves the safeguard as a convention a reviewer has to remember
+   rather than a rule the compiler enforces. Handing route handlers a fake user
+   object keeps the distinction invisible to every downstream caller, so each new
+   route still inherits the bug. Change `getAuthenticatedUser()` to return a
+   discriminated result so the type system forces the decision at each call site.
+   Second because `R1` returns the next time a route is added until this lands, and
+   `R6` cannot be fixed cleanly without it.
 
 3. **RAG index is absent from deployments** - `R3` - **Confirmed and fixed in the
    repo on 2026-07-26; production stays broken until the fix is deployed.**
