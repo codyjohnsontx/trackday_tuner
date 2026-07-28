@@ -61,13 +61,17 @@ and execution order may legitimately diverge; the reason is recorded there.
    any handler acts on the synthetic user, applied to checkout, portal, events, the
    session outcome route, and both AI routes. `beta/*` stays public by design and
    the Stripe webhook is signature-verified rather than cookie-based, so neither is
-   gated. The swallowed `profiles` write is now checked and fails the request,
-   because a checkout that proceeds without a linked customer id takes a payment the
-   webhook can never match.
+   gated. The swallowed `profiles` write is now verified by the row the update
+   returns rather than by the absence of an error, because a missing row or an RLS
+   denial updates nothing and reports no error, and a checkout that proceeds without
+   a linked customer id takes a payment the webhook can never match. The unlinked
+   Stripe customer is deleted on that path so failed attempts cannot pile up.
 
-   Remaining: checkout is still unrate-limited for authenticated riders, though
-   closing the demo hole means an outsider now gets a 401 there. Enforcing this at
-   each call site through the type system is `R2`.
+   Remaining: checkout is still unrate-limited for authenticated riders. A
+   demo-cookie request is now refused with a 403 before authentication runs, and a
+   request carrying neither a demo cookie nor a real session gets a 401, so the
+   remaining exposure is a signed-in rider hammering the route. Enforcing the demo
+   distinction at each call site through the type system is `R2`.
 
 2. **Demo identity is indistinguishable from a real session** - `R2` - all fourteen
    route handlers were audited and none check demo mode, while server actions
