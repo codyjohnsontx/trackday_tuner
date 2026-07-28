@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import { buildSessionExportCsv } from '@/lib/session-export';
@@ -19,7 +19,7 @@ function todayFileDate() {
 }
 
 export async function GET(request: Request) {
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) {
     return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
   }

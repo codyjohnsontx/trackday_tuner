@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import { getDemoVehicleBaseline, getDemoVehicleBaselines } from '@/lib/demo/data';
@@ -15,7 +15,7 @@ export async function getVehicleBaseline(vehicleId: string): Promise<VehicleBase
     return getDemoVehicleBaseline(vehicleId);
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return null;
 
   const supabase = await createClient();
@@ -36,7 +36,7 @@ export async function getVehicleBaselines(vehicleIds: string[]): Promise<Vehicle
     return getDemoVehicleBaselines(vehicleIds);
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return [];
 
   const supabase = await createClient();
@@ -53,7 +53,7 @@ export async function setVehicleBaselineFromSession(sessionId: string): Promise<
   const demoError = await assertNotDemoMode<VehicleBaseline>();
   if (demoError) return demoError;
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const profile = await getUserProfile();
@@ -119,7 +119,7 @@ export async function clearVehicleBaseline(vehicleId: string): Promise<ActionRes
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const profile = await getUserProfile();

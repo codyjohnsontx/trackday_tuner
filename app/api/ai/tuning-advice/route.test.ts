@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
-  getAuthenticatedUser,
+  getRealUser,
   getUserProfile,
   createClient,
   createAdminClient,
@@ -9,7 +9,7 @@ const {
   loadRaceEngineerContext,
   evaluateAdvicePolicy,
 } = vi.hoisted(() => ({
-  getAuthenticatedUser: vi.fn(),
+  getRealUser: vi.fn(),
   getUserProfile: vi.fn(),
   createClient: vi.fn(),
   createAdminClient: vi.fn(),
@@ -19,7 +19,7 @@ const {
 }));
 
 vi.mock('@/lib/auth', () => ({
-  getAuthenticatedUser,
+  getRealUser,
 }));
 
 vi.mock('@/lib/actions/vehicles', () => ({
@@ -309,7 +309,7 @@ function fingerprintFor(question: string): string {
 describe('POST /api/ai/tuning-advice duplicate handling', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getAuthenticatedUser.mockResolvedValue({ id: USER_ID });
+    getRealUser.mockResolvedValue({ id: USER_ID });
     getUserProfile.mockResolvedValue({ id: USER_ID, tier: 'pro' });
     createClient.mockResolvedValue(createServerClient());
     loadRaceEngineerContext.mockResolvedValue(null);

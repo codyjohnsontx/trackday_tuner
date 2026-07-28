@@ -23,7 +23,7 @@ vi.mock('next/headers', () => ({
 }));
 
 vi.mock('@/lib/auth', () => ({
-  getAuthenticatedUser: vi.fn(),
+  getRealUser: vi.fn(),
 }));
 
 vi.mock('@/lib/actions/vehicles', () => ({
@@ -43,7 +43,7 @@ vi.mock('@/lib/stripe/server', () => ({
   getAppBaseUrl: vi.fn((requestUrl: string) => new URL(requestUrl).origin),
 }));
 
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { POST } from '@/app/api/stripe/checkout/route';
 
@@ -55,7 +55,7 @@ describe('POST /api/stripe/checkout', () => {
   });
 
   it('returns 401 when unauthenticated', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue(null);
+    vi.mocked(getRealUser).mockResolvedValue(null);
 
     const response = await POST(new Request('http://127.0.0.1:3000/api/stripe/checkout', { method: 'POST' }));
 
@@ -63,7 +63,7 @@ describe('POST /api/stripe/checkout', () => {
   });
 
   it('creates checkout session and returns url', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1', email: 'test@example.com' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1', email: 'test@example.com' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free', stripe_customer_id: null } as never);
     createCustomer.mockResolvedValue({ id: 'cus_123' });
     createSession.mockResolvedValue({ url: 'https://checkout.stripe.com/session/123' });
@@ -94,7 +94,7 @@ describe('POST /api/stripe/checkout', () => {
   });
 
   it('fails the request when the customer id cannot be saved to the profile', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1', email: 'test@example.com' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1', email: 'test@example.com' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free', stripe_customer_id: null } as never);
     createCustomer.mockResolvedValue({ id: 'cus_123' });
     profileMaybeSingle.mockResolvedValue({
@@ -111,7 +111,7 @@ describe('POST /api/stripe/checkout', () => {
   });
 
   it('fails the request when the profile update matches no row', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1', email: 'test@example.com' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1', email: 'test@example.com' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free', stripe_customer_id: null } as never);
     createCustomer.mockResolvedValue({ id: 'cus_123' });
     // A missing row or an RLS denial updates nothing and reports no error.
@@ -125,7 +125,7 @@ describe('POST /api/stripe/checkout', () => {
   });
 
   it('still fails the request when cleaning up the orphaned customer fails', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1', email: 'test@example.com' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1', email: 'test@example.com' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free', stripe_customer_id: null } as never);
     createCustomer.mockResolvedValue({ id: 'cus_123' });
     profileMaybeSingle.mockResolvedValue({ data: null, error: null });

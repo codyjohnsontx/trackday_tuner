@@ -1,14 +1,16 @@
 import { redirect } from 'next/navigation';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getViewer } from '@/lib/auth';
 
 export default async function AuthenticatedAppLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getAuthenticatedUser();
+  // Demo browses the authenticated app, so this is one of the two places that
+  // deliberately admits a demo viewer.
+  const viewer = await getViewer();
 
-  if (!user) {
+  if (viewer.status === 'anonymous') {
     redirect('/login');
   }
 

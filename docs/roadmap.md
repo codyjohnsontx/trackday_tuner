@@ -73,7 +73,8 @@ and execution order may legitimately diverge; the reason is recorded there.
    remaining exposure is a signed-in rider hammering the route. Enforcing the demo
    distinction at each call site through the type system is `R2`.
 
-2. **Demo identity is indistinguishable from a real session** - `R2` - all fourteen
+2. **Demo identity is indistinguishable from a real session** - `R2` - **Fixed in
+   the repo on 2026-07-28.** All fourteen
    route handlers were audited at the time of the audit and none checked demo mode,
    while server actions consistently call `assertNotDemoMode()`. `R1` has since
    added `assertNotDemoRoute()` to the six write routes, which closes the live
@@ -84,6 +85,32 @@ and execution order may legitimately diverge; the reason is recorded there.
    discriminated result so the type system forces the decision at each call site.
    Second because `R1` returns the next time a route is added until this lands, and
    `R6` cannot be fixed cleanly without it.
+
+   The audit assumed one function returning a union, but all 47 call sites were
+   checked first and 45 of them sit behind an existing `isDemoMode()` or
+   `assertNotDemoMode()` branch, so the demo user was already unreachable there.
+   The synthesis existed for exactly two page-level callers while endangering
+   everything else. `getAuthenticatedUser()` is therefore gone, replaced by
+   `getRealUser()`, which cannot return a demo user, and `getViewer()`, which
+   returns the `Viewer` union and is the only way to obtain a demo identity. The 45
+   became a rename with identical semantics; `app/(app)/layout.tsx` and
+   `app/login/page.tsx` handle the union. Deleting the old name is what forces the
+   choice: reaching for "the user" in a new route now lands on a function that
+   cannot hand back a fake one.
+
+   This closed two write routes `R1` had missed by enumeration, `/api/beta/feedback`
+   and `/api/sessions/export`, without either being named - the demonstration of why
+   the type change outranks the guards. `beta/feedback` has since been given an
+   `assertNotDemoRoute()` guard too, so it refuses with the read-only message rather
+   than a misleading 401.
+
+   `isAuthenticated()` is now false in demo mode, which is what it always claimed to
+   mean. Its only caller, `app/layout.tsx`, already wrote `demoMode || await
+   isAuthenticated()`, so behaviour is unchanged.
+
+   Note for `R6`: demo requests to `/api/sessions/export` now return 401 rather than
+   the previous 500. The route is still unusable in the demo, which is what `R6`
+   fixes; it simply fails honestly now.
 
 3. **RAG index is absent from deployments** - `R3` - **Confirmed and fixed in the
    repo on 2026-07-26; production stays broken until the fix is deployed.**

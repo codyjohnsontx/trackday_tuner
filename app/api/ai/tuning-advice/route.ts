@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import {
   buildPromptFingerprint,
   buildPromptRedactedPreview,
@@ -392,7 +392,7 @@ export async function POST(request: Request) {
     return errorResponse(400, validated.error, requestId);
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) {
     return errorResponse(401, 'Not authenticated.', requestId);
   }

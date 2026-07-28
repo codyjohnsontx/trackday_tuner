@@ -26,9 +26,9 @@ export async function assertNotDemoMode<T = never>(): Promise<ActionResult<T> | 
 /**
  * Route-handler counterpart to `assertNotDemoMode`.
  *
- * `getAuthenticatedUser()` returns a synthetic demo user, so a route that only
- * checks for a user treats the public demo cookie as a real session. Every
- * write route must call this before acting on that user.
+ * `getRealUser()` cannot return a demo user, so a demo request already fails the
+ * authentication check on its own. This runs first so it fails as a 403 saying
+ * the demo is read-only, rather than a 401 claiming the rider is not signed in.
  */
 export async function assertNotDemoRoute(): Promise<NextResponse | null> {
   if (await isDemoMode()) {

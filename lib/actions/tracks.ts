@@ -2,7 +2,7 @@
 
 import { cache } from 'react';
 import { revalidatePath, revalidateTag } from 'next/cache';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { getDemoTracks } from '@/lib/demo/data';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
@@ -32,7 +32,7 @@ export async function getTracks(): Promise<Track[]> {
     return getDemoTracks();
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return [];
 
   return getTracksForUser(user.id);
@@ -63,7 +63,7 @@ export async function createTrack(input: {
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const name = input.name.trim();
@@ -114,7 +114,7 @@ export async function getTrack(id: string): Promise<ActionResult<Track>> {
     return track ? { ok: true, data: track } : { ok: false, error: 'Track not found.' };
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const track = await getTrackForUser(id, user.id);
@@ -130,7 +130,7 @@ export async function updateTrack(
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const name = input.name.trim();
@@ -167,7 +167,7 @@ export async function deleteTrack(id: string): Promise<ActionResult> {
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const existingTrack = await getTrackForUser(id, user.id);

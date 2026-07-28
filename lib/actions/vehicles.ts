@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { getDemoProfile, getDemoVehicles } from '@/lib/demo/data';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
@@ -15,7 +15,7 @@ export async function getVehicles(): Promise<Vehicle[]> {
     return getDemoVehicles();
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return [];
 
   const supabase = await createClient();
@@ -33,7 +33,7 @@ export async function getUserProfile(): Promise<Profile | null> {
     return getDemoProfile();
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return null;
 
   const supabase = await createClient();
@@ -52,7 +52,7 @@ export async function createVehicle(
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const supabase = await createClient();
@@ -100,7 +100,7 @@ export async function getVehicle(id: string): Promise<ActionResult<Vehicle>> {
     return vehicle ? { ok: true, data: vehicle } : { ok: false, error: 'Vehicle not found.' };
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const supabase = await createClient();
@@ -122,7 +122,7 @@ export async function updateVehicle(
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   if (input.year !== undefined && input.year !== null) {
@@ -150,7 +150,7 @@ export async function deleteVehicle(id: string): Promise<ActionResult> {
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const supabase = await createClient();

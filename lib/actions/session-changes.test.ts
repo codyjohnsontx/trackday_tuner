@@ -5,7 +5,7 @@ vi.mock('next/headers', () => ({
 }));
 
 vi.mock('@/lib/auth', () => ({
-  getAuthenticatedUser: vi.fn(),
+  getRealUser: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -13,7 +13,7 @@ vi.mock('@/lib/supabase/server', () => ({
 }));
 
 import { cookies } from 'next/headers';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { getSessionChangeRecords } from '@/lib/actions/session-changes';
 import { DEMO_COOKIE_NAME } from '@/lib/demo/mode';
@@ -68,14 +68,14 @@ describe('session change actions', () => {
   });
 
   it('returns an empty list when logged out', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue(null);
+    vi.mocked(getRealUser).mockResolvedValue(null);
 
     await expect(getSessionChangeRecords('session-1')).resolves.toEqual([]);
     expect(createClient).not.toHaveBeenCalled();
   });
 
   it('swallows query errors and returns an empty list', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     const query = createQuery({ base: { data: null, error: { message: 'boom' } } });
     const from = vi.fn().mockReturnValue(query);
     vi.mocked(createClient).mockResolvedValue({ from } as never);
@@ -84,7 +84,7 @@ describe('session change actions', () => {
   });
 
   it('sorts previous before baseline for the authenticated user', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     const records = [
       makeRecord({ id: 'change-baseline', reference_kind: 'baseline' }),
       makeRecord({ id: 'change-previous', reference_kind: 'previous' }),

@@ -1,6 +1,6 @@
 'use server';
 
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { isDemoMode } from '@/lib/demo/mode';
 import { filterRecommendationsBeforeSession } from '@/lib/recommendation-ordering';
 import { createClient } from '@/lib/supabase/server';
@@ -8,7 +8,7 @@ import type { AiRecommendation, Session, SessionFeedback } from '@/types';
 
 export async function getSessionOutcome(sessionId: string): Promise<SessionFeedback | null> {
   if (await isDemoMode()) return null;
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return null;
   const supabase = await createClient();
   const { data } = await supabase
@@ -22,7 +22,7 @@ export async function getSessionOutcome(sessionId: string): Promise<SessionFeedb
 
 export async function getVehicleOutcomeHistory(vehicleId: string, limit = 5): Promise<SessionFeedback[]> {
   if (await isDemoMode()) return [];
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return [];
   const supabase = await createClient();
   const { data } = await supabase
@@ -40,7 +40,7 @@ export async function getOutstandingRecommendations(params: {
   beforeSessionId: string;
 }): Promise<AiRecommendation[]> {
   if (await isDemoMode()) return [];
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return [];
   const supabase = await createClient();
   const [targetResult, recommendationResult] = await Promise.all([

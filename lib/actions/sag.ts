@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
 import type { TableInsert } from '@/types/supabase';
@@ -12,7 +12,7 @@ export async function getSagEntries(): Promise<SagEntry[]> {
     return [];
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return [];
 
   const supabase = await createClient();
@@ -31,7 +31,7 @@ export async function createSagEntry(
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const hasAnyMeasurement = [
