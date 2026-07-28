@@ -1,6 +1,6 @@
 'use server';
 
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { getDemoSessionChanges } from '@/lib/demo/data';
 import { isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
@@ -16,7 +16,7 @@ export async function getSessionChangeRecords(sessionId: string): Promise<Sessio
     return getDemoSessionChanges(sessionId);
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return [];
 
   const supabase = await createClient();

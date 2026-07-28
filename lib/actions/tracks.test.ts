@@ -7,7 +7,7 @@ vi.mock('next/cache', () => ({
 }));
 
 vi.mock('@/lib/auth', () => ({
-  getAuthenticatedUser: vi.fn(),
+  getRealUser: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -19,7 +19,7 @@ vi.mock('@/lib/actions/vehicles', () => ({
 }));
 
 import { revalidatePath } from 'next/cache';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { createClient } from '@/lib/supabase/server';
 import { createTrack, deleteTrack, getTrack, getTracks, updateTrack } from '@/lib/actions/tracks';
@@ -54,7 +54,7 @@ describe('tracks actions', () => {
   });
 
   it('returns auth error while logged out', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue(null);
+    vi.mocked(getRealUser).mockResolvedValue(null);
 
     const result = await createTrack({ name: 'Road Atlanta' });
 
@@ -62,7 +62,7 @@ describe('tracks actions', () => {
   });
 
   it('validates required track name', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const result = await createTrack({ name: '   ' });
 
@@ -71,7 +71,7 @@ describe('tracks actions', () => {
   });
 
   it('creates custom track and revalidates dependent pages', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
 
     const insertQuery = createQuery({
@@ -106,7 +106,7 @@ describe('tracks actions', () => {
   });
 
   it('returns only seeded and owned tracks for the authenticated user', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const listQuery = createQuery({
       base: {
@@ -128,7 +128,7 @@ describe('tracks actions', () => {
   });
 
   it('enforces free tier track limit', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free' } as never);
 
     const countQuery = createQuery({
@@ -146,7 +146,7 @@ describe('tracks actions', () => {
   });
 
   it('gets track details for seeded track', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const selectQuery = createQuery({
       single: {
@@ -163,7 +163,7 @@ describe('tracks actions', () => {
   });
 
   it('rejects update when user is logged out', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue(null);
+    vi.mocked(getRealUser).mockResolvedValue(null);
 
     const result = await updateTrack('track-1', { name: 'Updated' });
 
@@ -171,7 +171,7 @@ describe('tracks actions', () => {
   });
 
   it('rejects update when name is empty', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const result = await updateTrack('track-1', { name: '    ' });
 
@@ -179,7 +179,7 @@ describe('tracks actions', () => {
   });
 
   it('rejects update on seeded tracks', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const selectQuery = createQuery({
       single: {
@@ -196,7 +196,7 @@ describe('tracks actions', () => {
   });
 
   it('updates owned custom tracks', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const selectQuery = createQuery({
       single: {
@@ -232,7 +232,7 @@ describe('tracks actions', () => {
   });
 
   it('rejects delete on seeded tracks', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const selectQuery = createQuery({
       single: {
@@ -249,7 +249,7 @@ describe('tracks actions', () => {
   });
 
   it('deletes owned custom tracks', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const selectQuery = createQuery({
       single: {
@@ -274,7 +274,7 @@ describe('tracks actions', () => {
   });
 
   it('surfaces delete errors from the database', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const selectQuery = createQuery({
       single: {

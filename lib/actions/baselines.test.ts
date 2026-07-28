@@ -9,7 +9,7 @@ vi.mock('next/headers', () => ({
 }));
 
 vi.mock('@/lib/auth', () => ({
-  getAuthenticatedUser: vi.fn(),
+  getRealUser: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -22,7 +22,7 @@ vi.mock('@/lib/actions/vehicles', () => ({
 
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import {
   clearVehicleBaseline,
@@ -128,7 +128,7 @@ describe('baseline actions', () => {
   });
 
   it('returns a baseline for the authenticated user', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     const baselineQuery = createQuery({ base: { data: [baseline], error: null } });
     const from = vi.fn().mockReturnValue(baselineQuery);
     vi.mocked(createClient).mockResolvedValue({ from } as never);
@@ -142,7 +142,7 @@ describe('baseline actions', () => {
   });
 
   it('returns null when getting a baseline while logged out', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue(null);
+    vi.mocked(getRealUser).mockResolvedValue(null);
 
     await expect(getVehicleBaseline('vehicle-1')).resolves.toBeNull();
     expect(createClient).not.toHaveBeenCalled();
@@ -154,7 +154,7 @@ describe('baseline actions', () => {
   });
 
   it('filters baseline lookup by requested vehicle ids', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     const baselinesQuery = createQuery({ base: { data: [baseline], error: null } });
     const from = vi.fn().mockReturnValue(baselinesQuery);
     vi.mocked(createClient).mockResolvedValue({ from } as never);
@@ -167,7 +167,7 @@ describe('baseline actions', () => {
   });
 
   it('rejects setting a baseline while logged out', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue(null);
+    vi.mocked(getRealUser).mockResolvedValue(null);
 
     const result = await setVehicleBaselineFromSession('session-1');
 
@@ -175,7 +175,7 @@ describe('baseline actions', () => {
   });
 
   it('rejects setting a baseline for free users', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free' } as never);
 
     const result = await setVehicleBaselineFromSession('session-1');
@@ -185,7 +185,7 @@ describe('baseline actions', () => {
   });
 
   it('rejects missing sessions', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
     const sessionQuery = createQuery({ single: { data: null, error: { message: 'not found' } } });
     const from = vi.fn().mockReturnValue(sessionQuery);
@@ -197,7 +197,7 @@ describe('baseline actions', () => {
   });
 
   it('upserts a snapshot from an owned session', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
 
     const sessionQuery = createQuery({ single: { data: session, error: null } });
@@ -245,7 +245,7 @@ describe('baseline actions', () => {
   });
 
   it('revalidates garage, session detail, and compare paths after setting a baseline', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
 
     const from = vi
@@ -263,7 +263,7 @@ describe('baseline actions', () => {
   });
 
   it('deletes a baseline only by user and vehicle id', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
     const deleteQuery = createQuery({ base: { data: [{ source_session_id: 'session-1' }], error: null } });
     const from = vi.fn().mockReturnValue(deleteQuery);
@@ -278,7 +278,7 @@ describe('baseline actions', () => {
   });
 
   it('revalidates garage and source session paths after clearing a baseline', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
     const deleteQuery = createQuery({ base: { data: [{ source_session_id: 'session-1' }], error: null } });
     const from = vi.fn().mockReturnValue(deleteQuery);

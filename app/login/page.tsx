@@ -1,14 +1,16 @@
 import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { AuthForm } from '@/components/auth/auth-form';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getViewer } from '@/lib/auth';
 import { getOAuthProviders } from '@/lib/auth/providers';
 import { isBetaInviteOnly } from '@/lib/env.server';
 
 export default async function LoginPage() {
-  const user = await getAuthenticatedUser();
+  // A demo viewer is already "in" the app, so send them on rather than offering
+  // a login form they cannot use.
+  const viewer = await getViewer();
 
-  if (user) {
+  if (viewer.status !== 'anonymous') {
     redirect('/dashboard');
   }
 

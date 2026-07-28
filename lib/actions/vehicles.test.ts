@@ -5,7 +5,7 @@ vi.mock('next/cache', () => ({
 }));
 
 vi.mock('@/lib/auth', () => ({
-  getAuthenticatedUser: vi.fn(),
+  getRealUser: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -13,7 +13,7 @@ vi.mock('@/lib/supabase/server', () => ({
 }));
 
 import { revalidatePath } from 'next/cache';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { createVehicle, deleteVehicle, updateVehicle } from '@/lib/actions/vehicles';
 
@@ -46,7 +46,7 @@ describe('vehicles actions', () => {
   });
 
   it('returns auth error when creating vehicle while logged out', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue(null);
+    vi.mocked(getRealUser).mockResolvedValue(null);
 
     const result = await createVehicle({ nickname: 'Bike', type: 'motorcycle' });
 
@@ -54,7 +54,7 @@ describe('vehicles actions', () => {
   });
 
   it('enforces free tier vehicle limit', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const profileQuery = createQuery({
       single: { data: { id: 'user-1', tier: 'free' }, error: null },
@@ -85,7 +85,7 @@ describe('vehicles actions', () => {
   });
 
   it('creates vehicle and revalidates garage path', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const profileQuery = createQuery({
       single: { data: { id: 'user-1', tier: 'pro' }, error: null },
@@ -131,7 +131,7 @@ describe('vehicles actions', () => {
   });
 
   it('validates year on update before database call', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const result = await updateVehicle('veh-1', { year: 1700 });
 
@@ -140,7 +140,7 @@ describe('vehicles actions', () => {
   });
 
   it('surfaces delete errors from the database', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const deleteQuery = createQuery({
       base: { data: null, error: { message: 'Delete failed' } },

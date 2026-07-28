@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import {
   getDemoComparableSessions,
   getDemoLatestSessionsByVehicle,
@@ -81,7 +81,7 @@ export async function getSessions(vehicleId?: string, limit?: number): Promise<S
     return getDemoSessions(vehicleId, limit);
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return [];
 
   const supabase = await createClient();
@@ -108,7 +108,7 @@ export async function getLatestSessionsByVehicle(): Promise<Record<string, Sessi
     return getDemoLatestSessionsByVehicle();
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return {};
 
   const supabase = await createClient();
@@ -135,7 +135,7 @@ export async function getSessionCount(vehicleId?: string): Promise<number> {
     return getDemoSessionCount(vehicleId);
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return 0;
 
   const supabase = await createClient();
@@ -157,7 +157,7 @@ export async function getSession(id: string): Promise<Session | null> {
     return getDemoSession(id);
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return null;
 
   const supabase = await createClient();
@@ -177,7 +177,7 @@ export async function getSessionEnvironment(sessionId: string): Promise<SessionE
     return getDemoSessionEnvironment(sessionId);
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return null;
 
   const supabase = await createClient();
@@ -196,7 +196,7 @@ export async function getSessionEnvironments(sessionIds: string[]): Promise<Sess
     return getDemoSessionEnvironments(sessionIds);
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user || sessionIds.length === 0) return [];
 
   const supabase = await createClient();
@@ -216,7 +216,7 @@ export async function getPreviousSession(
     return getDemoPreviousSession(currentSession);
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return null;
 
   const supabase = await createClient();
@@ -242,7 +242,7 @@ export async function getComparableSessions(currentSession: Session): Promise<Se
     return getDemoComparableSessions(currentSession);
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return [];
 
   const supabase = await createClient();
@@ -272,7 +272,7 @@ export async function getTelemetrySummaries(sessionIds: string[]): Promise<Telem
     return getDemoTelemetrySummaries(sessionIds);
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return [];
 
   const supabase = await createClient();
@@ -302,7 +302,7 @@ export async function getSessionLaps(sessionId: string): Promise<SessionLap[]> {
     }));
   }
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return [];
   const supabase = await createClient();
   const { data } = await supabase
@@ -320,7 +320,7 @@ export async function createSession(
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const supabase = await createClient();
@@ -553,7 +553,7 @@ export async function replaceSessionLaps(
   const validationError = validateLaps(laps);
   if (validationError) return { ok: false, error: validationError };
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
   const supabase = await createClient();
   const { data: sessionRow, error: sessionError } = await supabase
@@ -583,7 +583,7 @@ export async function deleteSession(id: string): Promise<ActionResult> {
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const supabase = await createClient();

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { assertNotDemoRoute } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     const demoResponse = await assertNotDemoRoute();
     if (demoResponse) return demoResponse;
 
-    const user = await getAuthenticatedUser();
+    const user = await getRealUser();
     if (!user) {
       return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
     }

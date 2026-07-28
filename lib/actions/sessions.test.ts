@@ -9,7 +9,7 @@ vi.mock('next/headers', () => ({
 }));
 
 vi.mock('@/lib/auth', () => ({
-  getAuthenticatedUser: vi.fn(),
+  getRealUser: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -22,7 +22,7 @@ vi.mock('@/lib/actions/vehicles', () => ({
 
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { DEMO_COOKIE_NAME } from '@/lib/demo/mode';
@@ -159,7 +159,7 @@ describe('sessions actions', () => {
   });
 
   it('returns auth error when creating session while logged out', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue(null);
+    vi.mocked(getRealUser).mockResolvedValue(null);
 
     const result = await createSession(validInput);
 
@@ -167,7 +167,7 @@ describe('sessions actions', () => {
   });
 
   it('enforces free tier session limit', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free' } as never);
 
     const countQuery = createQuery({
@@ -188,7 +188,7 @@ describe('sessions actions', () => {
   });
 
   it('denormalizes track name when track_id is provided without track_name', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
 
     const trackLookup = createQuery({
@@ -235,7 +235,7 @@ describe('sessions actions', () => {
   });
 
   it('rolls back the session when environment insert fails', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -287,7 +287,7 @@ describe('sessions actions', () => {
   });
 
   it('persists change records against the previous session and the active baseline', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
 
     const insertQuery = createQuery({ single: { data: createdSession, error: null } });
@@ -333,7 +333,7 @@ describe('sessions actions', () => {
   });
 
   it('persists a single change record when only a previous session exists', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
 
     const insertQuery = createQuery({ single: { data: createdSession, error: null } });
@@ -360,7 +360,7 @@ describe('sessions actions', () => {
   });
 
   it('writes no change records when there is no reference to compare against', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
 
     const insertQuery = createQuery({ single: { data: createdSession, error: null } });
@@ -384,7 +384,7 @@ describe('sessions actions', () => {
   });
 
   it('still succeeds without rollback when the change-record insert fails', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -420,7 +420,7 @@ describe('sessions actions', () => {
   });
 
   it('skips persisting change records when the vehicle type cannot be resolved', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -450,7 +450,7 @@ describe('sessions actions', () => {
   });
 
   it('returns the closest previous session for same day and earlier time', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const current: Session = {
       id: 'current',
@@ -492,7 +492,7 @@ describe('sessions actions', () => {
   });
 
   it('prioritizes same-track comparable sessions before applying the final cap', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const current: Session = {
       id: 'current',
@@ -545,7 +545,7 @@ describe('sessions actions', () => {
   });
 
   it('returns environment rows for the requested sessions', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const environments: SessionEnvironment[] = [
       {
@@ -579,7 +579,7 @@ describe('sessions actions', () => {
   });
 
   it('returns telemetry summaries for requested session ids', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const summaries: TelemetrySummary[] = [
       {
@@ -618,7 +618,7 @@ describe('sessions actions', () => {
   });
 
   it('aborts lap replacement when the session lookup fails', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     const sessionQuery = createQuery({
       single: { data: null, error: { message: 'snapshot failed' } },
     });
@@ -633,7 +633,7 @@ describe('sessions actions', () => {
   });
 
   it('returns the transactional RPC error when lap replacement fails', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     const sessionQuery = createQuery({
       single: { data: createdSession, error: null },
     });

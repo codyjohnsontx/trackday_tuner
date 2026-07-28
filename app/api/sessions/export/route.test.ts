@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/auth', () => ({
-  getAuthenticatedUser: vi.fn(),
+  getRealUser: vi.fn(),
 }));
 
 vi.mock('@/lib/actions/vehicles', () => ({
@@ -12,7 +12,7 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(),
 }));
 
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { createClient } from '@/lib/supabase/server';
 import { GET } from '@/app/api/sessions/export/route';
@@ -82,7 +82,7 @@ describe('GET /api/sessions/export', () => {
   });
 
   it('returns 401 when unauthenticated', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue(null);
+    vi.mocked(getRealUser).mockResolvedValue(null);
 
     const response = await GET(new Request('http://127.0.0.1:3000/api/sessions/export'));
 
@@ -90,7 +90,7 @@ describe('GET /api/sessions/export', () => {
   });
 
   it('returns 403 for free users', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free' } as never);
 
     const response = await GET(new Request('http://127.0.0.1:3000/api/sessions/export'));
@@ -99,7 +99,7 @@ describe('GET /api/sessions/export', () => {
   });
 
   it('returns csv for pro users and applies filters', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
 
     const sessionsQuery = createQuery({ data: [session], error: null });

@@ -73,7 +73,8 @@ and execution order may legitimately diverge; the reason is recorded there.
    remaining exposure is a signed-in rider hammering the route. Enforcing the demo
    distinction at each call site through the type system is `R2`.
 
-2. **Demo identity is indistinguishable from a real session** - `R2` - all fourteen
+2. **Demo identity is indistinguishable from a real session** - `R2` - **Fixed in
+   the repo on 2026-07-28.** All fourteen
    route handlers were audited at the time of the audit and none checked demo mode,
    while server actions consistently call `assertNotDemoMode()`. `R1` has since
    added `assertNotDemoRoute()` to the six write routes, which closes the live
@@ -84,6 +85,38 @@ and execution order may legitimately diverge; the reason is recorded there.
    discriminated result so the type system forces the decision at each call site.
    Second because `R1` returns the next time a route is added until this lands, and
    `R6` cannot be fixed cleanly without it.
+
+   The audit assumed one function returning a union, but the 46 call sites were
+   checked first. 36 are server actions sitting behind an existing `isDemoMode()`
+   or `assertNotDemoMode()` branch and 6 are the route handlers `R1` guarded, so in
+   those 42 the demo user was already unreachable. The synthesis existed for two
+   page-level callers while endangering the rest. `getAuthenticatedUser()` is
+   therefore gone, replaced by `getRealUser()`, which cannot return a demo user, and
+   `getViewer()`, which returns the `Viewer` union and is the only way to obtain a
+   demo identity. Deleting the old name is what forces the choice: reaching for "the
+   user" in a new route now lands on a function that cannot hand back a fake one.
+
+   Those 42 became a rename with identical semantics, and the two page-level
+   callers handle the union. The remaining 2 changed behaviour, and they are the
+   point: the write routes `R1` had missed by enumeration, `/api/beta/feedback`
+   and `/api/sessions/export`, stopped serving a demo user without either being
+   named. That is the demonstration of why the type change outranks the guards.
+   `beta/feedback` has since been given an `assertNotDemoRoute()` guard too,
+   so it refuses with the read-only message rather than a misleading 401.
+
+   Demo mode also takes precedence over a live session inside `getRealUser()`.
+   Entering the demo does not sign a rider out, so a signed-in rider carries both
+   cookies; without that precedence the app would render demo data while an ungated
+   read such as `/api/sessions/export` returned their real account. A browser in
+   demo has no real user for as long as it stays there.
+
+   `isAuthenticated()` is now false in demo mode, which is what it always claimed to
+   mean. Its only caller, `app/layout.tsx`, already wrote `demoMode || await
+   isAuthenticated()`, so behaviour is unchanged.
+
+   Note for `R6`: demo requests to `/api/sessions/export` now return 401 rather than
+   the previous 500. The route is still unusable in the demo, which is what `R6`
+   fixes; it simply fails honestly now.
 
 3. **RAG index is absent from deployments** - `R3` - **Confirmed and fixed in the
    repo on 2026-07-26; production stays broken until the fix is deployed.**

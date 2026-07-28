@@ -5,7 +5,7 @@ vi.mock('next/cache', () => ({
 }));
 
 vi.mock('@/lib/auth', () => ({
-  getAuthenticatedUser: vi.fn(),
+  getRealUser: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -13,7 +13,7 @@ vi.mock('@/lib/supabase/server', () => ({
 }));
 
 import { revalidatePath } from 'next/cache';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { createSagEntry } from '@/lib/actions/sag';
 
@@ -38,7 +38,7 @@ describe('sag actions', () => {
   });
 
   it('returns auth error while logged out', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue(null);
+    vi.mocked(getRealUser).mockResolvedValue(null);
 
     const result = await createSagEntry({ front_l0: 120 });
 
@@ -46,7 +46,7 @@ describe('sag actions', () => {
   });
 
   it('requires at least one measurement value', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const result = await createSagEntry({
       label: 'Baseline',
@@ -61,7 +61,7 @@ describe('sag actions', () => {
   });
 
   it('inserts sanitized values and revalidates sag page', async () => {
-    vi.mocked(getAuthenticatedUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
 
     const insertQuery = createQuery({
       single: {

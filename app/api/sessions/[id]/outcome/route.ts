@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import { assertNotDemoRoute } from '@/lib/demo/mode';
@@ -35,7 +35,7 @@ export async function PUT(request: Request, context: RouteContext) {
   if (!Array.isArray(body.symptoms) || body.symptoms.length > 8 || !body.symptoms.every((item) => typeof item === 'string' && item.length <= 64)) return NextResponse.json({ ok: false, error: 'symptoms must contain up to 8 short strings.' }, { status: 400 });
   if (body.notes != null && (typeof body.notes !== 'string' || body.notes.length > 1000)) return NextResponse.json({ ok: false, error: 'notes must be at most 1000 characters.' }, { status: 400 });
 
-  const user = await getAuthenticatedUser();
+  const user = await getRealUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Not authenticated.' }, { status: 401 });
   if (!resolveUserAccess(await getUserProfile()).hasProAccess) return NextResponse.json({ ok: false, error: 'Session outcomes are a Pro feature.' }, { status: 402 });
 

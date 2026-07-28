@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getRealUser } from '@/lib/auth';
+import { assertNotDemoRoute } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
 import { readBoundedJson } from '@/lib/http/bounded-json';
 
 export async function POST(request: Request) {
-  const user = await getAuthenticatedUser();
+  const demoResponse = await assertNotDemoRoute();
+  if (demoResponse) return demoResponse;
+
+  const user = await getRealUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Not authenticated.' }, { status: 401 });
   const parsed = await readBoundedJson(request, 20_000);
   if (!parsed.ok && parsed.reason === 'too_large') return NextResponse.json({ ok: false, error: 'Request too large.' }, { status: 413 });
