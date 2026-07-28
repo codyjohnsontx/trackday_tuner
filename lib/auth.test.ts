@@ -38,6 +38,16 @@ describe('getRealUser', () => {
     await expect(getRealUser()).resolves.toBeNull();
   });
 
+  it('returns null for a signed-in rider who entered the demo', async () => {
+    // Entering the demo does not sign a rider out, so both cookies are present.
+    // Without demo taking precedence, the app shows demo data while an ungated
+    // read hands back the real account.
+    cookieValue.demo = '1';
+    supabaseUser.value = { id: 'user-1' };
+
+    await expect(getRealUser()).resolves.toBeNull();
+  });
+
   it('returns the signed-in user', async () => {
     supabaseUser.value = { id: 'user-1' };
 
@@ -82,6 +92,13 @@ describe('isAuthenticated', () => {
 
   it('is false in demo mode, which is not a signed-in state', async () => {
     cookieValue.demo = '1';
+
+    await expect(isAuthenticated()).resolves.toBe(false);
+  });
+
+  it('is false for a signed-in rider who entered the demo', async () => {
+    cookieValue.demo = '1';
+    supabaseUser.value = { id: 'user-1' };
 
     await expect(isAuthenticated()).resolves.toBe(false);
   });

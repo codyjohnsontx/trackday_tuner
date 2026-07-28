@@ -86,23 +86,29 @@ and execution order may legitimately diverge; the reason is recorded there.
    Second because `R1` returns the next time a route is added until this lands, and
    `R6` cannot be fixed cleanly without it.
 
-   The audit assumed one function returning a union, but all 47 call sites were
-   checked first and 45 of them sit behind an existing `isDemoMode()` or
-   `assertNotDemoMode()` branch, so the demo user was already unreachable there.
-   The synthesis existed for exactly two page-level callers while endangering
-   everything else. `getAuthenticatedUser()` is therefore gone, replaced by
-   `getRealUser()`, which cannot return a demo user, and `getViewer()`, which
-   returns the `Viewer` union and is the only way to obtain a demo identity. The 45
-   became a rename with identical semantics; `app/(app)/layout.tsx` and
-   `app/login/page.tsx` handle the union. Deleting the old name is what forces the
-   choice: reaching for "the user" in a new route now lands on a function that
-   cannot hand back a fake one.
+   The audit assumed one function returning a union, but the 46 call sites were
+   checked first. 36 are server actions sitting behind an existing `isDemoMode()`
+   or `assertNotDemoMode()` branch and 6 are the route handlers `R1` guarded, so in
+   those 42 the demo user was already unreachable. The synthesis existed for two
+   page-level callers while endangering the rest. `getAuthenticatedUser()` is
+   therefore gone, replaced by `getRealUser()`, which cannot return a demo user, and
+   `getViewer()`, which returns the `Viewer` union and is the only way to obtain a
+   demo identity. Deleting the old name is what forces the choice: reaching for "the
+   user" in a new route now lands on a function that cannot hand back a fake one.
 
-   This closed two write routes `R1` had missed by enumeration, `/api/beta/feedback`
-   and `/api/sessions/export`, without either being named - the demonstration of why
-   the type change outranks the guards. `beta/feedback` has since been given an
-   `assertNotDemoRoute()` guard too, so it refuses with the read-only message rather
-   than a misleading 401.
+   Those 42 became a rename with identical semantics, and the 2 page callers handle
+   the union. The remaining 2 changed behaviour, and they are the point: the write
+   routes `R1` had missed by enumeration, `/api/beta/feedback` and
+   `/api/sessions/export`, stopped serving a demo user without either being named.
+   That is the demonstration of why the type change outranks the guards.
+   `beta/feedback` has since been given an `assertNotDemoRoute()` guard too, so it
+   refuses with the read-only message rather than a misleading 401.
+
+   Demo mode also takes precedence over a live session inside `getRealUser()`.
+   Entering the demo does not sign a rider out, so a signed-in rider carries both
+   cookies; without that precedence the app would render demo data while an ungated
+   read such as `/api/sessions/export` returned their real account. A browser in
+   demo has no real user for as long as it stays there.
 
    `isAuthenticated()` is now false in demo mode, which is what it always claimed to
    mean. Its only caller, `app/layout.tsx`, already wrote `demoMode || await

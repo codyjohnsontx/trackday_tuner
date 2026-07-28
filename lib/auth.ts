@@ -31,8 +31,17 @@ function hasSupabaseAuthCookie(cookieStore: Awaited<ReturnType<typeof cookies>>)
  * Never returns a demo user. Demo mode is not authentication, and anything that
  * acts on this value — writes, payments, anything billed or persisted — is acting
  * for a real account. Rendering demo content is `getViewer()`.
+ *
+ * Demo mode wins over a live session. Entering the demo does not sign a rider
+ * out, so a signed-in rider carries both cookies; without this the app would show
+ * demo data while an ungated read returned their real account. A browser in demo
+ * has no real user for as long as it stays there.
  */
 export const getRealUser = cache(async (): Promise<User | null> => {
+  if (await isDemoMode()) {
+    return null;
+  }
+
   const cookieStore = await cookies();
 
   if (!hasSupabaseAuthCookie(cookieStore)) {
