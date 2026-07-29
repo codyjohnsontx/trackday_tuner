@@ -225,7 +225,7 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
           <select
             value={vehicleId}
             onChange={(event) => setVehicleId(event.target.value)}
-            className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+            className="w-full rounded-row bg-surface-2 px-3 py-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
           >
             <option value="">Select vehicle</option>
             {vehicles.map((vehicle) => (
@@ -243,7 +243,7 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
               value={trackName}
               onChange={(event) => setTrackName(event.target.value)}
               placeholder="Road America"
-              className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+              className="w-full rounded-row bg-surface-2 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             />
           </label>
           <label className="block space-y-2">
@@ -255,7 +255,7 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
               inputMode="decimal"
               step="any"
               placeholder="24"
-              className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+              className="w-full rounded-row bg-surface-2 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             />
           </label>
           <label className="block space-y-2">
@@ -267,7 +267,7 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
               inputMode="decimal"
               step="any"
               placeholder="36"
-              className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+              className="w-full rounded-row bg-surface-2 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             />
           </label>
         </div>
@@ -278,7 +278,7 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
             value={weatherCondition}
             onChange={(event) => setWeatherCondition(event.target.value)}
             placeholder="Cool morning, warming after lunch"
-            className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+            className="w-full rounded-row bg-surface-2 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
           />
         </label>
 
@@ -306,7 +306,7 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
       ) : null}
 
       {loading ? (
-        <div className="rounded-row bg-surface-3 p-3 text-sm text-ink-dim">
+        <div className="rounded-row bg-surface-2 p-3 text-sm text-ink-dim">
           Building a plan from your vehicle history and today&apos;s inputs.
         </div>
       ) : null}
@@ -329,22 +329,22 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
           {advice.recommended_changes.length > 0 ? (
             <ul className="space-y-2">
               {advice.recommended_changes.map((change, idx) => (
-                <li key={`${change.component}-${idx}`} className="rounded-row bg-surface-3 p-3">
+                <li key={`${change.component}-${idx}`} className="rounded-row bg-surface-2 p-3">
                   <p className="text-sm font-medium text-ink">{change.component}</p>
                   <p className="text-sm text-ink-dim">{change.direction} · {change.magnitude}</p>
-                  <p className="mt-1 text-sm text-ink-faint">{change.reason}</p>
+                  <p className="mt-1 text-sm text-ink-dim">{change.reason}</p>
                 </li>
               ))}
             </ul>
           ) : (
-            <div className="rounded-row border border-dashed border-white/5 bg-canvas p-3 text-sm text-ink-faint">
+            <div className="rounded-row border border-dashed border-white/5 bg-surface-2 p-3 text-sm text-ink-faint">
               No specific setup change recommended yet. Establish a baseline and log feedback after the next session.
             </div>
           )}
           {advice.prediction ? (
-            <div className="rounded-row bg-surface-3 p-3 text-sm text-ink-dim">
+            <div className="rounded-row bg-surface-2 p-3 text-sm text-ink-dim">
               <p>{advice.prediction.expected_effect}</p>
-              <p className="mt-1 text-ink-faint">{advice.prediction.day_trend}</p>
+              <p className="mt-1 text-ink-dim">{advice.prediction.day_trend}</p>
             </div>
           ) : null}
           <div>
@@ -370,7 +370,7 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
               <h3 className="text-sm font-semibold text-ink">Citations</h3>
               <ul className="mt-2 space-y-2">
                 {advice.citations.map((citation, idx) => (
-                  <li key={`${citation.source}-${idx}`} className="rounded-row bg-surface-3 p-2">
+                  <li key={`${citation.source}-${idx}`} className="rounded-row bg-surface-2 p-2">
                     <p className="font-mono text-xs text-ink-dim">{citation.source}</p>
                     <p className="mt-1 text-sm text-ink-dim">{citation.snippet}</p>
                   </li>

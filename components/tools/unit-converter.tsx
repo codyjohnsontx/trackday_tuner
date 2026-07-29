@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
+import { PageHeader } from '@/components/ui/page-header';
 import {
   converterCategories,
   convertValue,
@@ -26,7 +28,7 @@ export function UnitConverter() {
   const [toUnit, setToUnit] = useState(initialPair.toUnit);
   const [inputValue, setInputValue] = useState('');
   const [recentPairs, setRecentPairs] = useState<ConverterPair[]>([]);
-  const [copyMessage, setCopyMessage] = useState('');
+  const [copyMessage, setCopyMessage] = useState<{ text: string; ok: boolean } | null>(null);
 
   const unitsForCategory = useMemo(
     () => converterCategories.find((item) => item.id === category)?.units ?? [],
@@ -55,13 +57,13 @@ export function UnitConverter() {
     setCategory(pair.category);
     setFromUnit(pair.fromUnit);
     setToUnit(pair.toUnit);
-    setCopyMessage('');
+    setCopyMessage(null);
   }
 
   function swapUnits() {
     setFromUnit(toUnit);
     setToUnit(fromUnit);
-    setCopyMessage('');
+    setCopyMessage(null);
   }
 
   function markRecent(pair: ConverterPair) {
@@ -82,21 +84,20 @@ export function UnitConverter() {
     try {
       await navigator.clipboard.writeText(text);
       markRecent({ category, fromUnit, toUnit });
-      setCopyMessage('Copied');
+      setCopyMessage({ text: 'Copied', ok: true });
     } catch {
-      setCopyMessage('Copy failed');
+      setCopyMessage({ text: 'Copy failed', ok: false });
     }
-    setTimeout(() => setCopyMessage(''), 1200);
+    setTimeout(() => setCopyMessage(null), 1200);
   }
 
   return (
     <div className="space-y-5">
-      <section className="rounded-card bg-surface p-4">
-        <h1 className="text-2xl font-bold text-ink">Unit Converter</h1>
-        <p className="mt-1 text-sm text-ink-dim">
-          Quick conversions for trackside setup changes.
-        </p>
-      </section>
+      <PageHeader
+        title="Unit"
+        muted="Converter"
+        sub="Quick conversions for trackside setup changes."
+      />
 
       <section className="space-y-2 rounded-card bg-surface p-4">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
@@ -161,7 +162,7 @@ export function UnitConverter() {
           </label>
           <select
             id="converter-category"
-            className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus:border-signal/30 focus:outline-none"
+            className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             value={category}
             onChange={(event) => setCategory(event.target.value as ConverterCategory)}
           >
@@ -180,7 +181,7 @@ export function UnitConverter() {
             </label>
             <select
               id="converter-from"
-              className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus:border-signal/30 focus:outline-none"
+              className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
               value={fromUnit}
               onChange={(event) => setFromUnit(event.target.value)}
             >
@@ -197,7 +198,7 @@ export function UnitConverter() {
             </label>
             <select
               id="converter-to"
-              className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus:border-signal/30 focus:outline-none"
+              className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
               value={toUnit}
               onChange={(event) => setToUnit(event.target.value)}
             >
@@ -239,7 +240,14 @@ export function UnitConverter() {
           <Button type="button" variant="secondary" onClick={handleCopy} disabled={convertedValue === null}>
             Copy
           </Button>
-          {copyMessage ? <span className="text-sm text-faster">{copyMessage}</span> : null}
+          {copyMessage ? (
+            <span
+              className={cn('text-sm', copyMessage.ok ? 'text-faster' : 'text-slower')}
+              role="status"
+            >
+              {copyMessage.text}
+            </span>
+          ) : null}
         </div>
       </section>
     </div>

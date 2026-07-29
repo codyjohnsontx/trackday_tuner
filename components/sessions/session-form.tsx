@@ -556,7 +556,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
           </label>
           <select
             id="session-vehicle"
-            className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus:border-signal/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+            className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             value={vehicleId}
             onChange={(event) => setVehicleId(event.target.value)}
             required
@@ -591,7 +591,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
           <input
             id="session-track"
             type="text"
-            className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus:border-signal/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+            className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             placeholder="Search or type a track name"
             value={trackQuery}
             autoComplete="off"
@@ -645,7 +645,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
 
       <div className="space-y-3 rounded-card bg-surface p-4">
         <span className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Conditions</span>
-        <div className="grid grid-cols-4 gap-2 rounded-row bg-canvas p-1">
+        <div className="grid grid-cols-4 gap-2 rounded-row bg-surface-2 p-1">
           {conditionOptions.map((option) => (
             <Button
               key={option.value}
@@ -736,7 +736,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
 
           <div className="space-y-2">
             <span className="text-xs font-medium text-ink-dim">Condition</span>
-            <div className="grid grid-cols-4 gap-2 rounded-row bg-canvas p-1">
+            <div className="grid grid-cols-4 gap-2 rounded-row bg-surface-2 p-1">
               {tireConditionOptions.map((option) => (
                 <Button
                   key={option.value}
@@ -979,7 +979,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
         </label>
         <textarea
           id="session-notes"
-          className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus:border-signal/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+          className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
           rows={4}
           placeholder="Observations, lap times, what to try next..."
           value={notes}

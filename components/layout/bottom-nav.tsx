@@ -32,7 +32,7 @@ export function BottomNav() {
                 aria-current={active ? 'page' : undefined}
                 className={cn(
                   'flex min-h-11 flex-col items-center justify-center gap-1 rounded-full px-1 py-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80',
-                  active ? 'bg-surface-3' : 'hover:bg-surface-2',
+                  active ? 'bg-surface-2' : 'hover:bg-surface-2/60',
                 )}
               >
                 <Icon

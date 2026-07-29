@@ -47,7 +47,7 @@ export default async function SettingsPage() {
           </span>
         </p>
         {access.source === 'beta' && access.betaAccessExpiresAt ? (
-          <p className="mt-1 text-sm text-signal">
+          <p className="mt-1 text-sm text-ink-dim">
             Full access through {new Date(access.betaAccessExpiresAt).toLocaleDateString()}.
           </p>
         ) : isPro ? (

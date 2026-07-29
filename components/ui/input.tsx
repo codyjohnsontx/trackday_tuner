@@ -10,7 +10,9 @@ const inputVariants = cva(
   {
     variants: {
       error: {
-        true: 'ring-2 ring-slower/70',
+        // The error ring has to survive focus, otherwise focusing an invalid
+        // field swaps the only "this is wrong" cue for the ordinary accent.
+        true: 'ring-2 ring-slower/70 focus-visible:ring-slower/70',
         false: '',
       },
     },

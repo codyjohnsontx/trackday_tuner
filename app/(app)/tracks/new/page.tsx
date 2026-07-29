@@ -3,6 +3,7 @@ import { DemoReadOnlyNotice } from '@/components/demo/read-only-notice';
 import { TrackForm } from '@/components/tracks/track-form';
 import { isDemoMode } from '@/lib/demo/mode';
 import { pageTitleClass } from '@/components/ui/page-header';
+import { cn } from '@/lib/utils';
 
 export default async function NewTrackPage() {
   if (await isDemoMode()) {
@@ -15,7 +16,7 @@ export default async function NewTrackPage() {
         <Link href="/tracks" className="text-sm text-ink-dim hover:text-ink">
           ← Tracks
         </Link>
-        <h1 className={`mt-3 ${pageTitleClass}`}>Add Track</h1>
+        <h1 className={cn('mt-3', pageTitleClass)}>Add Track</h1>
         <p className="mt-1 text-sm text-ink-dim">
           Create a custom track you can use in session logging.
         </p>

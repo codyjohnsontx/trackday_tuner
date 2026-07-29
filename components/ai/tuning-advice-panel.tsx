@@ -73,12 +73,12 @@ function SafetyBanner() {
 
 function RefusalCard({ message }: { message: string }) {
   return (
-    <div className="space-y-3 rounded-row bg-surface-3 p-4">
+    <div className="space-y-3 rounded-row bg-surface-2 p-4">
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Couldn&apos;t answer that request</p>
         <p className="mt-1 text-sm text-ink">{message}</p>
       </div>
-      <div className="rounded-row bg-surface-2 p-3 text-sm text-ink-dim">
+      <div className="rounded-row bg-surface-3 p-3 text-sm text-ink-dim">
         <p className="font-medium text-ink">Race Engineer can help with questions like:</p>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>Front pushed on entry after I raised pressure 1 psi. What should I try next?</li>
@@ -194,7 +194,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
           <h3 className="text-sm font-semibold text-ink">Recommended change</h3>
           <ul className="mt-2 space-y-3">
             {advice.recommended_changes.map((change, idx) => (
-              <li key={`${change.component}-${idx}`} className="rounded-row bg-surface-3 p-3">
+              <li key={`${change.component}-${idx}`} className="rounded-row bg-surface-2 p-3">
                 <p className="text-sm font-medium text-ink">{change.component}</p>
                 <p className="text-sm text-ink-dim">{change.direction} · {change.magnitude}</p>
                 <p className="mt-1 text-sm text-ink-dim">{change.reason}</p>
@@ -361,10 +361,10 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
                   aria-pressed={active}
                   onClick={() => toggleSymptom(opt.id)}
                   className={cn(
-                    'min-h-11 rounded-row border px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
+                    'min-h-11 rounded-full px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
                     active
                       ? 'bg-surface-3 text-ink'
-                      : 'border-white/10 bg-surface text-ink-dim hover:bg-surface-3',
+                      : 'bg-surface-2 text-ink-dim hover:bg-surface-3',
                   )}
                 >
                   {opt.label}
@@ -441,7 +441,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
                     {advice.recommended_changes.map((change, idx) => (
                       <li
                         key={`${change.component}-${idx}`}
-                        className="rounded-row bg-surface-3 p-3"
+                        className="rounded-row bg-surface-2 p-3"
                       >
                         <p className="text-sm font-medium text-ink">
                           {change.component}
@@ -470,7 +470,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
               {advice.prediction ? (
                 <div>
                   <h3 className="text-sm font-semibold text-ink">Prediction</h3>
-                  <div className="mt-2 space-y-2 rounded-row bg-surface-3 p-3 text-sm text-ink-dim">
+                  <div className="mt-2 space-y-2 rounded-row bg-surface-2 p-3 text-sm text-ink-dim">
                     <p>{advice.prediction.expected_effect}</p>
                     <p className="text-ink-dim">{advice.prediction.day_trend}</p>
                     {advice.prediction.watch_items.length > 0 ? (
@@ -489,7 +489,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
                   <h3 className="text-sm font-semibold text-ink">Personal evidence</h3>
                   <ul className="mt-2 space-y-2 text-sm text-ink-dim">
                     {advice.personal_evidence.map((evidence, idx) => (
-                      <li key={idx} className="rounded-row bg-surface-3 p-3">
+                      <li key={idx} className="rounded-row bg-surface-2 p-3">
                         <p className="font-medium text-ink">{evidence.label}</p>
                         <p className="mt-1 text-ink-dim">{evidence.detail}</p>
                       </li>
@@ -533,7 +533,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
               <h3 className="text-sm font-semibold text-ink">Citations</h3>
               <ul className="mt-2 space-y-2 text-sm text-ink-dim">
                 {advice.citations.map((c, i) => (
-                  <li key={i} className="rounded-row bg-surface-3 p-2">
+                  <li key={i} className="rounded-row bg-surface-2 p-2">
                     <p className="text-xs font-mono text-ink-dim">{c.source}</p>
                     <p className="mt-1 text-sm text-ink">{c.snippet}</p>
                   </li>

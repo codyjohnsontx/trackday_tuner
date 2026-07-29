@@ -48,7 +48,7 @@ export function SessionChangesPanel({ changeSets, tier }: SessionChangesPanelPro
                         {entries.map((entry) => (
                           <li
                             key={`${group}-${entry.label}`}
-                            className="rounded-row bg-surface-3 p-3"
+                            className="rounded-row bg-surface-2 p-3"
                           >
                             <p className="text-sm font-semibold text-ink">{entry.label}</p>
                             <div className="mt-2 grid grid-cols-2 gap-3 text-sm">

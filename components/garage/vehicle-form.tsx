@@ -115,11 +115,11 @@ export function VehicleForm({ vehicle }: VehicleFormProps) {
           <span className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
             Vehicle Type
           </span>
-          <div className="grid grid-cols-2 gap-2 rounded-row bg-canvas p-1">
+          <div className="grid grid-cols-2 gap-2 rounded-row bg-surface-2 p-1">
             <Button
               type="button"
               variant={type === 'motorcycle' ? 'primary' : 'secondary'}
-              className="min-h-10"
+              className="min-h-11"
               onClick={() => setType('motorcycle')}
             >
               Motorcycle
@@ -127,7 +127,7 @@ export function VehicleForm({ vehicle }: VehicleFormProps) {
             <Button
               type="button"
               variant={type === 'car' ? 'primary' : 'secondary'}
-              className="min-h-10"
+              className="min-h-11"
               onClick={() => setType('car')}
             >
               Car

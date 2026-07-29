@@ -24,7 +24,7 @@ export default async function TracksPage() {
         sub="Seeded tracks are shared. Add custom tracks for your own logging flow."
         action={
           atTrackLimit || demoMode ? null : (
-            <Button asChild variant="primary" className="min-h-10 px-4 text-sm">
+            <Button asChild variant="primary" className="min-h-11 px-4 text-sm">
               <Link href="/tracks/new">+ New Track</Link>
             </Button>
           )
@@ -47,7 +47,7 @@ export default async function TracksPage() {
 
       <Link
         href="/sessions/new"
-        className="block text-center text-sm text-ink-dim transition hover:text-ink"
+        className="mx-auto flex min-h-11 w-fit items-center justify-center rounded-full px-4 text-sm text-ink-dim transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
       >
         Back to New Session
       </Link>

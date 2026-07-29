@@ -50,7 +50,7 @@ export default async function SessionsPage() {
         sub={tierLabel}
         action={
           !atLimit && !demoMode ? (
-            <Button asChild variant="primary" className="min-h-10 px-4 text-sm">
+            <Button asChild variant="primary" className="min-h-11 px-4 text-sm">
               <Link href="/sessions/new">+ New Session</Link>
             </Button>
           ) : null

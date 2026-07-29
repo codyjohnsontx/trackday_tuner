@@ -17,7 +17,7 @@ export function SessionBaselinePanel({ session, baseline, tier, demoMode }: Sess
 
   if (tier !== 'pro') {
     return (
-      <section className="rounded-card bg-surface-2 p-4">
+      <section className="rounded-card bg-surface p-4">
         <h2 className="text-sm font-semibold text-ink">Vehicle baselines are a Pro feature.</h2>
         <p className="mt-2 text-sm leading-6 text-ink-dim">
           Set a known-good setup for each vehicle and compare future sessions against it.
@@ -41,14 +41,14 @@ export function SessionBaselinePanel({ session, baseline, tier, demoMode }: Sess
           </p>
         </div>
         {isCurrentBaseline ? (
-          <span className="shrink-0 rounded-plate bg-surface-3 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-ink-faint">
+          <span className="shrink-0 rounded-plate bg-surface-2 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-ink-faint">
             Vehicle Baseline
           </span>
         ) : null}
       </div>
 
       {baseline && !isCurrentBaseline ? (
-        <p className="mt-3 rounded-row bg-surface-3 px-3 py-2 text-sm text-ink-dim">
+        <p className="mt-3 rounded-row bg-surface-2 px-3 py-2 text-sm text-ink-dim">
           Current baseline: <span className="font-medium text-ink">{baselineSourceLabel(baseline)}</span>
         </p>
       ) : null}

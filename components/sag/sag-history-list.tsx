@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils';
 import type { SagEntry } from '@/types';
 
 interface SagHistoryListProps {
@@ -29,11 +30,12 @@ export function SagHistoryList({ entries, selectedId, onSelect }: SagHistoryList
             <li key={entry.id}>
               <button
                 type="button"
-                className={`w-full rounded-row border px-3 py-3 text-left transition ${
+                className={cn(
+                  'w-full rounded-row px-3 py-3 text-left transition',
                   selectedId === entry.id
-                    ? 'border-signal/30 bg-canvas'
-                    : 'border-white/5 bg-canvas hover:border-white/10'
-                }`}
+                    ? 'bg-surface-3 ring-1 ring-signal/30'
+                    : 'bg-surface-2 hover:bg-surface-3',
+                )}
                 onClick={() => onSelect(entry)}
               >
                 <p className="text-sm font-semibold text-ink">{entry.label?.trim() || 'Untitled Entry'}</p>

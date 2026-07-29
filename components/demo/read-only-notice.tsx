@@ -17,7 +17,7 @@ export function DemoReadOnlyNotice({ backHref, backLabel }: DemoReadOnlyNoticePr
         </p>
         <Link
           href={backHref}
-          className="mt-4 inline-flex min-h-11 items-center justify-center rounded-row bg-surface-3 px-4 text-sm font-semibold text-ink transition hover:bg-surface focus-visible:ring-2 focus-visible:ring-signal/80"
+          className="mt-4 inline-flex min-h-11 items-center justify-center rounded-full bg-surface-3 px-4 text-sm font-semibold text-ink transition hover:bg-surface-3/70 focus-visible:ring-2 focus-visible:ring-signal/80"
         >
           {backLabel}
         </Link>

@@ -30,7 +30,7 @@ export default async function GaragePage() {
         sub={tierLabel}
         action={
           !atLimit && !demoMode ? (
-            <Button asChild variant="primary" className="min-h-10 px-4 text-sm">
+            <Button asChild variant="primary" className="min-h-11 px-4 text-sm">
               <Link href="/garage/new">+ Add Vehicle</Link>
             </Button>
           ) : null

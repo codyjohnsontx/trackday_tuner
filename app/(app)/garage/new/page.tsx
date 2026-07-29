@@ -3,6 +3,7 @@ import { DemoReadOnlyNotice } from '@/components/demo/read-only-notice';
 import { VehicleForm } from '@/components/garage/vehicle-form';
 import { isDemoMode } from '@/lib/demo/mode';
 import { pageTitleClass } from '@/components/ui/page-header';
+import { cn } from '@/lib/utils';
 
 export default async function NewVehiclePage() {
   if (await isDemoMode()) {
@@ -18,7 +19,7 @@ export default async function NewVehiclePage() {
         >
           ← Garage
         </Link>
-        <h1 className={`mt-3 ${pageTitleClass}`}>Add Vehicle</h1>
+        <h1 className={cn('mt-3', pageTitleClass)}>Add Vehicle</h1>
         <p className="mt-1 text-sm text-ink-dim">
           Give your vehicle a nickname and fill in optional details.
         </p>

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { CircleDot } from 'lucide-react';
 import { BottomNav } from '@/components/layout/bottom-nav';
 import { HeaderAppMenu } from '@/components/layout/header-app-menu';
+import { cn } from '@/lib/utils';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -47,11 +48,12 @@ export function AppShell({ children, isAuthenticated, isDemoMode = false }: AppS
       </header>
 
       <main
-        className={
+        className={cn(
+          'flex-1 px-4 py-5 sm:px-5 md:px-6',
           showBottomNav
-            ? 'flex-1 px-4 py-5 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:px-5 md:px-6'
-            : 'flex-1 px-4 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-5 md:px-6'
-        }
+            ? 'pb-[calc(6.5rem+env(safe-area-inset-bottom))]'
+            : 'pb-[max(1.25rem,env(safe-area-inset-bottom))]',
+        )}
       >
         {children}
       </main>

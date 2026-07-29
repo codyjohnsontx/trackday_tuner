@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 const linkRowClass =
   'flex min-h-11 items-center rounded-full px-4 text-sm font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80';
 
-const activeRowClass = 'bg-surface-3 text-ink';
+const activeRowClass = 'bg-surface-2 text-ink';
 const idleRowClass = 'text-ink-faint hover:bg-surface-2 hover:text-ink';
 
 export function HeaderAppMenu({ isDemoMode = false }: { isDemoMode?: boolean }) {

@@ -77,7 +77,9 @@ export function CardGroup({
       {hasHeader ? (
         <div className="flex items-start justify-between gap-3 px-3 pb-1 pt-3">
           <div className="flex min-w-0 items-start gap-2.5">
-            {Icon ? <Icon className="mt-0.5 h-4 w-4 shrink-0 text-signal" /> : null}
+            {/* Decorative, so it stays neutral — the accent marks interaction,
+                and a section heading is not something you can act on. */}
+            {Icon ? <Icon className="mt-0.5 h-4 w-4 shrink-0 text-ink-dim" /> : null}
             <div className="min-w-0">
               {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
               {title ? (

@@ -142,17 +142,17 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
         <span className="h-px flex-1 bg-surface-3" />
       </div> : null}
 
-      <div className="grid grid-cols-2 gap-2 rounded-row bg-canvas p-1">
+      <div className="grid grid-cols-2 gap-2 rounded-row bg-surface-2 p-1">
         <Button
           variant={mode === 'sign-in' ? 'primary' : 'secondary'}
-          className="min-h-10"
+          className="min-h-11"
           onClick={() => setMode('sign-in')}
         >
           Sign In
         </Button>
         <Button
           variant={mode === 'sign-up' ? 'primary' : 'secondary'}
-          className="min-h-10"
+          className="min-h-11"
           onClick={() => setMode('sign-up')}
         >
           Sign Up

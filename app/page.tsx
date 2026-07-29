@@ -5,22 +5,22 @@ export default function HomePage() {
   return (
     <div className="-mx-4 -mt-5 sm:-mx-5 md:-mx-6">
       <section className="relative min-h-[calc(100svh-4.5rem)] overflow-hidden border-b border-white/5 px-4 pb-12 pt-10 sm:px-8 md:px-12">
-        <div aria-hidden className="absolute -right-32 top-8 h-[34rem] w-[34rem] rotate-12 rounded-[45%] border-[3rem] border-white/5 shadow-[0_0_0_1px_rgba(34,211,238,0.08)] sm:right-0" />
-        <div aria-hidden className="absolute right-20 top-24 h-64 w-24 -rotate-12 rounded-full bg-signal/10 blur-3xl" />
+        <div aria-hidden className="absolute -right-32 top-8 h-[34rem] w-[34rem] rotate-12 rounded-[45%] border-[3rem] border-white/5 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] sm:right-0" />
+        <div aria-hidden className="absolute right-20 top-24 h-64 w-24 -rotate-12 rounded-full bg-white/5 blur-3xl" />
         <div className="relative z-10 mx-auto flex min-h-[calc(100svh-11rem)] max-w-4xl flex-col justify-center">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-ink-faint">Founding beta · Motorcycle track days</p>
           <h1 className="mt-5 max-w-3xl text-5xl font-black leading-[0.94] tracking-[-0.045em] text-ink sm:text-7xl">Know what changed.<br /><span className="text-ink-faint">Learn what worked.</span></h1>
           <p className="mt-6 max-w-xl text-base leading-relaxed text-ink-dim sm:text-lg">Log the setup, compare the result, and get conservative AI guidance grounded in your own track history.</p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row"><a href="#beta" className="inline-flex min-h-12 items-center justify-center rounded-row bg-ink px-5 text-sm font-bold text-canvas transition hover:bg-white active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-signal/80">Join the Founding Beta <ArrowRight className="ml-2 h-4 w-4" /></a><a href="/demo" className="inline-flex min-h-12 items-center justify-center rounded-row bg-surface px-5 text-sm font-semibold text-ink transition hover:border-white/10 hover:bg-surface focus-visible:ring-2 focus-visible:ring-signal/80">Explore the demo</a></div>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row"><a href="#beta" className="inline-flex min-h-12 items-center justify-center rounded-full bg-ink px-5 text-sm font-bold text-canvas transition hover:bg-white active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-signal/80">Join the Founding Beta <ArrowRight className="ml-2 h-4 w-4" /></a><a href="/demo" className="inline-flex min-h-12 items-center justify-center rounded-full bg-surface px-5 text-sm font-semibold text-ink transition hover:border-white/10 hover:bg-surface focus-visible:ring-2 focus-visible:ring-signal/80">Explore the demo</a></div>
         </div>
       </section>
 
       <section className="mx-auto max-w-4xl px-4 py-16 sm:px-8">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink-faint">The learning loop</p>
         <div className="mt-8 grid gap-8 md:grid-cols-3">
-          <div><Gauge className="h-6 w-6 text-signal" /><h2 className="mt-4 text-xl font-bold">Capture the session</h2><p className="mt-2 text-sm leading-relaxed text-ink-dim">Pressures, clickers, conditions, symptoms, and optional lap times—without forcing every field.</p></div>
-          <div><History className="h-6 w-6 text-signal" /><h2 className="mt-4 text-xl font-bold">Compare the signal</h2><p className="mt-2 text-sm leading-relaxed text-ink-dim">See what changed and whether pace, consistency, or rider feel moved in the right direction.</p></div>
-          <div><Sparkles className="h-6 w-6 text-signal" /><h2 className="mt-4 text-xl font-bold">Choose the next test</h2><p className="mt-2 text-sm leading-relaxed text-ink-dim">Race Engineer uses your outcomes and trusted setup guidance to suggest one small, reversible change.</p></div>
+          <div><Gauge className="h-6 w-6 text-ink-dim" /><h2 className="mt-4 text-xl font-bold">Capture the session</h2><p className="mt-2 text-sm leading-relaxed text-ink-dim">Pressures, clickers, conditions, symptoms, and optional lap times—without forcing every field.</p></div>
+          <div><History className="h-6 w-6 text-ink-dim" /><h2 className="mt-4 text-xl font-bold">Compare the signal</h2><p className="mt-2 text-sm leading-relaxed text-ink-dim">See what changed and whether pace, consistency, or rider feel moved in the right direction.</p></div>
+          <div><Sparkles className="h-6 w-6 text-ink-dim" /><h2 className="mt-4 text-xl font-bold">Choose the next test</h2><p className="mt-2 text-sm leading-relaxed text-ink-dim">Race Engineer uses your outcomes and trusted setup guidance to suggest one small, reversible change.</p></div>
         </div>
       </section>
 

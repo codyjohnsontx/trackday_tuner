@@ -6,21 +6,26 @@ import { cn } from '@/lib/utils';
 interface ConditionStyle {
   label: string;
   Icon: ComponentType<{ className?: string }>;
-  /** Plate fill and ink. Tints are weather, never status — nothing here means "good". */
   tone: string;
 }
 
+// Weather is data, so it is carried by icon shape rather than colour: a sun and
+// a rain cloud are told apart faster than two tints anyway, and tinting them
+// would spend the accent — or a second palette — on something that is not a
+// state you can act on.
+const PLATE_TONE = 'bg-surface-3 text-ink-dim';
+
 const CONDITIONS: Record<string, ConditionStyle> = {
-  sunny: { label: 'Sunny', Icon: Sun, tone: 'bg-signal/12 text-signal' },
-  overcast: { label: 'Overcast', Icon: Cloud, tone: 'bg-surface-3 text-ink-dim' },
-  rainy: { label: 'Rainy', Icon: CloudRain, tone: 'bg-sky-400/12 text-sky-300' },
-  mixed: { label: 'Mixed', Icon: CloudSun, tone: 'bg-violet-400/12 text-violet-300' },
+  sunny: { label: 'Sunny', Icon: Sun, tone: PLATE_TONE },
+  overcast: { label: 'Overcast', Icon: Cloud, tone: PLATE_TONE },
+  rainy: { label: 'Rainy', Icon: CloudRain, tone: PLATE_TONE },
+  mixed: { label: 'Mixed', Icon: CloudSun, tone: PLATE_TONE },
 };
 
 const FALLBACK: ConditionStyle = {
   label: 'Unknown',
   Icon: Cloud,
-  tone: 'bg-surface-3 text-ink-dim',
+  tone: PLATE_TONE,
 };
 
 export function conditionStyle(condition: SessionCondition | string): ConditionStyle {

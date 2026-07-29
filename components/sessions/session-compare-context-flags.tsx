@@ -6,7 +6,7 @@ interface SessionCompareContextFlagsProps {
 }
 
 const severityClass: Record<ContextFlag['severity'], string> = {
-  info: 'border-white/5 bg-canvas text-ink-dim',
+  info: 'bg-surface-2 text-ink-dim',
   warning: 'border-signal/30 bg-signal/12 text-signal',
   critical: 'border-slower/30 bg-slower/12 text-slower',
 };

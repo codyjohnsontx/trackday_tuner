@@ -115,7 +115,10 @@ export function LapTimeEditor({ value, onChange, onValidationChange }: LapTimeEd
           </div>
           <ul className="divide-y divide-white/5">
             {value.map((lap, index) => (
-              <li key={`${lap.lap_number}-${index}`} className="flex min-h-12 items-center gap-3 py-2">
+              // lap_number is unique by construction: appends take max+1 and
+              // pasted laps are de-duplicated against the existing set. Mixing
+              // the index back in would remount every row below a deletion.
+              <li key={lap.lap_number} className="flex min-h-12 items-center gap-3 py-2">
                 <span className="w-12 text-xs text-ink-faint">Lap {lap.lap_number}</span>
                 <span className="flex-1 font-mono text-sm text-ink">{formatLapTimeInput(lap.lap_time_ms)}</span>
                 <label className="flex min-h-11 items-center gap-2 text-xs text-ink-dim">

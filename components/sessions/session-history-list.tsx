@@ -75,7 +75,7 @@ export function SessionHistoryList({ items }: SessionHistoryListProps) {
                 />
                 <span
                   className={cn(
-                    'inline-flex min-h-10 min-w-10 items-center justify-center rounded-plate bg-surface-3 text-ink-dim transition',
+                    'inline-flex min-h-10 min-w-10 items-center justify-center rounded-plate bg-surface-2 text-ink-dim transition',
                     isOpen ? 'text-signal' : 'text-ink-dim',
                   )}
                   aria-hidden="true"
@@ -95,7 +95,7 @@ export function SessionHistoryList({ items }: SessionHistoryListProps) {
                   <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
                     Quick Summary
                   </p>
-                  <div className="divide-y divide-white/5 rounded-row bg-surface-3 px-3">
+                  <div className="divide-y divide-white/5 rounded-row bg-surface-2 px-3">
                     <SummaryRow label="Condition" value={summary.conditionLabel} />
                     <SummaryRow label="Front Tire" value={summary.tireRows[0]?.value ?? 'Not logged'} />
                     <SummaryRow label="Rear Tire" value={summary.tireRows[1]?.value ?? 'Not logged'} />
@@ -109,13 +109,13 @@ export function SessionHistoryList({ items }: SessionHistoryListProps) {
                     Environment
                   </p>
                   {summary.environmentRows.length > 0 ? (
-                    <div className="divide-y divide-white/5 rounded-row bg-surface-3 px-3">
+                    <div className="divide-y divide-white/5 rounded-row bg-surface-2 px-3">
                       {summary.environmentRows.map((row) => (
                         <SummaryRow key={row.label} label={row.label} value={row.value} />
                       ))}
                     </div>
                   ) : (
-                    <div className="rounded-row border border-dashed border-white/5 bg-canvas px-3 py-3 text-sm text-ink-faint">
+                    <div className="rounded-row border border-dashed border-white/5 bg-surface-2 px-3 py-3 text-sm text-ink-faint">
                       No environment snapshot logged.
                     </div>
                   )}
@@ -124,7 +124,7 @@ export function SessionHistoryList({ items }: SessionHistoryListProps) {
 
               <section className="mt-4 space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Notes</p>
-                <div className="rounded-row bg-surface-3 px-3 py-3 text-sm text-ink-dim">
+                <div className="rounded-row bg-surface-2 px-3 py-3 text-sm text-ink-dim">
                   {summary.notesPreview ?? 'No notes logged for this session.'}
                 </div>
               </section>

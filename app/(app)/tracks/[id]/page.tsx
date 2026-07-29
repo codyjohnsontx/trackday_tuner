@@ -6,6 +6,7 @@ import { isDemoMode } from '@/lib/demo/mode';
 import { TrackForm } from '@/components/tracks/track-form';
 import { TrackDeleteForm } from '@/components/tracks/track-delete-form';
 import { pageTitleClass } from '@/components/ui/page-header';
+import { cn } from '@/lib/utils';
 
 interface TrackDetailPageProps {
   params: Promise<{ id: string }>;
@@ -30,7 +31,7 @@ export default async function TrackDetailPage({ params }: TrackDetailPageProps) 
         <Link href="/tracks" className="text-sm text-ink-dim hover:text-ink">
           ← Tracks
         </Link>
-        <h1 className={`mt-3 ${pageTitleClass}`}>{track.name}</h1>
+        <h1 className={cn('mt-3', pageTitleClass)}>{track.name}</h1>
         <p className="mt-1 text-sm text-ink-dim">{track.location ?? 'No location provided.'}</p>
         <span className="mt-2 inline-flex rounded-plate bg-surface-2 px-2 py-1 text-xs text-ink-dim">
           {isCustom ? 'Custom Track' : 'Global Read-only Track'}

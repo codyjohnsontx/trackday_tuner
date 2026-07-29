@@ -60,7 +60,7 @@ export function SessionExportPanel({ vehicles, tier, demoMode = false }: Session
             <label className="space-y-1">
               <span className="text-xs font-medium text-ink-dim">Vehicle</span>
               <select
-                className="min-h-11 w-full rounded-row bg-surface-3 px-3 text-sm text-ink focus:border-signal/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+                className="min-h-11 w-full rounded-row bg-surface-2 px-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-2 focus-visible:ring-signal/80"
                 value={vehicleId}
                 onChange={(event) => setVehicleId(event.target.value)}
               >
@@ -76,7 +76,7 @@ export function SessionExportPanel({ vehicles, tier, demoMode = false }: Session
               <span className="text-xs font-medium text-ink-dim">From</span>
               <input
                 type="date"
-                className="min-h-11 w-full rounded-row bg-surface-3 px-3 text-sm text-ink focus:border-signal/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+                className="min-h-11 w-full rounded-row bg-surface-2 px-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-2 focus-visible:ring-signal/80"
                 value={from}
                 onChange={(event) => setFrom(event.target.value)}
               />
@@ -85,7 +85,7 @@ export function SessionExportPanel({ vehicles, tier, demoMode = false }: Session
               <span className="text-xs font-medium text-ink-dim">To</span>
               <input
                 type="date"
-                className="min-h-11 w-full rounded-row bg-surface-3 px-3 text-sm text-ink focus:border-signal/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+                className="min-h-11 w-full rounded-row bg-surface-2 px-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-2 focus-visible:ring-signal/80"
                 value={to}
                 onChange={(event) => setTo(event.target.value)}
               />

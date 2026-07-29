@@ -50,7 +50,7 @@ export default async function LoginPage() {
         <AuthForm providers={providers} inviteOnly={inviteOnly} />
         <a
           href="/demo"
-          className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-row bg-surface px-4 text-sm font-semibold text-ink transition hover:border-signal/30 hover:bg-surface focus-visible:ring-2 focus-visible:ring-signal/80"
+          className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-full bg-surface px-4 text-sm font-semibold text-ink transition hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-signal/80"
         >
           Explore the demo
         </a>
