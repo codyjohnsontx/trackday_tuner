@@ -22,6 +22,7 @@ import { deriveChangeSets, toChangeSets } from '@/lib/session-changes';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import { isSessionBefore } from '@/lib/session-compare';
 import type { ExtraModules, Session } from '@/types';
+import { pageTitleClass } from '@/components/ui/page-header';
 
 interface SessionDetailPageProps {
   params: Promise<{ id: string }>;
@@ -37,17 +38,17 @@ const conditionLabel: Record<string, string> = {
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3 py-1.5">
-      <span className="text-sm text-zinc-400">{label}</span>
-      <span className="text-sm font-medium text-zinc-100">{value || '—'}</span>
+      <span className="text-sm text-ink-dim">{label}</span>
+      <span className="text-sm font-medium text-ink">{value || '—'}</span>
     </div>
   );
 }
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">{title}</h2>
-      <div className="divide-y divide-zinc-800">{children}</div>
+    <section className="rounded-card bg-surface p-4">
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-faint">{title}</h2>
+      <div className="divide-y divide-white/5">{children}</div>
     </section>
   );
 }
@@ -345,17 +346,17 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
       {demoMode ? <DemoBanner /> : null}
 
       <div>
-        <h1 className="text-2xl font-bold text-zinc-100">{session.track_name ?? 'Unknown Track'}</h1>
-        <p className="mt-0.5 text-sm text-zinc-400">{formattedDate} · {vehicleNickname}</p>
+        <h1 className={pageTitleClass}>{session.track_name ?? 'Unknown Track'}</h1>
+        <p className="mt-0.5 text-sm text-ink-dim">{formattedDate} · {vehicleNickname}</p>
       </div>
 
       <div className="space-y-3">
         {previousSession ? (
           <SessionCompare rows={compareRows} previousDateLabel={formatDateLabel(previousSession.date)} />
         ) : (
-          <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Compare with Previous Session</h2>
-            <p className="mt-2 text-sm text-zinc-400">No earlier session found for this vehicle.</p>
+          <section className="rounded-card bg-surface p-4">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Compare with Previous Session</h2>
+            <p className="mt-2 text-sm text-ink-dim">No earlier session found for this vehicle.</p>
           </section>
         )}
         <Button asChild variant="secondary" fullWidth>
@@ -392,7 +393,7 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
           <DetailRow label="Session Number" value={session.session_number.toString()} />
         ) : null}
         <div className="flex items-center justify-between gap-3 py-1.5">
-          <span className="text-sm text-zinc-400">Start Time</span>
+          <span className="text-sm text-ink-dim">Start Time</span>
           <TimeDisplay time={session.start_time} />
         </div>
         <DetailRow label="Conditions" value={conditionLabel[session.conditions] ?? session.conditions} />
@@ -521,9 +522,9 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
       ) : null}
 
       {enabledModules.notes && session.notes ? (
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Notes</h2>
-          <p className="text-sm text-zinc-200 whitespace-pre-wrap">{session.notes}</p>
+        <section className="rounded-card bg-surface p-4">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-faint">Notes</h2>
+          <p className="text-sm text-ink whitespace-pre-wrap">{session.notes}</p>
         </section>
       ) : null}
     </div>

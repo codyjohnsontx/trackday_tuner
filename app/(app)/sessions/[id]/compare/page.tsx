@@ -103,9 +103,9 @@ function buildPickerOptions(
 
 function EmptyBaselineState({ hasCandidates }: { hasCandidates: boolean }) {
   return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-      <h2 className="text-sm font-semibold text-zinc-100">No baseline selected</h2>
-      <p className="mt-2 text-sm leading-6 text-zinc-400">
+    <section className="rounded-card bg-surface p-4">
+      <h2 className="text-sm font-semibold text-ink">No baseline selected</h2>
+      <p className="mt-2 text-sm leading-6 text-ink-dim">
         {hasCandidates
           ? 'Choose a baseline session above to render the comparison.'
           : 'Log another session with this vehicle to unlock a session comparison.'}

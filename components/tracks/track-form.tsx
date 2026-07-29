@@ -82,8 +82,8 @@ export function TrackForm({ initialTrack, onSuccessPath = '/tracks' }: TrackForm
         onChange={(event) => setLocation(event.target.value)}
       />
 
-      {errorMessage ? <p className="text-sm text-rose-300">{errorMessage}</p> : null}
-      {draftMessage ? <p className="text-sm text-emerald-300">{draftMessage}</p> : null}
+      {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
+      {draftMessage ? <p className="text-sm text-faster">{draftMessage}</p> : null}
 
       <Button type="submit" fullWidth disabled={isPending}>
         {isPending ? 'Saving...' : isEditing ? 'Save Track' : 'Add Track'}

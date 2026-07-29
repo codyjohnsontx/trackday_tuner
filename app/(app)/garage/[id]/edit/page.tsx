@@ -4,6 +4,8 @@ import { DemoReadOnlyNotice } from '@/components/demo/read-only-notice';
 import { getVehicle } from '@/lib/actions/vehicles';
 import { isDemoMode } from '@/lib/demo/mode';
 import { VehicleForm } from '@/components/garage/vehicle-form';
+import { pageTitleClass } from '@/components/ui/page-header';
+import { cn } from '@/lib/utils';
 
 interface EditVehiclePageProps {
   params: Promise<{ id: string }>;
@@ -26,12 +28,12 @@ export default async function EditVehiclePage({ params }: EditVehiclePageProps) 
       <div>
         <Link
           href="/garage"
-          className="text-sm text-zinc-400 hover:text-zinc-200"
+          className="text-sm text-ink-dim hover:text-ink"
         >
           ← Garage
         </Link>
-        <h1 className="mt-3 text-2xl font-bold text-zinc-100">Edit Vehicle</h1>
-        <p className="mt-1 text-sm text-zinc-400">
+        <h1 className={cn('mt-3', pageTitleClass)}>Edit Vehicle</h1>
+        <p className="mt-1 text-sm text-ink-dim">
           Update details for {result.data.nickname}.
         </p>
       </div>

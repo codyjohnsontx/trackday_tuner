@@ -45,7 +45,7 @@ export function TrackDeleteForm({ trackId, redirectPath = '/tracks' }: TrackDele
       >
         {isPending ? 'Deleting…' : 'Hold to delete track'}
       </Button>
-      {errorMessage ? <p className="text-sm text-rose-300">{errorMessage}</p> : null}
+      {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
     </div>
   );
 }

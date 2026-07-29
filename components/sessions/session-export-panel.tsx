@@ -28,26 +28,26 @@ export function SessionExportPanel({ vehicles, tier, demoMode = false }: Session
   }, [from, to, vehicleId]);
 
   return (
-    <section className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+    <section className="space-y-3 rounded-card bg-surface p-4">
       <div>
-        <p className="text-sm font-semibold text-zinc-100">CSV Export</p>
-        <p className="mt-1 text-sm text-zinc-400">
+        <p className="text-sm font-semibold text-ink">CSV Export</p>
+        <p className="mt-1 text-sm text-ink-dim">
           Download sessions with setup modules, conditions, environment, and notes.
         </p>
       </div>
 
       {demoMode ? (
-        <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-3">
-          <p className="text-sm font-medium text-cyan-100">
+        <div className="rounded-row bg-surface-2 p-3">
+          <p className="text-sm font-medium text-ink">
             CSV export is available in real Pro accounts. Demo data is read-only.
           </p>
         </div>
       ) : null}
 
       {!isPro ? (
-        <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-3">
-          <p className="text-sm font-medium text-cyan-100">Pro unlocks filtered CSV exports.</p>
-          <p className="mt-1 text-sm text-zinc-400">
+        <div className="rounded-row bg-surface-2 p-3">
+          <p className="text-sm font-medium text-ink">Pro unlocks filtered CSV exports.</p>
+          <p className="mt-1 text-sm text-ink-dim">
             Export your full setup history for analysis, sharing, and backups.
           </p>
           <div className="mt-3">
@@ -58,9 +58,9 @@ export function SessionExportPanel({ vehicles, tier, demoMode = false }: Session
         <>
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="space-y-1">
-              <span className="text-xs font-medium text-zinc-400">Vehicle</span>
+              <span className="text-xs font-medium text-ink-dim">Vehicle</span>
               <select
-                className="min-h-11 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 focus:border-cyan-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+                className="min-h-11 w-full rounded-row bg-surface-2 px-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-2 focus-visible:ring-signal/80"
                 value={vehicleId}
                 onChange={(event) => setVehicleId(event.target.value)}
               >
@@ -73,19 +73,19 @@ export function SessionExportPanel({ vehicles, tier, demoMode = false }: Session
               </select>
             </label>
             <label className="space-y-1">
-              <span className="text-xs font-medium text-zinc-400">From</span>
+              <span className="text-xs font-medium text-ink-dim">From</span>
               <input
                 type="date"
-                className="min-h-11 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 focus:border-cyan-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+                className="min-h-11 w-full rounded-row bg-surface-2 px-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-2 focus-visible:ring-signal/80"
                 value={from}
                 onChange={(event) => setFrom(event.target.value)}
               />
             </label>
             <label className="space-y-1">
-              <span className="text-xs font-medium text-zinc-400">To</span>
+              <span className="text-xs font-medium text-ink-dim">To</span>
               <input
                 type="date"
-                className="min-h-11 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100 focus:border-cyan-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+                className="min-h-11 w-full rounded-row bg-surface-2 px-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-2 focus-visible:ring-signal/80"
                 value={to}
                 onChange={(event) => setTo(event.target.value)}
               />

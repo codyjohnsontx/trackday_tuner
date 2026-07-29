@@ -8,6 +8,7 @@ import { SagHistoryList } from '@/components/sag/sag-history-list';
 import { createSagEntry } from '@/lib/actions/sag';
 import { clearDraft, loadDraft, saveDraft } from '@/lib/drafts';
 import { parseMeasurement } from '@/lib/sag';
+import { PageHeader } from '@/components/ui/page-header';
 import type { SagEntry } from '@/types';
 
 interface SagCalculatorProps {
@@ -114,18 +115,17 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <h1 className="text-2xl font-bold text-zinc-100">Sag Calculator</h1>
-        <p className="mt-1 text-sm text-zinc-400">
-          Enter measurements in millimeters. Results update instantly as you type.
-        </p>
-      </section>
+      <PageHeader
+        title="Sag"
+        muted="Calculator"
+        sub="Enter measurements in millimeters. Results update instantly as you type."
+      />
 
       <SagSection title="Front" values={front} onChange={setFront} />
       <SagSection title="Rear" values={rear} onChange={setRear} />
 
-      <section className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <h2 className="text-base font-semibold text-zinc-100">Save Entry</h2>
+      <section className="space-y-3 rounded-card bg-surface p-4">
+        <h2 className="text-base font-semibold text-ink">Save Entry</h2>
 
         <form className="space-y-3" onSubmit={handleSave}>
           <Input
@@ -137,9 +137,9 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
           />
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-zinc-200">Notes (optional)</span>
+            <span className="text-sm font-medium text-ink">Notes (optional)</span>
             <textarea
-              className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-500"
+              className="w-full rounded-row bg-surface-2 px-4 py-3 text-base text-ink placeholder:text-ink-faint"
               rows={3}
               placeholder="Track temp, tire setup, spring preload notes..."
               value={notes}
@@ -147,9 +147,9 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
             />
           </label>
 
-          {errorMessage ? <p className="text-sm text-rose-300">{errorMessage}</p> : null}
-          {successMessage ? <p className="text-sm text-emerald-300">{successMessage}</p> : null}
-          {draftMessage ? <p className="text-sm text-emerald-300">{draftMessage}</p> : null}
+          {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
+          {successMessage ? <p className="text-sm text-faster">{successMessage}</p> : null}
+          {draftMessage ? <p className="text-sm text-faster">{draftMessage}</p> : null}
 
           <div className="grid grid-cols-2 gap-2">
             <Button type="submit" fullWidth disabled={isPending}>

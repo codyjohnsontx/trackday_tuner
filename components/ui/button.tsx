@@ -17,14 +17,17 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  'relative isolate inline-flex items-center justify-center overflow-hidden rounded-xl font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98]',
+  'relative isolate inline-flex items-center justify-center overflow-hidden rounded-full font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98]',
   {
     variants: {
       variant: {
-        primary: 'bg-cyan-400 text-zinc-950 hover:bg-cyan-300',
-        secondary: 'border border-zinc-700 bg-zinc-900 text-zinc-100 hover:bg-zinc-800',
-        ghost: 'text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800',
-        destructive: 'border border-rose-800 bg-rose-950/40 text-rose-200 hover:bg-rose-900/50',
+        // The primary action is a white pill rather than an accent fill. Amber
+        // stays reserved for marking state (active tab, focus, live values), so
+        // a screen never has to compete with its own call to action.
+        primary: 'bg-ink text-canvas hover:bg-white',
+        secondary: 'bg-surface-3 text-ink hover:bg-surface-3/70',
+        ghost: 'text-ink-dim hover:bg-surface-3 hover:text-ink',
+        destructive: 'bg-slower/12 text-slower hover:bg-slower/20',
       },
       size: {
         sm: 'min-h-11 px-3 py-2 text-xs',
@@ -43,18 +46,18 @@ type ButtonVariant = NonNullable<VariantProps<typeof buttonVariants>['variant']>
 
 // Ink color of the press ripple, tuned per variant so it reads on the surface.
 const RIPPLE_COLOR: Record<ButtonVariant, string> = {
-  primary: 'rgba(6,34,42,0.45)',
-  secondary: 'rgba(34,211,238,0.16)',
-  ghost: 'rgba(34,211,238,0.16)',
-  destructive: 'rgba(190,18,60,0.40)',
+  primary: 'rgba(8,8,10,0.28)',
+  secondary: 'rgba(255,176,32,0.18)',
+  ghost: 'rgba(255,176,32,0.18)',
+  destructive: 'rgba(255,83,71,0.35)',
 };
 
 // Fill color of the hold-to-confirm progress sweep.
 const HOLD_FILL: Record<ButtonVariant, string> = {
-  primary: 'rgba(6,34,42,0.30)',
-  secondary: 'rgba(34,211,238,0.20)',
-  ghost: 'rgba(34,211,238,0.20)',
-  destructive: 'rgba(190,18,60,0.55)',
+  primary: 'rgba(8,8,10,0.22)',
+  secondary: 'rgba(255,176,32,0.24)',
+  ghost: 'rgba(255,176,32,0.24)',
+  destructive: 'rgba(255,83,71,0.45)',
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {

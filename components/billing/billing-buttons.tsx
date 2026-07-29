@@ -61,10 +61,10 @@ export function UpgradeToProButton({ fullWidth = false, className }: BillingButt
       >
         {loading ? 'Redirecting...' : 'Upgrade to Pro'}
       </Button>
-      <p className="text-xs text-zinc-400">
+      <p className="text-xs text-ink-dim">
         Founder special: use code {founderCode} for ${FOUNDER_PROMO_PRICE_USD.toFixed(2)}/mo (first {FOUNDER_PROMO_MAX_REDEMPTIONS}).
       </p>
-      {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+      {error ? <p className="text-sm text-slower">{error}</p> : null}
     </div>
   );
 }
@@ -97,7 +97,7 @@ export function ManageBillingButton({ fullWidth = false, className }: BillingBut
       >
         {loading ? 'Redirecting...' : 'Manage Billing'}
       </Button>
-      {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+      {error ? <p className="text-sm text-slower">{error}</p> : null}
     </div>
   );
 }

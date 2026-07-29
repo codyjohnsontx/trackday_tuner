@@ -55,7 +55,7 @@ export function SetVehicleBaselineButton({
       <Button type="button" fullWidth onClick={handleSetBaseline} loading={loading} disabled={disabled}>
         Set as Vehicle Baseline
       </Button>
-      {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+      {error ? <p className="text-sm text-slower">{error}</p> : null}
     </div>
   );
 }

@@ -116,7 +116,7 @@ function ModuleHeader({
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+      <span className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
         {sessionModuleConfigs[module].label}
       </span>
       <Button
@@ -547,16 +547,16 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
-      <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Session Info</span>
+      <div className="space-y-3 rounded-card bg-surface p-4">
+        <span className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Session Info</span>
 
         <div className="space-y-1">
-          <label htmlFor="session-vehicle" className="block text-sm font-medium text-zinc-300">
+          <label htmlFor="session-vehicle" className="block text-sm font-medium text-ink-dim">
             Vehicle
           </label>
           <select
             id="session-vehicle"
-            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 focus:border-cyan-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+            className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             value={vehicleId}
             onChange={(event) => setVehicleId(event.target.value)}
             required
@@ -585,13 +585,13 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
         ) : null}
 
         <div className="relative space-y-1">
-          <label htmlFor="session-track" className="block text-sm font-medium text-zinc-300">
+          <label htmlFor="session-track" className="block text-sm font-medium text-ink-dim">
             Track
           </label>
           <input
             id="session-track"
             type="text"
-            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+            className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             placeholder="Search or type a track name"
             value={trackQuery}
             autoComplete="off"
@@ -602,16 +602,16 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
             onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
           />
           {showDropdown && filteredTracks.length > 0 ? (
-            <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-900 shadow-lg">
+            <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-row bg-surface-2 shadow-lg">
               {filteredTracks.map((track) => (
                 <li key={track.id}>
                   <button
                     type="button"
-                    className="min-h-11 w-full px-3 py-3 text-left text-sm text-zinc-200 hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+                    className="min-h-11 w-full px-3 py-3 text-left text-sm text-ink hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-signal/80"
                     onMouseDown={() => handleTrackSelect(track)}
                   >
                     <span className="font-medium">{track.name}</span>
-                    {track.location ? <span className="ml-1 text-zinc-500">{track.location}</span> : null}
+                    {track.location ? <span className="ml-1 text-ink-faint">{track.location}</span> : null}
                   </button>
                 </li>
               ))}
@@ -643,9 +643,9 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
         />
       </div>
 
-      <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Conditions</span>
-        <div className="grid grid-cols-4 gap-2 rounded-xl bg-zinc-950 p-1">
+      <div className="space-y-3 rounded-card bg-surface p-4">
+        <span className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Conditions</span>
+        <div className="grid grid-cols-4 gap-2 rounded-row bg-surface-2 p-1">
           {conditionOptions.map((option) => (
             <Button
               key={option.value}
@@ -705,10 +705,10 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
         </div>
       </div>
 
-      <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+      <div className="space-y-3 rounded-card bg-surface p-4">
         <div>
-          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Modules</span>
-          <p className="mt-1 text-sm text-zinc-400">
+          <span className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Modules</span>
+          <p className="mt-1 text-sm text-ink-dim">
             Start with the basics. Turn on extra modules only for the data you want to log this session.
           </p>
         </div>
@@ -731,12 +731,12 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       </div>
 
       {enabledModules.tires ? (
-        <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+        <div className="space-y-4 rounded-card bg-surface p-4">
           <ModuleHeader module="tires" enabled={enabledModules.tires} onToggle={toggleModule} />
 
           <div className="space-y-2">
-            <span className="text-xs font-medium text-zinc-400">Condition</span>
-            <div className="grid grid-cols-4 gap-2 rounded-xl bg-zinc-950 p-1">
+            <span className="text-xs font-medium text-ink-dim">Condition</span>
+            <div className="grid grid-cols-4 gap-2 rounded-row bg-surface-2 p-1">
               {tireConditionOptions.map((option) => (
                 <Button
                   key={option.value}
@@ -761,7 +761,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
           </Button>
 
           <div className="space-y-3">
-            <span className="text-xs font-medium text-zinc-400">Front</span>
+            <span className="text-xs font-medium text-ink-dim">Front</span>
             <Input
               label="Front Pressure"
               type="text"
@@ -793,7 +793,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
           </div>
 
           <div className="space-y-3">
-            <span className="text-xs font-medium text-zinc-400">Rear</span>
+            <span className="text-xs font-medium text-ink-dim">Rear</span>
             <Input
               label="Rear Pressure"
               type="text"
@@ -827,22 +827,22 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       ) : null}
 
       {enabledModules.suspension ? (
-        <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+        <div className="space-y-4 rounded-card bg-surface p-4">
           <ModuleHeader module="suspension" enabled={enabledModules.suspension} onToggle={toggleModule} />
 
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-zinc-400">Clicks counted for both front and rear</span>
+            <span className="text-xs font-medium text-ink-dim">Clicks counted for both front and rear</span>
             <div className="flex items-center gap-2">
               <InfoTooltip text="Out - rotate the adjuster fully clockwise (full hard) until it stops, then count each click as you back it out. Most common standard. In - count from fully open (full soft). Some manufacturers use this. Check your manual if unsure." />
-              <div className="flex overflow-hidden rounded-lg border border-zinc-700">
+              <div className="flex overflow-hidden rounded-plate border border-white/10">
                 <button
                   type="button"
                   onClick={() => setSuspensionDirection('out')}
                   className={cn(
-                    'min-h-11 px-3 py-2 text-xs font-medium transition focus-visible:ring-2 focus-visible:ring-cyan-400/80',
+                    'min-h-11 px-3 py-2 text-xs font-medium transition focus-visible:ring-2 focus-visible:ring-signal/80',
                     suspensionDirection === 'out'
-                      ? 'bg-cyan-400 text-zinc-950'
-                      : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200',
+                      ? 'bg-ink text-canvas'
+                      : 'bg-surface text-ink-dim hover:text-ink',
                   )}
                 >
                   Out
@@ -851,10 +851,10 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
                   type="button"
                   onClick={() => setSuspensionDirection('in')}
                   className={cn(
-                    'min-h-11 px-3 py-2 text-xs font-medium transition focus-visible:ring-2 focus-visible:ring-cyan-400/80',
+                    'min-h-11 px-3 py-2 text-xs font-medium transition focus-visible:ring-2 focus-visible:ring-signal/80',
                     suspensionDirection === 'in'
-                      ? 'bg-cyan-400 text-zinc-950'
-                      : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200',
+                      ? 'bg-ink text-canvas'
+                      : 'bg-surface text-ink-dim hover:text-ink',
                   )}
                 >
                   In
@@ -864,14 +864,14 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
           </div>
 
           <div className="space-y-3">
-            <span className="text-xs font-medium text-zinc-400">Front</span>
+            <span className="text-xs font-medium text-ink-dim">Front</span>
             <Input label="Front Preload" type="text" inputMode="numeric" placeholder="e.g. 5" value={frontSusp.preload} onChange={(event) => setFrontSusp({ ...frontSusp, preload: event.target.value })} />
             <Input label="Front Compression" type="text" inputMode="numeric" placeholder="e.g. 12" value={frontSusp.compression} onChange={(event) => setFrontSusp({ ...frontSusp, compression: event.target.value })} />
             <Input label="Front Rebound" type="text" inputMode="numeric" placeholder="e.g. 14" value={frontSusp.rebound} onChange={(event) => setFrontSusp({ ...frontSusp, rebound: event.target.value })} />
           </div>
 
           <div className="space-y-3">
-            <span className="text-xs font-medium text-zinc-400">Rear</span>
+            <span className="text-xs font-medium text-ink-dim">Rear</span>
             <Input label="Rear Preload" type="text" inputMode="numeric" placeholder="e.g. 8" value={rearSusp.preload} onChange={(event) => setRearSusp({ ...rearSusp, preload: event.target.value })} />
             <Input label="Rear Compression" type="text" inputMode="numeric" placeholder="e.g. 10" value={rearSusp.compression} onChange={(event) => setRearSusp({ ...rearSusp, compression: event.target.value })} />
             <Input label="Rear Rebound" type="text" inputMode="numeric" placeholder="e.g. 16" value={rearSusp.rebound} onChange={(event) => setRearSusp({ ...rearSusp, rebound: event.target.value })} />
@@ -880,7 +880,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       ) : null}
 
       {availableModules.includes('alignment') && enabledModules.alignment ? (
-        <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+        <div className="space-y-3 rounded-card bg-surface p-4">
           <ModuleHeader module="alignment" enabled={enabledModules.alignment} onToggle={toggleModule} />
           <Button
             type="button"
@@ -901,7 +901,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       ) : null}
 
       {availableModules.includes('geometry') && enabledModules.geometry ? (
-        <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+        <div className="space-y-3 rounded-card bg-surface p-4">
           <ModuleHeader module="geometry" enabled={enabledModules.geometry} onToggle={toggleModule} />
           <Button
             type="button"
@@ -924,7 +924,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       ) : null}
 
       {availableModules.includes('drivetrain') && enabledModules.drivetrain ? (
-        <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+        <div className="space-y-3 rounded-card bg-surface p-4">
           <ModuleHeader module="drivetrain" enabled={enabledModules.drivetrain} onToggle={toggleModule} />
           <Button
             type="button"
@@ -946,7 +946,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       ) : null}
 
       {availableModules.includes('aero') && enabledModules.aero ? (
-        <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+        <div className="space-y-3 rounded-card bg-surface p-4">
           <ModuleHeader module="aero" enabled={enabledModules.aero} onToggle={toggleModule} />
           <Button
             type="button"
@@ -973,13 +973,13 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
         onValidationChange={setLapValidationMessage}
       />
 
-      <div className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <label htmlFor="session-notes" className="block text-xs font-semibold uppercase tracking-wider text-zinc-500">
+      <div className="space-y-2 rounded-card bg-surface p-4">
+        <label htmlFor="session-notes" className="block text-xs font-semibold uppercase tracking-wider text-ink-faint">
           Notes
         </label>
         <textarea
           id="session-notes"
-          className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+          className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
           rows={4}
           placeholder="Observations, lap times, what to try next..."
           value={notes}
@@ -987,10 +987,10 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
         />
       </div>
 
-      {errorMessage ? <p className="text-sm text-rose-300">{errorMessage}</p> : null}
-      {draftMessage ? <p className="text-sm text-emerald-300">{draftMessage}</p> : null}
+      {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
+      {draftMessage ? <p className="text-sm text-faster">{draftMessage}</p> : null}
 
-      <div className="sticky bottom-20 z-20 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-2 shadow-lg shadow-zinc-950/40 backdrop-blur sm:bottom-4">
+      <div className="sticky bottom-20 z-20 rounded-card bg-surface-3 p-2 shadow-lg shadow-black backdrop-blur sm:bottom-4">
         <Button type="submit" fullWidth disabled={isPending || saved} loading={isPending} success={saved}>
           {saved ? 'Saved' : isPending ? 'Saving…' : 'Save Session'}
         </Button>

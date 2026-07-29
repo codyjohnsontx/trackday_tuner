@@ -30,17 +30,17 @@ export function SessionCompare({ rows, previousDateLabel }: SessionCompareProps)
     : computedRows.filter((row) => row.changed);
 
   return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+    <section className="rounded-card bg-surface p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
             Compare with Previous Session
           </h2>
-          <p className="mt-1 text-xs text-zinc-400">Compared against {previousDateLabel}</p>
+          <p className="mt-1 text-xs text-ink-dim">Compared against {previousDateLabel}</p>
         </div>
         <button
           type="button"
-          className="rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1 text-xs text-zinc-300 hover:text-zinc-100"
+          className="inline-flex min-h-11 items-center rounded-full bg-surface-3 px-3.5 text-xs text-ink-dim transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
           onClick={() => setShowUnchanged((v) => !v)}
         >
           {showUnchanged ? 'Hide unchanged' : 'Show unchanged'}
@@ -48,20 +48,20 @@ export function SessionCompare({ rows, previousDateLabel }: SessionCompareProps)
       </div>
 
       {visibleRows.length === 0 ? (
-        <p className="text-sm text-zinc-400">No changed fields against the previous session.</p>
+        <p className="text-sm text-ink-dim">No changed fields against the previous session.</p>
       ) : (
         <ul className="space-y-2">
           {visibleRows.map((row) => (
-            <li key={row.label} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{row.label}</p>
+            <li key={row.label} className="rounded-row bg-surface-3 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">{row.label}</p>
               <div className="mt-1 grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <p className="text-zinc-500">Previous</p>
-                  <p className="text-zinc-300">{row.previous || '—'}</p>
+                  <p className="text-ink-faint">Previous</p>
+                  <p className="text-ink-dim">{row.previous || '—'}</p>
                 </div>
                 <div>
-                  <p className="text-zinc-500">Current</p>
-                  <p className="text-zinc-100">{row.current || '—'}</p>
+                  <p className="text-ink-faint">Current</p>
+                  <p className="text-ink">{row.current || '—'}</p>
                 </div>
               </div>
             </li>

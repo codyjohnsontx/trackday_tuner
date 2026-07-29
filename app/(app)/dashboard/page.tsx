@@ -1,10 +1,14 @@
 import Link from 'next/link';
+import { Timer } from 'lucide-react';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
+import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { DemoBanner } from '@/components/demo/demo-banner';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
 import { getSessions, getSessionCount } from '@/lib/actions/sessions';
 import { isDemoMode } from '@/lib/demo/mode';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
+import { CardGroup } from '@/components/ui/surface';
 import { SessionCard } from '@/components/sessions/session-card';
 import { resolveUserAccess } from '@/lib/access';
 import { getBetaFeedback, hasTwoDistinctTrackDays } from '@/lib/actions/beta';
@@ -28,66 +32,74 @@ export default async function DashboardPage() {
 
   const vehicleMap = new Map(vehicles.map((v) => [v.id, v.nickname]));
 
+  // getSessions returns newest first, so the head of the list is the last outing.
+  const lastSession = sessions[0];
+  const lastRun = lastSession
+    ? `Last out at ${lastSession.track_name ?? 'an unnamed track'} on ${new Date(
+        `${lastSession.date}T00:00:00`,
+      ).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`
+    : hasVehicles
+      ? 'No sessions logged yet.'
+      : null;
+
   return (
     <div className="space-y-5">
       {demoMode ? <DemoBanner /> : null}
 
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <h2 className="text-xl font-semibold">Dashboard</h2>
-        {hasVehicles ? (
-          <>
-            <p className="mt-2 text-sm text-zinc-300">
-              {vehicles.length} vehicle{vehicles.length !== 1 ? 's' : ''} · {sessionCount}/
-              {isFree ? '10' : '∞'} sessions
-            </p>
-            <div className="mt-4">
-              {demoMode ? (
-                <Button fullWidth variant="secondary" disabled>
-                  Read-only demo
-                </Button>
-              ) : atSessionLimit ? (
-                <UpgradeToProButton fullWidth />
-              ) : (
-                <Link href="/sessions/new">
-                  <Button fullWidth>+ New Session</Button>
-                </Link>
-              )}
-            </div>
-          </>
+      <PageHeader
+        title="Dashboard"
+        sub={
+          hasVehicles
+            ? `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} · ${sessionCount}/${isFree ? '10' : '∞'} sessions`
+            : 'Nothing in the garage yet'
+        }
+      />
+
+      <DashboardHero vehicleName={vehicles[0]?.nickname ?? null} lastRun={lastRun} />
+
+      {hasVehicles ? (
+        demoMode ? (
+          <Button fullWidth variant="secondary" disabled>
+            Read-only demo
+          </Button>
+        ) : atSessionLimit ? (
+          <UpgradeToProButton fullWidth />
         ) : (
-          <>
-            <p className="mt-2 text-sm text-zinc-300">
-              Add a vehicle to start logging track sessions.
-            </p>
-            <div className="mt-4">
-              <Link href="/garage/new">
-                <Button>Add a Vehicle</Button>
-              </Link>
-            </div>
-          </>
-        )}
-      </section>
+          <Button asChild fullWidth>
+            <Link href="/sessions/new">+ New Session</Link>
+          </Button>
+        )
+      ) : (
+        <Button asChild fullWidth>
+          <Link href="/garage/new">Add a Vehicle</Link>
+        </Button>
+      )}
 
       {sessions.length > 0 ? (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">
-              Recent Sessions
-            </h3>
-            <Link href="/sessions" className="text-xs text-cyan-400 hover:text-cyan-300">
+        <CardGroup
+          icon={Timer}
+          eyebrow="Recent"
+          title="Sessions"
+          action={
+            <Link
+              href="/sessions"
+              className="text-sm font-medium text-ink-dim transition hover:text-ink"
+            >
               View all
             </Link>
-          </div>
-          <ul className="space-y-3">
+          }
+        >
+          <ul className="space-y-2">
             {sessions.map((s) => (
-              <SessionCard
-                key={s.id}
-                session={s}
-                vehicleNickname={vehicleMap.get(s.vehicle_id) ?? 'Unknown Vehicle'}
-              />
+              <li key={s.id}>
+                <SessionCard
+                  session={s}
+                  vehicleNickname={vehicleMap.get(s.vehicle_id) ?? 'Unknown Vehicle'}
+                />
+              </li>
             ))}
           </ul>
-        </div>
+        </CardGroup>
       ) : null}
 
       {access.source === 'beta' && hasTwoTrackDays && !betaFeedback ? <BetaSurvey /> : null}

@@ -17,9 +17,9 @@ export function SessionBaselinePanel({ session, baseline, tier, demoMode }: Sess
 
   if (tier !== 'pro') {
     return (
-      <section className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 p-4">
-        <h2 className="text-sm font-semibold text-zinc-100">Vehicle baselines are a Pro feature.</h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-300">
+      <section className="rounded-card bg-surface p-4">
+        <h2 className="text-sm font-semibold text-ink">Vehicle baselines are a Pro feature.</h2>
+        <p className="mt-2 text-sm leading-6 text-ink-dim">
           Set a known-good setup for each vehicle and compare future sessions against it.
         </p>
         <div className="mt-4">
@@ -30,30 +30,30 @@ export function SessionBaselinePanel({ session, baseline, tier, demoMode }: Sess
   }
 
   return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+    <section className="rounded-card bg-surface p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Vehicle Baseline</h2>
-          <p className="mt-1 text-sm leading-6 text-zinc-400">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Vehicle Baseline</h2>
+          <p className="mt-1 text-sm leading-6 text-ink-dim">
             {isCurrentBaseline
               ? 'This session is the stored setup snapshot for this vehicle.'
               : 'Save this session as the known-good setup snapshot for this vehicle.'}
           </p>
         </div>
         {isCurrentBaseline ? (
-          <span className="shrink-0 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-200">
+          <span className="shrink-0 rounded-plate bg-surface-2 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-ink-faint">
             Vehicle Baseline
           </span>
         ) : null}
       </div>
 
       {baseline && !isCurrentBaseline ? (
-        <p className="mt-3 rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-300">
-          Current baseline: <span className="font-medium text-zinc-100">{baselineSourceLabel(baseline)}</span>
+        <p className="mt-3 rounded-row bg-surface-2 px-3 py-2 text-sm text-ink-dim">
+          Current baseline: <span className="font-medium text-ink">{baselineSourceLabel(baseline)}</span>
         </p>
       ) : null}
 
-      {demoMode ? <p className="mt-3 text-xs text-zinc-500">Demo mode is read-only.</p> : null}
+      {demoMode ? <p className="mt-3 text-xs text-ink-faint">Demo mode is read-only.</p> : null}
 
       <div className="mt-4">
         {isCurrentBaseline ? (

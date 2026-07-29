@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { ChevronDown, ExternalLink } from 'lucide-react';
 import { useId, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { DataPlate } from '@/components/ui/condition';
+import { Eyebrow } from '@/components/ui/surface';
 import { buildSessionHistorySummary } from '@/lib/session-history';
 import { cn } from '@/lib/utils';
 import type { Session, SessionEnvironment } from '@/types';
@@ -21,8 +23,8 @@ interface SessionHistoryListProps {
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3 py-1.5">
-      <span className="text-sm text-zinc-500">{label}</span>
-      <span className="text-right text-sm font-medium text-zinc-200">{value}</span>
+      <span className="text-sm text-ink-faint">{label}</span>
+      <span className="text-right text-sm font-medium text-ink">{value}</span>
     </div>
   );
 }
@@ -42,8 +44,8 @@ export function SessionHistoryList({ items }: SessionHistoryListProps) {
           <li
             key={session.id}
             className={cn(
-              'overflow-hidden rounded-2xl border bg-zinc-900/60 transition',
-              isOpen ? 'border-cyan-400/40' : 'border-zinc-800',
+              'overflow-hidden rounded-card border bg-surface transition',
+              isOpen ? 'border-signal/30' : 'border-white/5',
             )}
           >
             <button
@@ -51,28 +53,30 @@ export function SessionHistoryList({ items }: SessionHistoryListProps) {
               aria-expanded={isOpen}
               aria-controls={contentId}
               onClick={() => setOpenSessionId((current) => (current === session.id ? null : session.id))}
-              className="flex w-full items-start justify-between gap-3 px-4 py-4 text-left transition hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+              className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             >
-              <div className="min-w-0">
-                <p className="truncate font-semibold text-zinc-100">
-                  {session.track_name ?? 'Unknown Track'}
-                </p>
-                <p className="mt-0.5 truncate text-sm text-zinc-400">
-                  {vehicleNickname}
-                  {session.session_number ? ` · S${session.session_number}` : ''}
-                  {' · '}
+              <div className="min-w-0 flex-1">
+                <Eyebrow>
                   {summary.dateLabel}
                   {summary.timeLabel ? ` · ${summary.timeLabel}` : ''}
+                </Eyebrow>
+                <p className="mt-1.5 truncate font-semibold text-ink">
+                  {session.track_name ?? 'Unknown Track'}
                 </p>
+                <p className="mt-0.5 truncate text-sm text-ink-dim">{vehicleNickname}</p>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <span className="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-semibold text-zinc-300">
-                  {summary.conditionLabel}
-                </span>
+              <div className="flex shrink-0 items-center gap-3">
+                {/* Same plate as the dashboard rows — one session reads the same
+                    way wherever it appears. The ring matches this card's fill. */}
+                <DataPlate
+                  value={session.session_number ? `S${session.session_number}` : null}
+                  condition={session.conditions}
+                  ringClass="ring-surface"
+                />
                 <span
                   className={cn(
-                    'inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-950 text-zinc-400 transition',
-                    isOpen ? 'text-cyan-300' : 'text-zinc-400',
+                    'inline-flex min-h-10 min-w-10 items-center justify-center rounded-plate bg-surface-2 text-ink-dim transition',
+                    isOpen ? 'text-signal' : 'text-ink-dim',
                   )}
                   aria-hidden="true"
                 >
@@ -84,14 +88,14 @@ export function SessionHistoryList({ items }: SessionHistoryListProps) {
             <div
               id={contentId}
               hidden={!isOpen}
-              className="border-t border-zinc-800 px-4 py-4"
+              className="border-t border-white/5 px-4 py-4"
             >
               <div className="grid gap-4 md:grid-cols-2">
                 <section className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
                     Quick Summary
                   </p>
-                  <div className="divide-y divide-zinc-800 rounded-xl border border-zinc-800 bg-zinc-950/40 px-3">
+                  <div className="divide-y divide-white/5 rounded-row bg-surface-2 px-3">
                     <SummaryRow label="Condition" value={summary.conditionLabel} />
                     <SummaryRow label="Front Tire" value={summary.tireRows[0]?.value ?? 'Not logged'} />
                     <SummaryRow label="Rear Tire" value={summary.tireRows[1]?.value ?? 'Not logged'} />
@@ -101,17 +105,17 @@ export function SessionHistoryList({ items }: SessionHistoryListProps) {
                 </section>
 
                 <section className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
                     Environment
                   </p>
                   {summary.environmentRows.length > 0 ? (
-                    <div className="divide-y divide-zinc-800 rounded-xl border border-zinc-800 bg-zinc-950/40 px-3">
+                    <div className="divide-y divide-white/5 rounded-row bg-surface-2 px-3">
                       {summary.environmentRows.map((row) => (
                         <SummaryRow key={row.label} label={row.label} value={row.value} />
                       ))}
                     </div>
                   ) : (
-                    <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-950/30 px-3 py-3 text-sm text-zinc-500">
+                    <div className="rounded-row border border-dashed border-white/5 bg-surface-2 px-3 py-3 text-sm text-ink-faint">
                       No environment snapshot logged.
                     </div>
                   )}
@@ -119,8 +123,8 @@ export function SessionHistoryList({ items }: SessionHistoryListProps) {
               </div>
 
               <section className="mt-4 space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Notes</p>
-                <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-3 py-3 text-sm text-zinc-300">
+                <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Notes</p>
+                <div className="rounded-row bg-surface-2 px-3 py-3 text-sm text-ink-dim">
                   {summary.notesPreview ?? 'No notes logged for this session.'}
                 </div>
               </section>

@@ -35,8 +35,8 @@ export function SagSection({ title, values, onChange }: SagSectionProps) {
       : null;
 
   return (
-    <section className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-      <h2 className="text-base font-semibold text-zinc-100">{title}</h2>
+    <section className="space-y-3 rounded-card bg-surface p-4">
+      <h2 className="text-base font-semibold text-ink">{title}</h2>
 
       <Input
         label="Fully Extended (L0)"
@@ -68,8 +68,8 @@ export function SagSection({ title, values, onChange }: SagSectionProps) {
         onChange={(event) => onChange({ ...values, l2: event.target.value })}
       />
 
-      {measurementWarning ? <p className="text-sm text-amber-300">{measurementWarning}</p> : null}
-      {negativeWarning ? <p className="text-sm text-amber-300">{negativeWarning}</p> : null}
+      {measurementWarning ? <p className="text-sm text-signal">{measurementWarning}</p> : null}
+      {negativeWarning ? <p className="text-sm text-signal">{negativeWarning}</p> : null}
 
       <SagResults
         freeSagMm={freeSagMm}

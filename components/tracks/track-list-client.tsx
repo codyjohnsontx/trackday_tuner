@@ -35,7 +35,7 @@ export function TrackListClient({ tracks, demoMode = false }: TrackListClientPro
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+      <section className="rounded-card bg-surface p-4">
         <Input
           label="Search tracks"
           type="search"
@@ -45,40 +45,40 @@ export function TrackListClient({ tracks, demoMode = false }: TrackListClientPro
         />
       </section>
 
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+      <section className="rounded-card bg-surface p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Your Custom Tracks</h2>
-          <span className="text-xs text-zinc-500">{customTracks.length}</span>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-ink-dim">Your Custom Tracks</h2>
+          <span className="text-xs text-ink-faint">{customTracks.length}</span>
         </div>
 
         {customTracks.length === 0 ? (
-          <p className="mt-3 text-sm text-zinc-500">
+          <p className="mt-3 text-sm text-ink-faint">
             {query ? 'No custom tracks match your search.' : 'No custom tracks yet.'}
           </p>
         ) : (
           <ul className="mt-3 space-y-2">
             {customTracks.map((track) => (
-              <li key={track.id} className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+              <li key={track.id} className="space-y-3 rounded-row bg-surface-3 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-zinc-100">{track.name}</p>
-                    {track.location ? <p className="text-xs text-zinc-400">{track.location}</p> : null}
+                    <p className="truncate text-sm font-medium text-ink">{track.name}</p>
+                    {track.location ? <p className="text-xs text-ink-dim">{track.location}</p> : null}
                   </div>
-                  <span className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-300">
+                  <span className="rounded-plate bg-surface-2 px-2 py-1 text-xs text-ink-dim">
                     Custom
                   </span>
                 </div>
                 <div className={cn('grid gap-2', !demoMode && 'grid-cols-2')}>
                   <Link
                     href={`/tracks/${track.id}`}
-                    className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-center text-sm font-medium text-zinc-100 hover:bg-zinc-800"
+                    className="inline-flex min-h-11 items-center justify-center rounded-full bg-surface-2 px-3 text-sm font-medium text-ink transition hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
                   >
                     View
                   </Link>
                   {!demoMode ? (
                     <Link
                       href={`/tracks/${track.id}`}
-                      className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-center text-sm font-medium text-zinc-100 hover:bg-zinc-800"
+                      className="inline-flex min-h-11 items-center justify-center rounded-full bg-surface-2 px-3 text-sm font-medium text-ink transition hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
                     >
                       Edit
                     </Link>
@@ -91,31 +91,31 @@ export function TrackListClient({ tracks, demoMode = false }: TrackListClientPro
         )}
       </section>
 
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+      <section className="rounded-card bg-surface p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Seeded Tracks</h2>
-          <span className="text-xs text-zinc-500">{seededTracks.length}</span>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-ink-dim">Seeded Tracks</h2>
+          <span className="text-xs text-ink-faint">{seededTracks.length}</span>
         </div>
 
         {seededTracks.length === 0 ? (
-          <p className="mt-3 text-sm text-zinc-500">No seeded tracks match your search.</p>
+          <p className="mt-3 text-sm text-ink-faint">No seeded tracks match your search.</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {seededTracks.map((track) => (
-              <li key={track.id} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+              <li key={track.id} className="rounded-row bg-surface-3 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-zinc-100">{track.name}</p>
-                    {track.location ? <p className="text-xs text-zinc-400">{track.location}</p> : null}
+                    <p className="truncate text-sm font-medium text-ink">{track.name}</p>
+                    {track.location ? <p className="text-xs text-ink-dim">{track.location}</p> : null}
                   </div>
-                  <span className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-300">
+                  <span className="rounded-plate bg-surface-2 px-2 py-1 text-xs text-ink-dim">
                     Read-only
                   </span>
                 </div>
                 <div className="mt-3">
                   <Link
                     href={`/tracks/${track.id}`}
-                    className="block rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-center text-sm font-medium text-zinc-100 hover:bg-zinc-800"
+                    className="block inline-flex min-h-11 items-center justify-center rounded-full bg-surface-2 px-3 text-sm font-medium text-ink transition hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
                   >
                     View
                   </Link>

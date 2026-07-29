@@ -32,10 +32,10 @@ export function TimeDisplay({ time }: { time: string | null }) {
   }, []);
 
   if (!time) {
-    return <span className="text-sm font-medium text-zinc-100">—</span>;
+    return <span className="text-sm font-medium text-ink">—</span>;
   }
 
   return (
-    <span className="text-sm font-medium text-zinc-100">{formatSessionClockTime(time, format)}</span>
+    <span className="text-sm font-medium text-ink">{formatSessionClockTime(time, format)}</span>
   );
 }

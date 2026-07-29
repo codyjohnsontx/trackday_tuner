@@ -110,16 +110,16 @@ export function VehicleForm({ vehicle }: VehicleFormProps) {
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
-      <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+      <div className="space-y-3 rounded-card bg-surface p-4">
         <div className="space-y-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+          <span className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
             Vehicle Type
           </span>
-          <div className="grid grid-cols-2 gap-2 rounded-xl bg-zinc-950 p-1">
+          <div className="grid grid-cols-2 gap-2 rounded-row bg-surface-2 p-1">
             <Button
               type="button"
               variant={type === 'motorcycle' ? 'primary' : 'secondary'}
-              className="min-h-10"
+              className="min-h-11"
               onClick={() => setType('motorcycle')}
             >
               Motorcycle
@@ -127,7 +127,7 @@ export function VehicleForm({ vehicle }: VehicleFormProps) {
             <Button
               type="button"
               variant={type === 'car' ? 'primary' : 'secondary'}
-              className="min-h-10"
+              className="min-h-11"
               onClick={() => setType('car')}
             >
               Car
@@ -146,8 +146,8 @@ export function VehicleForm({ vehicle }: VehicleFormProps) {
         />
       </div>
 
-      <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+      <div className="space-y-3 rounded-card bg-surface p-4">
+        <span className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
           Optional Details
         </span>
         <Input
@@ -177,8 +177,8 @@ export function VehicleForm({ vehicle }: VehicleFormProps) {
         />
       </div>
 
-      <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+      <div className="space-y-3 rounded-card bg-surface p-4">
+        <span className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
           Photo
         </span>
         {photoPreview ? (
@@ -188,12 +188,12 @@ export function VehicleForm({ vehicle }: VehicleFormProps) {
               alt="Vehicle preview"
               width={64}
               height={64}
-              className="h-16 w-16 rounded-lg object-cover"
+              className="h-16 w-16 rounded-plate object-cover"
               unoptimized={photoPreview?.startsWith('blob:')}
             />
             <button
               type="button"
-              className="text-sm text-zinc-400 hover:text-zinc-200"
+              className="text-sm text-ink-dim hover:text-ink"
               onClick={() => {
                 setPhotoFile(null);
                 setPhotoPreview(null);
@@ -208,13 +208,13 @@ export function VehicleForm({ vehicle }: VehicleFormProps) {
           ref={fileInputRef}
           type="file"
           accept="image/*"
-          className="block w-full text-sm text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-zinc-200 hover:file:bg-zinc-700"
+          className="block w-full text-sm text-ink-dim file:mr-3 file:rounded-plate file:border-0 file:bg-surface-3 file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink hover:file:bg-surface-3"
           onChange={handlePhotoChange}
         />
       </div>
 
       {errorMessage ? (
-        <p className="mt-3 text-sm text-rose-300">{errorMessage}</p>
+        <p className="mt-3 text-sm text-slower">{errorMessage}</p>
       ) : null}
 
       <Button
