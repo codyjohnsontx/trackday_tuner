@@ -1,9 +1,11 @@
+import { Bike, Gauge, Route, Timer, Wrench } from 'lucide-react';
+
 export const APP_NAV_ITEMS = [
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/sessions', label: 'Sessions' },
-  { href: '/garage', label: 'Garage' },
-  { href: '/tracks', label: 'Tracks' },
-  { href: '/tools', label: 'Tools' },
+  { href: '/dashboard', label: 'Dashboard', icon: Gauge },
+  { href: '/sessions', label: 'Sessions', icon: Timer },
+  { href: '/garage', label: 'Garage', icon: Bike },
+  { href: '/tracks', label: 'Tracks', icon: Route },
+  { href: '/tools', label: 'Tools', icon: Wrench },
 ] as const;
 
 export function isActivePath(pathname: string, href: string): boolean {
