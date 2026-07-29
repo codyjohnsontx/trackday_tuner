@@ -66,7 +66,50 @@ npm run test:e2e     # playwright e2e tests
 npm run lint         # eslint
 npx tsc --noEmit     # type check (run after build so .next/types exist)
 npm run rag:index    # build RAG index from docs/knowledge-base/
+npm run db:status    # which migrations are applied on the linked project
+npm run db:new <name>  # scaffold a migration
+npm run db:push      # apply pending migrations to the linked project
 ```
+
+**Never run `npm run build` while a dev server is up.** They share `.next`, and
+the build overwrites the dev chunk manifest. The running server then 404s on
+`/_next/static/chunks/main-app.js`, so pages still render but React never
+hydrates and every click silently does nothing — it looks exactly like a broken
+component. Recover with `rm -rf .next` and restart dev.
+
+## Database Migrations
+
+Migrations live in `supabase/migrations/` and are applied with the Supabase CLI
+against the linked hosted project. `supabase_migrations.schema_migrations` on
+the remote is the source of truth for what has been applied.
+
+- `npm run db:status` before and after any schema work. It compares the applied
+  migration *history* — which versions the remote has recorded — against the
+  files in `supabase/migrations/`. Three migrations were once applied by hand
+  and silently skipped, which surfaced months later as `PGRST202 Could not find
+  the function public.replace_session_laps` when a rider saved lap times
+- `db:status` cannot see changes made outside a migration, so a table altered by
+  hand in the dashboard still reads as "up to date". Use
+  `npx supabase db diff --linked` for that: it diffs the live schema against
+  what the migration files describe and prints the SQL that would reconcile
+  them. Empty output means no difference *the diff engine models* was found —
+  not that the two are identical. The comparison is done by a pluggable engine
+  (`--use-migra`, `--use-pgadmin`, `--use-pg-schema`, `--use-pg-delta`), and
+  coverage varies between them. Publications, storage buckets, and
+  `security_invoker` on views are known to slip through, so anything in that
+  territory still needs checking by hand
+- **Never edit a migration that has already been applied.** The remote records
+  it by version, so an edit changes the file without changing the database and
+  `db push` will never re-run it. Corrections go in a new migration
+- Filenames are `<14-digit timestamp>_<name>.sql`. The timestamp is the version
+  recorded remotely and is a primary key, so **two migrations must never share a
+  prefix** — an earlier pair both named `20260224_` could not both be recorded
+- `create table`, `create index`, and `create function` statements are written
+  idempotently (`if not exists` / `or replace`). `create policy` is not, so a
+  half-applied migration cannot simply be replayed — check `db:status` first
+- Applying requires `supabase login` and `supabase link`, which need a personal
+  access token and the database password. Those are interactive and belong to
+  the operator, not to CI or an agent
 
 ## Project Structure
 
