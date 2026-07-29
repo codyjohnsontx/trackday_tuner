@@ -115,7 +115,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
   }
 
   return (
-    <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+    <section className="space-y-4 rounded-card bg-surface p-4">
       {!inviteOnly ? <div className="space-y-2">
         {oauthProviders.map((provider) => (
           <div key={provider.id} className="space-y-1">
@@ -130,19 +130,19 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
               {`Continue with ${provider.label}`}
             </Button>
             {!provider.enabled ? (
-              <p className="text-xs text-zinc-400">{provider.label} sign-in is not configured in this environment.</p>
+              <p className="text-xs text-ink-dim">{provider.label} sign-in is not configured in this environment.</p>
             ) : null}
           </div>
         ))}
       </div> : null}
 
       {!inviteOnly ? <div className="flex items-center gap-2">
-        <span className="h-px flex-1 bg-zinc-800" />
-        <span className="text-xs uppercase tracking-wide text-zinc-400">or</span>
-        <span className="h-px flex-1 bg-zinc-800" />
+        <span className="h-px flex-1 bg-surface-3" />
+        <span className="text-xs uppercase tracking-wide text-ink-dim">or</span>
+        <span className="h-px flex-1 bg-surface-3" />
       </div> : null}
 
-      <div className="grid grid-cols-2 gap-2 rounded-xl bg-zinc-950 p-1">
+      <div className="grid grid-cols-2 gap-2 rounded-row bg-canvas p-1">
         <Button
           variant={mode === 'sign-in' ? 'primary' : 'secondary'}
           className="min-h-10"
@@ -195,10 +195,10 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
         </Button>
       </form>
 
-      {errorMessage ? <p className="text-sm text-rose-300">{errorMessage}</p> : null}
-      {infoMessage ? <p className="text-sm text-emerald-300">{infoMessage}</p> : null}
+      {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
+      {infoMessage ? <p className="text-sm text-faster">{infoMessage}</p> : null}
       {inviteOnly && mode === 'sign-up' ? (
-        <p className="text-xs text-zinc-500">No invitation yet? Join the waitlist from the home page.</p>
+        <p className="text-xs text-ink-faint">No invitation yet? Join the waitlist from the home page.</p>
       ) : null}
     </section>
   );

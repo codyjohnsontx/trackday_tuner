@@ -51,7 +51,7 @@ export function ClearVehicleBaselineButton({ vehicleId, disabled = false }: Clea
       >
         {loading ? 'Clearing…' : 'Hold to clear baseline'}
       </Button>
-      {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+      {error ? <p className="text-sm text-slower">{error}</p> : null}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { getTrack } from '@/lib/actions/tracks';
 import { isDemoMode } from '@/lib/demo/mode';
 import { TrackForm } from '@/components/tracks/track-form';
 import { TrackDeleteForm } from '@/components/tracks/track-delete-form';
+import { pageTitleClass } from '@/components/ui/page-header';
 
 interface TrackDetailPageProps {
   params: Promise<{ id: string }>;
@@ -26,33 +27,33 @@ export default async function TrackDetailPage({ params }: TrackDetailPageProps) 
       {demoMode ? <DemoBanner /> : null}
 
       <div>
-        <Link href="/tracks" className="text-sm text-zinc-400 hover:text-zinc-200">
+        <Link href="/tracks" className="text-sm text-ink-dim hover:text-ink">
           ← Tracks
         </Link>
-        <h1 className="mt-3 text-2xl font-bold text-zinc-100">{track.name}</h1>
-        <p className="mt-1 text-sm text-zinc-400">{track.location ?? 'No location provided.'}</p>
-        <span className="mt-2 inline-flex rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-300">
+        <h1 className={`mt-3 ${pageTitleClass}`}>{track.name}</h1>
+        <p className="mt-1 text-sm text-ink-dim">{track.location ?? 'No location provided.'}</p>
+        <span className="mt-2 inline-flex rounded-plate bg-surface-2 px-2 py-1 text-xs text-ink-dim">
           {isCustom ? 'Custom Track' : 'Global Read-only Track'}
         </span>
       </div>
 
       {isCustom && !demoMode ? (
-        <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Edit Track</h2>
+        <section className="space-y-4 rounded-card bg-surface p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-ink-dim">Edit Track</h2>
           <TrackForm initialTrack={track} onSuccessPath={`/tracks/${track.id}`} />
           <TrackDeleteForm trackId={track.id} />
         </section>
       ) : (
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-          <p className="text-sm text-zinc-400">
+        <section className="rounded-card bg-surface p-4">
+          <p className="text-sm text-ink-dim">
             {demoMode ? 'Demo mode is read-only. Start a real account to edit tracks.' : 'This is a seeded global track and is read-only.'}
           </p>
         </section>
       )}
 
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Recent Sessions</h2>
-        <p className="mt-3 text-sm text-zinc-500">
+      <section className="rounded-card bg-surface p-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-ink-dim">Recent Sessions</h2>
+        <p className="mt-3 text-sm text-ink-faint">
           Session history for this track will appear here. Use session logging to populate this view.
         </p>
       </section>

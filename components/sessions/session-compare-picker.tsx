@@ -35,17 +35,17 @@ export function SessionComparePicker({ options, selectedId }: SessionComparePick
   }
 
   return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+    <section className="rounded-card bg-surface p-4">
       <div className="mb-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Baseline session</h2>
-        <p className="mt-1 text-sm text-zinc-400">Same-vehicle sessions are listed with same-track sessions first.</p>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Baseline session</h2>
+        <p className="mt-1 text-sm text-ink-dim">Same-vehicle sessions are listed with same-track sessions first.</p>
       </div>
 
       {options.length > 0 ? (
         <select
           value={selectedId ?? ''}
           onChange={(event) => handleChange(event.target.value)}
-          className="min-h-12 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+          className="min-h-12 w-full rounded-row bg-surface-3 px-3 py-2 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
           aria-label="Baseline session"
         >
           <option value="">Choose a baseline</option>
@@ -59,7 +59,7 @@ export function SessionComparePicker({ options, selectedId }: SessionComparePick
           ))}
         </select>
       ) : (
-        <p className="text-sm text-zinc-400">No other sessions are available for this vehicle yet.</p>
+        <p className="text-sm text-ink-dim">No other sessions are available for this vehicle yet.</p>
       )}
     </section>
   );

@@ -65,7 +65,7 @@ type ApiResponseBody = ApiErrorBody | ApiSuccessBody;
 
 function SafetyBanner() {
   return (
-    <div className="rounded-xl border border-amber-500/30 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
+    <div className="rounded-row border border-signal/30 bg-signal/12 px-3 py-2 text-xs text-signal">
       Informational only. You are responsible for vehicle safety and on-track conduct. Make one change at a time.
     </div>
   );
@@ -73,13 +73,13 @@ function SafetyBanner() {
 
 function RefusalCard({ message }: { message: string }) {
   return (
-    <div className="space-y-3 rounded-xl border border-zinc-700 bg-zinc-950/70 p-4">
+    <div className="space-y-3 rounded-row bg-surface-3 p-4">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Couldn&apos;t answer that request</p>
-        <p className="mt-1 text-sm text-zinc-200">{message}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Couldn&apos;t answer that request</p>
+        <p className="mt-1 text-sm text-ink">{message}</p>
       </div>
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-3 text-sm text-zinc-300">
-        <p className="font-medium text-zinc-100">Race Engineer can help with questions like:</p>
+      <div className="rounded-row bg-surface-2 p-3 text-sm text-ink-dim">
+        <p className="font-medium text-ink">Race Engineer can help with questions like:</p>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>Front pushed on entry after I raised pressure 1 psi. What should I try next?</li>
           <li>Rear overheated after four laps. What is the first thing I should check?</li>
@@ -92,12 +92,12 @@ function RefusalCard({ message }: { message: string }) {
 
 function ProUpgradeCard() {
   return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Race Engineer</h2>
-      <p className="mt-2 text-sm text-zinc-200">
+    <section className="rounded-card bg-surface p-4">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Race Engineer</h2>
+      <p className="mt-2 text-sm text-ink">
         Your personal race engineer. Ask about this session and get a small, explainable setup suggestion with citations to a trusted knowledge base.
       </p>
-      <p className="mt-1 text-sm text-zinc-400">Available on Pro.</p>
+      <p className="mt-1 text-sm text-ink-dim">Available on Pro.</p>
       <div className="mt-4">
         <UpgradeToProButton fullWidth />
       </div>
@@ -175,36 +175,36 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
   if (demoMode) {
     const advice = demoTuningAdvice;
     return (
-      <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+      <section className="space-y-4 rounded-card bg-surface p-4">
         <div>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Race Engineer</h2>
-          <p className="mt-1 text-sm text-zinc-300">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Race Engineer</h2>
+          <p className="mt-1 text-sm text-ink-dim">
             Static sample advice from the demo history. Real Pro accounts can ask Race Engineer about their own sessions.
           </p>
         </div>
         <SafetyBanner />
         <div>
-          <h3 className="text-sm font-semibold text-zinc-100">Summary</h3>
-          <p className="mt-1 text-sm text-zinc-200 whitespace-pre-wrap">{advice.summary}</p>
-          <p className="mt-1 text-xs uppercase tracking-wide text-zinc-500">
-            Confidence: <span className="text-zinc-300">{advice.confidence}</span>
+          <h3 className="text-sm font-semibold text-ink">Summary</h3>
+          <p className="mt-1 text-sm text-ink whitespace-pre-wrap">{advice.summary}</p>
+          <p className="mt-1 text-xs uppercase tracking-wide text-ink-faint">
+            Confidence: <span className="text-ink-dim">{advice.confidence}</span>
           </p>
         </div>
         <div>
-          <h3 className="text-sm font-semibold text-zinc-100">Recommended change</h3>
+          <h3 className="text-sm font-semibold text-ink">Recommended change</h3>
           <ul className="mt-2 space-y-3">
             {advice.recommended_changes.map((change, idx) => (
-              <li key={`${change.component}-${idx}`} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
-                <p className="text-sm font-medium text-zinc-100">{change.component}</p>
-                <p className="text-sm text-zinc-300">{change.direction} · {change.magnitude}</p>
-                <p className="mt-1 text-sm text-zinc-400">{change.reason}</p>
+              <li key={`${change.component}-${idx}`} className="rounded-row bg-surface-3 p-3">
+                <p className="text-sm font-medium text-ink">{change.component}</p>
+                <p className="text-sm text-ink-dim">{change.direction} · {change.magnitude}</p>
+                <p className="mt-1 text-sm text-ink-dim">{change.reason}</p>
               </li>
             ))}
           </ul>
         </div>
         <div>
-          <h3 className="text-sm font-semibold text-zinc-100">Tradeoffs</h3>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-300">
+          <h3 className="text-sm font-semibold text-ink">Tradeoffs</h3>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-dim">
             {advice.tradeoffs.map((tradeoff) => (
               <li key={tradeoff}>{tradeoff}</li>
             ))}
@@ -310,17 +310,17 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
   const isRefusal = Boolean(refusal);
 
   return (
-    <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+    <section className="space-y-4 rounded-card bg-surface p-4">
       <div>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Race Engineer</h2>
-        <p className="mt-1 text-sm text-zinc-300">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Race Engineer</h2>
+        <p className="mt-1 text-sm text-ink-dim">
           Your personal race engineer. Ask one small, specific question about this session and Race Engineer will return a single primary recommendation, with an optional secondary check when it matters.
         </p>
       </div>
 
       <form className="space-y-4" onSubmit={handleSubmit}>
         <label htmlFor="race_engineer_question" className="block space-y-2">
-          <span className="text-sm font-medium text-zinc-200">What did you feel?</span>
+          <span className="text-sm font-medium text-ink">What did you feel?</span>
           <textarea
             id="race_engineer_question"
             value={question}
@@ -329,26 +329,26 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
             minLength={10}
             maxLength={1000}
             placeholder="Front pushed mid-corner after raising pressure 1 psi."
-            className="flex w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
+            className="flex w-full rounded-row bg-surface-2 px-4 py-3 text-base text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
           />
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-ink-faint">
             Ask about setup, grip, balance, pressures, damping, or what changed on track.
           </span>
-          <span className="text-xs text-zinc-500">{question.length}/1000</span>
+          <span className="text-xs text-ink-faint">{question.length}/1000</span>
         </label>
 
         {showQuestionWarning ? (
           <div
             role="status"
-            className="rounded-xl border border-amber-500/30 bg-amber-950/20 px-3 py-2 text-sm text-amber-200"
+            className="rounded-row border border-signal/30 bg-signal/12 px-3 py-2 text-sm text-signal"
           >
             Race Engineer only answers track setup questions. This looks unrelated, so it will return a refusal instead of a setup recommendation.
           </div>
         ) : null}
 
         <fieldset className="space-y-2">
-          <legend className="text-sm font-medium text-zinc-200">Symptoms (optional)</legend>
-          <p className="text-xs text-zinc-500">
+          <legend className="text-sm font-medium text-ink">Symptoms (optional)</legend>
+          <p className="text-xs text-ink-faint">
             Symptoms add context to a real track question, but they do not replace it.
           </p>
           <div className="flex flex-wrap gap-2">
@@ -361,10 +361,10 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
                   aria-pressed={active}
                   onClick={() => toggleSymptom(opt.id)}
                   className={cn(
-                    'min-h-11 rounded-xl border px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950',
+                    'min-h-11 rounded-row border px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
                     active
-                      ? 'border-cyan-400/70 bg-cyan-400/10 text-cyan-200'
-                      : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800',
+                      ? 'bg-surface-3 text-ink'
+                      : 'border-white/10 bg-surface text-ink-dim hover:bg-surface-3',
                   )}
                 >
                   {opt.label}
@@ -375,12 +375,12 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
         </fieldset>
 
         <label htmlFor="race_engineer_intent" className="block space-y-2">
-          <span className="text-sm font-medium text-zinc-200">What are you trying to improve?</span>
+          <span className="text-sm font-medium text-ink">What are you trying to improve?</span>
           <select
             id="race_engineer_intent"
             value={intent}
             onChange={(e) => setIntentValue(e.target.value)}
-            className="flex w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-base text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
+            className="flex w-full rounded-row bg-surface-2 px-4 py-3 text-base text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
           >
             <option value="">No specific goal</option>
             {INTENT_OPTIONS.map((opt) => (
@@ -392,7 +392,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
         </label>
 
         <label htmlFor="race_engineer_temperature" className="block space-y-2">
-          <span className="text-sm font-medium text-zinc-200">Ambient temperature (C, optional)</span>
+          <span className="text-sm font-medium text-ink">Ambient temperature (C, optional)</span>
           <input
             id="race_engineer_temperature"
             type="number"
@@ -403,7 +403,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
             placeholder="24"
             min={-40}
             max={70}
-            className="flex w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
+            className="flex w-full rounded-row bg-surface-2 px-4 py-3 text-base text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
           />
         </label>
 
@@ -413,7 +413,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
       </form>
 
       {error ? (
-        <div role="alert" className="rounded-xl border border-rose-800 bg-rose-950/40 p-3 text-sm text-rose-200">
+        <div role="alert" className="rounded-row border border-slower/30 bg-slower/12 p-3 text-sm text-slower">
           {error}
         </div>
       ) : null}
@@ -427,29 +427,29 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
           {!isRefusal ? (
             <>
               <div>
-                <h3 className="text-sm font-semibold text-zinc-100">Summary</h3>
-                <p className="mt-1 text-sm text-zinc-200 whitespace-pre-wrap">{advice.summary}</p>
-                <p className="mt-1 text-xs uppercase tracking-wide text-zinc-500">
-                  Confidence: <span className="text-zinc-300">{advice.confidence}</span>
+                <h3 className="text-sm font-semibold text-ink">Summary</h3>
+                <p className="mt-1 text-sm text-ink whitespace-pre-wrap">{advice.summary}</p>
+                <p className="mt-1 text-xs uppercase tracking-wide text-ink-faint">
+                  Confidence: <span className="text-ink-dim">{advice.confidence}</span>
                 </p>
               </div>
 
               {hasRecommendations ? (
                 <div>
-                  <h3 className="text-sm font-semibold text-zinc-100">Recommended change</h3>
+                  <h3 className="text-sm font-semibold text-ink">Recommended change</h3>
                   <ul className="mt-2 space-y-3">
                     {advice.recommended_changes.map((change, idx) => (
                       <li
                         key={`${change.component}-${idx}`}
-                        className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3"
+                        className="rounded-row bg-surface-3 p-3"
                       >
-                        <p className="text-sm font-medium text-zinc-100">
+                        <p className="text-sm font-medium text-ink">
                           {change.component}
                         </p>
-                        <p className="text-sm text-zinc-300">
+                        <p className="text-sm text-ink-dim">
                           {change.direction} · {change.magnitude}
                         </p>
-                        <p className="mt-1 text-sm text-zinc-400">{change.reason}</p>
+                        <p className="mt-1 text-sm text-ink-dim">{change.reason}</p>
                       </li>
                     ))}
                   </ul>
@@ -458,8 +458,8 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
 
               {advice.tradeoffs.length > 0 ? (
                 <div>
-                  <h3 className="text-sm font-semibold text-zinc-100">Tradeoffs</h3>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-300">
+                  <h3 className="text-sm font-semibold text-ink">Tradeoffs</h3>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-dim">
                     {advice.tradeoffs.map((t, i) => (
                       <li key={i}>{t}</li>
                     ))}
@@ -469,10 +469,10 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
 
               {advice.prediction ? (
                 <div>
-                  <h3 className="text-sm font-semibold text-zinc-100">Prediction</h3>
-                  <div className="mt-2 space-y-2 rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
+                  <h3 className="text-sm font-semibold text-ink">Prediction</h3>
+                  <div className="mt-2 space-y-2 rounded-row bg-surface-3 p-3 text-sm text-ink-dim">
                     <p>{advice.prediction.expected_effect}</p>
-                    <p className="text-zinc-400">{advice.prediction.day_trend}</p>
+                    <p className="text-ink-dim">{advice.prediction.day_trend}</p>
                     {advice.prediction.watch_items.length > 0 ? (
                       <ul className="list-disc space-y-1 pl-5">
                         {advice.prediction.watch_items.map((item, idx) => (
@@ -486,12 +486,12 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
 
               {advice.personal_evidence.length > 0 ? (
                 <div>
-                  <h3 className="text-sm font-semibold text-zinc-100">Personal evidence</h3>
-                  <ul className="mt-2 space-y-2 text-sm text-zinc-300">
+                  <h3 className="text-sm font-semibold text-ink">Personal evidence</h3>
+                  <ul className="mt-2 space-y-2 text-sm text-ink-dim">
                     {advice.personal_evidence.map((evidence, idx) => (
-                      <li key={idx} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
-                        <p className="font-medium text-zinc-100">{evidence.label}</p>
-                        <p className="mt-1 text-zinc-400">{evidence.detail}</p>
+                      <li key={idx} className="rounded-row bg-surface-3 p-3">
+                        <p className="font-medium text-ink">{evidence.label}</p>
+                        <p className="mt-1 text-ink-dim">{evidence.detail}</p>
                       </li>
                     ))}
                   </ul>
@@ -499,16 +499,16 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
               ) : null}
 
               <div>
-                <h3 className="text-sm font-semibold text-zinc-100">Data used</h3>
+                <h3 className="text-sm font-semibold text-ink">Data used</h3>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {Object.entries(advice.data_used).map(([key, used]) => (
                     <span
                       key={key}
                       className={cn(
-                        'rounded-lg border px-2 py-1 text-xs font-medium',
+                        'rounded-plate px-2 py-1 text-xs font-medium',
                         used
-                          ? 'border-cyan-400/50 bg-cyan-400/10 text-cyan-200'
-                          : 'border-zinc-800 bg-zinc-950 text-zinc-500',
+                          ? 'bg-surface-3 text-ink'
+                          : 'bg-surface-2 text-ink-faint',
                       )}
                     >
                       {DATA_USED_LABELS[key] ?? key}
@@ -520,8 +520,8 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
           ) : null}
 
           <div>
-            <h3 className="text-sm font-semibold text-zinc-100">Safety notes</h3>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-300">
+            <h3 className="text-sm font-semibold text-ink">Safety notes</h3>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-dim">
               {advice.safety_notes.map((n, i) => (
                 <li key={i}>{n}</li>
               ))}
@@ -530,12 +530,12 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
 
           {!isRefusal && advice.citations.length > 0 ? (
             <div>
-              <h3 className="text-sm font-semibold text-zinc-100">Citations</h3>
-              <ul className="mt-2 space-y-2 text-sm text-zinc-300">
+              <h3 className="text-sm font-semibold text-ink">Citations</h3>
+              <ul className="mt-2 space-y-2 text-sm text-ink-dim">
                 {advice.citations.map((c, i) => (
-                  <li key={i} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-2">
-                    <p className="text-xs font-mono text-zinc-400">{c.source}</p>
-                    <p className="mt-1 text-sm text-zinc-200">{c.snippet}</p>
+                  <li key={i} className="rounded-row bg-surface-3 p-2">
+                    <p className="text-xs font-mono text-ink-dim">{c.source}</p>
+                    <p className="mt-1 text-sm text-ink">{c.snippet}</p>
                   </li>
                 ))}
               </ul>
@@ -543,13 +543,13 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
           ) : null}
 
           {response?.request_id ? (
-            <p className="text-xs text-zinc-500">Request id: {response.request_id}</p>
+            <p className="text-xs text-ink-faint">Request id: {response.request_id}</p>
           ) : null}
 
           {response?.recommendation_id && hasRecommendations ? (
-            <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-3">
-              <p className="text-sm font-medium text-cyan-100">Test this in a later session.</p>
-              <p className="mt-1 text-xs text-zinc-400">
+            <div className="rounded-row border border-signal/30 bg-signal/10 p-3">
+              <p className="text-sm font-medium text-signal">Test this in a later session.</p>
+              <p className="mt-1 text-xs text-ink-dim">
                 After the next session, record the outcome there so Race Engineer learns from the right comparison.
               </p>
             </div>

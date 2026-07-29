@@ -1,17 +1,12 @@
 import Link from 'next/link';
 import type { Session } from '@/types';
+import { DataPlate } from '@/components/ui/condition';
+import { Eyebrow } from '@/components/ui/surface';
 
 interface SessionCardProps {
   session: Session;
   vehicleNickname: string;
 }
-
-const conditionLabel: Record<string, string> = {
-  sunny: 'Sunny',
-  overcast: 'Overcast',
-  rainy: 'Rainy',
-  mixed: 'Mixed',
-};
 
 function formatTime12h(t: string): string {
   const [h, m] = t.split(':').map(Number);
@@ -19,6 +14,14 @@ function formatTime12h(t: string): string {
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+/**
+ * A session row. Renders the link only — callers own the list semantics, so it
+ * drops into a `CardGroup` and a bare `ul` alike.
+ *
+ * The date leads instead of the track: across a day at the circuit every row
+ * shares a track name, and what you are hunting for is which run it was. The
+ * plate on the right carries that number and the weather in one glance.
+ */
 export function SessionCard({ session, vehicleNickname }: SessionCardProps) {
   // Append time to avoid timezone date shift
   const date = new Date(`${session.date}T00:00:00`);
@@ -29,29 +32,24 @@ export function SessionCard({ session, vehicleNickname }: SessionCardProps) {
   });
 
   return (
-    <li>
-      <Link
-        href={`/sessions/${session.id}`}
-        className="block rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 transition hover:border-zinc-700"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate font-semibold text-zinc-100">
-              {session.track_name ?? 'Unknown Track'}
-            </p>
-            <p className="mt-0.5 truncate text-sm text-zinc-400">
-              {vehicleNickname}
-              {session.session_number ? ` · S${session.session_number}` : ''}
-              {' · '}
-              {formattedDate}
-              {session.start_time ? ` · ${formatTime12h(session.start_time)}` : ''}
-            </p>
-          </div>
-          <span className="shrink-0 rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-semibold text-zinc-300">
-            {conditionLabel[session.conditions] ?? session.conditions}
-          </span>
-        </div>
-      </Link>
-    </li>
+    <Link
+      href={`/sessions/${session.id}`}
+      className="flex items-center gap-4 rounded-row bg-surface-2 p-4 transition hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+    >
+      <div className="min-w-0 flex-1">
+        <Eyebrow>
+          {formattedDate}
+          {session.start_time ? ` · ${formatTime12h(session.start_time)}` : ''}
+        </Eyebrow>
+        <p className="mt-1.5 truncate font-semibold text-ink">
+          {session.track_name ?? 'Unknown Track'}
+        </p>
+        <p className="mt-0.5 truncate text-sm text-ink-dim">{vehicleNickname}</p>
+      </div>
+      <DataPlate
+        value={session.session_number ? `S${session.session_number}` : null}
+        condition={session.conditions}
+      />
+    </Link>
   );
 }

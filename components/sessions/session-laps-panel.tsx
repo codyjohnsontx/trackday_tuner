@@ -28,9 +28,9 @@ export function SessionLapsPanel({ sessionId, vehicleId, initialLaps, demoMode }
 
   if (!editing) {
     return (
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+      <section className="rounded-card bg-surface p-4">
         <div className="flex items-center justify-between gap-3">
-          <div><h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Lap Data</h2><p className="mt-1 text-sm text-zinc-300">{savedLaps.filter((lap) => lap.included).length} included laps</p></div>
+          <div><h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Lap Data</h2><p className="mt-1 text-sm text-ink-dim">{savedLaps.filter((lap) => lap.included).length} included laps</p></div>
           <Button type="button" variant="secondary" disabled={demoMode} onClick={() => setEditing(true)}>Edit</Button>
         </div>
       </section>
@@ -52,7 +52,7 @@ export function SessionLapsPanel({ sessionId, vehicleId, initialLaps, demoMode }
   return (
     <div className="space-y-3">
       <LapTimeEditor value={laps} onChange={setLaps} />
-      {message ? <p className="text-sm text-rose-300">{message}</p> : null}
+      {message ? <p className="text-sm text-slower">{message}</p> : null}
       <div className="grid grid-cols-2 gap-2">
         <Button type="button" variant="secondary" onClick={() => { setLaps(savedLaps); setEditing(false); }}>Cancel</Button>
         <Button type="button" loading={pending} onClick={save}>Save laps</Button>

@@ -91,15 +91,15 @@ export function UnitConverter() {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <h1 className="text-2xl font-bold text-zinc-100">Unit Converter</h1>
-        <p className="mt-1 text-sm text-zinc-400">
+      <section className="rounded-card bg-surface p-4">
+        <h1 className="text-2xl font-bold text-ink">Unit Converter</h1>
+        <p className="mt-1 text-sm text-ink-dim">
           Quick conversions for trackside setup changes.
         </p>
       </section>
 
-      <section className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+      <section className="space-y-2 rounded-card bg-surface p-4">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
           Core Presets
         </h2>
         <div className="grid grid-cols-3 gap-2">
@@ -127,8 +127,8 @@ export function UnitConverter() {
       </section>
 
       {recentPairs.length > 0 ? (
-        <section className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+        <section className="space-y-2 rounded-card bg-surface p-4">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
             Recent (Top 5)
           </h2>
           <div className="grid grid-cols-2 gap-2">
@@ -150,18 +150,18 @@ export function UnitConverter() {
         </section>
       ) : null}
 
-      <section className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+      <section className="space-y-3 rounded-card bg-surface p-4">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">
           Converter
         </h2>
 
         <div className="space-y-1">
-          <label htmlFor="converter-category" className="block text-sm font-medium text-zinc-300">
+          <label htmlFor="converter-category" className="block text-sm font-medium text-ink-dim">
             Category
           </label>
           <select
             id="converter-category"
-            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 focus:border-cyan-400 focus:outline-none"
+            className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus:border-signal/30 focus:outline-none"
             value={category}
             onChange={(event) => setCategory(event.target.value as ConverterCategory)}
           >
@@ -175,12 +175,12 @@ export function UnitConverter() {
 
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
-            <label htmlFor="converter-from" className="block text-sm font-medium text-zinc-300">
+            <label htmlFor="converter-from" className="block text-sm font-medium text-ink-dim">
               From
             </label>
             <select
               id="converter-from"
-              className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 focus:border-cyan-400 focus:outline-none"
+              className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus:border-signal/30 focus:outline-none"
               value={fromUnit}
               onChange={(event) => setFromUnit(event.target.value)}
             >
@@ -192,12 +192,12 @@ export function UnitConverter() {
             </select>
           </div>
           <div className="space-y-1">
-            <label htmlFor="converter-to" className="block text-sm font-medium text-zinc-300">
+            <label htmlFor="converter-to" className="block text-sm font-medium text-ink-dim">
               To
             </label>
             <select
               id="converter-to"
-              className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 focus:border-cyan-400 focus:outline-none"
+              className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus:border-signal/30 focus:outline-none"
               value={toUnit}
               onChange={(event) => setToUnit(event.target.value)}
             >
@@ -229,17 +229,17 @@ export function UnitConverter() {
         </div>
       </section>
 
-      <section className="space-y-3 rounded-2xl border border-cyan-500/30 bg-cyan-400/10 p-4">
-        <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Result</p>
-        <p className="text-3xl font-bold text-zinc-100">
+      <section className="space-y-3 rounded-card bg-surface-2 p-4">
+        <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Result</p>
+        <p className="text-3xl font-bold text-ink">
           {formatConverterResult(convertedValue)}{' '}
-          <span className="text-lg font-medium text-zinc-300">{toUnit}</span>
+          <span className="text-lg font-medium text-ink-dim">{toUnit}</span>
         </p>
         <div className="flex items-center gap-2">
           <Button type="button" variant="secondary" onClick={handleCopy} disabled={convertedValue === null}>
             Copy
           </Button>
-          {copyMessage ? <span className="text-sm text-emerald-300">{copyMessage}</span> : null}
+          {copyMessage ? <span className="text-sm text-faster">{copyMessage}</span> : null}
         </div>
       </section>
     </div>

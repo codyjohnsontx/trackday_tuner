@@ -24,9 +24,9 @@ export function SessionComparePageHeader({
         </Link>
       </Button>
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Session comparison</p>
-        <h1 className="mt-1 text-2xl font-bold text-zinc-100">{trackName}</h1>
-        <p className="mt-0.5 text-sm text-zinc-400">
+        <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Session comparison</p>
+        <h1 className="mt-1 text-2xl font-bold text-ink">{trackName}</h1>
+        <p className="mt-0.5 text-sm text-ink-dim">
           {dateLabel} · {sessionLabel}
         </p>
       </div>

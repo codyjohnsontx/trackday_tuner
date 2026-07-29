@@ -1,4 +1,6 @@
+import { ChartNoAxesColumn } from 'lucide-react';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
+import { CardGroup, Eyebrow } from '@/components/ui/surface';
 import type { SessionAnalyticsSummary } from '@/lib/session-export';
 
 interface SessionAnalyticsPanelProps {
@@ -6,41 +8,40 @@ interface SessionAnalyticsPanelProps {
   tier: 'free' | 'pro';
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-      <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{label}</p>
-      <p className="mt-2 text-xl font-semibold text-zinc-100">{value}</p>
+    <div className="rounded-row bg-surface-2 p-4">
+      <Eyebrow>{label}</Eyebrow>
+      <p className="mt-2 text-xl font-semibold text-ink">{value}</p>
     </div>
   );
 }
 
 function CountList({ title, items }: { title: string; items: { label: string; detail: string }[] }) {
   return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-      <p className="text-sm font-semibold text-zinc-100">{title}</p>
+    <CardGroup eyebrow={title}>
       {items.length > 0 ? (
-        <div className="mt-3 divide-y divide-zinc-800">
+        <div className="divide-y divide-white/5 rounded-row bg-surface-2 px-4">
           {items.map((item) => (
-            <div key={`${item.label}-${item.detail}`} className="flex justify-between gap-3 py-2">
-              <span className="min-w-0 truncate text-sm text-zinc-300">{item.label}</span>
-              <span className="shrink-0 text-sm font-medium text-zinc-100">{item.detail}</span>
+            <div key={`${item.label}-${item.detail}`} className="flex justify-between gap-3 py-2.5">
+              <span className="min-w-0 truncate text-sm text-ink-dim">{item.label}</span>
+              <span className="shrink-0 text-sm font-medium text-ink">{item.detail}</span>
             </div>
           ))}
         </div>
       ) : (
-        <p className="mt-3 text-sm text-zinc-500">No data yet.</p>
+        <p className="rounded-row bg-surface-2 p-4 text-sm text-ink-faint">No data yet.</p>
       )}
-    </section>
+    </CardGroup>
   );
 }
 
 export function SessionAnalyticsPanel({ analytics, tier }: SessionAnalyticsPanelProps) {
   if (tier !== 'pro') {
     return (
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <p className="text-sm font-semibold text-zinc-100">Analytics</p>
-        <p className="mt-1 text-sm text-zinc-400">
+      <section className="rounded-card bg-surface p-4">
+        <p className="text-sm font-semibold text-ink">Analytics</p>
+        <p className="mt-1 text-sm text-ink-dim">
           Pro summarizes vehicle usage, track history, module coverage, tire pressures, and environment snapshots.
         </p>
         <div className="mt-4">
@@ -52,26 +53,29 @@ export function SessionAnalyticsPanel({ analytics, tier }: SessionAnalyticsPanel
 
   return (
     <section className="space-y-3">
-      <div>
-        <p className="text-sm font-semibold text-zinc-100">Analytics</p>
-        <p className="mt-1 text-sm text-zinc-400">Quick summaries from your logged setup history.</p>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <StatCard label="Sessions" value={String(analytics.totalSessions)} />
-        <StatCard
-          label="Environment Logs"
-          value={`${analytics.environmentSnapshots.withEnvironment}/${analytics.totalSessions}`}
-        />
-        <StatCard
-          label="Avg Track Temp"
-          value={
-            analytics.environmentSnapshots.averageTrackTemperatureC === null
-              ? 'Not logged'
-              : `${analytics.environmentSnapshots.averageTrackTemperatureC} C`
-          }
-        />
-      </div>
+      <CardGroup
+        icon={ChartNoAxesColumn}
+        eyebrow="From your history"
+        title="Analytics"
+      >
+        {/* Three across even on the narrowest phone: these are short numbers,
+            and stacking them turns a glance into a scroll. */}
+        <div className="grid grid-cols-3 gap-2">
+          <Stat label="Sessions" value={String(analytics.totalSessions)} />
+          <Stat
+            label="Env logs"
+            value={`${analytics.environmentSnapshots.withEnvironment}/${analytics.totalSessions}`}
+          />
+          <Stat
+            label="Avg track"
+            value={
+              analytics.environmentSnapshots.averageTrackTemperatureC === null
+                ? '--'
+                : `${analytics.environmentSnapshots.averageTrackTemperatureC} C`
+            }
+          />
+        </div>
+      </CardGroup>
 
       <div className="grid gap-3 md:grid-cols-2">
         <CountList

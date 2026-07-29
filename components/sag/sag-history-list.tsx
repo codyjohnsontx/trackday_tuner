@@ -18,26 +18,26 @@ function formatDate(dateString: string): string {
 
 export function SagHistoryList({ entries, selectedId, onSelect }: SagHistoryListProps) {
   return (
-    <section className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-      <h2 className="text-base font-semibold text-zinc-100">History</h2>
+    <section className="space-y-3 rounded-card bg-surface p-4">
+      <h2 className="text-base font-semibold text-ink">History</h2>
 
       {entries.length === 0 ? (
-        <p className="text-sm text-zinc-500">No sag entries saved yet.</p>
+        <p className="text-sm text-ink-faint">No sag entries saved yet.</p>
       ) : (
         <ul className="space-y-2">
           {entries.map((entry) => (
             <li key={entry.id}>
               <button
                 type="button"
-                className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                className={`w-full rounded-row border px-3 py-3 text-left transition ${
                   selectedId === entry.id
-                    ? 'border-cyan-400 bg-zinc-950'
-                    : 'border-zinc-800 bg-zinc-950 hover:border-zinc-600'
+                    ? 'border-signal/30 bg-canvas'
+                    : 'border-white/5 bg-canvas hover:border-white/10'
                 }`}
                 onClick={() => onSelect(entry)}
               >
-                <p className="text-sm font-semibold text-zinc-100">{entry.label?.trim() || 'Untitled Entry'}</p>
-                <p className="mt-0.5 text-xs text-zinc-500">{formatDate(entry.created_at)}</p>
+                <p className="text-sm font-semibold text-ink">{entry.label?.trim() || 'Untitled Entry'}</p>
+                <p className="mt-0.5 text-xs text-ink-faint">{formatDate(entry.created_at)}</p>
               </button>
             </li>
           ))}

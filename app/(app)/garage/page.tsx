@@ -6,6 +6,7 @@ import { DemoBanner } from '@/components/demo/demo-banner';
 import { isDemoMode } from '@/lib/demo/mode';
 import { VehicleCard } from '@/components/garage/vehicle-card';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 import { resolveUserAccess } from '@/lib/access';
 
 export default async function GaragePage() {
@@ -24,24 +25,22 @@ export default async function GaragePage() {
     <div className="space-y-5">
       {demoMode ? <DemoBanner /> : null}
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-100">Garage</h1>
-          <p className="mt-0.5 text-xs text-zinc-500">{tierLabel}</p>
-        </div>
-        {!atLimit && !demoMode ? (
-          <Link href="/garage/new">
-            <Button variant="primary" className="min-h-10 px-3 text-sm">
-              + Add Vehicle
+      <PageHeader
+        title="Garage"
+        sub={tierLabel}
+        action={
+          !atLimit && !demoMode ? (
+            <Button asChild variant="primary" className="min-h-10 px-4 text-sm">
+              <Link href="/garage/new">+ Add Vehicle</Link>
             </Button>
-          </Link>
-        ) : null}
-      </div>
+          ) : null
+        }
+      />
 
       {vehicles.length === 0 ? (
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 text-center">
-          <p className="text-sm text-zinc-400">No vehicles yet.</p>
-          <p className="mt-1 text-sm text-zinc-500">Add your first vehicle to start logging sessions.</p>
+        <section className="rounded-card bg-surface p-6 text-center">
+          <p className="text-sm text-ink-dim">No vehicles yet.</p>
+          <p className="mt-1 text-sm text-ink-faint">Add your first vehicle to start logging sessions.</p>
           <div className="mt-4">
             <Link href="/garage/new">
               <Button fullWidth>Add Your First Vehicle</Button>
@@ -63,9 +62,9 @@ export default async function GaragePage() {
       )}
 
       {atLimit && !demoMode ? (
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 text-center">
-          <p className="text-sm font-semibold text-zinc-200">Want more vehicles?</p>
-          <p className="mt-1 text-sm text-zinc-400">
+        <section className="rounded-card bg-surface p-4 text-center">
+          <p className="text-sm font-semibold text-ink">Want more vehicles?</p>
+          <p className="mt-1 text-sm text-ink-dim">
             Upgrade to Pro for unlimited vehicles, full session history, and AI-powered tuning suggestions.
           </p>
           <div className="mt-4">

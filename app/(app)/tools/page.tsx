@@ -1,7 +1,10 @@
 import Link from 'next/link';
 import type { Route } from 'next';
+import { ChevronRight } from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
+import { CardGroup } from '@/components/ui/surface';
 
-function ToolCard({
+function ToolRow({
   title,
   description,
   href,
@@ -13,10 +16,16 @@ function ToolCard({
   return (
     <Link
       href={href}
-      className="block rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 transition hover:border-zinc-600"
+      className="group flex items-center gap-4 rounded-row bg-surface-2 p-4 transition hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
     >
-      <p className="text-base font-semibold text-zinc-100">{title}</p>
-      <p className="mt-1 text-sm text-zinc-400">{description}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-base font-semibold text-ink">{title}</p>
+        <p className="mt-1 text-sm text-ink-dim">{description}</p>
+      </div>
+      <ChevronRight
+        className="h-5 w-5 shrink-0 text-ink-faint transition group-hover:translate-x-0.5 group-hover:text-ink"
+        aria-hidden
+      />
     </Link>
   );
 }
@@ -24,35 +33,28 @@ function ToolCard({
 export default function ToolsPage() {
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <h1 className="text-2xl font-bold text-zinc-100">Tools</h1>
-        <p className="mt-1 text-sm text-zinc-400">
-          Dedicated calculators and utilities for trackside setup work.
-        </p>
-      </section>
+      <PageHeader title="Tools" sub="Dedicated calculators and utilities for trackside setup work." />
 
-      <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Calculators</h2>
-        <ToolCard
+      <CardGroup eyebrow="Calculators">
+        <ToolRow
           title="Unit Converter"
           description="Fast pressure, temperature, torque, mass, and volume conversions."
           href="/tools/converter"
         />
-        <ToolCard
+        <ToolRow
           title="Sag Calculator"
           description="Calculate free/static and rider/race sag in mm and % of travel."
           href="/sag"
         />
-      </section>
+      </CardGroup>
 
-      <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Utilities</h2>
-        <ToolCard
+      <CardGroup eyebrow="Utilities">
+        <ToolRow
           title="Tracks"
           description="Manage seeded and custom tracks used in session logging."
           href="/tracks"
         />
-      </section>
+      </CardGroup>
     </div>
   );
 }

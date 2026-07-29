@@ -6,6 +6,7 @@ import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
 import { isDemoMode } from '@/lib/demo/mode';
 import { DayPlanPanel } from '@/components/ai/day-plan-panel';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 import { deriveSessionAnalytics } from '@/lib/session-export';
 import { SessionAnalyticsPanel } from '@/components/sessions/session-analytics-panel';
 import { SessionExportPanel } from '@/components/sessions/session-export-panel';
@@ -44,19 +45,17 @@ export default async function SessionsPage() {
     <div className="space-y-5">
       {demoMode ? <DemoBanner /> : null}
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-100">Sessions</h1>
-          <p className="mt-0.5 text-xs text-zinc-500">{tierLabel}</p>
-        </div>
-        {!atLimit && !demoMode ? (
-          <Link href="/sessions/new">
-            <Button variant="primary" className="min-h-10 px-3 text-sm">
-              + New Session
+      <PageHeader
+        title="Sessions"
+        sub={tierLabel}
+        action={
+          !atLimit && !demoMode ? (
+            <Button asChild variant="primary" className="min-h-10 px-4 text-sm">
+              <Link href="/sessions/new">+ New Session</Link>
             </Button>
-          </Link>
-        ) : null}
-      </div>
+          ) : null
+        }
+      />
 
       <DayPlanPanel vehicles={vehicles} tier={accessTier} demoMode={demoMode} />
 
@@ -65,9 +64,9 @@ export default async function SessionsPage() {
       <SessionAnalyticsPanel analytics={analytics} tier={accessTier} />
 
       {sessions.length === 0 ? (
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6 text-center">
-          <p className="text-sm text-zinc-400">No sessions logged yet.</p>
-          <p className="mt-1 text-sm text-zinc-500">
+        <section className="rounded-card bg-surface p-6 text-center">
+          <p className="text-sm text-ink-dim">No sessions logged yet.</p>
+          <p className="mt-1 text-sm text-ink-faint">
             Log your first session to start tracking your setup.
           </p>
           {vehicles.length > 0 ? (
@@ -95,9 +94,9 @@ export default async function SessionsPage() {
       )}
 
       {atLimit && !demoMode ? (
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 text-center">
-          <p className="text-sm font-semibold text-zinc-200">Session limit reached</p>
-          <p className="mt-1 text-sm text-zinc-400">
+        <section className="rounded-card bg-surface p-4 text-center">
+          <p className="text-sm font-semibold text-ink">Session limit reached</p>
+          <p className="mt-1 text-sm text-ink-dim">
             Upgrade to Pro for unlimited sessions, full history, and AI-powered tuning suggestions.
           </p>
           <div className="mt-4">

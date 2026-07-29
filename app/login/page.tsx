@@ -31,14 +31,14 @@ export default async function LoginPage() {
           sizes="(min-width: 1024px) 1024px, 100vw"
           className="object-cover object-[65%_45%] opacity-60"
         />
-        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-zinc-950/80 to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-zinc-950 via-zinc-950/45 to-transparent" />
+        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-canvas to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-canvas via-canvas to-transparent" />
         <div className="absolute inset-x-0 bottom-0 px-4 pb-3 sm:px-5 md:px-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-400">
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-ink-faint">
             {inviteOnly ? 'Founding Beta' : 'Setup Logger'}
           </p>
-          <h1 className="mt-1 text-3xl font-bold tracking-tight text-zinc-100">Get on track</h1>
-          <p className="mt-1 text-sm text-zinc-300">
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-ink">Get on track</h1>
+          <p className="mt-1 text-sm text-ink-dim">
             {inviteOnly
               ? 'Founding Beta access for invited riders.'
               : 'Log setups, compare sessions, dial in your ride.'}
@@ -50,7 +50,7 @@ export default async function LoginPage() {
         <AuthForm providers={providers} inviteOnly={inviteOnly} />
         <a
           href="/demo"
-          className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900/60 px-4 text-sm font-semibold text-zinc-100 transition hover:border-cyan-400/50 hover:bg-zinc-900 focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+          className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-row bg-surface px-4 text-sm font-semibold text-ink transition hover:border-signal/30 hover:bg-surface focus-visible:ring-2 focus-visible:ring-signal/80"
         >
           Explore the demo
         </a>

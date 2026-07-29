@@ -127,9 +127,9 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
 
   if (!demoMode && tier !== 'pro') {
     return (
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Morning Plan</h2>
-        <p className="mt-2 text-sm text-zinc-300">
+      <section className="rounded-card bg-surface p-4">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Morning Plan</h2>
+        <p className="mt-2 text-sm text-ink-dim">
           Pro unlocks forecast-aware Race Engineer planning from your past sessions.
         </p>
         <div className="mt-4">
@@ -211,21 +211,21 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
   const advice = demoMode ? demoDayPlanAdvice : response?.advice ?? null;
 
   return (
-    <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+    <section className="space-y-4 rounded-card bg-surface p-4">
       <div>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Morning Plan</h2>
-        <p className="mt-1 text-sm text-zinc-300">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Morning Plan</h2>
+        <p className="mt-1 text-sm text-ink-dim">
           Predict the day from your history, manual conditions, and any rider memory Race Engineer has learned.
         </p>
       </div>
 
       <form className="space-y-3" onSubmit={handleSubmit}>
         <label className="block space-y-2">
-          <span className="text-sm font-medium text-zinc-200">Vehicle</span>
+          <span className="text-sm font-medium text-ink">Vehicle</span>
           <select
             value={vehicleId}
             onChange={(event) => setVehicleId(event.target.value)}
-            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+            className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
           >
             <option value="">Select vehicle</option>
             {vehicles.map((vehicle) => (
@@ -238,16 +238,16 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
 
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-zinc-200">Track</span>
+            <span className="text-sm font-medium text-ink">Track</span>
             <input
               value={trackName}
               onChange={(event) => setTrackName(event.target.value)}
               placeholder="Road America"
-              className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+              className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             />
           </label>
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-zinc-200">Ambient C</span>
+            <span className="text-sm font-medium text-ink">Ambient C</span>
             <input
               value={ambientTemperatureC}
               onChange={(event) => setAmbientTemperatureC(event.target.value)}
@@ -255,11 +255,11 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
               inputMode="decimal"
               step="any"
               placeholder="24"
-              className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+              className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             />
           </label>
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-zinc-200">Track C</span>
+            <span className="text-sm font-medium text-ink">Track C</span>
             <input
               value={trackTemperatureC}
               onChange={(event) => setTrackTemperatureC(event.target.value)}
@@ -267,89 +267,97 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
               inputMode="decimal"
               step="any"
               placeholder="36"
-              className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+              className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             />
           </label>
         </div>
 
         <label className="block space-y-2">
-          <span className="text-sm font-medium text-zinc-200">Weather trend</span>
+          <span className="text-sm font-medium text-ink">Weather trend</span>
           <input
             value={weatherCondition}
             onChange={(event) => setWeatherCondition(event.target.value)}
             placeholder="Cool morning, warming after lunch"
-            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+            className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
           />
         </label>
 
         {selectedVehicle ? (
-          <p className="text-xs text-zinc-500">Planning for {selectedVehicle.nickname}.</p>
+          <p className="text-xs text-ink-faint">Planning for {selectedVehicle.nickname}.</p>
         ) : null}
 
-        <Button type="submit" fullWidth loading={loading} disabled={!vehicleId || demoMode}>
+        {/* In demo the button is a label, not an offer — a white pill would make
+            the loudest thing on the page something you cannot press. */}
+        <Button
+          type="submit"
+          fullWidth
+          variant={demoMode ? 'secondary' : 'primary'}
+          loading={loading}
+          disabled={!vehicleId || demoMode}
+        >
           {demoMode ? 'Sample plan shown' : loading ? 'Planning...' : 'Generate Morning Plan'}
         </Button>
       </form>
 
       {demoMode ? (
-        <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-3 text-sm text-cyan-100">
+        <div className="rounded-row bg-surface-2 p-3 text-sm text-ink-dim">
           This is a static sample plan. Real Pro accounts can generate plans from their own history and current conditions.
         </div>
       ) : null}
 
       {loading ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-400">
+        <div className="rounded-row bg-surface-3 p-3 text-sm text-ink-dim">
           Building a plan from your vehicle history and today&apos;s inputs.
         </div>
       ) : null}
 
       {error ? (
-        <div role="alert" className="rounded-xl border border-rose-800 bg-rose-950/40 p-3 text-sm text-rose-200">
+        <div role="alert" className="rounded-row border border-slower/30 bg-slower/12 p-3 text-sm text-slower">
           {error}
         </div>
       ) : null}
 
       {advice ? (
-        <div className="space-y-3 border-t border-zinc-800 pt-4">
+        <div className="space-y-3 border-t border-white/5 pt-4">
           <div>
-            <h3 className="text-sm font-semibold text-zinc-100">Plan</h3>
-            <p className="mt-1 text-sm text-zinc-300">{advice.summary}</p>
-            <p className="mt-1 text-xs uppercase tracking-wide text-zinc-500">
-              Confidence: <span className="text-zinc-300">{advice.confidence}</span>
+            <h3 className="text-sm font-semibold text-ink">Plan</h3>
+            <p className="mt-1 text-sm text-ink-dim">{advice.summary}</p>
+            <p className="mt-1 text-xs uppercase tracking-wide text-ink-faint">
+              Confidence: <span className="text-ink-dim">{advice.confidence}</span>
             </p>
           </div>
           {advice.recommended_changes.length > 0 ? (
             <ul className="space-y-2">
               {advice.recommended_changes.map((change, idx) => (
-                <li key={`${change.component}-${idx}`} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
-                  <p className="text-sm font-medium text-zinc-100">{change.component}</p>
-                  <p className="text-sm text-zinc-300">{change.direction} · {change.magnitude}</p>
-                  <p className="mt-1 text-sm text-zinc-500">{change.reason}</p>
+                <li key={`${change.component}-${idx}`} className="rounded-row bg-surface-3 p-3">
+                  <p className="text-sm font-medium text-ink">{change.component}</p>
+                  <p className="text-sm text-ink-dim">{change.direction} · {change.magnitude}</p>
+                  <p className="mt-1 text-sm text-ink-faint">{change.reason}</p>
                 </li>
               ))}
             </ul>
           ) : (
-            <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-950/40 p-3 text-sm text-zinc-500">
+            <div className="rounded-row border border-dashed border-white/5 bg-canvas p-3 text-sm text-ink-faint">
               No specific setup change recommended yet. Establish a baseline and log feedback after the next session.
             </div>
           )}
           {advice.prediction ? (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
+            <div className="rounded-row bg-surface-3 p-3 text-sm text-ink-dim">
               <p>{advice.prediction.expected_effect}</p>
-              <p className="mt-1 text-zinc-500">{advice.prediction.day_trend}</p>
+              <p className="mt-1 text-ink-faint">{advice.prediction.day_trend}</p>
             </div>
           ) : null}
           <div>
-            <h3 className="text-sm font-semibold text-zinc-100">Data used</h3>
+            <h3 className="text-sm font-semibold text-ink">Data used</h3>
             <div className="mt-2 flex flex-wrap gap-2">
               {Object.entries(advice.data_used).map(([key, used]) => (
                 <span
                   key={key}
                   className={cn(
-                    'rounded-lg border px-2 py-1 text-xs font-medium',
+                    'rounded-plate px-2 py-1 text-xs font-medium',
                     used
-                      ? 'border-cyan-400/50 bg-cyan-400/10 text-cyan-200'
-                      : 'border-zinc-800 bg-zinc-950 text-zinc-500',
+                      ? 'bg-surface-3 text-ink'
+                      : 'bg-surface-2 text-ink-faint',
                   )}
                 >
                   {DATA_USED_LABELS[key] ?? key}
@@ -359,12 +367,12 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
           </div>
           {advice.citations.length > 0 ? (
             <div>
-              <h3 className="text-sm font-semibold text-zinc-100">Citations</h3>
+              <h3 className="text-sm font-semibold text-ink">Citations</h3>
               <ul className="mt-2 space-y-2">
                 {advice.citations.map((citation, idx) => (
-                  <li key={`${citation.source}-${idx}`} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-2">
-                    <p className="font-mono text-xs text-zinc-400">{citation.source}</p>
-                    <p className="mt-1 text-sm text-zinc-300">{citation.snippet}</p>
+                  <li key={`${citation.source}-${idx}`} className="rounded-row bg-surface-3 p-2">
+                    <p className="font-mono text-xs text-ink-dim">{citation.source}</p>
+                    <p className="mt-1 text-sm text-ink-dim">{citation.snippet}</p>
                   </li>
                 ))}
               </ul>

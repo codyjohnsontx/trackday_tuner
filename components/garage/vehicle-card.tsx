@@ -21,7 +21,7 @@ export function VehicleCard({
     .join(' ');
 
   return (
-    <li className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+    <li className="space-y-3 rounded-card bg-surface p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           {vehicle.photo_url ? (
@@ -30,28 +30,28 @@ export function VehicleCard({
               alt={vehicle.nickname}
               width={48}
               height={48}
-              className="h-12 w-12 shrink-0 rounded-lg object-cover"
+              className="h-12 w-12 shrink-0 rounded-plate object-cover"
             />
           ) : null}
           <div className="min-w-0">
-            <p className="truncate font-semibold text-zinc-100">{vehicle.nickname}</p>
+            <p className="truncate font-semibold text-ink">{vehicle.nickname}</p>
             {subtitle ? (
-              <p className="mt-0.5 truncate text-sm text-zinc-400">{subtitle}</p>
+              <p className="mt-0.5 truncate text-sm text-ink-dim">{subtitle}</p>
             ) : null}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <span className="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+          <span className="rounded-plate bg-surface-3 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-ink-dim">
             {vehicle.type}
           </span>
           {demoMode ? (
-            <span className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-200">
+            <span className="rounded-plate bg-surface-3 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-ink-faint">
               Sample
             </span>
           ) : (
             <Link
               href={`/garage/${vehicle.id}/edit`}
-              className="flex min-h-11 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs font-semibold text-zinc-300 hover:border-zinc-500 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-cyan-400/80"
+              className="flex min-h-11 items-center justify-center rounded-row bg-surface-3 px-2 py-1 text-xs font-semibold text-ink-dim hover:border-white/10 hover:text-ink focus-visible:ring-2 focus-visible:ring-signal/80"
             >
               Edit →
             </Link>
