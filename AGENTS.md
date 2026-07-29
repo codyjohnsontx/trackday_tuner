@@ -83,10 +83,19 @@ Migrations live in `supabase/migrations/` and are applied with the Supabase CLI
 against the linked hosted project. `supabase_migrations.schema_migrations` on
 the remote is the source of truth for what has been applied.
 
-- `npm run db:status` before and after any schema work — it is the only way to
-  see drift. Three migrations were once applied by hand and silently skipped,
-  which surfaced months later as `PGRST202 Could not find the function
-  public.replace_session_laps` when a rider saved lap times
+- `npm run db:status` before and after any schema work. It compares the applied
+  migration *history* — which versions the remote has recorded — against the
+  files in `supabase/migrations/`. Three migrations were once applied by hand
+  and silently skipped, which surfaced months later as `PGRST202 Could not find
+  the function public.replace_session_laps` when a rider saved lap times
+- `db:status` cannot see changes made outside a migration, so a table altered by
+  hand in the dashboard still reads as "up to date". Use
+  `npx supabase db diff --linked` for that: it diffs the live schema against
+  what the migration files describe and prints the SQL that would reconcile
+  them. Empty output means the database really does match the files
+- **Never edit a migration that has already been applied.** The remote records
+  it by version, so an edit changes the file without changing the database and
+  `db push` will never re-run it. Corrections go in a new migration
 - Filenames are `<14-digit timestamp>_<name>.sql`. The timestamp is the version
   recorded remotely and is a primary key, so **two migrations must never share a
   prefix** — an earlier pair both named `20260224_` could not both be recorded
