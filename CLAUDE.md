@@ -7,7 +7,7 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 ## Tech Stack
 
 - **Framework**: Next.js 15 (App Router), React 19, TypeScript 5 strict
-- **Styling**: Tailwind CSS v4, dark theme only (zinc-950 bg, cyan-400 accent)
+- **Styling**: Tailwind CSS v4, dark theme only, design tokens in `@theme` (canvas bg, sodium-amber `signal` accent)
 - **UI**: shadcn/ui pattern — `cva` + `cn()` from `lib/utils.ts`, Radix primitives
 - **Backend/Auth**: Supabase (email/password)
 - **Payments**: Stripe (subscriptions)
@@ -103,9 +103,31 @@ data/session-logs/   # sample session log JSON
 - Dark mode only — no light mode
 - Mobile-first, max-width-md (448px) app shell
 - 44px minimum touch targets
-- Cyan-400 (`#22d3ee`) focus rings: `focus-visible:ring-2 focus-visible:ring-cyan-400/80`
-- `rounded-xl` on inputs/buttons, `rounded-2xl` on cards
-- Zinc palette: `zinc-950` bg, `zinc-900` surfaces, `zinc-100` text, `zinc-400` muted
+- Use the tokens in `app/globals.css`, never raw palette classes (`zinc-*`, `cyan-*`, `amber-*`)
+
+**Surfaces.** Separation comes from a lightness ramp, not borders. `canvas` is the
+page, `surface` a card on it, `surface-2` a row nested in that card, `surface-3` a
+control on that row. Never skip a step, and never nest deeper than `surface-3`.
+Radii tighten with depth: `rounded-card` → `rounded-row` → `rounded-plate`; buttons
+and chips are `rounded-full`.
+
+**Ink.** `ink` for primary text, `ink-dim` for secondary, `ink-faint` for eyebrows
+and metadata. Dark ink on a bright fill is `text-canvas`, never `ink-faint`.
+
+**Accent.** `signal` (sodium amber `#ffb020`) is the only accent and marks
+*interaction or caution*: active tab, focus ring, warnings, live markers. It never
+encodes data and never labels a section — an uppercase eyebrow is `ink-faint`.
+Data semantics are `faster` (green) and `slower` (red), which is why the accent is
+deliberately neither. Primary buttons are a white pill (`bg-ink text-canvas`), not
+an accent fill, so the accent stays scarce enough to mean something.
+
+**Type.** `font-display` (Instrument Serif) is for page titles only — use
+`PageHeader` or `pageTitleClass`. Everything carrying a measurement stays on the
+system sans. Digits are tabular by default.
+
+**Primitives.** Compose screens from `components/ui/surface.tsx` (`Card`,
+`CardGroup`, `GroupRow`, `Eyebrow`, `SectionHeader`), `PageHeader`, and `DataPlate`
+rather than hand-rolling card markup.
 
 ## CSS Variables
 

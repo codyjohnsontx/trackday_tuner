@@ -3,12 +3,15 @@ import { cva } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const inputVariants = cva(
-  'flex w-full rounded-xl border bg-zinc-900 px-4 py-3 text-base text-zinc-100 placeholder:text-zinc-400 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:cursor-not-allowed disabled:opacity-50',
+  // Fields are surfaces, not outlines: the fill is what says "you can type
+  // here". A ring appears only for the error and focus states, where a border
+  // is carrying real information.
+  'flex w-full rounded-row bg-surface-2 px-4 py-3 text-base text-ink placeholder:text-ink-faint transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed disabled:opacity-50',
   {
     variants: {
       error: {
-        true: 'border-rose-600',
-        false: 'border-zinc-700',
+        true: 'ring-2 ring-slower/70',
+        false: '',
       },
     },
     defaultVariants: {
@@ -31,7 +34,7 @@ export function Input({ id, label, error, helperText, className, ...props }: Inp
 
   return (
     <label htmlFor={inputId} className="block space-y-2">
-      <span className="text-sm font-medium text-zinc-200">{label}</span>
+      <span className="text-sm font-medium text-ink-dim">{label}</span>
       <input
         id={inputId}
         aria-describedby={finalDescId}
@@ -40,12 +43,12 @@ export function Input({ id, label, error, helperText, className, ...props }: Inp
         {...inputProps}
       />
       {error && (
-        <p id={`${inputId}-error`} className="text-xs text-rose-400">
+        <p id={`${inputId}-error`} className="text-xs text-slower">
           {error}
         </p>
       )}
       {!error && helperText && (
-        <p id={`${inputId}-helper`} className="text-xs text-zinc-400">
+        <p id={`${inputId}-helper`} className="text-xs text-ink-faint">
           {helperText}
         </p>
       )}

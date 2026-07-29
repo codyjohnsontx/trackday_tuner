@@ -1,5 +1,44 @@
 @import "tailwindcss";
 
+/* ── Design tokens ──────────────────────────────────────────────────────
+   The UI is a dark instrument panel: a flat near-black canvas, borderless
+   surfaces that get their separation from a lightness ramp rather than from
+   hairlines, and exactly one warm accent.
+
+   Surfaces stack. `canvas` is the page, `surface` is a card sitting on it,
+   `surface-2` is a row nested inside that card, `surface-3` is a control on
+   top of the row. Never skip a step — two adjacent levels are what makes the
+   nesting legible without borders.
+
+   `signal` (sodium amber) is the only accent, and it marks *interaction*:
+   the active tab, the focus ring, a live marker. It never encodes data.
+   Lap and pressure deltas use `faster`/`slower`, which is why the accent is
+   deliberately not red or green — those two already mean something here. */
+@theme {
+  --color-canvas: #08080a;
+  --color-surface: #141417;
+  --color-surface-2: #1c1c20;
+  --color-surface-3: #26262b;
+
+  --color-ink: #f4f4f5;
+  --color-ink-dim: #a1a1aa;
+  --color-ink-faint: #6f6f78;
+
+  --color-signal: #ffb020;
+  --color-signal-dim: #b8801a;
+
+  --color-faster: #3fd77e;
+  --color-slower: #ff5347;
+
+  /* Card, nested row, and small plate. Radii are part of the hierarchy:
+     the deeper the nesting, the tighter the corner. */
+  --radius-card: 1.5rem;
+  --radius-row: 1.125rem;
+  --radius-plate: 0.875rem;
+
+  --font-display: var(--font-instrument-serif), ui-serif, Georgia, serif;
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
 }
@@ -12,8 +51,8 @@ body {
   margin: 0;
   min-height: 100vh;
   overscroll-behavior-y: none;
-  background: linear-gradient(180deg, #09090b 0%, #121215 60%, #0a0a0c 100%);
-  color: #f4f4f5;
+  background: var(--color-canvas);
+  color: var(--color-ink);
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -41,8 +80,14 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 button:focus-visible {
-  outline: 2px solid #22d3ee;
+  outline: 2px solid var(--color-signal);
   outline-offset: 2px;
+}
+
+/* Every number in this app is a measurement that gets compared against
+   another one, so digits line up by default rather than opt-in. */
+body {
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Motion system (Trackday Motion Studio) ─────────────────────────── */
