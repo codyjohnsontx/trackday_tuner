@@ -92,7 +92,12 @@ the remote is the source of truth for what has been applied.
   hand in the dashboard still reads as "up to date". Use
   `npx supabase db diff --linked` for that: it diffs the live schema against
   what the migration files describe and prints the SQL that would reconcile
-  them. Empty output means the database really does match the files
+  them. Empty output means no difference *the diff engine models* was found —
+  not that the two are identical. The comparison is done by a pluggable engine
+  (`--use-migra`, `--use-pgadmin`, `--use-pg-schema`, `--use-pg-delta`), and
+  coverage varies between them. Publications, storage buckets, and
+  `security_invoker` on views are known to slip through, so anything in that
+  territory still needs checking by hand
 - **Never edit a migration that has already been applied.** The remote records
   it by version, so an edit changes the file without changing the database and
   `db push` will never re-run it. Corrections go in a new migration
