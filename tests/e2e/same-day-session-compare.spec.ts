@@ -54,7 +54,7 @@ async function createRunVehicle(page: Page, nickname: string): Promise<string> {
   }).toPass({ timeout: 10_000 });
 
   await page.getByRole('button', { name: 'Add Vehicle' }).click();
-  await expect(page).toHaveURL(/\/garage$/);
+  await expect(page).toHaveURL(/\/garage$/, { timeout: 20_000 });
 
   const { data, error } = await createTestAdminClient()
     .from('vehicles')
@@ -98,12 +98,21 @@ async function logSessionWithoutStartTime(
   await expect(page.getByLabel('Start Time', { exact: true })).toHaveValue('');
 
   await page.getByRole('button', { name: 'Save Session' }).click();
-  await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]{36}$/);
+  // Saving is a server action followed by a client navigation that waits on the new
+  // session's RSC payload. The default 5s expectation is tight enough that two device
+  // projects sharing one dev server trip it while the save itself is succeeding.
+  await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]{36}$/, { timeout: 20_000 });
 
   return page.url().split('/').pop() as string;
 }
 
 test.describe('same-day sessions logged without a start time', () => {
+  // Signing in, adding a vehicle and logging two full sessions is several times the
+  // work of the other smoke tests, and `npm run test:e2e` runs six device projects
+  // against one dev server. At the shared 30s budget this test times out on nothing
+  // worse than a busy machine.
+  test.describe.configure({ timeout: 120_000 });
+
   test.skip(!hasE2EAuth(), 'E2E_EMAIL and E2E_PASSWORD env vars are required');
   test.skip(
     !hasServiceRole(),

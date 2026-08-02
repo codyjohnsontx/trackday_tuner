@@ -31,5 +31,8 @@ export async function signIn(page: Page) {
   }).toPass({ timeout: 10_000 });
 
   await form.getByRole('button', { name: /^Sign In$/ }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  // Signing in is a network round trip plus a client navigation that renders
+  // /dashboard on the server. Several device projects share one dev server, so the
+  // default 5s expectation trips on a sign-in that is merely slow, not failed.
+  await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
 }
