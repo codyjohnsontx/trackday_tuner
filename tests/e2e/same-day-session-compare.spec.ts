@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 
@@ -32,24 +32,62 @@ function formattedSessionDate(): string {
   });
 }
 
-async function ensureVehicleExists(page: Page) {
-  await page.goto('/sessions/new');
-  // /sessions/new redirects to /garage/new when the account has no vehicle.
-  if (!/\/garage\/new/.test(page.url())) return;
+/**
+ * A vehicle of this run's own, created and torn down here rather than borrowed from
+ * the garage.
+ *
+ * All six Playwright projects drive the single shared E2E account, and `fullyParallel:
+ * false` only serialises tests inside one file, so several of them log sessions at the
+ * same moment. The previous-session lookup is scoped by `vehicle_id`, so a private
+ * vehicle makes this run's two sessions the only rows it can choose between and keeps
+ * one project's cleanup away from another project's data. Returns the vehicle id.
+ */
+async function createRunVehicle(page: Page, nickname: string): Promise<string> {
+  await page.goto('/garage/new');
 
-  await page.getByLabel('Nickname', { exact: true }).fill(`PW Vehicle ${Date.now()}`);
+  const nicknameField = page.getByLabel('Nickname', { exact: true });
+  // Controlled input: a value typed into the streamed HTML before React hydrates is
+  // thrown away. Retry until it sticks.
+  await expect(async () => {
+    await nicknameField.fill(nickname);
+    await expect(nicknameField).toHaveValue(nickname);
+  }).toPass({ timeout: 10_000 });
+
   await page.getByRole('button', { name: 'Add Vehicle' }).click();
   await expect(page).toHaveURL(/\/garage$/);
-  await page.goto('/sessions/new');
+
+  const { data, error } = await createTestAdminClient()
+    .from('vehicles')
+    .select('id')
+    .eq('nickname', nickname)
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Vehicle "${nickname}" was not created: ${error?.message ?? 'no row returned'}`);
+  }
+
+  return data.id;
 }
 
 /** Logs one session with Start Time deliberately left blank. Returns its id. */
 async function logSessionWithoutStartTime(
   page: Page,
-  { sessionNumber, frontPressure }: { sessionNumber: string; frontPressure: string },
+  {
+    vehicleId,
+    sessionNumber,
+    frontPressure,
+  }: { vehicleId: string; sessionNumber: string; frontPressure: string },
 ): Promise<string> {
   await page.goto('/sessions/new');
   await expect(page.getByRole('heading', { name: 'New Session' })).toBeVisible();
+
+  // The form preselects a vehicle only when the account has exactly one, and this
+  // account has as many as the concurrent projects have created, so pick explicitly.
+  const vehicleSelect = page.getByLabel('Vehicle', { exact: true });
+  await expect(async () => {
+    await vehicleSelect.selectOption(vehicleId);
+    await expect(vehicleSelect).toHaveValue(vehicleId);
+  }).toPass({ timeout: 10_000 });
 
   await page.getByLabel('Track', { exact: true }).fill(TRACK_NAME);
   await page.getByLabel('Date', { exact: true }).fill(SESSION_DATE);
@@ -73,25 +111,41 @@ test.describe('same-day sessions logged without a start time', () => {
   );
 
   const createdSessionIds: string[] = [];
+  let createdVehicleId: string | null = null;
 
   test.afterEach(async () => {
-    if (createdSessionIds.length === 0) return;
-    // session_changes cascades on session_id, so this clears both tables.
-    await createTestAdminClient().from('sessions').delete().in('id', createdSessionIds);
-    createdSessionIds.length = 0;
+    const admin = createTestAdminClient();
+
+    if (createdSessionIds.length > 0) {
+      // session_changes cascades on session_id, so this clears both tables.
+      await admin.from('sessions').delete().in('id', createdSessionIds);
+      createdSessionIds.length = 0;
+    }
+
+    if (createdVehicleId) {
+      await admin.from('vehicles').delete().eq('id', createdVehicleId);
+      createdVehicleId = null;
+    }
   });
 
-  test('compares against the earlier session and records the change', async ({ page }) => {
+  test('compares against the earlier session and records the change', async ({ page }, testInfo: TestInfo) => {
     await signIn(page);
-    await ensureVehicleExists(page);
+
+    const vehicleId = await createRunVehicle(
+      page,
+      `PW Same-Day ${testInfo.project.name} w${testInfo.workerIndex} ${Date.now()}`,
+    );
+    createdVehicleId = vehicleId;
 
     const firstSessionId = await logSessionWithoutStartTime(page, {
+      vehicleId,
       sessionNumber: '1',
       frontPressure: FIRST_FRONT_PRESSURE,
     });
     createdSessionIds.push(firstSessionId);
 
     const secondSessionId = await logSessionWithoutStartTime(page, {
+      vehicleId,
       sessionNumber: '2',
       frontPressure: SECOND_FRONT_PRESSURE,
     });

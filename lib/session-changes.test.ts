@@ -5,6 +5,7 @@ import {
   baselineToComparableSession,
   computeSetupChanges,
   deriveChangeSets,
+  resolveChangeSets,
   sessionReferenceLabel,
   toChangeSets,
 } from '@/lib/session-changes';
@@ -199,6 +200,91 @@ describe('deriveChangeSets', () => {
 
   it('derives no sets when there is no previous session or baseline', () => {
     expect(deriveChangeSets(baseSession, null, null, 'motorcycle')).toEqual([]);
+  });
+});
+
+describe('resolveChangeSets', () => {
+  const baselineRecord: SessionChange = {
+    id: 'change-baseline',
+    user_id: 'user-1',
+    session_id: baseSession.id,
+    vehicle_id: 'veh-1',
+    reference_kind: 'baseline',
+    reference_session_id: 'session-source',
+    reference_label: 'MSR Cresson 1.7 · May 18, 2026 · Session 3',
+    reference_date: '2026-05-18',
+    changes: [{ group: 'Suspension', label: 'Front compression', from: '10 clicks', to: '12 clicks' }],
+    created_at: '2026-05-18T19:45:00.000Z',
+    updated_at: '2026-05-18T19:45:00.000Z',
+  };
+
+  const previousSession = makeSession({
+    id: 'session-prev',
+    session_number: 3,
+    tires: {
+      condition: 'used',
+      front: { brand: 'Pirelli', compound: 'SC1', pressure: '33 psi hot' },
+      rear: { brand: 'Pirelli', compound: 'SC2', pressure: '27 psi hot' },
+    },
+  });
+
+  it('derives the previous-session set alongside a lone persisted baseline record', () => {
+    // The shape left behind by sessions logged while the previous-session lookup was
+    // blind to a missing start time: the baseline record was written, the
+    // previous-session record was not.
+    const sets = resolveChangeSets([baselineRecord], baseSession, previousSession, baseBaseline, 'motorcycle');
+
+    expect(sets.map((set) => set.referenceKind)).toEqual(['previous', 'baseline']);
+    expect(sets[0].persisted).toBe(false);
+    expect(sets[0].referenceLabel).toBe(sessionReferenceLabel(previousSession));
+    expect(sets[0].entries).toContainEqual({
+      group: 'Tires',
+      label: 'Front pressure',
+      from: '33 psi hot',
+      to: '34 psi hot',
+    });
+    expect(sets[1].persisted).toBe(true);
+    expect(sets[1].entries).toEqual(baselineRecord.changes);
+  });
+
+  it('leaves persisted records alone when the previous-session record is already stored', () => {
+    const previousRecord: SessionChange = {
+      ...baselineRecord,
+      id: 'change-previous',
+      reference_kind: 'previous',
+      reference_session_id: previousSession.id,
+    };
+
+    const sets = resolveChangeSets(
+      [previousRecord, baselineRecord],
+      baseSession,
+      previousSession,
+      baseBaseline,
+      'motorcycle',
+    );
+
+    expect(sets.map((set) => set.referenceKind)).toEqual(['previous', 'baseline']);
+    expect(sets.every((set) => set.persisted)).toBe(true);
+  });
+
+  it('does not invent a previous-session set when there is no previous session', () => {
+    const sets = resolveChangeSets([baselineRecord], baseSession, null, baseBaseline, 'motorcycle');
+
+    expect(sets.map((set) => set.referenceKind)).toEqual(['baseline']);
+    expect(sets[0].persisted).toBe(true);
+  });
+
+  it('derives every set when nothing has been persisted', () => {
+    const sets = resolveChangeSets(
+      [],
+      baseSession,
+      previousSession,
+      makeBaseline({ source_session_id: 'other-session' }),
+      'motorcycle',
+    );
+
+    expect(sets.map((set) => set.referenceKind)).toEqual(['previous', 'baseline']);
+    expect(sets.every((set) => set.persisted === false)).toBe(true);
   });
 });
 

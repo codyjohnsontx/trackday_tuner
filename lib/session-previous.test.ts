@@ -148,10 +148,44 @@ describe('fetchPreviousSession', () => {
     expect(queryCount()).toBe(1);
   });
 
-  it('returns null when the query fails', async () => {
+  it('returns null when the query fails, and says so', async () => {
     const current = session({ id: 'current' });
     const { supabase } = createSupabaseStub([{ data: null, error: { message: 'boom' } }]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     expect(await fetchPreviousSession(supabase, 'user-1', current)).toBeNull();
+
+    // A swallowed failure renders as "No earlier session found for this vehicle",
+    // which is indistinguishable from the answer this function exists to fix.
+    expect(consoleError).toHaveBeenCalledWith(
+      '[session-previous] previous-session query failed',
+      { userId: 'user-1', sessionId: 'current', error: 'boom' },
+    );
+
+    consoleError.mockRestore();
+  });
+
+  it('returns null when the fallback query fails, and says so', async () => {
+    const current = session({ id: 'current', start_time: null, created_at: '2026-02-24T06:00:00Z' });
+    const sameDayAfter = Array.from({ length: PREVIOUS_SESSION_SCAN_LIMIT }, (_, index) =>
+      session({
+        id: `after-${index}`,
+        start_time: null,
+        created_at: `2026-02-24T23:00:${String(index).padStart(2, '0')}Z`,
+      }),
+    );
+    const { supabase } = createSupabaseStub([
+      { data: sameDayAfter },
+      { data: null, error: { message: 'fallback boom' } },
+    ]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(await fetchPreviousSession(supabase, 'user-1', current)).toBeNull();
+    expect(consoleError).toHaveBeenCalledWith(
+      '[session-previous] earlier-date fallback query failed',
+      { userId: 'user-1', sessionId: 'current', error: 'fallback boom' },
+    );
+
+    consoleError.mockRestore();
   });
 });

@@ -135,3 +135,33 @@ export function deriveChangeSets(
 
   return sets;
 }
+
+/**
+ * The change sets to display for a session: persisted records where they exist,
+ * derived where they do not.
+ *
+ * Persistence is per reference kind rather than all-or-nothing. A session logged
+ * while the previous-session lookup was blind to a missing `start_time` persisted a
+ * baseline record and no previous-session record, so the presence of *some* record
+ * cannot stand in for the presence of *every* record. The previous-session set is
+ * derived for those sessions and stays unpersisted, ordered ahead of the stored
+ * records to match how `getSessionChangeRecords` sorts reference kinds.
+ */
+export function resolveChangeSets(
+  records: SessionChange[],
+  session: Session,
+  previousSession: Session | null,
+  baseline: VehicleBaseline | null,
+  vehicleType: VehicleType,
+): SessionChangeSet[] {
+  if (records.length === 0) {
+    return deriveChangeSets(session, previousSession, baseline, vehicleType);
+  }
+
+  const persistedSets = toChangeSets(records);
+  if (!previousSession || persistedSets.some((set) => set.referenceKind === 'previous')) {
+    return persistedSets;
+  }
+
+  return [...deriveChangeSets(session, previousSession, null, vehicleType), ...persistedSets];
+}

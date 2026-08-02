@@ -55,7 +55,16 @@ export async function fetchPreviousSession(
     .lte('date', currentSession.date)
     .limit(PREVIOUS_SESSION_SCAN_LIMIT);
 
-  if (error) return null;
+  if (error) {
+    // Silence here reads exactly like "this rider has no earlier session", which is
+    // the failure this function exists to remove.
+    console.error('[session-previous] previous-session query failed', {
+      userId,
+      sessionId: currentSession.id,
+      error: error.message,
+    });
+    return null;
+  }
 
   const rows = (data ?? []) as Session[];
   const previous = rows
@@ -70,7 +79,18 @@ export async function fetchPreviousSession(
   // earlier date directly.
   if (rows.length < PREVIOUS_SESSION_SCAN_LIMIT) return null;
 
-  const { data: earlierData } = await baseQuery(query).lt('date', currentSession.date).limit(1);
+  const { data: earlierData, error: earlierError } = await baseQuery(query)
+    .lt('date', currentSession.date)
+    .limit(1);
+
+  if (earlierError) {
+    console.error('[session-previous] earlier-date fallback query failed', {
+      userId,
+      sessionId: currentSession.id,
+      error: earlierError.message,
+    });
+    return null;
+  }
 
   return ((earlierData ?? [])[0] ?? null) as Session | null;
 }

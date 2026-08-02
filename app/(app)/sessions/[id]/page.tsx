@@ -18,7 +18,7 @@ import { SessionLapsPanel } from '@/components/sessions/session-laps-panel';
 import { SessionOutcomePanel } from '@/components/sessions/session-outcome-panel';
 import { VehicleOutcomeHistory } from '@/components/sessions/vehicle-outcome-history';
 import { effectiveTier } from '@/lib/access';
-import { deriveChangeSets, toChangeSets } from '@/lib/session-changes';
+import { resolveChangeSets } from '@/lib/session-changes';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import { isSessionBefore } from '@/lib/session-compare';
 import type { ExtraModules, Session } from '@/types';
@@ -321,9 +321,7 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
   const enabledModules = resolveSessionEnabledModules(session, vehicleType);
   const changeSets =
     tier === 'pro'
-      ? changeRecords.length > 0
-        ? toChangeSets(changeRecords)
-        : deriveChangeSets(session, previousSession, baseline, vehicleType)
+      ? resolveChangeSets(changeRecords, session, previousSession, baseline, vehicleType)
       : [];
   const previousEnabledModules = previousSession
     ? resolveSessionEnabledModules(previousSession, vehicleType)
