@@ -184,19 +184,14 @@ declaration inside `@layer base`. Those are separate namespaces, no collision.
 **Every rule in `app/globals.css` must sit inside a layer**: `@layer base` for
 element defaults, `@layer components` for helper classes. Tailwind v4 emits all
 utilities inside `@layer utilities`, and unlayered CSS beats layered CSS at any
-specificity, so one unlayered rule silently disables a whole family of utilities
-with no warning from the build, the linter, or the types. An unlayered
-`a { color: inherit }` outranked `text-canvas` on every link in the app, so the
-primary CTA rendered as white text on a white pill (contrast 1.00:1) on every
-list screen. `font: inherit` and `min-height` on the same block were doing the
-same to `text-*`, `font-*`, and `min-h-*` on form controls.
+specificity, so one unlayered rule silently outranks a whole family of utilities
+with no warning from the build, the linter, or the types.
 
-`tests/unit/globals-css-layers.test.ts` enforces the layering itself and runs in
-the required checks. It only sees unlayered rules in that one file - a contrast
-regression from a changed token, a Button variant, or a new component pairs the
-wrong ink on the wrong fill without tripping it. So still verify a change here in
-the browser: `getComputedStyle` on an `<a class="text-canvas">` must match the
-same class on a `<span>`.
+`tests/unit/globals-css-layers.test.ts` enforces this and runs in the required
+checks; the comments in `app/globals.css` record why each block is layered. That
+guard reads one file, so a contrast regression arriving any other way - a changed
+token, a Button variant, a new component - still needs a browser. Only the manual
+e2e suite asserts a rendered colour.
 
 ## Path Alias
 
