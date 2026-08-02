@@ -127,7 +127,8 @@ test.describe('authenticated tracks smoke', () => {
     await expect(page.getByRole('heading', { name: 'Sessions' })).toBeVisible();
 
     await page.goto('/tracks');
-    await expect(page.getByRole('heading', { name: 'Tracks' })).toBeVisible();
+    // Exact: the page also carries "Seeded Tracks" and "Your Tracks" headings.
+    await expect(page.getByRole('heading', { name: 'Tracks', exact: true })).toBeVisible();
   });
 
   test('shows a refusal for out-of-domain Race Engineer prompts and clears it when editing', async ({ page }) => {
@@ -145,7 +146,9 @@ test.describe('authenticated tracks smoke', () => {
     await firstSessionRow.getByRole('button').first().click();
     await firstSessionRow.getByRole('link', { name: 'Open Full Session' }).click();
 
-    await page.getByLabel('What did you feel?').fill('Recommend a good vacuum to me');
+    // Unique per run: identical questions inside the route's 5-minute dedupe window
+    // come back as "handled recently" instead of a refusal, so a re-run would fail.
+    await page.getByLabel('What did you feel?').fill(`Recommend a good vacuum to me ${Date.now()}`);
     await expect(
       page.getByText('This looks unrelated, so it will return a refusal instead of a setup recommendation.'),
     ).toBeVisible();
@@ -187,7 +190,7 @@ test.describe('authenticated converter smoke', () => {
 
     await page.getByLabel('Category').selectOption('mass');
     await page.getByLabel('From').selectOption('lb');
-    await page.getByLabel('To').selectOption('kg');
+    await page.getByLabel('To', { exact: true }).selectOption('kg');
     await page.getByLabel('Value').fill('10');
     await expect(page.getByText('4.536')).toBeVisible();
 
@@ -197,7 +200,7 @@ test.describe('authenticated converter smoke', () => {
 
     await page.getByLabel('Category').selectOption('spring_rate');
     await page.getByLabel('From').selectOption('N/mm');
-    await page.getByLabel('To').selectOption('lb/in');
+    await page.getByLabel('To', { exact: true }).selectOption('lb/in');
     await page.getByLabel('Value').fill('10');
     await expect(page.getByText('57.101')).toBeVisible();
 

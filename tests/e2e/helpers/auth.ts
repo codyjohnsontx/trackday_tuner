@@ -12,8 +12,24 @@ export async function signIn(page: Page) {
   }
 
   await page.goto('/login');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: /^Sign In$/ }).first().click();
+
+  // The login page has two controls named "Sign In": the mode toggle above the
+  // form, and the form's own submit button. Scoping to the form picks the one
+  // that actually signs in — clicking the toggle just reselects the current mode
+  // and leaves the test sitting on /login.
+  const form = page.locator('form');
+  const emailField = form.getByLabel('Email');
+  const passwordField = form.getByLabel('Password');
+
+  // These are controlled inputs, so a value typed into the streamed HTML before
+  // React hydrates gets thrown away. Retry until it sticks.
+  await expect(async () => {
+    await emailField.fill(email);
+    await passwordField.fill(password);
+    await expect(emailField).toHaveValue(email);
+    await expect(passwordField).toHaveValue(password);
+  }).toPass({ timeout: 10_000 });
+
+  await form.getByRole('button', { name: /^Sign In$/ }).click();
   await expect(page).toHaveURL(/\/dashboard/);
 }
