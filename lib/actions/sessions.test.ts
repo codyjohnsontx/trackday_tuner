@@ -60,6 +60,8 @@ function createQuery(response: QueryResponse = {}) {
   query.in = vi.fn(() => query);
   query.neq = vi.fn(() => query);
   query.or = vi.fn(() => query);
+  query.lt = vi.fn(() => query);
+  query.lte = vi.fn(() => query);
   query.order = vi.fn(() => query);
   query.limit = vi.fn(() => query);
   query.single = vi.fn(async () => single);

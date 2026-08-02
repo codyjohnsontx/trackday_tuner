@@ -80,6 +80,8 @@ function createServerClient() {
     eq: vi.fn().mockReturnThis(),
     neq: vi.fn().mockReturnThis(),
     or: vi.fn().mockReturnThis(),
+    lt: vi.fn().mockReturnThis(),
+    lte: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn(async () => ({
       data: [],

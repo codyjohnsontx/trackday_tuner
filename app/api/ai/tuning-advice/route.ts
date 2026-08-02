@@ -28,6 +28,7 @@ import {
   TUNING_ADVICE_LIMITS,
   validateTuningAdviceRequest,
 } from '@/lib/rag/validation';
+import { fetchPreviousSession } from '@/lib/session-previous';
 import { createClient } from '@/lib/supabase/server';
 import type { Json, Session, Vehicle } from '@/types';
 import type { AdviceDataUsed, AdviceResponse } from '@/lib/rag/schema';
@@ -603,22 +604,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: previousRows } = await supabase
-    .from('sessions')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('vehicle_id', vehicle.id)
-    .neq('id', session.id)
-    .or(
-      `date.lt.${session.date},and(date.eq.${session.date},start_time.lt.${
-        session.start_time ?? '23:59:59'
-      })`,
-    )
-    .order('date', { ascending: false })
-    .order('start_time', { ascending: false, nullsFirst: false })
-    .limit(1);
-
-  const previousSession = (previousRows?.[0] ?? null) as Session | null;
+  const previousSession = await fetchPreviousSession(supabase, user.id, session);
 
   const questionAssessment = classifyRaceEngineerQuestion({
     question: validated.data.question,

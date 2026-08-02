@@ -20,6 +20,7 @@ import {
   compareSessionsDesc,
   sessionsMatchTrack,
 } from '@/lib/session-compare';
+import { fetchPreviousSession } from '@/lib/session-previous';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
@@ -221,20 +222,7 @@ export async function getPreviousSession(
 
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from('sessions')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('vehicle_id', currentSession.vehicle_id)
-    .neq('id', currentSession.id)
-    .or(`date.lt.${currentSession.date},and(date.eq.${currentSession.date},start_time.lt.${currentSession.start_time ?? '23:59:59'})`)
-    .order('date', { ascending: false })
-    .order('start_time', { ascending: false, nullsFirst: false })
-    .limit(1);
-
-  if (error || !data || data.length === 0) return null;
-
-  return (data?.[0] ?? null) as Session | null;
+  return fetchPreviousSession(supabase, user.id, currentSession);
 }
 
 export async function getComparableSessions(currentSession: Session): Promise<Session[]> {
@@ -446,25 +434,14 @@ export async function createSession(
   // vehicle, previous-session, and baseline lookups are independent, so run them in
   // parallel to keep this off the critical path of session creation.
   try {
-    const [vehicleResult, previousResult, baselineResult] = await Promise.all([
+    const [vehicleResult, previousSession, baselineResult] = await Promise.all([
       supabase
         .from('vehicles')
         .select('type')
         .eq('id', createdSession.vehicle_id)
         .eq('user_id', user.id)
         .single(),
-      supabase
-        .from('sessions')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('vehicle_id', createdSession.vehicle_id)
-        .neq('id', createdSession.id)
-        .or(
-          `date.lt.${createdSession.date},and(date.eq.${createdSession.date},start_time.lt.${createdSession.start_time ?? '23:59:59'})`,
-        )
-        .order('date', { ascending: false })
-        .order('start_time', { ascending: false, nullsFirst: false })
-        .limit(1),
+      fetchPreviousSession(supabase, user.id, createdSession),
       supabase
         .from('vehicle_baselines')
         .select('*')
@@ -474,7 +451,6 @@ export async function createSession(
     ]);
 
     const vehicleRow = vehicleResult.data;
-    const previousRows = previousResult.data;
     const baselineRows = baselineResult.data;
 
     // The vehicle type drives module resolution and is persisted into each diff, so it
@@ -488,7 +464,6 @@ export async function createSession(
         vehicleId: createdSession.vehicle_id,
       });
     } else {
-      const previousSession = ((previousRows ?? [])[0] ?? null) as Session | null;
       const baseline = ((baselineRows ?? [])[0] ?? null) as VehicleBaseline | null;
 
       const changeRows: TableInsert<'session_changes'>[] = [];
