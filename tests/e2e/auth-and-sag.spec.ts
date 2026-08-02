@@ -46,6 +46,13 @@ test.describe('unauthenticated route guards', () => {
     await expect(page.getByRole('heading', { name: 'Know what changed. Learn what worked.' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Two track days. One honest outcome loop.' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Join the Founding Beta' })).toBeVisible();
+
+    // The hero CTA is `bg-ink text-canvas`. If an unlayered rule in globals.css
+    // ever outranks a text-colour utility again, this reads back as the ink
+    // token and the pill goes white-on-white at 1.00:1.
+    const heroCta = page.getByRole('link', { name: 'Join the Founding Beta' });
+    await expect(heroCta).toBeVisible();
+    await expect(heroCta).toHaveCSS('color', 'rgb(8, 8, 10)');
   });
 });
 

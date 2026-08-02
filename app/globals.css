@@ -104,42 +104,45 @@
 
 /* ── Motion system (Trackday Motion Studio) ─────────────────────────── */
 
-/* Ripple that grows from the press point (Button `ripple`). */
-@keyframes tt-ripple-grow {
-  from {
-    transform: scale(0);
-    opacity: 0.55;
-  }
-  to {
-    transform: scale(1);
-    opacity: 0;
-  }
-}
-
-/* Checkmark that pops in on a confirmed save (Button `success`). */
-@keyframes tt-btn-pop {
-  0% {
-    transform: scale(0.3);
-    opacity: 0;
-  }
-  60% {
-    transform: scale(1.2);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
 /* Layered for the same reason as the element defaults above: a component class
-   that outranks every utility is a trap for whoever styles these next. */
+   that outranks every utility is a trap for whoever styles these next. The
+   keyframes are layered alongside the classes that consume them so nothing in
+   this file sits outside a layer: `@keyframes` participate in layer order too
+   when two of them share a name. */
 @layer components {
+  /* Ripple that grows from the press point (Button `ripple`). */
+  @keyframes tt-ripple-grow {
+    from {
+      transform: scale(0);
+      opacity: 0.55;
+    }
+    to {
+      transform: scale(1);
+      opacity: 0;
+    }
+  }
+
   .tt-ripple {
     position: absolute;
     border-radius: 9999px;
     pointer-events: none;
     animation: tt-ripple-grow 0.6s ease-out forwards;
+  }
+
+  /* Checkmark that pops in on a confirmed save (Button `success`). */
+  @keyframes tt-btn-pop {
+    0% {
+      transform: scale(0.3);
+      opacity: 0;
+    }
+    60% {
+      transform: scale(1.2);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
   }
 
   .tt-btn-pop {

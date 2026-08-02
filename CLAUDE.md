@@ -174,8 +174,10 @@ rather than hand-rolling card markup.
 
 ## CSS Variables
 
-shadcn CSS vars live in `@layer base { :root { ... } }` in `app/globals.css`.
-Tailwind v4 project tokens live in `@theme { ... }` — these are separate namespaces, no collision.
+`app/globals.css` defines no shadcn CSS variables - the project follows the
+shadcn *pattern* (`cva` + `cn()`) but not its token set. Tailwind v4 project
+tokens live in `@theme { ... }`; the only `:root` block is a `color-scheme`
+declaration inside `@layer base`. Those are separate namespaces, no collision.
 
 ## Cascade Layers
 
