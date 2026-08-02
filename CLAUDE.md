@@ -177,6 +177,20 @@ rather than hand-rolling card markup.
 shadcn CSS vars live in `@layer base { :root { ... } }` in `app/globals.css`.
 Tailwind v4 project tokens live in `@theme { ... }` — these are separate namespaces, no collision.
 
+## Cascade Layers
+
+**Every rule in `app/globals.css` must sit inside a layer**: `@layer base` for
+element defaults, `@layer components` for helper classes. Tailwind v4 emits all
+utilities inside `@layer utilities`, and unlayered CSS beats layered CSS at any
+specificity, so one unlayered rule silently disables a whole family of utilities
+with no warning from the build, the linter, or the types. An unlayered
+`a { color: inherit }` outranked `text-canvas` on every link in the app, so the
+primary CTA rendered as white text on a white pill (contrast 1.00:1) on every
+list screen. `font: inherit` and `min-height` on the same block were doing the
+same to `text-*`, `font-*`, and `min-h-*` on form controls. Verify a change here
+in the browser: `getComputedStyle` on an `<a class="text-canvas">` must match the
+same class on a `<span>`.
+
 ## Path Alias
 
 `@/*` maps to project root.
@@ -193,3 +207,10 @@ Tailwind v4 project tokens live in `@theme { ... }` — these are separate names
 AI routes are active for tuning advice, recommendation feedback, and day planning.
 `lib/rag/` contains retrieval, prompt, policy, validation, and schema helpers.
 Knowledge-base markdown lives in `docs/knowledge-base/` and can be indexed with `npm run rag:index`.
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.

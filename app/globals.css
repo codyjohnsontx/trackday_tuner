@@ -39,55 +39,67 @@
   --font-display: var(--font-instrument-serif), ui-serif, Georgia, serif;
 }
 
-* {
-  -webkit-tap-highlight-color: transparent;
-}
+/* ── Element defaults ───────────────────────────────────────────────────
+   These are defaults, so they belong in `@layer base`, the layer Tailwind's
+   own preflight uses. Unlayered CSS beats every layered rule no matter how
+   specific, so an unlayered `a { color: inherit }` silently outranks
+   `text-canvas` on every link in the app: the primary CTA rendered as white
+   text on a white pill. Same trap for `font` and `min-height` below, which
+   would otherwise outrank `text-sm`, `font-semibold`, and `min-h-*`.
+   Anything written here must stay inside a layer. */
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
 
-:root {
-  color-scheme: dark;
-}
+  :root {
+    color-scheme: dark;
+  }
 
-body {
-  margin: 0;
-  min-height: 100vh;
-  overscroll-behavior-y: none;
-  background: var(--color-canvas);
-  color: var(--color-ink);
-  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
+  body {
+    margin: 0;
+    min-height: 100vh;
+    overscroll-behavior-y: none;
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
 
-input,
-select,
-textarea,
-button {
-  font: inherit;
-}
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
 
-button,
-a,
-input,
-select,
-textarea {
-  min-height: 2.75rem;
-}
+  /* The 44px floor for touch targets. A component can now raise it with
+     `min-h-12`/`min-h-14`; nothing in the app sets a smaller one. */
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    min-height: 2.75rem;
+  }
 
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-button:focus-visible {
-  outline: 2px solid var(--color-signal);
-  outline-offset: 2px;
-}
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--color-signal);
+    outline-offset: 2px;
+  }
 
-/* Every number in this app is a measurement that gets compared against
-   another one, so digits line up by default rather than opt-in. */
-body {
-  font-variant-numeric: tabular-nums;
+  /* Every number in this app is a measurement that gets compared against
+     another one, so digits line up by default rather than opt-in. */
+  body {
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 /* ── Motion system (Trackday Motion Studio) ─────────────────────────── */
@@ -120,23 +132,27 @@ body {
   }
 }
 
-.tt-ripple {
-  position: absolute;
-  border-radius: 9999px;
-  pointer-events: none;
-  animation: tt-ripple-grow 0.6s ease-out forwards;
-}
-
-.tt-btn-pop {
-  display: inline-flex;
-  animation: tt-btn-pop 0.4s ease-out;
-}
-
-@media (prefers-reduced-motion: reduce) {
+/* Layered for the same reason as the element defaults above: a component class
+   that outranks every utility is a trap for whoever styles these next. */
+@layer components {
   .tt-ripple {
-    display: none;
+    position: absolute;
+    border-radius: 9999px;
+    pointer-events: none;
+    animation: tt-ripple-grow 0.6s ease-out forwards;
   }
+
   .tt-btn-pop {
-    animation: none;
+    display: inline-flex;
+    animation: tt-btn-pop 0.4s ease-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tt-ripple {
+      display: none;
+    }
+    .tt-btn-pop {
+      animation: none;
+    }
   }
 }
