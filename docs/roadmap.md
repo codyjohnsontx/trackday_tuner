@@ -38,7 +38,7 @@ this section is independent of the ordered roadmap below.
 
 Position is impact order, not a schedule. Items 1 to 4 are live defects and should
 be worked in that order. Items 5 to 9 unblock or protect everything after them.
-Items 10 to 16 are real but survivable. Item 5 is the one place where impact order
+Items 10 to 17 are real but survivable. Item 5 is the one place where impact order
 and execution order may legitimately diverge; the reason is recorded there.
 
 ### 1 to 4 - live defects
@@ -196,7 +196,7 @@ and execution order may legitimately diverge; the reason is recorded there.
    Supabase and no secrets, and no test uses it, so this is cheap once `R6` lands
    and it is the only regression guard on the product's main flow.
 
-### 10 to 16 - real but survivable
+### 10 to 17 - real but survivable
 
 10. **Body text below AA contrast** - `R8` - `text-zinc-500` measures 4.12:1 on
     `zinc-950` and 3.67:1 on `zinc-900` cards against a 4.5:1 threshold, across 96
@@ -237,6 +237,21 @@ and execution order may legitimately diverge; the reason is recorded there.
     untracked and unreferenced, `components/layout/bottom-nav.tsx` is tracked and
     dead, thirteen local branches and two agent worktrees remain, and
     `body { min-height: 100vh }` should be `100dvh` for iOS Safari.
+
+17. **Raw form controls below the iOS 16px zoom floor** - `F8` - an accepted trade,
+    not an open defect. Putting `app/globals.css` inside cascade layers let the
+    authored `text-sm` on those controls finally apply; the previous 16px was an
+    unlayered `input, select, textarea, button { font: inherit }` outranking that
+    utility, so the app now renders what its own source says. The cost is that
+    roughly 25 raw controls (`components/beta/waitlist-form.tsx`,
+    `components/beta/beta-survey.tsx`, `components/sessions/session-form.tsx`,
+    `components/sessions/session-outcome-panel.tsx`,
+    `components/garage/vehicle-form.tsx`, `components/tools/unit-converter.tsx`) now
+    sit below 16px, where iOS Safari zooms the viewport on focus. Correcting it means
+    restyling those call sites, which the cascade-layer brief ruled out, and several
+    live in session-comparison files another worker holds. Raise them to `text-base`
+    if picked up, deciding deliberately whether 16px is the right floor for form
+    controls generally.
 
 ## Ordered Roadmap
 
