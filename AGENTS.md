@@ -189,8 +189,13 @@ with no warning from the build, the linter, or the types. An unlayered
 `a { color: inherit }` outranked `text-canvas` on every link in the app, so the
 primary CTA rendered as white text on a white pill (contrast 1.00:1) on every
 list screen. `font: inherit` and `min-height` on the same block were doing the
-same to `text-*`, `font-*`, and `min-h-*` on form controls. Verify a change here
-in the browser: `getComputedStyle` on an `<a class="text-canvas">` must match the
+same to `text-*`, `font-*`, and `min-h-*` on form controls.
+
+`tests/unit/globals-css-layers.test.ts` enforces the layering itself and runs in
+the required checks. It only sees unlayered rules in that one file - a contrast
+regression from a changed token, a Button variant, or a new component pairs the
+wrong ink on the wrong fill without tripping it. So still verify a change here in
+the browser: `getComputedStyle` on an `<a class="text-canvas">` must match the
 same class on a `<span>`.
 
 ## Path Alias
