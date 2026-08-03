@@ -221,11 +221,12 @@ and execution order may legitimately diverge; the reason is recorded there.
     `/terms`. The landing page sits at the top of the beta funnel and cannot be
     CDN-cached. Move the cookie read below the layouts that need it.
 
-13. **Navigation reach regression** - `F6` - `components/layout/bottom-nav.tsx` is
-    dead code; navigation moved to a hamburger at the top right, the least reachable
-    point one-handed. The PRD lists one-handed thumb reach as a core UX requirement
-    and `CLAUDE.md` still documents the bottom nav. Confirm this was a deliberate
-    trade rather than drift, then correct whichever of the two is wrong.
+13. **Navigation reach regression** - `F6` - **Premise resolved; verified on
+    2026-08-02.** `components/layout/bottom-nav.tsx` is live rather than dead code:
+    `components/layout/app-shell.tsx` imports it and renders it whenever a rider is
+    authenticated or in demo mode, restored in `f8a5c05` on 2026-07-29. Navigation
+    is not hamburger-only, `CLAUDE.md` and the code agree, and there is nothing left
+    to correct on either side.
 
 14. **Free-tier limits duplicated** - `F5` - `lib/plans.ts` is authoritative, but the
     sessions and dashboard pages inline `10` in four places. Changing a plan silently
