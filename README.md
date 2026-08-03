@@ -1,4 +1,22 @@
-Track Tuner PRD v1.0
+# Track Tuner
+
+A mobile race engineer for riders and drivers.
+
+Log a session at the track in under 60 seconds, then compare what you changed against what you felt. Track Tuner keeps your setups, session history, and conditions in one place, and its AI setup guidance is grounded in your own riding history rather than generic advice.
+
+### What it includes
+
+- Fast trackside session logging for motorcycles and cars
+- Setup modules you add only where you have data
+- Session comparison showing what changed between runs
+- Track conditions and session outcomes
+- Retrieval-based AI setup guidance grounded in your own history
+
+**Built with:** Next.js · TypeScript · Supabase · Tailwind CSS
+
+---
+
+## Product Requirements (PRD v1.0)
 
 1. One-liner
 
