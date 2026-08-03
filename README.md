@@ -342,13 +342,14 @@ npm install
 npx supabase start
 ```
 
-That creates the database and applies all thirteen migrations in order, on the
-ports declared in `supabase/config.toml` (API 54321, database 54322, Studio
-54323). The CLI is a repo devDependency, which is why the bare `supabase` in the
-`db:*` scripts resolves - npm puts `node_modules/.bin` on PATH for scripts, but
-not for your own shell, so run it as `npx supabase` here. That is also why
-`npm install` comes first: on a clean checkout there is no local copy yet and
-`npx` would fetch an unpinned CLI from the registry instead of the pinned one.
+That creates the database and applies every migration in `supabase/migrations/`
+in order, on the ports declared in `supabase/config.toml` (API 54321, database
+54322, Studio 54323). The CLI is a repo devDependency, which is why the bare
+`supabase` in the `db:*` scripts resolves - npm puts `node_modules/.bin` on PATH
+for scripts, but not for your own shell, so run it as `npx supabase` here. That
+is also why `npm install` comes first: on a clean checkout there is no local copy
+yet and `npx` would fetch an unpinned CLI from the registry instead of the
+pinned one.
 See "Building a database from nothing" in `CLAUDE.md` for why two of those
 migrations exist only to make a clean build work, and for the caveat that
 applies to the hosted project.
