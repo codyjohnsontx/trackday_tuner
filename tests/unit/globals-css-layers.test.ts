@@ -21,11 +21,43 @@ import { describe, expect, it } from 'vitest';
 
 const GLOBALS_CSS_PATH = fileURLToPath(new URL('../../app/globals.css', import.meta.url));
 
-// Allowed at the top level. `@import` pulls Tailwind in and `@theme` carries
-// custom-property declarations rather than style rules, so neither can outrank a
-// utility. Everything else must be inside a layer, which is why this list is a
-// closed allowlist rather than a blocklist of known-bad at-rules.
-const TOP_LEVEL_ALLOWED = ['@import', '@theme', '@layer'];
+// Allowed at the top level. This is a closed allowlist rather than a blocklist of
+// known-bad at-rules, so anything unrecognised fails. Every entry earns its place
+// by provably being unable to outrank a utility:
+//
+//   @import          pulls Tailwind in, establishing the layer order rather than competing in it
+//   @theme           carries custom-property declarations, not style rules
+//   @layer           the invariant itself
+//   @utility         Tailwind requires it at the top level and it CANNOT be nested in a layer;
+//                    Tailwind emits the generated output into the utilities layer itself
+//   @custom-variant  defines a variant at the top level, emits no style rules of its own
+//   @source          tells Tailwind where to scan for class names, emits no CSS
+//   @plugin          loads a JS plugin, emits no CSS itself
+//   @config          loads a legacy JS config, emits no CSS itself
+//   @reference       imports a stylesheet for reference only and deliberately emits no CSS
+//
+// `@variant` is deliberately absent: in Tailwind v4 it APPLIES an existing variant
+// from inside a rule, and `@custom-variant` is the top-level spelling that defines
+// one. `@apply` and `@slot` are nested-only for the same reason. `@media`,
+// `@supports`, `@keyframes` and bare selectors are absent because each genuinely
+// can outrank a layered utility.
+const TOP_LEVEL_ALLOWED = [
+  '@import',
+  '@theme',
+  '@layer',
+  '@utility',
+  '@custom-variant',
+  '@source',
+  '@plugin',
+  '@config',
+  '@reference',
+];
+
+// Constructs that fail this guard but can simply be moved into a layer. Anything
+// else that fails is an at-rule the allowlist does not recognise, which needs
+// different advice - telling someone to wrap `@utility` in a layer, for instance,
+// prescribes something Tailwind does not permit.
+const LAYERABLE_AT_RULES = ['@keyframes', '@media', '@supports'];
 
 type TopLevelConstruct = {
   prelude: string;
@@ -89,10 +121,17 @@ function findTopLevelConstructs(css: string): TopLevelConstruct[] {
   return constructs;
 }
 
+function matchesAtRule(prelude: string, atRule: string): boolean {
+  return prelude === atRule || prelude.startsWith(`${atRule} `) || prelude.startsWith(`${atRule}(`);
+}
+
 function isAllowedAtTopLevel(prelude: string): boolean {
-  return TOP_LEVEL_ALLOWED.some(
-    (atRule) => prelude === atRule || prelude.startsWith(`${atRule} `) || prelude.startsWith(`${atRule}(`),
-  );
+  return TOP_LEVEL_ALLOWED.some((atRule) => matchesAtRule(prelude, atRule));
+}
+
+function isLayerable(prelude: string): boolean {
+  if (!prelude.startsWith('@')) return true;
+  return LAYERABLE_AT_RULES.some((atRule) => matchesAtRule(prelude, atRule));
 }
 
 function findUnlayeredRules(css: string): TopLevelConstruct[] {
@@ -102,7 +141,10 @@ function findUnlayeredRules(css: string): TopLevelConstruct[] {
 }
 
 function explainViolations(violations: TopLevelConstruct[]): string {
-  return [
+  const layerable = violations.filter((violation) => isLayerable(violation.prelude));
+  const unrecognised = violations.filter((violation) => !isLayerable(violation.prelude));
+
+  const message = [
     `app/globals.css has ${violations.length} rule(s) outside a cascade layer:`,
     ...violations.map((violation) => `  line ${violation.line}: ${violation.prelude} { ... }`),
     '',
@@ -114,11 +156,30 @@ function explainViolations(violations: TopLevelConstruct[]): string {
     'This already shipped once. An unlayered `a { color: inherit }` outranked',
     '`text-canvas` on every anchor in the app, so the primary CTA rendered as white',
     'text on a white pill - #f4f4f5 on #f4f4f5, contrast 1.00:1, invisible.',
-    '',
-    'Fix: wrap the rule in `@layer base` if it is an element default, or',
-    '`@layer components` if it is a helper class. Put `@keyframes` and `@media`',
-    'blocks inside the layer holding the classes that consume them.',
-  ].join('\n');
+  ];
+
+  if (layerable.length > 0) {
+    message.push(
+      '',
+      `Fix for ${layerable.map((violation) => violation.prelude).join(', ')}:`,
+      'wrap the rule in `@layer base` if it is an element default, or',
+      '`@layer components` if it is a helper class. Put `@keyframes` and `@media`',
+      'blocks inside the layer holding the classes that consume them.',
+    );
+  }
+
+  if (unrecognised.length > 0) {
+    message.push(
+      '',
+      `Fix for ${unrecognised.map((violation) => violation.prelude).join(', ')}:`,
+      'this guard does not recognise that at-rule, so it cannot tell you where it',
+      'belongs. If it is a Tailwind directive that must live at the top level, add it',
+      'to TOP_LEVEL_ALLOWED in this file along with a note on why it cannot outrank a',
+      'utility. Otherwise wrap it in a layer.',
+    );
+  }
+
+  return message.join('\n');
 }
 
 const PASSING_FIXTURE = `
@@ -167,6 +228,38 @@ a {
 }
 `;
 
+// The Tailwind v4 directives that belong at the top level, including `@utility`,
+// which cannot be nested in a layer at all. None of them emits a style rule that
+// could outrank a utility, so none of them may fail this guard.
+const TOP_LEVEL_DIRECTIVES_FIXTURE = `
+@import "tailwindcss";
+@source "../components";
+@plugin "@tailwindcss/typography";
+@config "../tailwind.config.js";
+@reference "./globals.css";
+@custom-variant pointer-coarse (@media (pointer: coarse));
+
+@utility tab-4 {
+  tab-size: 4;
+}
+
+@theme {
+  --color-canvas: #08080a;
+}
+`;
+
+// An at-rule the allowlist does not know about. It must still fail: the guard is
+// only worth having because anything unrecognised trips it rather than slipping
+// through on a prefix match.
+const UNRECOGNISED_AT_RULE_FIXTURE = `
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Instrument Serif";
+  src: url("/fonts/instrument-serif.woff2") format("woff2");
+}
+`;
+
 describe('app/globals.css cascade layers', () => {
   const css = readFileSync(GLOBALS_CSS_PATH, 'utf8');
 
@@ -180,10 +273,12 @@ describe('app/globals.css cascade layers', () => {
 
     expect(preludes).toContain('@import "tailwindcss"');
     expect(preludes).toContain('@theme');
-    expect(preludes.filter((prelude) => prelude.startsWith('@layer '))).toEqual([
-      '@layer base',
-      '@layer components',
-    ]);
+
+    // Present, not exhaustive. A third layer is a legitimate addition and must not
+    // fail a required check just for existing.
+    const layers = preludes.filter((prelude) => prelude.startsWith('@layer '));
+    expect(layers).toContain('@layer base');
+    expect(layers).toContain('@layer components');
   });
 
   it('keeps the element defaults and the motion keyframes layered', () => {
@@ -206,6 +301,16 @@ describe('unlayered-rule detection', () => {
     ]);
   });
 
+  it('accepts the Tailwind v4 directives that belong at the top level', () => {
+    expect(findUnlayeredRules(TOP_LEVEL_DIRECTIVES_FIXTURE)).toEqual([]);
+  });
+
+  it('still flags an at-rule the allowlist does not recognise', () => {
+    expect(findUnlayeredRules(UNRECOGNISED_AT_RULE_FIXTURE).map((violation) => violation.prelude)).toEqual([
+      '@font-face',
+    ]);
+  });
+
   it('is not fooled by braces or selectors inside comments', () => {
     const css = `
 /* An unlayered a { color: inherit } used to outrank text-canvas. */
@@ -223,5 +328,14 @@ describe('unlayered-rule detection', () => {
     expect(message).toContain('1.00:1');
     expect(message).toContain('@layer base');
     expect(message).toContain('@keyframes tt-pop { ... }');
+  });
+
+  it('does not prescribe wrapping an unrecognised at-rule in a layer', () => {
+    const message = explainViolations(findUnlayeredRules(UNRECOGNISED_AT_RULE_FIXTURE));
+
+    expect(message).toContain('@font-face');
+    expect(message).toContain('1.00:1');
+    expect(message).toContain('TOP_LEVEL_ALLOWED');
+    expect(message).not.toContain('helper class');
   });
 });

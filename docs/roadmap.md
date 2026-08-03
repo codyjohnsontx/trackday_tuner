@@ -247,11 +247,15 @@ and execution order may legitimately diverge; the reason is recorded there.
     not an open defect. Putting `app/globals.css` inside cascade layers let the
     authored `text-sm` on those controls finally apply; the previous 16px was an
     unlayered `input, select, textarea, button { font: inherit }` outranking that
-    utility, so the app now renders what its own source says. The cost is that
-    roughly 25 raw controls (`components/beta/waitlist-form.tsx`,
-    `components/beta/beta-survey.tsx`, `components/sessions/session-form.tsx`,
+    utility, so the app now renders what its own source says. The cost is that 32
+    raw controls across nine files (`components/ai/day-plan-panel.tsx`,
+    `components/beta/beta-survey.tsx`, `components/beta/waitlist-form.tsx`,
+    `components/sessions/lap-time-editor.tsx`,
+    `components/sessions/session-compare-picker.tsx`,
+    `components/sessions/session-export-panel.tsx`,
+    `components/sessions/session-form.tsx`,
     `components/sessions/session-outcome-panel.tsx`,
-    `components/garage/vehicle-form.tsx`, `components/tools/unit-converter.tsx`) now
+    `components/tools/unit-converter.tsx`) now
     sit below 16px, where iOS Safari zooms the viewport on focus. Correcting it means
     restyling those call sites, which the cascade-layer brief ruled out, and several
     live in session-comparison files another worker holds. Raise them to `text-base`
