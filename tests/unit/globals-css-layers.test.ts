@@ -26,7 +26,6 @@ const GLOBALS_CSS_PATH = fileURLToPath(new URL('../../app/globals.css', import.m
 // by provably being unable to outrank a utility:
 //
 //   @theme           carries custom-property declarations, not style rules
-//   @layer           the invariant itself
 //   @utility         Tailwind requires it at the top level and it CANNOT be nested in a layer;
 //                    Tailwind emits the generated output into the utilities layer itself
 //   @custom-variant  defines a variant at the top level, emits no style rules of its own
@@ -35,9 +34,10 @@ const GLOBALS_CSS_PATH = fileURLToPath(new URL('../../app/globals.css', import.m
 //   @config          loads a legacy JS config, emits no CSS itself
 //   @reference       imports a stylesheet for reference only and deliberately emits no CSS
 //
-// `@import` is allowed too, but it is the one entry that cannot be waved through on
-// its name alone, so it is checked by `isLayerSafeImport` below rather than listed
-// here.
+// `@layer` and `@import` are allowed too, but neither can be waved through on its
+// name alone: both can name a cascade layer, and a layer's rank depends on which
+// layer it is. They are checked by `isLayerBlockAllowed` and `isLayerSafeImport`
+// below rather than listed here.
 //
 // `@variant` is deliberately absent: in Tailwind v4 it APPLIES an existing variant
 // from inside a rule, and `@custom-variant` is the top-level spelling that defines
@@ -46,7 +46,6 @@ const GLOBALS_CSS_PATH = fileURLToPath(new URL('../../app/globals.css', import.m
 // can outrank a layered utility.
 const TOP_LEVEL_ALLOWED = [
   '@theme',
-  '@layer',
   '@utility',
   '@custom-variant',
   '@source',
@@ -69,6 +68,58 @@ type TopLevelConstruct = {
 function stripComments(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n]/g, ' '));
 }
+
+// Sitting inside a layer is necessary but not sufficient. CSS orders layers by
+// first declaration and a later layer beats an earlier one, so a layer whose name
+// is first seen after Tailwind's `utilities` outranks every utility in it - the
+// invisible-CTA defect all over again, just spelled with a layer. Only the layers
+// Tailwind declares BEFORE `utilities` are safe to write into.
+//
+// That set is read out of the installed package rather than hardcoded, so the guard
+// stays correct if Tailwind changes its layer order. `utilities` itself is not in
+// the set, deliberately: the rule is "declared before utilities", and a rule added
+// to `utilities` alongside Tailwind's own output is not what this stylesheet is for.
+const TAILWIND_ENTRY_CSS_PATH = fileURLToPath(
+  new URL('../../node_modules/tailwindcss/index.css', import.meta.url),
+);
+
+const LAYER_ORDER_UNRESOLVED =
+  'This guard could not determine Tailwind\'s cascade layer order from node_modules/tailwindcss/index.css';
+
+function readPreUtilitiesLayers(): string[] {
+  let entry: string;
+  try {
+    entry = readFileSync(TAILWIND_ENTRY_CSS_PATH, 'utf8');
+  } catch {
+    throw new Error(`${LAYER_ORDER_UNRESOLVED}: the file could not be read at ${TAILWIND_ENTRY_CSS_PATH}.`);
+  }
+
+  const statement = stripComments(entry).match(/@layer\s+([^;{}]+);/);
+  if (statement === null) {
+    throw new Error(`${LAYER_ORDER_UNRESOLVED}: no '@layer a, b, c;' order statement was found in it.`);
+  }
+
+  const declared = statement[1]
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+  const utilities = declared.indexOf('utilities');
+
+  if (utilities === -1) {
+    throw new Error(
+      `${LAYER_ORDER_UNRESOLVED}: 'utilities' is absent from the declared order [${declared.join(', ')}].`,
+    );
+  }
+  if (utilities === 0) {
+    throw new Error(
+      `${LAYER_ORDER_UNRESOLVED}: 'utilities' is declared first in [${declared.join(', ')}], so no layer precedes it.`,
+    );
+  }
+
+  return declared.slice(0, utilities);
+}
+
+const PRE_UTILITIES_LAYERS = readPreUtilitiesLayers();
 
 function readConstruct(source: string, start: number, end: number): TopLevelConstruct {
   const raw = source.slice(start, end);
@@ -157,19 +208,51 @@ function parseImport(prelude: string): { specifier: string; conditions: string }
 // The specifier must be `tailwindcss` exactly or continue with a `/`, so a
 // look-alike package such as `tailwindcss-animate` does not slip through on a
 // prefix match.
+function isTailwindEntryPoint(specifier: string): boolean {
+  return specifier === 'tailwindcss' || specifier.startsWith('tailwindcss/');
+}
+
+function importLayerName(conditions: string): string | null {
+  const clause = conditions.match(/\blayer\(\s*([^)]*?)\s*\)/);
+  return clause ? clause[1] : null;
+}
+
 function isLayerSafeImport(prelude: string): boolean {
   const parsed = parseImport(prelude);
   if (parsed === null) return false;
-  if (/\blayer\(/.test(parsed.conditions)) return true;
-  return parsed.specifier === 'tailwindcss' || parsed.specifier.startsWith('tailwindcss/');
+  if (isTailwindEntryPoint(parsed.specifier)) return true;
+
+  const layer = importLayerName(parsed.conditions);
+  return layer !== null && PRE_UTILITIES_LAYERS.includes(layer);
+}
+
+// `@layer base`, `@layer components` - and nothing first declared after
+// `utilities`, which would outrank it. An anonymous `@layer { ... }` names nothing
+// and is declared wherever it sits, so it fails too.
+function layerNames(prelude: string): string[] {
+  return prelude
+    .slice('@layer'.length)
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+}
+
+function isLayerBlockAllowed(prelude: string): boolean {
+  const names = layerNames(prelude);
+  return names.length > 0 && names.every((name) => PRE_UTILITIES_LAYERS.includes(name));
 }
 
 function isImport(prelude: string): boolean {
   return matchesAtRule(prelude, '@import');
 }
 
+function isLayer(prelude: string): boolean {
+  return matchesAtRule(prelude, '@layer');
+}
+
 function isAllowedAtTopLevel(prelude: string): boolean {
   if (isImport(prelude)) return isLayerSafeImport(prelude);
+  if (isLayer(prelude)) return isLayerBlockAllowed(prelude);
   return TOP_LEVEL_ALLOWED.some((atRule) => matchesAtRule(prelude, atRule));
 }
 
@@ -184,14 +267,27 @@ function findUnlayeredRules(css: string): TopLevelConstruct[] {
   );
 }
 
+type ViolationReason = 'disallowed-layer' | 'unlayered-import' | 'layerable' | 'unrecognised';
+
+function reasonFor(prelude: string): ViolationReason {
+  if (isLayer(prelude)) return 'disallowed-layer';
+  if (isImport(prelude)) {
+    const parsed = parseImport(prelude);
+    const layer = parsed === null ? null : importLayerName(parsed.conditions);
+    return layer === null ? 'unlayered-import' : 'disallowed-layer';
+  }
+  if (isLayerable(prelude)) return 'layerable';
+  return 'unrecognised';
+}
+
 function explainViolations(violations: TopLevelConstruct[]): string {
-  const imports = violations.filter((violation) => isImport(violation.prelude));
-  const layerable = violations.filter(
-    (violation) => !isImport(violation.prelude) && isLayerable(violation.prelude),
-  );
-  const unrecognised = violations.filter(
-    (violation) => !isImport(violation.prelude) && !isLayerable(violation.prelude),
-  );
+  const withReason = (reason: ViolationReason) =>
+    violations.filter((violation) => reasonFor(violation.prelude) === reason);
+
+  const disallowedLayer = withReason('disallowed-layer');
+  const imports = withReason('unlayered-import');
+  const layerable = withReason('layerable');
+  const unrecognised = withReason('unrecognised');
 
   const message = [
     `app/globals.css has ${violations.length} rule(s) outside a cascade layer:`,
@@ -217,14 +313,27 @@ function explainViolations(violations: TopLevelConstruct[]): string {
     );
   }
 
+  if (disallowedLayer.length > 0) {
+    message.push(
+      '',
+      `Fix for ${disallowedLayer.map((violation) => violation.prelude).join(', ')}:`,
+      'CSS orders layers by first declaration and a later layer beats an earlier one,',
+      'so a layer first declared after Tailwind\'s `utilities` outranks every utility',
+      'in it. Write into one of the layers Tailwind declares before `utilities` -',
+      `${PRE_UTILITIES_LAYERS.join(', ')} - rather than adding a layer of your own.`,
+      '`utilities` itself is not one of them, by the same rule.',
+    );
+  }
+
   if (imports.length > 0) {
     message.push(
       '',
       `Fix for ${imports.map((violation) => violation.prelude).join(', ')}:`,
       'this import arrives unlayered, so every rule in the imported sheet outranks the',
-      'utilities. Add an explicit `layer(...)` clause to the import, or move the',
-      'imported rules into a layer. Do NOT wrap the `@import` statement itself in',
-      '`@layer` - an import has to stay at the top level.',
+      'utilities. Add a `layer(...)` clause naming one of Tailwind\'s pre-utilities',
+      `layers (${PRE_UTILITIES_LAYERS.join(', ')}), or move the imported rules into a`,
+      'layer. Do NOT wrap the `@import` statement itself in `@layer` - an import has to',
+      'stay at the top level.',
     );
   }
 
@@ -320,13 +429,14 @@ const UNRECOGNISED_AT_RULE_FIXTURE = `
 }
 `;
 
-// The only two import shapes that cannot deliver an unlayered rule: Tailwind's own
-// entry points, and any specifier pinned into a layer by an explicit clause.
+// The only two import shapes that cannot deliver a rule that outranks a utility:
+// Tailwind's own entry points, and a specifier pinned into a pre-utilities layer.
 const SAFE_IMPORT_FIXTURE = `
 @import "tailwindcss";
 @import "tailwindcss/utilities";
 @import "tailwindcss" source(none);
-@import './legacy.css' layer(legacy);
+@import './legacy.css' layer(base);
+@import "./legacy.css" layer(components);
 `;
 
 // Every one of these bundles its sheet unlayered. `tailwindcss-animate` is the
@@ -337,6 +447,19 @@ const UNSAFE_IMPORT_FIXTURE = `
 @import "./legacy.css";
 @import url("./legacy.css");
 @import "tailwindcss-animate";
+`;
+
+// Layered, and still fatal. `legacy` is first declared here, after Tailwind's
+// `utilities`, so it wins over every utility - the same invisible CTA, reached
+// through a layer rather than around one.
+const DISALLOWED_LAYER_FIXTURE = `
+@import "tailwindcss";
+
+@import "./legacy.css" layer(legacy);
+
+@layer legacy {
+  a { color: inherit; }
+}
 `;
 
 describe('app/globals.css cascade layers', () => {
@@ -402,6 +525,20 @@ describe('unlayered-rule detection', () => {
     ]);
   });
 
+  it('derives the accepted layer names from the installed Tailwind entry point', () => {
+    expect(PRE_UTILITIES_LAYERS.length).toBeGreaterThan(0);
+    expect(PRE_UTILITIES_LAYERS).toContain('base');
+    expect(PRE_UTILITIES_LAYERS).toContain('components');
+    expect(PRE_UTILITIES_LAYERS).not.toContain('utilities');
+  });
+
+  it('flags a layer first declared after utilities, however it is reached', () => {
+    expect(findUnlayeredRules(DISALLOWED_LAYER_FIXTURE).map((violation) => violation.prelude)).toEqual([
+      '@import "./legacy.css" layer(legacy)',
+      '@layer legacy',
+    ]);
+  });
+
   it('is not fooled by braces or selectors inside comments', () => {
     const css = `
 /* An unlayered a { color: inherit } used to outrank text-canvas. */
@@ -437,6 +574,18 @@ describe('unlayered-rule detection', () => {
     expect(message).toContain('@import "tailwindcss-animate"');
     expect(message).toContain('1.00:1');
     expect(message).toContain('`layer(...)` clause');
+    expect(message).not.toContain('helper class');
+    expect(message).not.toContain('TOP_LEVEL_ALLOWED');
+  });
+
+  it('tells a disallowed layer to use a pre-utilities layer, not to add one', () => {
+    const message = explainViolations(findUnlayeredRules(DISALLOWED_LAYER_FIXTURE));
+
+    expect(message).toContain('@layer legacy');
+    expect(message).toContain('@import "./legacy.css" layer(legacy)');
+    expect(message).toContain('1.00:1');
+    expect(message).toContain('first declaration');
+    expect(message).toContain(PRE_UTILITIES_LAYERS.join(', '));
     expect(message).not.toContain('helper class');
     expect(message).not.toContain('TOP_LEVEL_ALLOWED');
   });
