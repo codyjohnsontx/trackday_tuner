@@ -373,6 +373,11 @@ npm run dev
 Then open `http://localhost:3000`. Email confirmation is disabled locally in
 `supabase/config.toml`, so signing up logs you straight in.
 
+What that builds is the database, not everything the app touches. This repository
+does not provision the `vehicle-photos` storage bucket, so adding a vehicle with a
+photo fails with "Bucket not found" until that bucket is created out of band, and
+no tracks are seeded, so a fresh database starts with none to pick from.
+
 To rebuild, `npx supabase db reset` re-applies every migration to the running
 stack, and `npx supabase stop --no-backup` followed by `npx supabase start`
 destroys the containers and volumes and rebuilds from nothing.

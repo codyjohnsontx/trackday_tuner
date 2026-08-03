@@ -10,13 +10,21 @@
 -- and the app is blind to them.
 --
 -- Row Level Security, not the grant, is what keeps one rider's rows away from
--- another. Every table in public has RLS enabled with auth.uid() policies, which
--- is what makes granting the Data API roles write access safe at all.
+-- another. Every table this repository creates today - all 19 of them - has RLS
+-- enabled with auth.uid() policies, and that is what makes granting the Data API
+-- roles write access safe at all.
 --
 -- The `alter default privileges` block is what keeps this from having to be
 -- repeated. It binds to the role running the migration, which is the same role
 -- that creates the tables in every later migration, so anything added after
 -- this file is exposed without another grant statement.
+--
+-- Read the sentence above about RLS as a statement of what is true now, not as a
+-- standing guarantee. Nothing enforces it. A later migration that creates a table
+-- and omits `enable row level security` still picks up the default privilege, and
+-- an unauthenticated caller holding the public anon key can then select, insert,
+-- update and delete every row in it. A migration adding a table must enable RLS
+-- itself, the same way a migration adding a function must revoke execute itself.
 --
 -- Functions are the exception, and deliberately so: nothing here grants execute
 -- schema-wide. A function is not contained by RLS the way a table is - a

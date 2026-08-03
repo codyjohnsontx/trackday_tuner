@@ -135,6 +135,11 @@ to make that true, and both are easy to undo by accident:
   `permission denied for table ...`. RLS, not the grant, is what separates
   riders' rows
 
+What it builds is the schema and nothing else. The repository does not provision
+the `vehicle-photos` storage bucket that `components/garage/vehicle-form.tsx`
+uploads to, so adding a vehicle with a photo fails with `Bucket not found` until
+that bucket is created out of band, and no tracks are seeded.
+
 Functions are deliberately *not* granted schema-wide. RLS contains a table; it does
 not contain a `security definer` function, which runs as its owner and bypasses
 every policy, so for a function the grant *is* the access control. Execute belongs
