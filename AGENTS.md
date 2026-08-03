@@ -111,6 +111,38 @@ the remote is the source of truth for what has been applied.
   access token and the database password. Those are interactive and belong to
   the operator, not to CI or an agent
 
+### Building a database from nothing
+
+`supabase start` on a clean machine builds the whole schema. Two files exist only
+to make that true, and both are easy to undo by accident:
+
+- `20260223000000_init_baseline_schema.sql` creates `profiles`, `vehicles`,
+  `tracks` and `sessions`. Those four were originally made by hand in the
+  dashboard, so nothing created them and the second migration died on
+  `relation "public.profiles" does not exist`. It is dated *before* the rest of
+  the history on purpose, and holds the tables' **original** shape - later
+  migrations still add the columns they always added
+- `20260719001100_grant_data_api_access.sql` grants `public` to `anon`,
+  `authenticated` and `service_role`, and sets `alter default privileges` so
+  later migrations need no grant of their own. Nothing in the repo granted
+  anything before it. The hosted project never noticed because it predates the
+  change and still carries Supabase's legacy auto-expose defaults; a project
+  created today does not (see `auto_expose_new_tables` in `supabase/config.toml`),
+  so it applied every migration cleanly and then answered every PostgREST request
+  with `permission denied for table ...`. RLS, not the grant, is what separates
+  riders' rows
+
+`tests/unit/migrations-bootstrap.test.ts` reads the SQL as text and fails if a
+migration alters or references a table nothing earlier creates, or if those grants
+go missing. It cannot tell you a migration *runs* - only `supabase start` from a
+destroyed local stack proves that, and only then exercising the app against it
+proves PostgREST can see the result.
+
+The baseline is dated before migrations the remote has already recorded, so
+`db push` will report it as out of order and refuse without `--include-all`. On the
+hosted project it is a no-op that is already true, so record it rather than run it:
+`supabase migration repair --status applied 20260223000000`.
+
 ## Project Structure
 
 ```text
