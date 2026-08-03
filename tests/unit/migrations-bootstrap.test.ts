@@ -24,15 +24,22 @@ import { describe, expect, it } from 'vitest';
 //   - the loss of the grants to anon / authenticated / service_role, or of the
 //     `alter default privileges` that keeps later migrations exposed without
 //     repeating those grants
+//   - a schema-wide grant of execute that reverses a deliberate per-function
+//     `revoke`. Tables are contained by RLS; a `security definer` function is not,
+//     because it runs as its owner and bypasses every policy, so for those the
+//     grant is the access control and it belongs to the migration that creates
+//     the function
 //
 // WHAT IT DOES NOT CATCH, because a guard assumed to cover more than it does is
 // worse than none: whether a migration actually runs. This reads SQL as text, so a
 // syntax error, a column type the app cannot use, an RLS policy that denies the
 // wrong rows, or a table whose columns drifted from types/supabase.ts all pass
 // here. Only building a database proves those: `supabase start` from a clean state
-// and then exercising the app against it. It also says nothing about the hosted
-// project, whose applied history is recorded remotely and cannot be read from these
-// files at all - see the migration notes in CLAUDE.md.
+// and then exercising the app against it. Nor does it check that a function is
+// executable by the role that calls it: it can see a grant taken away, not one
+// that was never written. It also says nothing about the hosted project, whose
+// applied history is recorded remotely and cannot be read from these files at
+// all - see the migration notes in CLAUDE.md.
 
 const migrationsDir = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -44,13 +51,22 @@ interface Migration {
   sql: string;
 }
 
+// Comments are stripped before anything is matched. These files explain
+// themselves at length, and prose naming a table would otherwise register it as
+// created - masking the one bug this exists to catch. No migration puts `--` or
+// `/* */` inside a string literal or a function body, so removing them by text
+// is safe.
+function stripComments(sql: string): string {
+  return sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+}
+
 function loadMigrations(): Migration[] {
   return readdirSync(migrationsDir)
     .filter((file) => file.endsWith('.sql'))
     .sort()
     .map((file) => ({
       file,
-      sql: readFileSync(path.join(migrationsDir, file), 'utf8'),
+      sql: stripComments(readFileSync(path.join(migrationsDir, file), 'utf8')),
     }));
 }
 
@@ -65,6 +81,13 @@ const ALTER_TABLE = /alter\s+table\s+(?:if\s+exists\s+)?public\.(\w+)/gi;
 const REFERENCES = /references\s+public\.(\w+)/gi;
 const CREATE_FUNCTION = /create\s+(?:or\s+replace\s+)?function\s+public\.(\w+)/gi;
 const TRIGGER_FUNCTION = /execute\s+(?:function|procedure)\s+public\.(\w+)/gi;
+
+// `[^;]*` keeps each of these inside a single statement.
+const REVOKE_ON_FUNCTION = /revoke\s+[^;]*\son\s+function\s+public\.(\w+)/gi;
+const SCHEMA_WIDE_EXECUTE_GRANT =
+  /grant\s+[^;]*\son\s+all\s+(?:routines|functions)\s+in\s+schema\s+public\s+to\s+[^;]*\b(?:anon|authenticated)\b/i;
+const DEFAULT_EXECUTE_GRANT =
+  /alter\s+default\s+privileges\s[^;]*\bgrant\s+[^;]*\son\s+(?:routines|functions)\s+to\s+[^;]*\b(?:anon|authenticated)\b/i;
 
 const migrations = loadMigrations();
 
@@ -127,5 +150,29 @@ describe('supabase migrations bootstrap a database from nothing', () => {
       /alter\s+default\s+privileges\s+in\s+schema\s+public\s+grant\s+[^;]*\s+on\s+tables\s+to\s+[^;]*\banon\b[^;]*\bauthenticated\b[^;]*\bservice_role\b/,
     );
     expect(sql).toMatch(/grant\s+usage\s+on\s+schema\s+public\s+to\s+[^;]*\banon\b/);
+  });
+
+  it('leaves execute on a function to the migration that creates it', () => {
+    const revoked = new Set<string>();
+    const violations: string[] = [];
+
+    for (const { file, sql } of migrations) {
+      if (SCHEMA_WIDE_EXECUTE_GRANT.test(sql) && revoked.size > 0) {
+        violations.push(
+          `${file}: grant on all routines re-exposes ${[...revoked].sort().join(', ')}`,
+        );
+      }
+      if (DEFAULT_EXECUTE_GRANT.test(sql)) {
+        violations.push(`${file}: alter default privileges exposes every function added after it`);
+      }
+      for (const fn of matchAll(sql, REVOKE_ON_FUNCTION)) revoked.add(fn);
+    }
+
+    expect(violations).toEqual([]);
+    // The revoke that keeps a future function from becoming anon-callable by
+    // merely existing, which is what the grant it replaced would have done.
+    expect(migrations.map(({ sql }) => sql).join('\n').toLowerCase()).toMatch(
+      /alter\s+default\s+privileges\s+in\s+schema\s+public\s+revoke\s+(?:execute|all)\s+on\s+(?:routines|functions)\s+from\s+public/,
+    );
   });
 });

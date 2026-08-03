@@ -122,19 +122,29 @@ to make that true, and both are easy to undo by accident:
   `relation "public.profiles" does not exist`. It is dated *before* the rest of
   the history on purpose, and holds the tables' **original** shape - later
   migrations still add the columns they always added
-- `20260719001100_grant_data_api_access.sql` grants `public` to `anon`,
-  `authenticated` and `service_role`, and sets `alter default privileges` so
-  later migrations need no grant of their own. Nothing in the repo granted
-  anything before it. The hosted project never noticed because it predates the
-  change and still carries Supabase's legacy auto-expose defaults; a project
-  created today does not (see `auto_expose_new_tables` in `supabase/config.toml`),
-  so it applied every migration cleanly and then answered every PostgREST request
-  with `permission denied for table ...`. RLS, not the grant, is what separates
-  riders' rows
+- `20260719001100_grant_data_api_access.sql` grants the `public` schema, and every
+  table and sequence in it, to `anon`, `authenticated` and `service_role`, and sets
+  `alter default privileges` so later migrations need no grant of their own.
+  Nothing in the repo granted anything before it. The hosted project never noticed
+  because it predates the change and still carries Supabase's legacy auto-expose
+  defaults; a project created today does not (see `auto_expose_new_tables` in
+  `supabase/config.toml`), so it applied every migration cleanly and then answered
+  every PostgREST request with `permission denied for table ...`. RLS, not the
+  grant, is what separates riders' rows
+
+Functions are deliberately *not* granted schema-wide. RLS contains a table; it does
+not contain a `security definer` function, which runs as its owner and bypasses
+every policy, so for a function the grant *is* the access control. Execute belongs
+to the migration that creates the function, which is the only place its caller is
+known - see the `revoke` / `grant execute` pairs on `create_beta_invite` and
+`consume_beta_rate_limit`. The routines default privilege therefore revokes execute
+from `public` rather than granting it, so a function added later is not
+anon-callable merely by existing, and every new function needs its own grant.
 
 `tests/unit/migrations-bootstrap.test.ts` reads the SQL as text and fails if a
-migration alters or references a table nothing earlier creates, or if those grants
-go missing. It cannot tell you a migration *runs* - only `supabase start` from a
+migration alters or references a table nothing earlier creates, if those grants go
+missing, or if a migration re-grants execute schema-wide over a per-function
+`revoke`. It cannot tell you a migration *runs* - only `supabase start` from a
 destroyed local stack proves that, and only then exercising the app against it
 proves PostgREST can see the result.
 
