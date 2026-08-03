@@ -51,7 +51,7 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 
 - PRs merge with a **merge commit** — `gh pr merge <n> --merge`. The merge commit takes the PR title as its message with a blank body. Squash merging is disabled on the repository; rebase merging is allowed but is not the default
 - Every commit on the branch lands on `main`, so each one must stand on its own. No `wip`, no `fix typo`, no commits that only make sense next to the one after them
-- Review-response work is a normal commit describing what changed and why, not an amendment to the original
+- Review-response work is a normal commit describing what changed and why, not an amendment to the original. Pushing it does not trigger a second CodeRabbit review: incremental review is off in `.coderabbit.yaml`, so a re-review is requested with `@coderabbitai review` once the branch is ready
 - `git log --first-parent --oneline` gives the one-line-per-PR view of `main`; plain `git log` gives the full detail
 - The remote branch is deleted automatically on merge. Clean up locally with `git checkout main`, `git pull --ff-only`, `git branch -d <branch>`, `git remote prune origin`
 - Merging is the user's call. Open the PR, report it, and stop
