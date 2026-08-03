@@ -2,8 +2,10 @@
 
 ## Launch Checklist
 
-1. Apply the three July 2026 migrations in order: session outcomes, session laps,
-   then beta foundation.
+1. Apply the four July 2026 migrations in order: session outcomes, session laps,
+   beta foundation, then the Data API grants. A deployment standing up its own
+   database also needs the baseline that precedes them all - see "Building a
+   database from nothing" in CLAUDE.md.
 2. Set `BETA_INVITE_ONLY=true`, a long random `BETA_INVITE_SECRET`, and a distinct
    `BETA_FORM_RATE_LIMIT_SECRET` in the deployment environment.
 3. Deploy and verify the public home page, waitlist, invitation signup, session

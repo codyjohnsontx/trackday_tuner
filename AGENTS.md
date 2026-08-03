@@ -106,7 +106,9 @@ the remote is the source of truth for what has been applied.
   prefix** — an earlier pair both named `20260224_` could not both be recorded
 - `create table`, `create index`, and `create function` statements are written
   idempotently (`if not exists` / `or replace`). `create policy` is not, so a
-  half-applied migration cannot simply be replayed — check `db:status` first
+  half-applied migration cannot simply be replayed — check `db:status` first. The
+  baseline below is the one exception: it drops each policy first, because it is
+  written to meet a database that already has those tables
 - Applying requires `supabase login` and `supabase link`, which need a personal
   access token and the database password. Those are interactive and belong to
   the operator, not to CI or an agent
@@ -125,12 +127,13 @@ to make that true, and both are easy to undo by accident:
 - `20260719001100_grant_data_api_access.sql` grants the `public` schema, and every
   table and sequence in it, to `anon`, `authenticated` and `service_role`, and sets
   `alter default privileges` so later migrations need no grant of their own.
-  Nothing in the repo granted anything before it. The hosted project never noticed
-  because it predates the change and still carries Supabase's legacy auto-expose
-  defaults; a project created today does not (see `auto_expose_new_tables` in
-  `supabase/config.toml`), so it applied every migration cleanly and then answered
-  every PostgREST request with `permission denied for table ...`. RLS, not the
-  grant, is what separates riders' rows
+  Nothing in the repo granted table access before it. The hosted project never
+  noticed because it predates the change and still carries Supabase's legacy
+  auto-expose defaults; a project created today does not (see
+  `auto_expose_new_tables` in `supabase/config.toml`), so it applied every
+  migration cleanly and then answered every PostgREST request with
+  `permission denied for table ...`. RLS, not the grant, is what separates
+  riders' rows
 
 Functions are deliberately *not* granted schema-wide. RLS contains a table; it does
 not contain a `security definer` function, which runs as its owner and bypasses
