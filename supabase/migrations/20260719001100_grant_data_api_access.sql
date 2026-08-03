@@ -30,10 +30,17 @@
 -- /rest/v1/rpc/create_beta_invite. Execute stays the business of the migration
 -- that creates the function, which is where its caller is known.
 --
--- The routines default privilege therefore revokes rather than grants, so a
--- function added later is not anon-callable merely by existing. Default
--- privileges only apply to objects created after this statement, so no function
--- already defined by an earlier migration changes here.
+-- The routines default privilege below therefore revokes rather than grants.
+-- Treat that as a declaration of intent, not a guarantee. It is recorded in
+-- pg_default_acl, but a function created afterwards on a rebuilt local stack
+-- still comes out with a null proacl, which is Postgres's built-in execute to
+-- public. The same statement against tables does take effect, so the mechanism
+-- works and this one case does not. A new function is world-executable until
+-- its own migration revokes it, exactly as create_beta_invite and
+-- consume_beta_rate_limit already do.
+--
+-- Default privileges only apply to objects created after this statement, so no
+-- function already defined by an earlier migration changes here.
 
 grant usage on schema public to anon, authenticated, service_role;
 

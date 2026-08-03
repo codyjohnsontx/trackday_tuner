@@ -141,8 +141,17 @@ every policy, so for a function the grant *is* the access control. Execute belon
 to the migration that creates the function, which is the only place its caller is
 known - see the `revoke` / `grant execute` pairs on `create_beta_invite` and
 `consume_beta_rate_limit`. The routines default privilege therefore revokes execute
-from `public` rather than granting it, so a function added later is not
-anon-callable merely by existing, and every new function needs its own grant.
+from `public` rather than granting it.
+
+That revoke is a declaration of intent, not a guarantee, and the difference was
+measured rather than reasoned about. It is recorded correctly in `pg_default_acl`,
+but on a rebuilt local stack a function created afterwards still comes out with a
+null `proacl`, which is Postgres's built-in `execute` to `public`. The same
+statement against `tables` does take effect, so the mechanism works and this one
+case does not. **A new function is world-executable until its own migration revokes
+it.** Copy the `revoke` / `grant execute` pair whenever you add one;
+`tests/unit/migrations-bootstrap.test.ts` only catches a later migration undoing
+that pair, not a pair that was never written.
 
 `tests/unit/migrations-bootstrap.test.ts` reads the SQL as text and fails if a
 migration alters or references a table nothing earlier creates, if those grants go
