@@ -36,6 +36,7 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 ### Creating a PR (exact steps, no deviation)
 
 - PRs are opened as drafts by default, so step 7 uses `gh pr create --draft`. CodeRabbit does not review draft pull requests, so the pipeline's own fix commits cost no review quota while the branch is still being worked. The author marks the pull request ready for review when their review quota allows; an agent never does that, and never converts a draft to ready.
+- Every entry in `path_filters` in `.coderabbit.yaml` must begin with `!`. An entry without one is an include, not an exclude, and a single include narrows the whole review to only what it matches, skipping everything else silently. Check this before editing that file.
 
 1. `git status` — working tree must be clean. If not, stop and tell the user.
 2. `ls .git/index.lock 2>/dev/null` — if lock exists, stop and tell the user. Do not delete it.
