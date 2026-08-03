@@ -20,9 +20,14 @@
 -- the bare `create policy` the rest of the migrations use.
 
 -- profiles ------------------------------------------------------------------
--- One row per auth user. Rows are written by the beta signup route through the
--- service-role client, so users get no insert policy - only read and update of
--- their own row (Stripe checkout links the customer id that way).
+-- At most one row per auth user, and nothing creates it automatically. No
+-- migration installs a trigger on auth.users, so signing up through the ordinary
+-- email and password form leaves that user with no profiles row at all. The one
+-- writer is the beta signup route, which inserts through the service-role client
+-- and so bypasses RLS entirely. That is why the table has select and update
+-- policies for a user's own row but no insert policy: a user is never the one
+-- creating it (the update policy is what lets Stripe checkout link a customer
+-- id).
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   tier text not null default 'free',

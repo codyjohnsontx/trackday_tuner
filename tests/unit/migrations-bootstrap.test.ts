@@ -37,7 +37,12 @@ import { describe, expect, it } from 'vitest';
 // here. Only building a database proves those: `supabase start` from a clean state
 // and then exercising the app against it. Nor does it check that a function is
 // executable by the role that calls it: it can see a grant taken away, not one
-// that was never written. It also says nothing about the hosted project, whose
+// that was never written. Nor does it see a missing table named anywhere other
+// than a foreign key: a policy or function body reading `from public.X` or
+// `insert into public.X` aborts `supabase start` exactly the way the missing
+// profiles table did, and passes here, because matching those would also fire on
+// every ordinary statement against a table that does exist and a guard that
+// cries wolf gets skipped. It also says nothing about the hosted project, whose
 // applied history is recorded remotely and cannot be read from these files at
 // all - see the migration notes in CLAUDE.md.
 
@@ -140,15 +145,31 @@ describe('supabase migrations bootstrap a database from nothing', () => {
 
   it('grants the schema to the roles the application connects as', () => {
     const sql = migrations.map(({ sql: body }) => body).join('\n').toLowerCase();
+    const roles = ['anon', 'authenticated', 'service_role'];
 
-    // A grant naming all three roles at once, in either order, on tables.
-    expect(sql).toMatch(
-      /grant\s+[^;]*\s+on\s+all\s+tables\s+in\s+schema\s+public\s+to\s+[^;]*\banon\b[^;]*\bauthenticated\b[^;]*\bservice_role\b/,
-    );
+    // Each role is looked for on its own inside the grant's role list, so
+    // `to service_role, authenticated, anon` passes like any other ordering of
+    // the same statement. Reported as the roles missing from the closest
+    // matching statement, so a failure names what is absent rather than only
+    // saying the pattern did not match.
+    function rolesMissingFrom(pattern: RegExp): string[] {
+      const shortfalls = matchAll(sql, pattern)
+        .map((targets) => roles.filter((role) => !new RegExp(`\\b${role}\\b`).test(targets)))
+        .sort((a, b) => a.length - b.length);
+
+      return shortfalls[0] ?? roles;
+    }
+
+    // A grant naming all three roles at once, in any order, on tables.
+    expect(
+      rolesMissingFrom(/grant\s+[^;]*\s+on\s+all\s+tables\s+in\s+schema\s+public\s+to\s+([^;]*)/g),
+    ).toEqual([]);
     // Without this, every migration added after the grant file is invisible again.
-    expect(sql).toMatch(
-      /alter\s+default\s+privileges\s+in\s+schema\s+public\s+grant\s+[^;]*\s+on\s+tables\s+to\s+[^;]*\banon\b[^;]*\bauthenticated\b[^;]*\bservice_role\b/,
-    );
+    expect(
+      rolesMissingFrom(
+        /alter\s+default\s+privileges\s+in\s+schema\s+public\s+grant\s+[^;]*\s+on\s+tables\s+to\s+([^;]*)/g,
+      ),
+    ).toEqual([]);
     expect(sql).toMatch(/grant\s+usage\s+on\s+schema\s+public\s+to\s+[^;]*\banon\b/);
   });
 
@@ -169,8 +190,12 @@ describe('supabase migrations bootstrap a database from nothing', () => {
     }
 
     expect(violations).toEqual([]);
-    // The revoke that keeps a future function from becoming anon-callable by
-    // merely existing, which is what the grant it replaced would have done.
+    // The routines default privilege, pinned here so a later migration cannot
+    // quietly drop it. It is a declaration of intent and not an enforcement: it
+    // is recorded correctly in pg_default_acl, but a function created afterwards
+    // on a rebuilt stack still comes out with a null proacl, which is Postgres's
+    // built-in execute to public. A new function is world-executable until its
+    // own migration revokes it.
     expect(migrations.map(({ sql }) => sql).join('\n').toLowerCase()).toMatch(
       /alter\s+default\s+privileges\s+in\s+schema\s+public\s+revoke\s+(?:execute|all)\s+on\s+(?:routines|functions)\s+from\s+public/,
     );
