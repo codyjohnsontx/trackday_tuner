@@ -333,12 +333,45 @@ Free → Pro conversion rate (after hitting limits / wanting compare/export/AI)
 
 ## Local Run
 
+The app needs a database, and this repository builds one. Start Docker first: the
+local stack runs in containers, and `supabase start` silently has nothing to do
+without it.
+
+```bash
+npx supabase start
+```
+
+That creates the database and applies all thirteen migrations in order, on the
+ports declared in `supabase/config.toml` (API 54321, database 54322, Studio
+54323). Use the `npx` form; the `db:*` scripts in `package.json` call a bare
+`supabase`, which is neither a repo dependency nor assumed to be installed
+globally. See "Building a database from nothing" in `CLAUDE.md` for why two of
+those migrations exist only to make a clean build work, and for the caveat that
+applies to the hosted project.
+
+Copy `.env.example` to `.env.local` and fill `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` from
+`npx supabase status -o env`. Those are local development values, not the hosted
+project's.
+
+Set `BETA_INVITE_ONLY=false` in the same file. `.env.example` ships it as `true`
+and `isBetaInviteOnly()` in `lib/env.server.ts` reads unset as `true`, so leaving
+it alone puts the invite-only wall in front of signup and no account can be
+created. To exercise the invite flow instead, leave it `true`, set
+`BETA_INVITE_SECRET`, and mint a code with
+`npm run beta:invite -- create you@example.com`.
+
 ```bash
 npm install
 npm run dev
 ```
 
-Then open `http://localhost:3000`.
+Then open `http://localhost:3000`. Email confirmation is disabled locally in
+`supabase/config.toml`, so signing up logs you straight in.
+
+To rebuild, `npx supabase db reset` re-applies every migration to the running
+stack, and `npx supabase stop --no-backup` followed by `npx supabase start`
+destroys the containers and volumes and rebuilds from nothing.
 
 ## Linting
 
