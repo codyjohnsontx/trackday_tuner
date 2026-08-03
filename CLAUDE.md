@@ -174,8 +174,30 @@ rather than hand-rolling card markup.
 
 ## CSS Variables
 
-shadcn CSS vars live in `@layer base { :root { ... } }` in `app/globals.css`.
-Tailwind v4 project tokens live in `@theme { ... }` — these are separate namespaces, no collision.
+`app/globals.css` defines no shadcn CSS variables - the project follows the
+shadcn *pattern* (`cva` + `cn()`) but not its token set. Tailwind v4 project
+tokens live in `@theme { ... }`; the only `:root` block is a `color-scheme`
+declaration inside `@layer base`. Those are separate namespaces, no collision.
+
+## Cascade Layers
+
+**Every rule in `app/globals.css` must sit inside a layer**: `@layer base` for
+element defaults, `@layer components` for helper classes. Tailwind v4 emits all
+utilities inside `@layer utilities`, and unlayered CSS beats layered CSS at any
+specificity, so one unlayered rule silently outranks a whole family of utilities
+with no warning from the build, the linter, or the types. Layers rank by first
+declaration, so the layer has to be one Tailwind declares before `utilities`: a
+layer of your own is first declared after them and outranks every utility exactly
+the way an unlayered rule does, and `utilities` itself is not somewhere to write.
+An `@import` cannot be wrapped in a layer, so it carries a `layer(...)` clause
+naming one of those layers instead - only `tailwindcss` itself arrives already
+layered.
+
+`tests/unit/globals-css-layers.test.ts` enforces this and runs in the required
+checks; the comments in `app/globals.css` record why each block is layered. That
+guard reads one file, so a contrast regression arriving any other way - a changed
+token, a Button variant, a new component - still needs a browser. Only the manual
+e2e suite asserts a rendered colour.
 
 ## Path Alias
 
@@ -193,3 +215,10 @@ Tailwind v4 project tokens live in `@theme { ... }` — these are separate names
 AI routes are active for tuning advice, recommendation feedback, and day planning.
 `lib/rag/` contains retrieval, prompt, policy, validation, and schema helpers.
 Knowledge-base markdown lives in `docs/knowledge-base/` and can be indexed with `npm run rag:index`.
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.
