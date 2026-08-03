@@ -209,6 +209,14 @@ e2e suite asserts a rendered colour.
 - Use `lib/supabase/client.ts` in Client Components
 - `lib/supabase/middleware.ts` handles session refresh — runs via `middleware.ts`
 - Admin client (`lib/supabase/admin.ts`) uses service role key — server only
+- `sessions.start_time` is nullable, and PostgREST filters inherit SQL NULL
+  semantics, so `start_time.lt.<t>` silently drops every row that has none. Session
+  ordering is defined once, in `isSessionBefore` / `compareSessionsDesc`
+  (`lib/session-compare.ts`), which coalesce a missing start time to `00:00:00` and
+  fall back to `created_at`. Reach for `fetchPreviousSession`
+  (`lib/session-previous.ts`) rather than writing a fourth predicate: three call
+  sites once hand-rolled the raw filter and all three went blind to same-day
+  sessions logged without a start time
 
 ## Current AI Status
 

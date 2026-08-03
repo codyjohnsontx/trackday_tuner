@@ -194,12 +194,15 @@ and execution order may legitimately diverge; the reason is recorded there.
    filters events to registered rider ids, but the public demo cannot sell the
    feature the gate is meant to validate. Also unblocks `F2`.
 
-9. **Core loop has no end-to-end coverage** - `F2` - the two e2e specs cover auth
-   redirects, the sag calculator, the converter, tracks, and AI rejection paths.
-   Nothing tests add vehicle, log session, compare, record outcome. E2E is also
-   skipped in CI by default. Demo mode is a deterministic fixture that needs no
-   Supabase and no secrets, and no test uses it, so this is cheap once `R6` lands
-   and it is the only regression guard on the product's main flow.
+9. **Core loop is only partly covered end to end** - `F2` - the other two e2e specs
+   cover auth redirects, the sag calculator, the converter, tracks, and AI rejection
+   paths. `tests/e2e/same-day-session-compare.spec.ts` now adds a vehicle, logs two
+   same-day sessions, and asserts both the rendered comparison and the persisted
+   `session_changes` row, so add vehicle, log session, and compare are covered;
+   recording an outcome is not. That spec drives the real E2E account and skips
+   without its credentials (see `TESTING.md`), and E2E is still skipped in CI by
+   default. Demo mode is a deterministic fixture that needs no Supabase and no
+   secrets, and no test uses it, so the remaining coverage is cheap once `R6` lands.
 
 ### 10 to 17 - real but survivable
 
@@ -213,7 +216,9 @@ and execution order may legitimately diverge; the reason is recorded there.
     text, so the front and rear sag sections emit `fully_extended_(l0)`,
     `bike_only_(l1)`, and `rider_on_bike_(l2)` twice each. Tapping a rear label
     focuses the front input and screen readers announce the wrong field. Prefix the
-    ids or use `useId()`.
+    ids or use `useId()`. The sag e2e test fails on this: both `Fully Extended (L0)`
+    labels resolve to the front input, so it cannot reach the rear fields. That
+    failure is expected until this item lands, not a test defect.
 
 12. **Nothing is statically rendered** - `F3` - the root layout awaits
     `isDemoMode()`, which reads cookies and opts the whole tree out of static
@@ -317,6 +322,15 @@ Work queue items `R1`, `R2`, and `R3` must clear before the gate is read. `R3` i
 particular decides whether the AI guidance number means anything: a missing index
 makes every rider look unguided, so the report would be measuring an outage rather
 than rider behavior.
+
+The within-day loop counts carry the same caveat for a different reason.
+`computeWithinDayLoops` in `scripts/lib/beta-report-metrics.mjs` decides that a
+session changed from its `session_changes` rows, and until `fetchPreviousSession`
+(`lib/session-previous.ts`) replaced the raw previous-session predicate, no
+`previous` row was written for a same-day session logged without a start time. A
+rider with no vehicle baseline had no row written at all, so a track day of real
+setup changes between runs still registered zero loops. Those counts only reflect
+rider behavior for sessions logged after that fix.
 
 Use `npm run beta:report` for the decision snapshot and follow
 [`docs/beta-runbook.md`](./beta-runbook.md) for cohort operations.
