@@ -178,6 +178,16 @@ describe('supabase migrations bootstrap a database from nothing', () => {
     const violations: string[] = [];
 
     for (const { file, sql } of migrations) {
+      // This file's own revokes are collected before its grants are judged.
+      // Collecting them afterwards missed the case where one migration revokes
+      // execute on its own function and then issues a schema-wide grant that
+      // undoes it: `revoked` was still empty at the check, so the file passed.
+      // The cost is that a file granting broadly and only then revoking, which
+      // is safe because the revoke runs last, is flagged too. No migration here
+      // is written that way, and over-reporting a schema-wide execute grant is
+      // the safe direction to err in.
+      for (const fn of matchAll(sql, REVOKE_ON_FUNCTION)) revoked.add(fn);
+
       if (SCHEMA_WIDE_EXECUTE_GRANT.test(sql) && revoked.size > 0) {
         violations.push(
           `${file}: grant on all routines re-exposes ${[...revoked].sort().join(', ')}`,
@@ -186,7 +196,6 @@ describe('supabase migrations bootstrap a database from nothing', () => {
       if (DEFAULT_EXECUTE_GRANT.test(sql)) {
         violations.push(`${file}: alter default privileges exposes every function added after it`);
       }
-      for (const fn of matchAll(sql, REVOKE_ON_FUNCTION)) revoked.add(fn);
     }
 
     expect(violations).toEqual([]);

@@ -10,9 +10,8 @@
 -- and the app is blind to them.
 --
 -- Row Level Security, not the grant, is what keeps one rider's rows away from
--- another. Every table in public has RLS enabled with auth.uid() policies, so
--- granting broadly here reproduces the privileges the hosted project already
--- has rather than tightening them behind its back.
+-- another. Every table in public has RLS enabled with auth.uid() policies, which
+-- is what makes granting the Data API roles write access safe at all.
 --
 -- The `alter default privileges` block is what keeps this from having to be
 -- repeated. It binds to the role running the migration, which is the same role
@@ -44,12 +43,60 @@
 
 grant usage on schema public to anon, authenticated, service_role;
 
-grant all on all tables in schema public to anon, authenticated, service_role;
-grant all on all sequences in schema public to anon, authenticated, service_role;
+-- The four the Data API actually uses, rather than `all`. `all` on a table also
+-- carries truncate, references, trigger and maintain, none of which PostgREST
+-- issues and none of which the app needs: the schema is built by migrations
+-- running as the owner. For a sequence the three named here are the whole set,
+-- so naming them changes nothing there beyond saying so out loud.
+--
+-- Do not read this as a narrower end state, because it was measured and it is
+-- not. On a local stack with this file removed, `sessions` comes out as
+-- `anon=Dxtm` - the CLI hands the Data API roles truncate, references, trigger
+-- and maintain on its own, and withholds exactly the four that make a table
+-- readable. That is why the failure this file fixes reads as "permission denied
+-- for table sessions" rather than as a table with no ACL at all. Adding `arwd`
+-- to a pre-existing `Dxtm` lands on `arwdDxtm` either way, so what this spelling
+-- buys is an honest statement of what the application needs, not a smaller
+-- privilege set.
+grant select, insert, update, delete on all tables in schema public
+  to anon, authenticated, service_role;
+grant usage, select, update on all sequences in schema public
+  to anon, authenticated, service_role;
 
 alter default privileges in schema public
-  grant all on tables to anon, authenticated, service_role;
+  grant select, insert, update, delete on tables to anon, authenticated, service_role;
 alter default privileges in schema public
-  grant all on sequences to anon, authenticated, service_role;
+  grant usage, select, update on sequences to anon, authenticated, service_role;
 alter default privileges in schema public
   revoke execute on routines from public;
+
+-- The two remaining RPC endpoints. Both are `security invoker`, so RLS already
+-- contains them and this is not the load-bearing control that the revokes on
+-- create_beta_invite and consume_beta_rate_limit are. It still takes anon off
+-- functions no unauthenticated caller has any business reaching.
+--
+-- These belong here rather than in 20260716000800 and 20260422000400, which
+-- define them: both are already recorded as applied on the hosted project, and
+-- editing an applied migration changes the file without changing the database.
+--
+-- save_session_outcome is called by app/api/sessions/[id]/outcome/route.ts
+-- through lib/supabase/server.ts, so its caller is `authenticated`.
+-- record_race_engineer_memory_feedback has no caller in the application at all;
+-- it takes p_user_id the same way save_session_outcome does, so it gets the same
+-- role rather than a guess at a wider one.
+--
+-- set_updated_at is deliberately untouched: it returns `trigger`, so PostgREST
+-- cannot expose it as an endpoint and it must stay callable by the triggers.
+revoke execute on function public.save_session_outcome(
+  uuid, uuid, uuid, uuid, text, smallint, text[], text, smallint
+) from public, anon, authenticated;
+grant execute on function public.save_session_outcome(
+  uuid, uuid, uuid, uuid, text, smallint, text[], text, smallint
+) to authenticated;
+
+revoke execute on function public.record_race_engineer_memory_feedback(
+  uuid, uuid, uuid, uuid, text, date, text, text[], text
+) from public, anon, authenticated;
+grant execute on function public.record_race_engineer_memory_feedback(
+  uuid, uuid, uuid, uuid, text, date, text, text[], text
+) to authenticated;

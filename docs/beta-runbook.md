@@ -2,10 +2,16 @@
 
 ## Launch Checklist
 
-1. Apply the four July 2026 migrations in order: session outcomes, session laps,
-   beta foundation, then the Data API grants. A deployment standing up its own
-   database also needs the baseline that precedes them all - see "Building a
-   database from nothing" in CLAUDE.md.
+1. A deployment standing up its own database applies every file in
+   `supabase/migrations/` in Supabase CLI order, not just the beta ones: the
+   baseline `20260223000000` first, then everything between it and the tail,
+   including `20260224000100`, `20260228000200` and `20260422000400`. `supabase
+   start` and `db push` do this for you; the point is that no file in that range
+   is optional. See "Building a database from nothing" in CLAUDE.md.
+   The four July 2026 migrations are the beta-specific tail of that same order:
+   session outcomes, session laps, beta foundation, then the Data API grants.
+   On a deployment whose database already predates this work, those four are
+   what is left to apply.
 2. Set `BETA_INVITE_ONLY=true`, a long random `BETA_INVITE_SECRET`, and a distinct
    `BETA_FORM_RATE_LIMIT_SECRET` in the deployment environment.
 3. Deploy and verify the public home page, waitlist, invitation signup, session

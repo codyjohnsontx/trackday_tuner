@@ -161,9 +161,20 @@ destroyed local stack proves that, and only then exercising the app against it
 proves PostgREST can see the result.
 
 The baseline is dated before migrations the remote has already recorded, so
-`db push` will report it as out of order and refuse without `--include-all`. On the
-hosted project it is a no-op that is already true, so record it rather than run it:
-`supabase migration repair --status applied 20260223000000`.
+`db push` will report it as out of order and refuse without `--include-all`.
+
+Do not reach for `migration repair` on reflex. The baseline is not a pure no-op
+against a database that already has these tables: `create table if not exists`
+skips, but each policy is preceded by `drop policy if exists`, so running it
+replaces the live policies with the ones in this file. Those were reconstructed
+from `types/supabase.ts` and the application's queries, not read off the hosted
+project, so they may not match what is actually there. Compare the live policy
+definitions against this file first (`pg_policies` in the SQL editor, or
+`npx supabase db diff --linked`). Only once they agree, record it as applied
+rather than running it:
+`supabase migration repair --status applied 20260223000000`. If they disagree,
+that difference is the real finding and needs deciding before anything is
+recorded.
 
 ## Project Structure
 
