@@ -21,6 +21,14 @@ import { describe, expect, it } from 'vitest';
 //     purpose: `tailwindcss/preflight` contains the literal `a { color: inherit }`
 //     that caused this bug, and `tailwindcss/utilities` is a bare
 //     `@tailwind utilities;`. Only `tailwindcss` itself layers its own output.
+//   - a layer order statement that first declares `utilities` ahead of a layer
+//     Tailwind declares before it. The statement carries no rules of its own, but
+//     it is the construct that fixes rank: `@layer utilities, base;` above the
+//     Tailwind import first declares `utilities`, and Tailwind's own order
+//     statement cannot move a layer that is already declared, so every rule in
+//     `@layer base` then beats every utility. This is judged against the file's
+//     own effective order, which is why `@import "tailwindcss"` counts here as
+//     declaring Tailwind's whole order at the point where it appears.
 //
 // WHAT IT DOES NOT CATCH, because a guard assumed to cover more than it does is
 // worse than none: a contrast regression arriving any other way - a changed design
@@ -28,7 +36,10 @@ import { describe, expect, it } from 'vitest';
 // wrong fill. None of that is visible from this one file. The computed-colour
 // assertion in tests/e2e/auth-and-sag.spec.ts covers the rendered effect, but that
 // suite is manual and does not gate pull requests. Neither guard replaces looking
-// at the screen.
+// at the screen. Nor does it catch a layer order declared INSIDE an imported sheet
+// other than Tailwind's own entry point: `@import "./x.css" layer(base);` is read
+// as declaring `base` and nothing more, so an `@layer` statement within x.css is
+// invisible from here.
 //
 // KNOWN AND ACCEPTED LIMIT: the layers this file will accept as a target are the
 // ones Tailwind declares before `utilities` - today `theme`, `base`, `components`.
@@ -109,7 +120,7 @@ const TAILWIND_ENTRY_CSS_PATH = fileURLToPath(
 const LAYER_ORDER_UNRESOLVED =
   'This guard could not determine Tailwind\'s cascade layer order from node_modules/tailwindcss/index.css';
 
-function readPreUtilitiesLayers(): string[] {
+function readTailwindLayerOrder(): string[] {
   let entry: string;
   try {
     entry = readFileSync(TAILWIND_ENTRY_CSS_PATH, 'utf8');
@@ -139,10 +150,16 @@ function readPreUtilitiesLayers(): string[] {
     );
   }
 
-  return declared.slice(0, utilities);
+  return declared;
 }
 
-const PRE_UTILITIES_LAYERS = readPreUtilitiesLayers();
+// Tailwind's full declared order, and the prefix of it that is safe to write into.
+// The full order is needed as well as the prefix because `@import "tailwindcss";`
+// contributes every one of these names, in this sequence, at the point where the
+// import appears - which is what decides whether a layer named earlier in the file
+// has already outranked them.
+const TAILWIND_LAYER_ORDER = readTailwindLayerOrder();
+const PRE_UTILITIES_LAYERS = TAILWIND_LAYER_ORDER.slice(0, TAILWIND_LAYER_ORDER.indexOf('utilities'));
 
 function readConstruct(
   source: string,
@@ -270,9 +287,12 @@ function isLayerSafeImport(prelude: string): boolean {
 // nothing and is declared wherever it sits, so it fails too.
 //
 // A layer ORDER STATEMENT - `@layer theme, base, components, utilities;` with no
-// block - is a different construct and always passes. It carries no rules, so it
-// cannot outrank anything, and pinning the order explicitly is normal Tailwind v4
-// practice.
+// block - is a different construct, and this predicate does not apply to it: it may
+// legitimately name `utilities`, which is never an accepted target for a BLOCK, and
+// pinning the order explicitly is normal Tailwind v4 practice. It is not exempt from
+// checking, though. It carries no rules of its own, but it is precisely the construct
+// that establishes layer rank, because CSS orders layers by first declaration. So it
+// is judged on the ORDER it declares, by `findInvertedLayerOrder` below.
 function layerNames(prelude: string): string[] {
   return prelude
     .slice('@layer'.length)
@@ -301,26 +321,90 @@ function isAllowedAtTopLevel(construct: TopLevelConstruct): boolean {
   return TOP_LEVEL_ALLOWED.some((atRule) => matchesAtRule(prelude, atRule));
 }
 
+// Every construct that names a layer contributes to the file's own declaration
+// order: an order statement, a layer block, a `layer(...)` clause on an import, and
+// `@import "tailwindcss"` itself, which brings Tailwind's whole order with it at the
+// point where it appears.
+function layerDeclarations(construct: TopLevelConstruct): string[] {
+  const { prelude } = construct;
+
+  if (isLayer(prelude)) return layerNames(prelude);
+
+  if (isImport(prelude)) {
+    const parsed = parseImport(prelude);
+    if (parsed === null) return [];
+    if (isTailwindEntryPoint(parsed.specifier)) return TAILWIND_LAYER_ORDER;
+
+    const layer = importLayerName(parsed.conditions);
+    return layer === null ? [] : [layer];
+  }
+
+  return [];
+}
+
+// Sitting in an accepted layer is necessary but still not sufficient, because a
+// layer's rank is not fixed by its name - it is fixed by where that name is FIRST
+// declared. So the order has to be read out of this file rather than assumed from
+// the installed package: `@layer utilities, base;` written above the Tailwind import
+// first declares `utilities`, and Tailwind's own statement cannot move a layer that
+// is already declared. The effective order becomes utilities, base, theme,
+// components, and `a { color: inherit }` inside `@layer base` outranks `text-canvas`
+// on every anchor again - the invisible CTA, reached by declaring a layer early
+// rather than by leaving a rule unlayered.
+//
+// Returns the construct that first declared `utilities`, since that is the one that
+// has to move, or null when nothing pre-utilities ends up behind it.
+function findInvertedLayerOrder(constructs: TopLevelConstruct[]): TopLevelConstruct | null {
+  const seen = new Set<string>();
+  const order: { name: string; construct: TopLevelConstruct }[] = [];
+
+  for (const construct of constructs) {
+    for (const name of layerDeclarations(construct)) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      order.push({ name, construct });
+    }
+  }
+
+  const utilities = order.findIndex((entry) => entry.name === 'utilities');
+  if (utilities === -1) return null;
+
+  const outranking = order
+    .slice(utilities + 1)
+    .some((entry) => PRE_UTILITIES_LAYERS.includes(entry.name));
+
+  return outranking ? order[utilities].construct : null;
+}
+
 function isLayerable(prelude: string): boolean {
   if (!prelude.startsWith('@')) return true;
   return LAYERABLE_AT_RULES.some((atRule) => matchesAtRule(prelude, atRule));
 }
 
 function findUnlayeredRules(css: string): TopLevelConstruct[] {
-  return findTopLevelConstructs(css).filter(
-    (construct) => construct.prelude.length > 0 && !isAllowedAtTopLevel(construct),
+  const constructs = findTopLevelConstructs(css).filter((construct) => construct.prelude.length > 0);
+  const inverted = findInvertedLayerOrder(constructs);
+
+  return constructs.filter(
+    (construct) => !isAllowedAtTopLevel(construct) || construct === inverted,
   );
 }
 
 type ViolationReason =
+  | 'inverted-layer-order'
   | 'disallowed-layer'
   | 'unlayered-split-entry'
   | 'unlayered-import'
   | 'layerable'
   | 'unrecognised';
 
-function reasonFor(prelude: string): ViolationReason {
-  if (isLayer(prelude)) return 'disallowed-layer';
+// A layer STATEMENT is always accepted by `isAllowedAtTopLevel`, so the only way one
+// reaches this list is the order it declares. A layer BLOCK is the other way round:
+// the order check can never blame it, because a block naming `utilities` has already
+// failed `isLayerBlockAllowed`.
+function reasonFor(construct: TopLevelConstruct): ViolationReason {
+  const { prelude, kind } = construct;
+  if (isLayer(prelude)) return kind === 'statement' ? 'inverted-layer-order' : 'disallowed-layer';
   if (isImport(prelude)) {
     const parsed = parseImport(prelude);
     if (parsed === null) return 'unlayered-import';
@@ -333,8 +417,9 @@ function reasonFor(prelude: string): ViolationReason {
 
 function explainViolations(violations: TopLevelConstruct[]): string {
   const withReason = (reason: ViolationReason) =>
-    violations.filter((violation) => reasonFor(violation.prelude) === reason);
+    violations.filter((violation) => reasonFor(violation) === reason);
 
+  const invertedOrder = withReason('inverted-layer-order');
   const disallowedLayer = withReason('disallowed-layer');
   const splitEntry = withReason('unlayered-split-entry');
   const imports = withReason('unlayered-import');
@@ -342,8 +427,11 @@ function explainViolations(violations: TopLevelConstruct[]): string {
   const unrecognised = withReason('unrecognised');
 
   const message = [
-    `app/globals.css has ${violations.length} rule(s) outside a cascade layer:`,
-    ...violations.map((violation) => `  line ${violation.line}: ${violation.prelude} { ... }`),
+    `app/globals.css has ${violations.length} construct(s) that let a rule outrank a Tailwind utility:`,
+    ...violations.map(
+      (violation) =>
+        `  line ${violation.line}: ${violation.prelude}${violation.kind === 'block' ? ' { ... }' : ';'}`,
+    ),
     '',
     'Why this matters, because the failure is silent otherwise:',
     'Tailwind v4 emits every utility inside `@layer utilities`, and unlayered CSS',
@@ -362,6 +450,22 @@ function explainViolations(violations: TopLevelConstruct[]): string {
       'wrap the rule in `@layer base` if it is an element default, or',
       '`@layer components` if it is a helper class. Put `@keyframes` and `@media`',
       'blocks inside the layer holding the classes that consume them.',
+    );
+  }
+
+  if (invertedOrder.length > 0) {
+    message.push(
+      '',
+      `Fix for ${invertedOrder.map((violation) => `\`${violation.prelude};\``).join(', ')}:`,
+      'an order statement carries no rules of its own, but it is the construct that',
+      'sets layer rank: CSS orders layers by first declaration, and a statement is',
+      'where a name is first declared. Declaring `utilities` ahead of',
+      `${PRE_UTILITIES_LAYERS.join(', ')} - or ahead of the \`@import "tailwindcss";\``,
+      'that declares them - leaves those layers outranking every utility, which is',
+      'this same bug spelled with a layer. Tailwind cannot repair it either: its own',
+      'order statement cannot move a layer that is already declared. Declare',
+      `\`utilities\` last, as Tailwind does - \`@layer ${TAILWIND_LAYER_ORDER.join(', ')};\` -`,
+      'or drop the statement and let `@import "tailwindcss";` set the order.',
     );
   }
 
@@ -557,6 +661,50 @@ const LAYER_ORDER_STATEMENT_FIXTURE = `
 }
 `;
 
+// A partial order statement naming only pre-utilities layers puts nothing behind
+// `utilities`, so it inverts nothing. Tailwind's import then contributes `theme` and
+// `utilities`, and `utilities` still lands last.
+const PARTIAL_LAYER_ORDER_FIXTURE = `
+@layer base, components;
+
+@import "tailwindcss";
+
+@layer base {
+  a { color: inherit; }
+}
+`;
+
+// The hole this guard used to have, and the reason an order statement cannot be
+// waved through on its construct kind. `@layer utilities, base;` first declares
+// `utilities`, and Tailwind's own `@layer theme, base, components, utilities;`
+// cannot move a layer that is already declared - so the effective order becomes
+// utilities, base, theme, components, and `a { color: inherit }` in `@layer base`
+// outranks `text-canvas` on every anchor. The invisible CTA again, reached by
+// declaring a layer early rather than by leaving a rule unlayered.
+const INVERTED_LAYER_ORDER_FIXTURE = `
+@layer utilities, base;
+
+@import "tailwindcss";
+
+@layer base {
+  a { color: inherit; }
+}
+`;
+
+// The same inversion, written without naming a single pre-utilities layer.
+// `utilities` is declared first and the Tailwind import contributes `theme`, `base`
+// and `components` AFTER it. Nothing in the statement's own text says so, which is
+// why the file's effective order has to be walked instead.
+const UTILITIES_FIRST_FIXTURE = `
+@layer utilities;
+
+@import "tailwindcss";
+
+@layer components {
+  .tt-pop { animation: none; }
+}
+`;
+
 describe('app/globals.css cascade layers', () => {
   const css = readFileSync(GLOBALS_CSS_PATH, 'utf8');
 
@@ -620,8 +768,24 @@ describe('unlayered-rule detection', () => {
     ]);
   });
 
-  it('accepts a layer order statement, which declares no rules', () => {
+  it('accepts a layer order statement that pins Tailwind\'s own order', () => {
     expect(findUnlayeredRules(LAYER_ORDER_STATEMENT_FIXTURE)).toEqual([]);
+  });
+
+  it('accepts a partial order statement naming only pre-utilities layers', () => {
+    expect(findUnlayeredRules(PARTIAL_LAYER_ORDER_FIXTURE)).toEqual([]);
+  });
+
+  it('flags an order statement declaring utilities ahead of a pre-utilities layer', () => {
+    expect(findUnlayeredRules(INVERTED_LAYER_ORDER_FIXTURE).map((violation) => violation.prelude)).toEqual([
+      '@layer utilities, base',
+    ]);
+  });
+
+  it('flags utilities declared first even when the statement names nothing else', () => {
+    expect(findUnlayeredRules(UTILITIES_FIRST_FIXTURE).map((violation) => violation.prelude)).toEqual([
+      '@layer utilities',
+    ]);
   });
 
   it('records whether each construct was a block or a statement', () => {
@@ -646,6 +810,9 @@ describe('unlayered-rule detection', () => {
     expect(PRE_UTILITIES_LAYERS).toContain('base');
     expect(PRE_UTILITIES_LAYERS).toContain('components');
     expect(PRE_UTILITIES_LAYERS).not.toContain('utilities');
+
+    expect(TAILWIND_LAYER_ORDER).toContain('utilities');
+    expect(TAILWIND_LAYER_ORDER.slice(0, PRE_UTILITIES_LAYERS.length)).toEqual(PRE_UTILITIES_LAYERS);
   });
 
   it('flags a layer first declared after utilities, however it is reached', () => {
@@ -702,6 +869,17 @@ describe('unlayered-rule detection', () => {
     expect(message).toContain('1.00:1');
     expect(message).toContain('first declaration');
     expect(message).toContain(PRE_UTILITIES_LAYERS.join(', '));
+    expect(message).not.toContain('helper class');
+    expect(message).not.toContain('TOP_LEVEL_ALLOWED');
+  });
+
+  it('tells an inverted order statement to declare utilities last', () => {
+    const message = explainViolations(findUnlayeredRules(INVERTED_LAYER_ORDER_FIXTURE));
+
+    expect(message).toContain('@layer utilities, base;');
+    expect(message).toContain('1.00:1');
+    expect(message).toContain('first declaration');
+    expect(message).toContain(`@layer ${TAILWIND_LAYER_ORDER.join(', ')};`);
     expect(message).not.toContain('helper class');
     expect(message).not.toContain('TOP_LEVEL_ALLOWED');
   });
