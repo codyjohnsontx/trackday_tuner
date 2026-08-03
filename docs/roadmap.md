@@ -152,6 +152,11 @@ and execution order may legitimately diverge; the reason is recorded there.
    the list and the only item where a bad day means the data model cannot be
    rebuilt. Capture a baseline with `supabase db pull`.
 
+<!-- The band headings and the paragraph above name items by absolute position,
+     so these lists continue the numbering across headings rather than each
+     restarting at 1. Scoped to these two sections only. -->
+<!-- markdownlint-disable MD029 -->
+
 ### 5 to 9 - unblock and protect
 
 5. **Structured numeric setup values** - `F1` - every setup field is typed `string`
@@ -252,6 +257,8 @@ and execution order may legitimately diverge; the reason is recorded there.
     live in session-comparison files another worker holds. Raise them to `text-base`
     if picked up, deciding deliberately whether 16px is the right floor for form
     controls generally.
+
+<!-- markdownlint-enable MD029 -->
 
 ## Ordered Roadmap
 

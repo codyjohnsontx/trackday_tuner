@@ -47,9 +47,12 @@ test.describe('unauthenticated route guards', () => {
     await expect(page.getByRole('heading', { name: 'Two track days. One honest outcome loop.' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Join the Founding Beta' })).toBeVisible();
 
-    // The hero CTA is `bg-ink text-canvas`. If an unlayered rule in globals.css
-    // ever outranks a text-colour utility again, this reads back as the ink
-    // token and the pill goes white-on-white at 1.00:1.
+    // The hero CTA is `bg-ink text-canvas`, so its text must compute to the
+    // canvas token, #08080a / rgb(8, 8, 10) - the near-black asserted below,
+    // sitting on the white pill. If an unlayered rule in globals.css ever
+    // outranks a text-colour utility again, the anchor stops taking `text-canvas`
+    // and falls back to inheriting body's ink token, #f4f4f5, which is the same
+    // colour as the pill: white-on-white at 1.00:1.
     const heroCta = page.getByRole('link', { name: 'Join the Founding Beta' });
     await expect(heroCta).toBeVisible();
     await expect(heroCta).toHaveCSS('color', 'rgb(8, 8, 10)');
