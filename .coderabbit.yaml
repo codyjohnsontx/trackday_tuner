@@ -6,9 +6,17 @@
 # at again. That is the whole reason this file exists.
 
 reviews:
-  # Already the default. Stated explicitly so nobody raises it to assertive
-  # later and wonders where the noise came from.
-  profile: chill
+  # Must stay `assertive`. This is the review DEPTH, and it is unrelated to
+  # the review COUNT this file exists to cut - a shallower review is not a
+  # cheaper one, it is the same review quota spent on less.
+  #
+  # A repo-level profile silently overrides the organization-level setting,
+  # and this organization is set to assertive. Verified: DiazMartialArts PRs
+  # #15, #16 and #17 carry no repo config and CodeRabbit reports profile
+  # ASSERTIVE on all three, while DiazOnDemand, which does set `chill` in its
+  # repo config, reports CHILL. So writing `chill` here would quietly make
+  # every review on this repository shallower than it is today.
+  profile: assertive
 
   auto_review:
     enabled: true
