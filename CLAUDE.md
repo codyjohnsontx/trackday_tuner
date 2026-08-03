@@ -35,7 +35,7 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 
 ### Creating a PR (exact steps, no deviation)
 
-- PRs are ready for review by default. Create a draft PR only when the user explicitly asks for a draft.
+- PRs are opened as drafts by default, so step 7 uses `gh pr create --draft`. CodeRabbit does not review draft pull requests, so the pipeline's own fix commits cost no review quota while the branch is still being worked. The author marks the pull request ready for review when their review quota allows; an agent never does that, and never converts a draft to ready.
 
 1. `git status` — working tree must be clean. If not, stop and tell the user.
 2. `ls .git/index.lock 2>/dev/null` — if lock exists, stop and tell the user. Do not delete it.
@@ -43,7 +43,7 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 4. `git log --oneline main..HEAD` — show the user exactly which commits are going up. Wait for confirmation before continuing.
 5. `git push -u origin HEAD` — wait for it to fully complete before proceeding. If it fails, report the error and stop.
 6. `git branch -vv` — confirm the branch now shows a remote tracking ref. If not, stop.
-7. `gh pr create --title "<concise title>" --body "<summary + test plan>"` — write an explicit title and body. Do not use `--fill`.
+7. `gh pr create --draft --title "<concise title>" --body "<summary + test plan>"` — write an explicit title and body. Do not use `--fill`.
 
 **Never** run extra staging, committing, stashing, or branch operations unless explicitly asked. If the push is slow, wait — do not retry or run a second push in parallel.
 
