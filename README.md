@@ -4,7 +4,7 @@ A mobile race engineer for riders and drivers.
 
 Log a session at the track in under 60 seconds, then compare what you changed against what you felt. Track Tuner keeps your setups, session history, and conditions in one place, and its AI setup guidance is grounded in your own riding history rather than generic advice.
 
-### What it includes
+## What it includes
 
 - Fast trackside session logging for motorcycles and cars
 - Setup modules you add only where you have data
