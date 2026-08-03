@@ -145,8 +145,11 @@ not contain a `security definer` function, which runs as its owner and bypasses
 every policy, so for a function the grant *is* the access control. Execute belongs
 to the migration that creates the function, which is the only place its caller is
 known - see the `revoke` / `grant execute` pairs on `create_beta_invite` and
-`consume_beta_rate_limit`. The routines default privilege therefore revokes execute
-from `public` rather than granting it.
+`consume_beta_rate_limit`. When that migration is already applied on the remote,
+editing it would change the file and not the database, so the pair goes in a new
+migration instead: `20260719001100` carries the pairs for `save_session_outcome`
+and `record_race_engineer_memory_feedback` for that reason. The routines default
+privilege therefore revokes execute from `public` rather than granting it.
 
 That revoke is a declaration of intent, not a guarantee, and the difference was
 measured rather than reasoned about. It is recorded correctly in `pg_default_acl`,
