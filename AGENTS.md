@@ -185,7 +185,13 @@ declaration inside `@layer base`. Those are separate namespaces, no collision.
 element defaults, `@layer components` for helper classes. Tailwind v4 emits all
 utilities inside `@layer utilities`, and unlayered CSS beats layered CSS at any
 specificity, so one unlayered rule silently outranks a whole family of utilities
-with no warning from the build, the linter, or the types.
+with no warning from the build, the linter, or the types. Layers rank by first
+declaration, so the layer has to be one Tailwind declares before `utilities`: a
+layer of your own is first declared after them and outranks every utility exactly
+the way an unlayered rule does, and `utilities` itself is not somewhere to write.
+An `@import` cannot be wrapped in a layer, so it carries a `layer(...)` clause
+naming one of those layers instead - only `tailwindcss` itself arrives already
+layered.
 
 `tests/unit/globals-css-layers.test.ts` enforces this and runs in the required
 checks; the comments in `app/globals.css` record why each block is layered. That
