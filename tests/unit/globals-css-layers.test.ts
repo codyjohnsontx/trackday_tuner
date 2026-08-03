@@ -25,7 +25,6 @@ const GLOBALS_CSS_PATH = fileURLToPath(new URL('../../app/globals.css', import.m
 // known-bad at-rules, so anything unrecognised fails. Every entry earns its place
 // by provably being unable to outrank a utility:
 //
-//   @import          pulls Tailwind in, establishing the layer order rather than competing in it
 //   @theme           carries custom-property declarations, not style rules
 //   @layer           the invariant itself
 //   @utility         Tailwind requires it at the top level and it CANNOT be nested in a layer;
@@ -36,13 +35,16 @@ const GLOBALS_CSS_PATH = fileURLToPath(new URL('../../app/globals.css', import.m
 //   @config          loads a legacy JS config, emits no CSS itself
 //   @reference       imports a stylesheet for reference only and deliberately emits no CSS
 //
+// `@import` is allowed too, but it is the one entry that cannot be waved through on
+// its name alone, so it is checked by `isLayerSafeImport` below rather than listed
+// here.
+//
 // `@variant` is deliberately absent: in Tailwind v4 it APPLIES an existing variant
 // from inside a rule, and `@custom-variant` is the top-level spelling that defines
 // one. `@apply` and `@slot` are nested-only for the same reason. `@media`,
 // `@supports`, `@keyframes` and bare selectors are absent because each genuinely
 // can outrank a layered utility.
 const TOP_LEVEL_ALLOWED = [
-  '@import',
   '@theme',
   '@layer',
   '@utility',
@@ -125,7 +127,49 @@ function matchesAtRule(prelude: string, atRule: string): boolean {
   return prelude === atRule || prelude.startsWith(`${atRule} `) || prelude.startsWith(`${atRule}(`);
 }
 
+// Splits `@import <specifier> <conditions>` into its two halves, accepting both
+// quote styles and the `url(...)` form. Returns null when no specifier parses.
+function parseImport(prelude: string): { specifier: string; conditions: string } | null {
+  const rest = prelude.slice('@import'.length).trim();
+
+  const url = rest.match(/^url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*?))\s*\)/);
+  if (url) return { specifier: url[1] ?? url[2] ?? url[3] ?? '', conditions: rest.slice(url[0].length) };
+
+  const quoted = rest.match(/^(?:"([^"]*)"|'([^']*)')/);
+  if (quoted) return { specifier: quoted[1] ?? quoted[2] ?? '', conditions: rest.slice(quoted[0].length) };
+
+  return null;
+}
+
+// `@import` is the one construct that cannot be judged by its name. A bare
+// `@import "./legacy.css";` bundles that sheet's rules unlayered, which reproduces
+// the shipped defect exactly: an unlayered `a { color: inherit }` arriving that way
+// outranks `text-canvas` at any specificity while this guard reports nothing. Only
+// two shapes are safe.
+//
+// 1. Tailwind's own entry point - `tailwindcss` itself, or a split entry point
+//    under `tailwindcss/` such as `tailwindcss/preflight` or `tailwindcss/theme`,
+//    optionally followed by Tailwind's import functions `source()`, `prefix()`,
+//    `theme()` or `layer()`. Tailwind emits that content into layers it controls.
+// 2. Any specifier carrying an explicit `layer(...)` clause, which forces the
+//    imported sheet into that layer.
+//
+// The specifier must be `tailwindcss` exactly or continue with a `/`, so a
+// look-alike package such as `tailwindcss-animate` does not slip through on a
+// prefix match.
+function isLayerSafeImport(prelude: string): boolean {
+  const parsed = parseImport(prelude);
+  if (parsed === null) return false;
+  if (/\blayer\(/.test(parsed.conditions)) return true;
+  return parsed.specifier === 'tailwindcss' || parsed.specifier.startsWith('tailwindcss/');
+}
+
+function isImport(prelude: string): boolean {
+  return matchesAtRule(prelude, '@import');
+}
+
 function isAllowedAtTopLevel(prelude: string): boolean {
+  if (isImport(prelude)) return isLayerSafeImport(prelude);
   return TOP_LEVEL_ALLOWED.some((atRule) => matchesAtRule(prelude, atRule));
 }
 
@@ -141,8 +185,13 @@ function findUnlayeredRules(css: string): TopLevelConstruct[] {
 }
 
 function explainViolations(violations: TopLevelConstruct[]): string {
-  const layerable = violations.filter((violation) => isLayerable(violation.prelude));
-  const unrecognised = violations.filter((violation) => !isLayerable(violation.prelude));
+  const imports = violations.filter((violation) => isImport(violation.prelude));
+  const layerable = violations.filter(
+    (violation) => !isImport(violation.prelude) && isLayerable(violation.prelude),
+  );
+  const unrecognised = violations.filter(
+    (violation) => !isImport(violation.prelude) && !isLayerable(violation.prelude),
+  );
 
   const message = [
     `app/globals.css has ${violations.length} rule(s) outside a cascade layer:`,
@@ -165,6 +214,17 @@ function explainViolations(violations: TopLevelConstruct[]): string {
       'wrap the rule in `@layer base` if it is an element default, or',
       '`@layer components` if it is a helper class. Put `@keyframes` and `@media`',
       'blocks inside the layer holding the classes that consume them.',
+    );
+  }
+
+  if (imports.length > 0) {
+    message.push(
+      '',
+      `Fix for ${imports.map((violation) => violation.prelude).join(', ')}:`,
+      'this import arrives unlayered, so every rule in the imported sheet outranks the',
+      'utilities. Add an explicit `layer(...)` clause to the import, or move the',
+      'imported rules into a layer. Do NOT wrap the `@import` statement itself in',
+      '`@layer` - an import has to stay at the top level.',
     );
   }
 
@@ -260,6 +320,25 @@ const UNRECOGNISED_AT_RULE_FIXTURE = `
 }
 `;
 
+// The only two import shapes that cannot deliver an unlayered rule: Tailwind's own
+// entry points, and any specifier pinned into a layer by an explicit clause.
+const SAFE_IMPORT_FIXTURE = `
+@import "tailwindcss";
+@import "tailwindcss/utilities";
+@import "tailwindcss" source(none);
+@import './legacy.css' layer(legacy);
+`;
+
+// Every one of these bundles its sheet unlayered. `tailwindcss-animate` is the
+// look-alike a prefix match would wrongly admit: it is a third-party package, not
+// Tailwind's entry point, and it can carry unlayered rules.
+const UNSAFE_IMPORT_FIXTURE = `
+@import "tailwindcss";
+@import "./legacy.css";
+@import url("./legacy.css");
+@import "tailwindcss-animate";
+`;
+
 describe('app/globals.css cascade layers', () => {
   const css = readFileSync(GLOBALS_CSS_PATH, 'utf8');
 
@@ -311,6 +390,18 @@ describe('unlayered-rule detection', () => {
     ]);
   });
 
+  it('accepts Tailwind entry points and imports pinned into a layer', () => {
+    expect(findUnlayeredRules(SAFE_IMPORT_FIXTURE)).toEqual([]);
+  });
+
+  it('flags bare imports, including a look-alike package name', () => {
+    expect(findUnlayeredRules(UNSAFE_IMPORT_FIXTURE).map((violation) => violation.prelude)).toEqual([
+      '@import "./legacy.css"',
+      '@import url("./legacy.css")',
+      '@import "tailwindcss-animate"',
+    ]);
+  });
+
   it('is not fooled by braces or selectors inside comments', () => {
     const css = `
 /* An unlayered a { color: inherit } used to outrank text-canvas. */
@@ -337,5 +428,16 @@ describe('unlayered-rule detection', () => {
     expect(message).toContain('1.00:1');
     expect(message).toContain('TOP_LEVEL_ALLOWED');
     expect(message).not.toContain('helper class');
+  });
+
+  it('tells a bare import to carry a layer clause, not to wrap the statement', () => {
+    const message = explainViolations(findUnlayeredRules(UNSAFE_IMPORT_FIXTURE));
+
+    expect(message).toContain('@import "./legacy.css"');
+    expect(message).toContain('@import "tailwindcss-animate"');
+    expect(message).toContain('1.00:1');
+    expect(message).toContain('`layer(...)` clause');
+    expect(message).not.toContain('helper class');
+    expect(message).not.toContain('TOP_LEVEL_ALLOWED');
   });
 });
