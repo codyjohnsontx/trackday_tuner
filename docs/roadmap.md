@@ -240,9 +240,10 @@ and execution order may legitimately diverge; the reason is recorded there.
     one whose pain is entirely in the future.
 
 16. **Dead and stale artifacts** - `F7` - `components/demo/demo-aware-link.tsx` is
-    untracked and unreferenced, `components/layout/bottom-nav.tsx` is tracked and
-    dead, thirteen local branches and two agent worktrees remain, and
-    `body { min-height: 100vh }` should be `100dvh` for iOS Safari.
+    untracked and unreferenced, thirteen local branches and two agent worktrees
+    remain, and `body { min-height: 100vh }` should be `100dvh` for iOS Safari.
+    This entry also listed `components/layout/bottom-nav.tsx` as dead; that was
+    struck on 2026-08-02 because the component is live and rendered. See item 13.
 
 17. **Raw form controls below the iOS 16px zoom floor** - `F8` - an accepted trade,
     not an open defect. Putting `app/globals.css` inside cascade layers let the
