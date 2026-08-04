@@ -178,16 +178,37 @@ but on a rebuilt local stack a function created afterwards still comes out with 
 null `proacl`, which is Postgres's built-in `execute` to `public`. The same
 statement against `tables` does take effect, so the mechanism works and this one
 case does not. **A new function is world-executable until its own migration revokes
-it.** Copy the `revoke` / `grant execute` pair whenever you add one;
-`tests/unit/migrations-bootstrap.test.ts` only catches a later migration undoing
-that pair, not a pair that was never written.
+it.**
+
+So the migration has to say so itself, and
+`tests/unit/migrations-bootstrap.test.ts` now fails a `security definer` function
+whose migration does not. Either statement satisfies it, because the requirement is
+that the decision is written down and not that every function is locked:
+
+```sql
+revoke all on function public.f(...) from public, anon, authenticated;  -- locked
+grant execute on function public.f(...) to public;                      -- open, on purpose
+```
+
+Both name `public`, which is the only role that settles it: `anon` and
+`authenticated` are *members* of `public`, so revoking from those two by name while
+public still holds execute reads like a lockdown and closes nothing. That near-miss
+has its own fixture. `security invoker` functions are out of scope - they run as
+their caller, so RLS still applies and execute is not the access control.
 
 `tests/unit/migrations-bootstrap.test.ts` reads the SQL as text and fails if a
 migration alters or references a table nothing earlier creates, if those grants go
-missing, or if a migration re-grants execute schema-wide over a per-function
-`revoke`. It cannot tell you a migration *runs* - only `supabase start` from a
-destroyed local stack proves that, and only then exercising the app against it
-proves PostgREST can see the result.
+missing, if a `security definer` function arrives without that decision, or if a
+migration re-grants execute schema-wide over a per-function `revoke`. It cannot
+tell you a migration *runs* - only `supabase start` from a destroyed local stack
+proves that, and only then exercising the app against it proves PostgREST can see
+the result. It reads the decision rather than its effect, so a revoke naming the
+wrong roles still passes.
+
+The wrong SQL it is meant to catch lives in `tests/fixtures/migration-guard/`,
+outside `supabase/migrations/` so no Supabase command applies it. Each check was
+watched failing against those files before it was written, because a guard that has
+only ever been run against a repository that gets it right proves nothing.
 
 The baseline is dated before migrations the remote has already recorded, so
 `db push` will report it as out of order and refuse without `--include-all`.

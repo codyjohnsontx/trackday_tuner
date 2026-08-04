@@ -28,7 +28,14 @@ import { describe, expect, it } from 'vitest';
 //     `revoke`. Tables are contained by RLS; a `security definer` function is not,
 //     because it runs as its owner and bypasses every policy, so for those the
 //     grant is the access control and it belongs to the migration that creates
-//     the function
+//     the function. `anon`, `authenticated` and `public` all count as grant
+//     targets: the first two are members of the third, so a grant to `public` is
+//     the widest of the three and was the one this missed
+//   - a `security definer` function whose own migration never decides whether
+//     `public` may execute it. Postgres leaves proacl null on a function nobody
+//     granted or revoked, and a null proacl is execute to public, so it ships
+//     callable by an unauthenticated PostgREST request. The routines default
+//     privilege does not close this - see the note on that expectation below
 //
 // WHAT IT DOES NOT CATCH, because a guard assumed to cover more than it does is
 // worse than none: whether a migration actually runs. This reads SQL as text, so a
@@ -36,8 +43,12 @@ import { describe, expect, it } from 'vitest';
 // wrong rows, or a table whose columns drifted from types/supabase.ts all pass
 // here. Only building a database proves those: `supabase start` from a clean state
 // and then exercising the app against it. Nor does it check that a function is
-// executable by the role that calls it: it can see a grant taken away, not one
-// that was never written. Nor does it see a missing table named anywhere other
+// executable by the role that calls it: it reads the decision, not its effect, so
+// a revoke naming the wrong role list or a grant to a role that never calls the
+// function both pass. Nor does it cover `security invoker` functions, which run as
+// their caller and stay inside RLS, so for them execute is not the access control
+// and requiring a revoke would fail two of the three already in the repository.
+// Nor does it see a missing table named anywhere other
 // than a foreign key: a policy or function body reading `from public.X` or
 // `insert into public.X` aborts `supabase start` exactly the way the missing
 // profiles table did, and passes here, because matching those would also fire on
@@ -46,10 +57,9 @@ import { describe, expect, it } from 'vitest';
 // applied history is recorded remotely and cannot be read from these files at
 // all - see the migration notes in CLAUDE.md.
 
-const migrationsDir = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../supabase/migrations',
-);
+const testDir = path.dirname(fileURLToPath(import.meta.url));
+const migrationsDir = path.resolve(testDir, '../../supabase/migrations');
+const fixturesDir = path.resolve(testDir, '../fixtures/migration-guard');
 
 interface Migration {
   file: string;
@@ -75,6 +85,16 @@ function loadMigrations(): Migration[] {
     }));
 }
 
+// Deliberately wrong SQL, kept in tests/fixtures/migration-guard/ rather than in
+// supabase/migrations/ so no Supabase command ever applies it. Order is the
+// argument order, standing in for the filename order the real loader sorts by.
+function loadFixtures(...files: string[]): Migration[] {
+  return files.map((file) => ({
+    file,
+    sql: stripComments(readFileSync(path.join(fixturesDir, file), 'utf8')),
+  }));
+}
+
 function matchAll(sql: string, pattern: RegExp): string[] {
   return Array.from(sql.matchAll(pattern), (match) => match[1]);
 }
@@ -88,11 +108,117 @@ const CREATE_FUNCTION = /create\s+(?:or\s+replace\s+)?function\s+public\.(\w+)/g
 const TRIGGER_FUNCTION = /execute\s+(?:function|procedure)\s+public\.(\w+)/gi;
 
 // `[^;]*` keeps each of these inside a single statement.
+//
+// `public` sits in the role list alongside anon and authenticated because it is the
+// role the per-function revokes actually take execute away from, and because anon
+// and authenticated are both members of it - a grant to public reaches strictly
+// more callers than either of the other two spellings. Only the role list after
+// `to` is searched for it, so the `in schema public` earlier in the same statement
+// is not mistaken for a grant target.
 const REVOKE_ON_FUNCTION = /revoke\s+[^;]*\son\s+function\s+public\.(\w+)/gi;
 const SCHEMA_WIDE_EXECUTE_GRANT =
-  /grant\s+[^;]*\son\s+all\s+(?:routines|functions)\s+in\s+schema\s+public\s+to\s+[^;]*\b(?:anon|authenticated)\b/i;
+  /grant\s+[^;]*\son\s+all\s+(?:routines|functions)\s+in\s+schema\s+public\s+to\s+[^;]*\b(?:anon|authenticated|public)\b/i;
 const DEFAULT_EXECUTE_GRANT =
-  /alter\s+default\s+privileges\s[^;]*\bgrant\s+[^;]*\son\s+(?:routines|functions)\s+to\s+[^;]*\b(?:anon|authenticated)\b/i;
+  /alter\s+default\s+privileges\s[^;]*\bgrant\s+[^;]*\son\s+(?:routines|functions)\s+to\s+[^;]*\b(?:anon|authenticated|public)\b/i;
+
+// Every function header up to the start of its body, so `security definer` is read
+// off the header that declares it rather than off anything the body happens to
+// contain. A body opens at its dollar-quote tag, so the header is what precedes the
+// first `$`; the next `create function` bounds a function written without one.
+const FUNCTION_HEADER =
+  /create\s+(?:or\s+replace\s+)?function\s+public\.(\w+)([\s\S]*?)(?=\$|create\s+(?:or\s+replace\s+)?function|$)/gi;
+
+function headers(sql: string): { name: string; header: string }[] {
+  return Array.from(sql.matchAll(FUNCTION_HEADER), (match) => ({
+    name: match[1],
+    header: match[2],
+  }));
+}
+
+// A statement naming this function and this role, in either direction. The arg
+// list is optional because Postgres lets it be omitted when the name is unique.
+function privilegeStatement(verb: 'revoke' | 'grant', fn: string, preposition: string): RegExp {
+  return new RegExp(
+    `${verb}\\s+[^;]*\\son\\s+function\\s+public\\.${fn}\\b(?:\\s*\\([^)]*\\))?\\s+${preposition}\\s+([^;]+)`,
+    'i',
+  );
+}
+
+function namesPublic(roleList: string | undefined): boolean {
+  return roleList !== undefined && /\bpublic\b/i.test(roleList);
+}
+
+// A `security definer` function whose own migration never says whether `public`
+// may execute it. Postgres leaves proacl null on a function nobody granted or
+// revoked, and a null proacl is execute to public, so the function ships callable
+// by an unauthenticated PostgREST caller while running as its owner and bypassing
+// every RLS policy. The routines default privilege in 20260719001100 does not
+// reach it - that was measured, not reasoned about, and is written up in CLAUDE.md.
+//
+// The decision, not the lockdown, is what is required. Either spelling passes:
+//   revoke ... on function public.f(...) from public, ...   -- not callable by all
+//   grant execute on function public.f(...) to public       -- callable by all, on purpose
+// Both name `public`, which is the only role that settles it: `anon` and
+// `authenticated` are members of public, so revoking from them by name while
+// public still holds execute changes nothing.
+function definerFunctionsWithoutAnExecuteDecision(migrations: Migration[]): string[] {
+  const violations: string[] = [];
+
+  for (const { file, sql } of migrations) {
+    for (const { name, header } of headers(sql)) {
+      if (!/security\s+definer/i.test(header)) continue;
+
+      const revokedFromPublic = namesPublic(sql.match(privilegeStatement('revoke', name, 'from'))?.[1]);
+      const grantedToPublic = namesPublic(sql.match(privilegeStatement('grant', name, 'to'))?.[1]);
+      if (revokedFromPublic || grantedToPublic) continue;
+
+      violations.push(
+        `${file}: security definer function public.${name} never says whether public may execute it`,
+      );
+    }
+  }
+
+  return violations;
+}
+
+// A grant of execute written across the whole schema, which undoes per-function
+// revokes wholesale and names none of the functions it re-exposes.
+function schemaWideExecuteGrants(migrations: Migration[]): string[] {
+  const revoked = new Set<string>();
+  const violations: string[] = [];
+
+  for (const { file, sql } of migrations) {
+    // This file's own revokes are collected before its grants are judged.
+    // Collecting them afterwards missed the case where one migration revokes
+    // execute on its own function and then issues a schema-wide grant that
+    // undoes it: `revoked` was still empty at the check, so the file passed.
+    // The cost is that a file granting broadly and only then revoking, which
+    // is safe because the revoke runs last, is flagged too. No migration here
+    // is written that way, and over-reporting a schema-wide execute grant is
+    // the safe direction to err in.
+    for (const fn of matchAll(sql, REVOKE_ON_FUNCTION)) revoked.add(fn);
+
+    if (SCHEMA_WIDE_EXECUTE_GRANT.test(sql) && revoked.size > 0) {
+      violations.push(
+        `${file}: grant on all routines re-exposes ${[...revoked].sort().join(', ')}`,
+      );
+    }
+    if (DEFAULT_EXECUTE_GRANT.test(sql)) {
+      violations.push(`${file}: alter default privileges exposes every function added after it`);
+    }
+  }
+
+  return violations;
+}
+
+// The whole execute invariant, run as one thing so the fixture tests below and the
+// run against supabase/migrations/ exercise the same entry point.
+function executeViolations(migrations: Migration[]): string[] {
+  return [
+    ...definerFunctionsWithoutAnExecuteDecision(migrations),
+    ...schemaWideExecuteGrants(migrations),
+  ];
+}
 
 const migrations = loadMigrations();
 
@@ -229,32 +355,23 @@ describe('supabase migrations bootstrap a database from nothing', () => {
     expect(violations).toEqual([]);
   });
 
+  it('reads security definer off the two functions that declare it', () => {
+    // Without this the check below could pass by seeing no functions at all. A
+    // header parser that stopped matching would take the execute invariant with
+    // it silently, so the classification is asserted rather than assumed. A new
+    // `security definer` function belongs in this list, and needs the revoke that
+    // putting it here will start requiring.
+    const definers = migrations.flatMap(({ sql }) =>
+      headers(sql)
+        .filter(({ header }) => /security\s+definer/i.test(header))
+        .map(({ name }) => name),
+    );
+
+    expect(definers.sort()).toEqual(['consume_beta_rate_limit', 'create_beta_invite']);
+  });
+
   it('leaves execute on a function to the migration that creates it', () => {
-    const revoked = new Set<string>();
-    const violations: string[] = [];
-
-    for (const { file, sql } of migrations) {
-      // This file's own revokes are collected before its grants are judged.
-      // Collecting them afterwards missed the case where one migration revokes
-      // execute on its own function and then issues a schema-wide grant that
-      // undoes it: `revoked` was still empty at the check, so the file passed.
-      // The cost is that a file granting broadly and only then revoking, which
-      // is safe because the revoke runs last, is flagged too. No migration here
-      // is written that way, and over-reporting a schema-wide execute grant is
-      // the safe direction to err in.
-      for (const fn of matchAll(sql, REVOKE_ON_FUNCTION)) revoked.add(fn);
-
-      if (SCHEMA_WIDE_EXECUTE_GRANT.test(sql) && revoked.size > 0) {
-        violations.push(
-          `${file}: grant on all routines re-exposes ${[...revoked].sort().join(', ')}`,
-        );
-      }
-      if (DEFAULT_EXECUTE_GRANT.test(sql)) {
-        violations.push(`${file}: alter default privileges exposes every function added after it`);
-      }
-    }
-
-    expect(violations).toEqual([]);
+    expect(executeViolations(migrations)).toEqual([]);
     // The routines default privilege, pinned here so a later migration cannot
     // quietly drop it. It is a declaration of intent and not an enforcement: it
     // is recorded correctly in pg_default_acl, but a function created afterwards
@@ -265,4 +382,68 @@ describe('supabase migrations bootstrap a database from nothing', () => {
       /alter\s+default\s+privileges\s+in\s+schema\s+public\s+revoke\s+(?:execute|all)\s+on\s+(?:routines|functions)\s+from\s+public/,
     );
   });
+});
+
+// The tests above pass against a repository that got it right, and would pass just
+// as happily against a deleted check. These feed the same analysis SQL that got it
+// wrong, so what the guard catches is observed rather than assumed.
+describe('the execute check, against migrations written wrongly on purpose', () => {
+  it('catches a security definer function whose migration never mentions execute', () => {
+    expect(executeViolations(loadFixtures('definer_without_revoke.sql'))).toEqual([
+      'definer_without_revoke.sql: security definer function public.promote_rider never says whether public may execute it',
+    ]);
+  });
+
+  it('catches a revoke that names anon and authenticated but not public', () => {
+    // Both are members of public, so the statement reads like a lockdown and is not one.
+    expect(executeViolations(loadFixtures('definer_revoked_from_anon_only.sql'))).toEqual([
+      'definer_revoked_from_anon_only.sql: security definer function public.promote_rider never says whether public may execute it',
+    ]);
+  });
+
+  it('accepts the revoke / grant execute pair the real migrations use', () => {
+    expect(executeViolations(loadFixtures('definer_with_revoke.sql'))).toEqual([]);
+  });
+
+  it('accepts a security definer function granted to public on purpose', () => {
+    // The escape hatch. The invariant is that the decision is written down, not
+    // that every function is locked, so an author who means it says so and passes.
+    expect(executeViolations(loadFixtures('definer_granted_to_public_on_purpose.sql'))).toEqual([]);
+  });
+
+  it('leaves security invoker functions alone', () => {
+    // They run as their caller, so RLS still applies and execute is not the
+    // access control. Two of the three in supabase/migrations/ have no revoke.
+    expect(executeViolations(loadFixtures('invoker_without_revoke.sql'))).toEqual([]);
+  });
+
+  it('leaves a schema-wide grant of execute to service_role alone', () => {
+    // service_role never leaves the server and already bypasses RLS, so it is not
+    // the role the per-function revokes are defending against. Widening the
+    // pattern to catch `public` must not have swept this up with it.
+    const fixtures = loadFixtures(
+      'definer_with_revoke.sql',
+      'grant_all_routines_to_service_role.sql',
+    );
+
+    expect(executeViolations(fixtures)).toEqual([]);
+  });
+
+  for (const role of ['anon', 'authenticated', 'public']) {
+    it(`catches a schema-wide grant of execute to ${role}`, () => {
+      const fixtures = loadFixtures('definer_with_revoke.sql', `grant_all_routines_to_${role}.sql`);
+
+      expect(executeViolations(fixtures)).toEqual([
+        `grant_all_routines_to_${role}.sql: grant on all routines re-exposes promote_rider`,
+      ]);
+    });
+
+    it(`catches a routines default privilege granting execute to ${role}`, () => {
+      const fixtures = loadFixtures(`default_privileges_routines_to_${role}.sql`);
+
+      expect(executeViolations(fixtures)).toEqual([
+        `default_privileges_routines_to_${role}.sql: alter default privileges exposes every function added after it`,
+      ]);
+    });
+  }
 });
