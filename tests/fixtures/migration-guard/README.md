@@ -7,12 +7,22 @@ These files are **not** migrations. They live outside `supabase/migrations/` so
 `supabase start`, `supabase db push` and `npm run db:status` never see them. The
 guard's own tests are the only thing that reads them.
 
-A fixture exists so the guard can be watched failing. `20260719001100_grant_data_api_access.sql`
-already carries a correct `revoke` / `grant execute` pair, so running the guard
-only against the real migrations proves nothing about what it would do to a
-migration that got it wrong - it would pass just as happily if the check were
-deleted.
+A fixture exists so the guard can be watched failing. The migrations already get
+this right: `20260718001000_add_beta_foundation.sql` carries a correct `revoke` /
+`grant execute` pair on both of the repository's `security definer` functions,
+`create_beta_invite` and `consume_beta_rate_limit`, and
+`20260717000900_add_session_laps.sql` carries one on `replace_session_laps`. So
+running the guard only against the real migrations proves nothing about what it
+would do to a migration that got it wrong. It would pass just as happily if the
+check were deleted.
 
 Each filename says what it is. The three role spellings - `anon`,
 `authenticated` and `public` - are covered separately because `public` is the
 one the real migrations revoke from, and the one the guard used to miss.
+
+Two more vary how the same function is written rather than which role it names:
+`definer_attributes_after_body.sql` puts `security definer` after the body, which
+Postgres accepts because its option list is order-independent, and
+`definer_unqualified_name.sql` leaves off the `public.` qualifier, which
+search_path supplies. Both ship the identical world-executable function, so the
+guard has to read both.

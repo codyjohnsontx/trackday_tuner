@@ -35,7 +35,11 @@ import { describe, expect, it } from 'vitest';
 //     `public` may execute it. Postgres leaves proacl null on a function nobody
 //     granted or revoked, and a null proacl is execute to public, so it ships
 //     callable by an unauthenticated PostgREST request. The routines default
-//     privilege does not close this - see the note on that expectation below
+//     privilege does not close this - see the note on that expectation below.
+//     However the declaration is written counts: Postgres's option list is
+//     order-independent, so `security definer` after the body declares the same
+//     function, and a name with no `public.` qualifier lands in public via
+//     search_path and is the same function too
 //
 // WHAT IT DOES NOT CATCH, because a guard assumed to cover more than it does is
 // worse than none: whether a migration actually runs. This reads SQL as text, so a
@@ -45,10 +49,13 @@ import { describe, expect, it } from 'vitest';
 // and then exercising the app against it. Nor does it check that a function is
 // executable by the role that calls it: it reads the decision, not its effect, so
 // a revoke naming the wrong role list or a grant to a role that never calls the
-// function both pass. Nor does it cover `security invoker` functions, which run as
-// their caller and stay inside RLS, so for them execute is not the access control
-// and requiring a revoke would fail two of the three already in the repository.
-// Nor does it see a missing table named anywhere other
+// function both pass. It finds a function body by its dollar-quote tag, which is
+// what every function here uses; a body written between single quotes instead
+// would have the first `;` inside it read as the end of the declaration, hiding
+// any attribute that follows. Nor does it cover `security invoker` functions,
+// which run as their caller and stay inside RLS, so for them execute is not the
+// access control and requiring a revoke would fail two of the three already in
+// the repository. Nor does it see a missing table named anywhere other
 // than a foreign key: a policy or function body reading `from public.X` or
 // `insert into public.X` aborts `supabase start` exactly the way the missing
 // profiles table did, and passes here, because matching those would also fire on
@@ -115,31 +122,91 @@ const TRIGGER_FUNCTION = /execute\s+(?:function|procedure)\s+public\.(\w+)/gi;
 // more callers than either of the other two spellings. Only the role list after
 // `to` is searched for it, so the `in schema public` earlier in the same statement
 // is not mistaken for a grant target.
-const REVOKE_ON_FUNCTION = /revoke\s+[^;]*\son\s+function\s+public\.(\w+)/gi;
+const REVOKE_ON_FUNCTION = /revoke\s+[^;]*\son\s+function\s+(?:public\.)?(\w+)/gi;
 const SCHEMA_WIDE_EXECUTE_GRANT =
   /grant\s+[^;]*\son\s+all\s+(?:routines|functions)\s+in\s+schema\s+public\s+to\s+[^;]*\b(?:anon|authenticated|public)\b/i;
 const DEFAULT_EXECUTE_GRANT =
   /alter\s+default\s+privileges\s[^;]*\bgrant\s+[^;]*\son\s+(?:routines|functions)\s+to\s+[^;]*\b(?:anon|authenticated|public)\b/i;
 
-// Every function header up to the start of its body, so `security definer` is read
-// off the header that declares it rather than off anything the body happens to
-// contain. A body opens at its dollar-quote tag, so the header is what precedes the
-// first `$`; the next `create function` bounds a function written without one.
-const FUNCTION_HEADER =
-  /create\s+(?:or\s+replace\s+)?function\s+public\.(\w+)([\s\S]*?)(?=\$|create\s+(?:or\s+replace\s+)?function|$)/gi;
+// Each `create function` statement in full, from its name through the terminating
+// `;`, with any dollar-quoted body taken out. `security definer` is then read off
+// the whole declaration rather than off the body, and read wherever in the
+// declaration it was written: Postgres's option list is order-independent, so
+// `as $$ ... $$ language plpgsql security definer;` says exactly what putting
+// `security definer` ahead of the body says, and a reader stopping at the opening
+// `$` would see the second and miss the first. `set_updated_at` in 20260422000400
+// already writes `language plpgsql` after its body, so this is the repository's
+// own house style and not a hypothetical.
+//
+// `public.` is optional because an unqualified `create function f(...)` lands in
+// public via search_path and is the same function. The lookahead stops a name in
+// another schema from matching as the bare word before its dot, so
+// `create function auth.f(...)` is not read as a function called `auth`.
+const CREATE_FUNCTION_STATEMENT =
+  /create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?(\w+)\b(?!\s*\.)/gi;
 
-function headers(sql: string): { name: string; header: string }[] {
-  return Array.from(sql.matchAll(FUNCTION_HEADER), (match) => ({
-    name: match[1],
-    header: match[2],
-  }));
+// A body opens on a dollar-quote tag - `$$`, or a named one like `$body$` - and
+// closes on the identical tag, so a `;` inside it does not end the statement and
+// the words `security definer` inside it are not an attribute.
+const DOLLAR_TAG = /\$\w*\$/y;
+const NEXT_FUNCTION = /create\s+(?:or\s+replace\s+)?function\b/iy;
+
+function readStatement(sql: string, from: number): { text: string; end: number } {
+  let text = '';
+  let cursor = from;
+
+  while (cursor < sql.length) {
+    DOLLAR_TAG.lastIndex = cursor;
+    const tag = DOLLAR_TAG.exec(sql);
+    if (tag !== null) {
+      const close = sql.indexOf(tag[0], cursor + tag[0].length);
+      cursor = close === -1 ? sql.length : close + tag[0].length;
+      text += ' ';
+      continue;
+    }
+
+    // The terminator normally ends it; the next `create function` bounds one
+    // written without a terminator at all.
+    NEXT_FUNCTION.lastIndex = cursor;
+    if (NEXT_FUNCTION.test(sql)) break;
+    if (sql[cursor] === ';') {
+      cursor += 1;
+      break;
+    }
+
+    text += sql[cursor];
+    cursor += 1;
+  }
+
+  return { text, end: cursor };
+}
+
+function functionStatements(sql: string): { name: string; statement: string }[] {
+  const statements: { name: string; statement: string }[] = [];
+  let cursor = 0;
+
+  while (cursor < sql.length) {
+    CREATE_FUNCTION_STATEMENT.lastIndex = cursor;
+    const match = CREATE_FUNCTION_STATEMENT.exec(sql);
+    if (match === null) break;
+
+    const { text, end } = readStatement(sql, match.index + match[0].length);
+    statements.push({ name: match[1], statement: text });
+    // Resuming past the statement, body and all, so a `create function` written
+    // inside a function body never starts a second one.
+    cursor = end;
+  }
+
+  return statements;
 }
 
 // A statement naming this function and this role, in either direction. The arg
-// list is optional because Postgres lets it be omitted when the name is unique.
+// list is optional because Postgres lets it be omitted when the name is unique,
+// and the schema qualifier is optional for the same reason it is above: a
+// migration that creates a function unqualified revokes on it unqualified too.
 function privilegeStatement(verb: 'revoke' | 'grant', fn: string, preposition: string): RegExp {
   return new RegExp(
-    `${verb}\\s+[^;]*\\son\\s+function\\s+public\\.${fn}\\b(?:\\s*\\([^)]*\\))?\\s+${preposition}\\s+([^;]+)`,
+    `${verb}\\s+[^;]*\\son\\s+function\\s+(?:public\\.)?${fn}\\b(?:\\s*\\([^)]*\\))?\\s+${preposition}\\s+([^;]+)`,
     'i',
   );
 }
@@ -165,8 +232,8 @@ function definerFunctionsWithoutAnExecuteDecision(migrations: Migration[]): stri
   const violations: string[] = [];
 
   for (const { file, sql } of migrations) {
-    for (const { name, header } of headers(sql)) {
-      if (!/security\s+definer/i.test(header)) continue;
+    for (const { name, statement } of functionStatements(sql)) {
+      if (!/security\s+definer/i.test(statement)) continue;
 
       const revokedFromPublic = namesPublic(sql.match(privilegeStatement('revoke', name, 'from'))?.[1]);
       const grantedToPublic = namesPublic(sql.match(privilegeStatement('grant', name, 'to'))?.[1]);
@@ -357,17 +424,23 @@ describe('supabase migrations bootstrap a database from nothing', () => {
 
   it('reads security definer off the two functions that declare it', () => {
     // Without this the check below could pass by seeing no functions at all. A
-    // header parser that stopped matching would take the execute invariant with
-    // it silently, so the classification is asserted rather than assumed. A new
-    // `security definer` function belongs in this list, and needs the revoke that
-    // putting it here will start requiring.
-    const definers = migrations.flatMap(({ sql }) =>
-      headers(sql)
-        .filter(({ header }) => /security\s+definer/i.test(header))
-        .map(({ name }) => name),
+    // statement parser that stopped matching would take the execute invariant
+    // with it silently, so the classification is asserted rather than assumed. A
+    // new `security definer` function belongs in this list, and needs the revoke
+    // that putting it here will start requiring.
+    //
+    // Deduplicated, because a later migration may `create or replace` one of
+    // these to fix its body. That is a second declaration of the same function,
+    // not a classification change, and this assertion is aimed at the second.
+    const definers = new Set(
+      migrations.flatMap(({ sql }) =>
+        functionStatements(sql)
+          .filter(({ statement }) => /security\s+definer/i.test(statement))
+          .map(({ name }) => name),
+      ),
     );
 
-    expect(definers.sort()).toEqual(['consume_beta_rate_limit', 'create_beta_invite']);
+    expect([...definers].sort()).toEqual(['consume_beta_rate_limit', 'create_beta_invite']);
   });
 
   it('leaves execute on a function to the migration that creates it', () => {
@@ -392,6 +465,30 @@ describe('the execute check, against migrations written wrongly on purpose', () 
     expect(executeViolations(loadFixtures('definer_without_revoke.sql'))).toEqual([
       'definer_without_revoke.sql: security definer function public.promote_rider never says whether public may execute it',
     ]);
+  });
+
+  it('catches a security definer function whose attributes follow its body', () => {
+    // `as $$ ... $$ language plpgsql security definer;` is the same declaration
+    // written the other way round, and the option list is order-independent, so
+    // a reader that stopped at the opening `$` would call this an ordinary
+    // function and say nothing about the missing revoke.
+    expect(executeViolations(loadFixtures('definer_attributes_after_body.sql'))).toEqual([
+      'definer_attributes_after_body.sql: security definer function public.promote_rider never says whether public may execute it',
+    ]);
+  });
+
+  it('catches a security definer function created without its schema qualifier', () => {
+    // search_path lands it in public regardless, so it is the same function and
+    // the same hole.
+    expect(executeViolations(loadFixtures('definer_unqualified_name.sql'))).toEqual([
+      'definer_unqualified_name.sql: security definer function public.promote_rider never says whether public may execute it',
+    ]);
+  });
+
+  it('accepts an unqualified function whose revoke is unqualified too', () => {
+    // The other side of the widened match: reading the create without reading
+    // the revoke the same way would fail an author who did write the decision.
+    expect(executeViolations(loadFixtures('definer_unqualified_with_revoke.sql'))).toEqual([]);
   });
 
   it('catches a revoke that names anon and authenticated but not public', () => {
