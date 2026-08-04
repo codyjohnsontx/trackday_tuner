@@ -30,8 +30,11 @@ vi.mock('@/lib/actions/vehicles', () => ({
   getUserProfile: vi.fn(),
 }));
 
-vi.mock('@/lib/supabase/server', () => ({
-  createClient: vi.fn(async () => ({ from })),
+// The customer link is written with the admin client, not the caller's session:
+// `authenticated` holds no UPDATE on profiles, because RLS gates rows and not
+// columns and a user-context update of their own row could also set tier.
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: vi.fn(() => ({ from })),
 }));
 
 vi.mock('@/lib/stripe/server', () => ({

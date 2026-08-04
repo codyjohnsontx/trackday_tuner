@@ -51,30 +51,86 @@
 
 grant usage on schema public to anon, authenticated, service_role;
 
--- The four the Data API actually uses, rather than `all`. `all` on a table also
--- carries truncate, references, trigger and maintain, none of which PostgREST
--- issues and none of which the app needs: the schema is built by migrations
--- running as the owner. For a sequence the three named here are the whole set,
--- so naming them changes nothing there beyond saying so out loud.
+-- Start from nothing for the two untrusted roles.
 --
--- Do not read this as a narrower end state, because it was measured and it is
--- not. On a local stack with this file removed, `sessions` comes out as
--- `anon=Dxtm` - the CLI hands the Data API roles truncate, references, trigger
--- and maintain on its own, and withholds exactly the four that make a table
--- readable. That is why the failure this file fixes reads as "permission denied
--- for table sessions" rather than as a table with no ACL at all. Adding `arwd`
--- to a pre-existing `Dxtm` lands on `arwdDxtm` either way, so what this spelling
--- buys is an honest statement of what the application needs, not a smaller
--- privilege set.
-grant select, insert, update, delete on all tables in schema public
-  to anon, authenticated, service_role;
-grant usage, select, update on all sequences in schema public
-  to anon, authenticated, service_role;
+-- This revoke is not ceremony. With this file removed, a rebuilt stack still
+-- shows `sessions` as `anon=Dxtm`: the CLI hands the Data API roles truncate,
+-- references, trigger and maintain on its own and withholds only the four that
+-- make a table readable, which is why the original failure read as "permission
+-- denied for table sessions" rather than a table with no ACL at all. Granting a
+-- narrower set on top of that leaves the wider one in place, so the platform's
+-- privileges have to be taken away explicitly before ours are added. RLS does
+-- not contain truncate.
+revoke all on all tables in schema public from anon, authenticated;
+revoke all on all sequences in schema public from anon, authenticated;
 
 alter default privileges in schema public
-  grant select, insert, update, delete on tables to anon, authenticated, service_role;
+  revoke all on tables from anon, authenticated;
 alter default privileges in schema public
-  grant usage, select, update on sequences to anon, authenticated, service_role;
+  revoke all on sequences from anon, authenticated;
+
+-- anon gets no table access at all. Every unauthenticated write in the app goes
+-- through the service client (the waitlist and invite routes), and no page reads
+-- a table before sign-in: getTracks in lib/actions/tracks.ts returns early
+-- without a user, and the demo browses fixtures rather than the database. A
+-- future public read must grant itself what it needs, and will fail loudly
+-- rather than silently inherit it.
+
+-- service_role is the trusted server identity and bypasses RLS by design.
+grant select, insert, update, delete on all tables in schema public to service_role;
+grant usage, select, update on all sequences in schema public to service_role;
+
+-- authenticated gets exactly what the application asks for, per table, derived
+-- from every .from(...) call in app/, lib/ and components/ plus the writes the
+-- `security invoker` RPCs perform as their caller.
+--
+-- profiles is SELECT ONLY, and that is the point of this block rather than a
+-- detail of it. Postgres RLS chooses which ROW a policy admits; it cannot
+-- restrict which COLUMN is written. So any UPDATE privilege on profiles lets a
+-- user set tier, beta_access_expires_at and the Stripe identifiers on their own
+-- row and grant themselves paid access. The one legitimate user-context write to
+-- this table, the Stripe customer link, now runs through the admin client inside
+-- an already authenticated server route (app/api/stripe/checkout/route.ts).
+grant select on public.profiles to authenticated;
+
+grant select, insert, update, delete on public.vehicles to authenticated;
+grant select, insert, update, delete on public.tracks to authenticated;
+grant select, insert, update, delete on public.sessions to authenticated;
+grant select, insert, update, delete on public.session_environment to authenticated;
+grant select, insert, update, delete on public.session_changes to authenticated;
+grant select, insert, update, delete on public.vehicle_baselines to authenticated;
+grant select, insert, update, delete on public.sag_entries to authenticated;
+
+-- Written by replace_session_laps, which is `security invoker` and so needs the
+-- caller to hold these itself: it deletes and reinserts laps, and upserts the
+-- matching telemetry summary.
+grant select, insert, update, delete on public.session_laps to authenticated;
+grant select, insert, update, delete on public.telemetry_summaries to authenticated;
+
+-- save_session_outcome upserts feedback, upserts race engineer memory and marks
+-- a recommendation, all as the caller.
+grant select, insert, update, delete on public.session_feedback to authenticated;
+grant select, insert, update on public.race_engineer_memory to authenticated;
+grant select, update on public.ai_recommendations to authenticated;
+
+grant select, insert, update on public.beta_feedback to authenticated;
+grant select, insert on public.product_events to authenticated;
+
+-- Deliberately absent for authenticated: ai_requests, beta_waitlist,
+-- beta_invites and beta_rate_limits. Every one of those is reached only through
+-- the service client, and beta_invites and beta_rate_limits back the invite and
+-- rate-limit controls that create_beta_invite and consume_beta_rate_limit exist
+-- to protect.
+
+-- Future tables reach service_role automatically and the Data API roles never.
+-- The revokes above already cleared anon and authenticated from the default ACL,
+-- so a table added by a later migration arrives with no Data API access and the
+-- migration that adds it grants what that table actually needs. Without this, one
+-- new table silently reopens exactly the hole this file closes.
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to service_role;
+alter default privileges in schema public
+  grant usage, select, update on sequences to service_role;
 alter default privileges in schema public
   revoke execute on routines from public;
 

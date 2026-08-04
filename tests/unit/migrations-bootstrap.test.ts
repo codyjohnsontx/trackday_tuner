@@ -145,32 +145,88 @@ describe('supabase migrations bootstrap a database from nothing', () => {
 
   it('grants the schema to the roles the application connects as', () => {
     const sql = migrations.map(({ sql: body }) => body).join('\n').toLowerCase();
-    const roles = ['anon', 'authenticated', 'service_role'];
 
-    // Each role is looked for on its own inside the grant's role list, so
-    // `to service_role, authenticated, anon` passes like any other ordering of
-    // the same statement. Reported as the roles missing from the closest
-    // matching statement, so a failure names what is absent rather than only
-    // saying the pattern did not match.
-    function rolesMissingFrom(pattern: RegExp): string[] {
-      const shortfalls = matchAll(sql, pattern)
-        .map((targets) => roles.filter((role) => !new RegExp(`\\b${role}\\b`).test(targets)))
-        .sort((a, b) => a.length - b.length);
+    // service_role is the trusted server identity, so it is the only role a
+    // schema-wide grant may name. anon and authenticated are granted per table.
+    expect(sql).toMatch(
+      /grant\s+[^;]*\son\s+all\s+tables\s+in\s+schema\s+public\s+to\s+service_role\s*;/,
+    );
+    expect(sql).toMatch(
+      /alter\s+default\s+privileges\s+in\s+schema\s+public\s+grant\s+[^;]*\son\s+tables\s+to\s+service_role\s*;/,
+    );
+    // The platform grants the Data API roles truncate, references and trigger on
+    // its own, so these revokes are what actually removes them.
+    expect(sql).toMatch(
+      /revoke\s+all\s+on\s+all\s+tables\s+in\s+schema\s+public\s+from\s+[^;]*\banon\b/,
+    );
+    expect(sql).toMatch(
+      /alter\s+default\s+privileges\s+in\s+schema\s+public\s+revoke\s+all\s+on\s+tables\s+from\s+[^;]*\banon\b/,
+    );
+    expect(sql).toMatch(/grant\s+usage\s+on\s+schema\s+public\s+to\s+[^;]*\banon\b/);
+    // The app cannot read anything if authenticated never receives its tables.
+    expect(sql).toMatch(/grant\s+[^;]*\son\s+public\.sessions\s+to\s+authenticated/);
+  });
 
-      return shortfalls[0] ?? roles;
+  // The regression test for the privilege escalation this schema shipped with.
+  //
+  // An ordinary authenticated user, holding only the public key and their own
+  // session, could PATCH their own profiles row and set tier to pro,
+  // beta_access_expires_at to a future date, and both Stripe identifiers. It was
+  // reproduced twice against a rebuilt local database and returned HTTP 200 with
+  // the elevated values. lib/access.ts grants Pro on either tier or beta access,
+  // so that is paid entitlement for free, and rewriting stripe_customer_id points
+  // a billing identifier wherever the caller likes.
+  //
+  // The cause is not the row policy, which is correct. Postgres RLS chooses which
+  // ROW a policy admits and cannot restrict which COLUMN is written, so the only
+  // thing standing between a user and their own tier column is whether
+  // `authenticated` holds UPDATE on the table at all. Narrowing an earlier
+  // `grant all` to CRUD did not help, because UPDATE is the privilege that
+  // matters.
+  //
+  // WHAT THIS CATCHES: any migration granting anon or authenticated more than
+  // SELECT on profiles, and any schema-wide or default-privilege table grant that
+  // reaches those roles and would sweep profiles up with everything else.
+  //
+  // WHAT IT DOES NOT CATCH: it reads SQL as text. It cannot see a grant made by
+  // hand in the dashboard, and it says nothing about the hosted project, whose
+  // privileges are not described by these files. Proving the attack fails needs a
+  // rebuilt database and a real Data API request, which is how this fix was
+  // verified and is recorded in CLAUDE.md.
+  it('never lets a user write their own entitlement or billing columns', () => {
+    const violations: string[] = [];
+
+    for (const { file, sql } of migrations) {
+      for (const match of sql.matchAll(
+        /grant\s+([^;]*?)\s+on\s+(?:table\s+)?public\.profiles\s+to\s+([^;]*)/gi,
+      )) {
+        const [, privileges, targets] = match;
+        const exposed = ['anon', 'authenticated', 'public'].filter((role) =>
+          new RegExp(`\\b${role}\\b`, 'i').test(targets),
+        );
+        const writes = ['insert', 'update', 'delete', 'all'].filter((privilege) =>
+          new RegExp(`\\b${privilege}\\b`, 'i').test(privileges),
+        );
+        if (exposed.length > 0 && writes.length > 0) {
+          violations.push(`${file}: grant ${writes.join(', ')} on profiles to ${exposed.join(', ')}`);
+        }
+      }
+
+      // A schema-wide or default grant reaching these roles would carry profiles
+      // with it, whatever the per-table statements say.
+      for (const match of sql.matchAll(
+        /(?:grant\s+[^;]*?\s+on\s+all\s+tables\s+in\s+schema\s+public|alter\s+default\s+privileges[^;]*?\bgrant\s+[^;]*?\s+on\s+tables)\s+to\s+([^;]*)/gi,
+      )) {
+        const exposed = ['anon', 'authenticated', 'public'].filter((role) =>
+          new RegExp(`\\b${role}\\b`, 'i').test(match[1]),
+        );
+        if (exposed.length > 0) {
+          violations.push(`${file}: schema-wide table grant reaches ${exposed.join(', ')}`);
+        }
+      }
     }
 
-    // A grant naming all three roles at once, in any order, on tables.
-    expect(
-      rolesMissingFrom(/grant\s+[^;]*\s+on\s+all\s+tables\s+in\s+schema\s+public\s+to\s+([^;]*)/g),
-    ).toEqual([]);
-    // Without this, every migration added after the grant file is invisible again.
-    expect(
-      rolesMissingFrom(
-        /alter\s+default\s+privileges\s+in\s+schema\s+public\s+grant\s+[^;]*\s+on\s+tables\s+to\s+([^;]*)/g,
-      ),
-    ).toEqual([]);
-    expect(sql).toMatch(/grant\s+usage\s+on\s+schema\s+public\s+to\s+[^;]*\banon\b/);
+    expect(violations).toEqual([]);
   });
 
   it('leaves execute on a function to the migration that creates it', () => {

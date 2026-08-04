@@ -124,16 +124,37 @@ to make that true, and both are easy to undo by accident:
   `relation "public.profiles" does not exist`. It is dated *before* the rest of
   the history on purpose, and holds the tables' **original** shape - later
   migrations still add the columns they always added
-- `20260719001100_grant_data_api_access.sql` grants the `public` schema, and every
-  table and sequence in it, to `anon`, `authenticated` and `service_role`, and sets
-  `alter default privileges` so later migrations need no grant of their own.
-  Nothing in the repo granted table access before it. The hosted project never
-  noticed because it predates the change and still carries Supabase's legacy
+- `20260719001100_grant_data_api_access.sql` is the only place the Data API roles
+  get table access. Nothing in the repo granted any before it. The hosted project
+  never noticed because it predates the change and still carries Supabase's legacy
   auto-expose defaults; a project created today does not (see
   `auto_expose_new_tables` in `supabase/config.toml`), so it applied every
   migration cleanly and then answered every PostgREST request with
-  `permission denied for table ...`. RLS, not the grant, is what separates
-  riders' rows
+  `permission denied for table ...`
+
+**Grants are per role and per table, and that is a security boundary rather than
+tidiness.** `anon` gets no table access at all, `service_role` gets everything
+schema-wide, and `authenticated` is granted table by table. `profiles` is
+`select` only for it.
+
+The reason is worth knowing before widening any of it. **RLS chooses which ROW a
+policy admits and cannot restrict which COLUMN is written.** So while
+`profiles: update own` correctly limits a user to their own row, any `update`
+privilege on that table would also let them set `tier`, `beta_access_expires_at`
+and the Stripe identifiers on it, which `lib/access.ts` reads as paid access. That
+was reproduced against a rebuilt database, twice, as a plain `PATCH` carrying only
+the public key and the user's own session. Withholding the privilege is the fix;
+no policy can be written that would do it. The one legitimate user-context write
+to that table, the Stripe customer link, runs through the admin client inside an
+already authenticated route (`app/api/stripe/checkout/route.ts`).
+
+The default privileges match: future tables reach `service_role` and never the
+Data API roles, so a migration adding a table grants what that table needs. The
+file also has to `revoke` before it grants, because the CLI itself hands `anon`
+and `authenticated` truncate, references and trigger, and RLS does not apply to
+truncate. `tests/unit/migrations-bootstrap.test.ts` fails on any migration that
+grants those roles more than `select` on `profiles`, or that reaches them with a
+schema-wide or default table grant
 
 What it builds is the schema and nothing else. The repository does not provision
 the `vehicle-photos` storage bucket that `components/garage/vehicle-form.tsx`
