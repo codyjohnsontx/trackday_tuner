@@ -351,12 +351,54 @@ Free → Pro conversion rate (after hitting limits / wanting compare/export/AI)
 
 ## Local Run
 
+The app needs a database, and this repository builds one. Install first, then
+start Docker: the local stack runs in containers, and `supabase start` silently
+has nothing to do without it.
+
 ```bash
 npm install
+npx supabase start
+```
+
+That creates the database and applies every migration in `supabase/migrations/`
+in order, on the ports declared in `supabase/config.toml` (API 54321, database
+54322, Studio 54323). The CLI is a repo devDependency, which is why the bare
+`supabase` in the `db:*` scripts resolves - npm puts `node_modules/.bin` on PATH
+for scripts, but not for your own shell, so run it as `npx supabase` here. That
+is also why `npm install` comes first: on a clean checkout there is no local copy
+yet and `npx` would fetch an unpinned CLI from the registry instead of the
+pinned one.
+See "Building a database from nothing" in `CLAUDE.md` for why two of those
+migrations exist only to make a clean build work, and for the caveat that
+applies to the hosted project.
+
+Copy `.env.example` to `.env.local` and fill `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` from
+`npx supabase status -o env`. Those are local development values, not the hosted
+project's.
+
+Set `BETA_INVITE_ONLY=false` in the same file. `.env.example` ships it as `true`
+and `isBetaInviteOnly()` in `lib/env.server.ts` reads unset as `true`, so leaving
+it alone puts the invite-only wall in front of signup and no account can be
+created. To exercise the invite flow instead, leave it `true`, set
+`BETA_INVITE_SECRET`, and mint a code with
+`npm run beta:invite -- create you@example.com`.
+
+```bash
 npm run dev
 ```
 
-Then open `http://localhost:3000`.
+Then open `http://localhost:3000`. Email confirmation is disabled locally in
+`supabase/config.toml`, so signing up logs you straight in.
+
+What that builds is the database, not everything the app touches. This repository
+does not provision the `vehicle-photos` storage bucket, so adding a vehicle with a
+photo fails with "Bucket not found" until that bucket is created out of band, and
+no tracks are seeded, so a fresh database starts with none to pick from.
+
+To rebuild, `npx supabase db reset` re-applies every migration to the running
+stack, and `npx supabase stop --no-backup` followed by `npx supabase start`
+destroys the containers and volumes and rebuilds from nothing.
 
 ## Linting
 

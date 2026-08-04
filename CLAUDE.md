@@ -106,10 +106,104 @@ the remote is the source of truth for what has been applied.
   prefix** — an earlier pair both named `20260224_` could not both be recorded
 - `create table`, `create index`, and `create function` statements are written
   idempotently (`if not exists` / `or replace`). `create policy` is not, so a
-  half-applied migration cannot simply be replayed — check `db:status` first
+  half-applied migration cannot simply be replayed — check `db:status` first. The
+  baseline below is the one exception: it drops each policy first, because it is
+  written to meet a database that already has those tables
 - Applying requires `supabase login` and `supabase link`, which need a personal
   access token and the database password. Those are interactive and belong to
   the operator, not to CI or an agent
+
+### Building a database from nothing
+
+`supabase start` on a clean machine builds the whole schema. Two files exist only
+to make that true, and both are easy to undo by accident:
+
+- `20260223000000_init_baseline_schema.sql` creates `profiles`, `vehicles`,
+  `tracks` and `sessions`. Those four were originally made by hand in the
+  dashboard, so nothing created them and the second migration died on
+  `relation "public.profiles" does not exist`. It is dated *before* the rest of
+  the history on purpose, and holds the tables' **original** shape - later
+  migrations still add the columns they always added
+- `20260719001100_grant_data_api_access.sql` is the only place the Data API roles
+  get table access. Nothing in the repo granted any before it. The hosted project
+  never noticed because it predates the change and still carries Supabase's legacy
+  auto-expose defaults; a project created today does not (see
+  `auto_expose_new_tables` in `supabase/config.toml`), so it applied every
+  migration cleanly and then answered every PostgREST request with
+  `permission denied for table ...`
+
+**Grants are per role and per table, and that is a security boundary rather than
+tidiness.** `anon` gets no table access at all, `service_role` gets everything
+schema-wide, and `authenticated` is granted table by table. `profiles` is
+`select` only for it.
+
+The reason is worth knowing before widening any of it. **RLS chooses which ROW a
+policy admits and cannot restrict which COLUMN is written.** So while
+`profiles: update own` correctly limits a user to their own row, any `update`
+privilege on that table would also let them set `tier`, `beta_access_expires_at`
+and the Stripe identifiers on it, which `lib/access.ts` reads as paid access. That
+was reproduced against a rebuilt database, twice, as a plain `PATCH` carrying only
+the public key and the user's own session. Withholding the privilege is the fix;
+no policy can be written that would do it. The one legitimate user-context write
+to that table, the Stripe customer link, runs through the admin client inside an
+already authenticated route (`app/api/stripe/checkout/route.ts`).
+
+The default privileges match: future tables reach `service_role` and never the
+Data API roles, so a migration adding a table grants what that table needs. The
+file also has to `revoke` before it grants, because the CLI itself hands `anon`
+and `authenticated` truncate, references and trigger, and RLS does not apply to
+truncate. `tests/unit/migrations-bootstrap.test.ts` fails on any migration that
+grants those roles more than `select` on `profiles`, or that reaches them with a
+schema-wide or default table grant
+
+What it builds is the schema and nothing else. The repository does not provision
+the `vehicle-photos` storage bucket that `components/garage/vehicle-form.tsx`
+uploads to, so adding a vehicle with a photo fails with `Bucket not found` until
+that bucket is created out of band, and no tracks are seeded.
+
+Functions are deliberately *not* granted schema-wide. RLS contains a table; it does
+not contain a `security definer` function, which runs as its owner and bypasses
+every policy, so for a function the grant *is* the access control. Execute belongs
+to the migration that creates the function, which is the only place its caller is
+known - see the `revoke` / `grant execute` pairs on `create_beta_invite` and
+`consume_beta_rate_limit`. When that migration is already applied on the remote,
+editing it would change the file and not the database, so the pair goes in a new
+migration instead: `20260719001100` carries the pairs for `save_session_outcome`
+and `record_race_engineer_memory_feedback` for that reason. The routines default
+privilege therefore revokes execute from `public` rather than granting it.
+
+That revoke is a declaration of intent, not a guarantee, and the difference was
+measured rather than reasoned about. It is recorded correctly in `pg_default_acl`,
+but on a rebuilt local stack a function created afterwards still comes out with a
+null `proacl`, which is Postgres's built-in `execute` to `public`. The same
+statement against `tables` does take effect, so the mechanism works and this one
+case does not. **A new function is world-executable until its own migration revokes
+it.** Copy the `revoke` / `grant execute` pair whenever you add one;
+`tests/unit/migrations-bootstrap.test.ts` only catches a later migration undoing
+that pair, not a pair that was never written.
+
+`tests/unit/migrations-bootstrap.test.ts` reads the SQL as text and fails if a
+migration alters or references a table nothing earlier creates, if those grants go
+missing, or if a migration re-grants execute schema-wide over a per-function
+`revoke`. It cannot tell you a migration *runs* - only `supabase start` from a
+destroyed local stack proves that, and only then exercising the app against it
+proves PostgREST can see the result.
+
+The baseline is dated before migrations the remote has already recorded, so
+`db push` will report it as out of order and refuse without `--include-all`.
+
+Do not reach for `migration repair` on reflex. The baseline is not a pure no-op
+against a database that already has these tables: `create table if not exists`
+skips, but each policy is preceded by `drop policy if exists`, so running it
+replaces the live policies with the ones in this file. Those were reconstructed
+from `types/supabase.ts` and the application's queries, not read off the hosted
+project, so they may not match what is actually there. Compare the live policy
+definitions against this file first (`pg_policies` in the SQL editor, or
+`npx supabase db diff --linked`). Only once they agree, record it as applied
+rather than running it:
+`supabase migration repair --status applied 20260223000000`. If they disagree,
+that difference is the real finding and needs deciding before anything is
+recorded.
 
 ## Project Structure
 

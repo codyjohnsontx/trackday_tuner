@@ -143,14 +143,29 @@ and execution order may legitimately diverge; the reason is recorded there.
 
    Remaining: deploy, then confirm a real Race Engineer call logs an `ok` status.
 
-4. **Core schema is not in version control** - `R4` - `supabase/migrations/` begins
-   at `20260224` and contains only additive changes. Nothing creates `profiles`,
-   `vehicles`, `tracks`, or `sessions`. No fresh environment can be stood up from
-   the repo, which blocks staging, disaster recovery, and any e2e run against a
-   clean database, and leaves the RLS policies on the four tables holding all rider
-   data unversioned and unreviewable. Fourth because it is the widest roadblock in
-   the list and the only item where a bad day means the data model cannot be
-   rebuilt. Capture a baseline with `supabase db pull`.
+4. **Core schema is not in version control** - `R4` - **Fixed in the repo on
+   2026-08-03.** `supabase/migrations/` began at `20260224` and contained only
+   additive changes. Nothing created `profiles`, `vehicles`, `tracks`, or
+   `sessions`. No fresh environment could be stood up from the repo, which blocked
+   staging, disaster recovery, and any e2e run against a clean database, and left
+   the RLS policies on the four tables holding all rider data unversioned and
+   unreviewable. Fourth because it is the widest roadblock in the list and the only
+   item where a bad day means the data model cannot be rebuilt.
+
+   `20260223000000_init_baseline_schema.sql` now creates those four tables and their
+   policies, dated before the rest of the history so the migrations the hosted
+   project has already recorded stay untouched. It was reconstructed from
+   `types/supabase.ts` and from what the later migrations alter and reference,
+   rather than captured with `supabase db pull`, which needs a linked hosted
+   project. A second failure sat underneath it: nothing in the repo granted `anon`,
+   `authenticated` or `service_role` anything, so a fresh project applied every
+   migration cleanly and then answered every PostgREST request with
+   `permission denied for table ...`. `20260719001100_grant_data_api_access.sql`
+   closes that, and `tests/unit/migrations-bootstrap.test.ts` guards both. The
+   mechanics and the hosted-project caveat are in CLAUDE.md under "Building a
+   database from nothing".
+
+   Remaining: the hosted project has not recorded the out-of-order baseline yet.
 
 <!-- The band headings and the paragraph above name items by absolute position,
      so these lists continue the numbering across headings rather than each
