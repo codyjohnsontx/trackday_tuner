@@ -202,8 +202,8 @@ missing, if a `security definer` function arrives without that decision, or if a
 migration re-grants execute schema-wide over a per-function `revoke`. It cannot
 tell you a migration *runs* - only `supabase start` from a destroyed local stack
 proves that, and only then exercising the app against it proves PostgREST can see
-the result. It reads the decision rather than its effect, so a revoke naming the
-wrong roles still passes.
+the result. It reads the decision rather than its effect, so once `public` is
+named, a revoke listing the wrong roles beside it still passes.
 
 The wrong SQL it is meant to catch lives in `tests/fixtures/migration-guard/`,
 outside `supabase/migrations/` so no Supabase command applies it. Each check was
