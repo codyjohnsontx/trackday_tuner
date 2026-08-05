@@ -35,7 +35,7 @@ describe('GET /auth/callback', () => {
     const response = await GET(new Request('http://127.0.0.1:3000/auth/callback?next=/dashboard'));
 
     expect(response.status).toBe(307);
-    expect(response.headers.get('location')).toBe('http://127.0.0.1:3000/login?error=oauth_callback_failed');
+    expect(response.headers.get('location')).toBe('http://127.0.0.1:3000/login?error=auth_callback_failed');
   });
 
   it('exchanges code and redirects to dashboard by default', async () => {
@@ -71,6 +71,6 @@ describe('GET /auth/callback', () => {
 
     const response = await GET(new Request('http://127.0.0.1:3000/auth/callback?code=bad'));
 
-    expect(response.headers.get('location')).toBe('http://127.0.0.1:3000/login?error=oauth_callback_failed');
+    expect(response.headers.get('location')).toBe('http://127.0.0.1:3000/login?error=auth_callback_failed');
   });
 });

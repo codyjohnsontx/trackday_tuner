@@ -7,22 +7,30 @@ import { Input } from '@/components/ui/input';
 import { type OAuthProvider, type OAuthProviderConfig } from '@/lib/auth/providers';
 import { createClient } from '@/lib/supabase/client';
 
-type AuthMode = 'sign-in' | 'sign-up';
+type AuthMode = 'sign-in' | 'sign-up' | 'reset';
 
 interface AuthFormProps {
   providers: OAuthProviderConfig[];
   inviteOnly?: boolean;
+  /** Message from a redirect that landed here, e.g. an expired email link. */
+  initialError?: string;
 }
 
-export function AuthForm({ providers: oauthProviders, inviteOnly = false }: AuthFormProps) {
+export function AuthForm({ providers: oauthProviders, inviteOnly = false, initialError = '' }: AuthFormProps) {
   const router = useRouter();
   const [mode, setMode] = useState<AuthMode>('sign-in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [inviteCode, setInviteCode] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState(initialError);
   const [infoMessage, setInfoMessage] = useState('');
   const [loading, setLoading] = useState(false);
+
+  function switchMode(next: AuthMode) {
+    setMode(next);
+    setErrorMessage('');
+    setInfoMessage('');
+  }
 
   async function handleOAuthSignIn(provider: OAuthProvider) {
     setLoading(true);
@@ -48,6 +56,24 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
     setLoading(true);
     setErrorMessage('');
     setInfoMessage('');
+
+    if (mode === 'reset') {
+      const supabase = createClient();
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+      });
+
+      // Deliberately the same answer whether or not that address has an account:
+      // the reply to this form must not be a way to find out who has one.
+      if (error) {
+        setErrorMessage(error.message);
+      } else {
+        setInfoMessage(`If ${email} has an account, a reset link is on its way. It expires in an hour.`);
+      }
+
+      setLoading(false);
+      return;
+    }
 
     if (mode === 'sign-in') {
       const supabase = createClient();
@@ -114,9 +140,20 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
     setLoading(false);
   }
 
+  const isReset = mode === 'reset';
+
   return (
     <section className="space-y-4 rounded-card bg-surface p-4">
-      {!inviteOnly ? <div className="space-y-2">
+      {isReset ? (
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold text-ink">Reset your password</h2>
+          <p className="text-sm text-ink-dim">
+            Enter the email you signed up with and we will send you a link to set a new password.
+          </p>
+        </div>
+      ) : null}
+
+      {!inviteOnly && !isReset ? <div className="space-y-2">
         {oauthProviders.map((provider) => (
           <div key={provider.id} className="space-y-1">
             <Button
@@ -136,28 +173,30 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
         ))}
       </div> : null}
 
-      {!inviteOnly ? <div className="flex items-center gap-2">
+      {!inviteOnly && !isReset ? <div className="flex items-center gap-2">
         <span className="h-px flex-1 bg-surface-3" />
         <span className="text-xs uppercase tracking-wide text-ink-dim">or</span>
         <span className="h-px flex-1 bg-surface-3" />
       </div> : null}
 
-      <div className="grid grid-cols-2 gap-2 rounded-row bg-surface-2 p-1">
-        <Button
-          variant={mode === 'sign-in' ? 'primary' : 'secondary'}
-          className="min-h-11"
-          onClick={() => setMode('sign-in')}
-        >
-          Sign In
-        </Button>
-        <Button
-          variant={mode === 'sign-up' ? 'primary' : 'secondary'}
-          className="min-h-11"
-          onClick={() => setMode('sign-up')}
-        >
-          Sign Up
-        </Button>
-      </div>
+      {!isReset ? (
+        <div className="grid grid-cols-2 gap-2 rounded-row bg-surface-2 p-1">
+          <Button
+            variant={mode === 'sign-in' ? 'primary' : 'secondary'}
+            className="min-h-11"
+            onClick={() => switchMode('sign-in')}
+          >
+            Sign In
+          </Button>
+          <Button
+            variant={mode === 'sign-up' ? 'primary' : 'secondary'}
+            className="min-h-11"
+            onClick={() => switchMode('sign-up')}
+          >
+            Sign Up
+          </Button>
+        </div>
+      ) : null}
 
       <form className="space-y-3" onSubmit={handleSubmit}>
         <Input
@@ -179,21 +218,35 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
             required
           />
         ) : null}
-        <Input
-          label="Password"
-          type="password"
-          autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="At least 8 characters"
-          minLength={8}
-          required
-        />
+        {!isReset ? (
+          <Input
+            label="Password"
+            type="password"
+            autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="At least 8 characters"
+            minLength={8}
+            required
+          />
+        ) : null}
 
         <Button type="submit" fullWidth loading={loading}>
-          {mode === 'sign-in' ? 'Sign In' : 'Create Account'}
+          {isReset ? 'Send Reset Link' : mode === 'sign-in' ? 'Sign In' : 'Create Account'}
         </Button>
       </form>
+
+      {mode === 'sign-in' ? (
+        <Button variant="ghost" size="sm" fullWidth onClick={() => switchMode('reset')}>
+          Forgot your password?
+        </Button>
+      ) : null}
+
+      {isReset ? (
+        <Button variant="ghost" size="sm" fullWidth onClick={() => switchMode('sign-in')}>
+          Back to sign in
+        </Button>
+      ) : null}
 
       {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
       {infoMessage ? <p className="text-sm text-faster">{infoMessage}</p> : null}
