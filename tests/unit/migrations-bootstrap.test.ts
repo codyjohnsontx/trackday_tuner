@@ -54,8 +54,17 @@ import { describe, expect, it } from 'vitest';
 // would have the first `;` inside it read as the end of the declaration, hiding
 // any attribute that follows. Nor does it cover `security invoker` functions,
 // which run as their caller and stay inside RLS, so for them execute is not the
-// access control and requiring a revoke would fail two of the three already in
-// the repository. Nor does it see a missing table named anywhere other
+// access control. 20260719001100 has since given the client-callable ones an
+// explicit revoke anyway, so the reason to leave them alone is no longer that
+// covering them would fail the repository wholesale. Two narrower reasons remain:
+// `set_updated_at` has no revoke and needs none, because it is reached through
+// the triggers that name it rather than called by a client; and 20260719001100
+// revokes `save_session_outcome` and `record_race_engineer_memory_feedback` in a
+// *later* migration than the one that creates them, which the same-migration rule
+// below would flag. That rule is deliberately strict for `security definer`,
+// where the gap between the two migrations is a window in which the function is
+// world-executable, and it is why widening this check to every function would
+// fail main today. Nor does it see a missing table named anywhere other
 // than a foreign key: a policy or function body reading `from public.X` or
 // `insert into public.X` aborts `supabase start` exactly the way the missing
 // profiles table did, and passes here, because matching those would also fire on

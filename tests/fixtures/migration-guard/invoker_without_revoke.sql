@@ -2,9 +2,14 @@
 --
 -- A `security invoker` function runs as its caller, so every RLS policy on every
 -- table it touches still applies. Being executable by anon buys an attacker
--- nothing they could not do by querying the tables directly. Three functions in
--- supabase/migrations are exactly this shape and only one of them revokes, so a
--- guard covering them would fail the repository on day one and get deleted.
+-- nothing they could not do by querying the tables directly.
+--
+-- 20260719001100 now revokes execute on the client-callable invoker functions
+-- anyway, so this is no longer the difference between passing and failing the
+-- whole repository. It is still out of scope for two reasons: `set_updated_at`
+-- has no revoke and needs none, being reached through triggers rather than
+-- called by a client, and two of those revokes live in a later migration than
+-- the one creating the function, which the same-migration rule would flag.
 
 create or replace function public.save_rider_note(
   p_session_id uuid,

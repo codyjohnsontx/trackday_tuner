@@ -196,6 +196,13 @@ public still holds execute reads like a lockdown and closes nothing. That near-m
 has its own fixture. `security invoker` functions are out of scope - they run as
 their caller, so RLS still applies and execute is not the access control.
 
+The check requires the decision in the function's **own** migration, because the
+gap between two migrations is a window in which a `security definer` function is
+world-executable. Note that `20260719001100` revokes `save_session_outcome` and
+`record_race_engineer_memory_feedback` in a later migration than the one creating
+them. That is fine for those two, which are `security invoker`, but a
+`security definer` function written that way is flagged on purpose.
+
 `tests/unit/migrations-bootstrap.test.ts` reads the SQL as text and fails if a
 migration alters or references a table nothing earlier creates, if those grants go
 missing, if a `security definer` function arrives without that decision, or if a
