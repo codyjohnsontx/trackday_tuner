@@ -35,7 +35,8 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 
 ### Creating a PR (exact steps, no deviation)
 
-- PRs are ready for review by default. Create a draft PR only when the user explicitly asks for a draft.
+- PRs are opened as drafts by default, so step 7 uses `gh pr create --draft`. CodeRabbit does not review draft pull requests, so the pipeline's own fix commits cost no review quota while the branch is still being worked. The author marks the pull request ready for review when their review quota allows; an agent never does that, and never converts a draft to ready.
+- Every entry in `path_filters` in `.coderabbit.yaml` must begin with `!`. An entry without one is an include, not an exclude, and a single include narrows the whole review to only what it matches, skipping everything else silently. Check this before editing that file.
 
 1. `git status` — working tree must be clean. If not, stop and tell the user.
 2. `ls .git/index.lock 2>/dev/null` — if lock exists, stop and tell the user. Do not delete it.
@@ -43,7 +44,7 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 4. `git log --oneline main..HEAD` — show the user exactly which commits are going up. Wait for confirmation before continuing.
 5. `git push -u origin HEAD` — wait for it to fully complete before proceeding. If it fails, report the error and stop.
 6. `git branch -vv` — confirm the branch now shows a remote tracking ref. If not, stop.
-7. `gh pr create --title "<concise title>" --body "<summary + test plan>"` — write an explicit title and body. Do not use `--fill`.
+7. `gh pr create --draft --title "<concise title>" --body "<summary + test plan>"` — write an explicit title and body. Do not use `--fill`.
 
 **Never** run extra staging, committing, stashing, or branch operations unless explicitly asked. If the push is slow, wait — do not retry or run a second push in parallel.
 
@@ -51,7 +52,7 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 
 - PRs merge with a **merge commit** — `gh pr merge <n> --merge`. The merge commit takes the PR title as its message with a blank body. Squash merging is disabled on the repository; rebase merging is allowed but is not the default
 - Every commit on the branch lands on `main`, so each one must stand on its own. No `wip`, no `fix typo`, no commits that only make sense next to the one after them
-- Review-response work is a normal commit describing what changed and why, not an amendment to the original
+- Review-response work is a normal commit describing what changed and why, not an amendment to the original. Pushing it does not trigger a second CodeRabbit review: incremental review is off in `.coderabbit.yaml`, so a re-review is requested with `@coderabbitai review` once the branch is ready
 - `git log --first-parent --oneline` gives the one-line-per-PR view of `main`; plain `git log` gives the full detail
 - The remote branch is deleted automatically on merge. Clean up locally with `git checkout main`, `git pull --ff-only`, `git branch -d <branch>`, `git remote prune origin`
 - Merging is the user's call. Open the PR, report it, and stop
