@@ -20,6 +20,13 @@ describe('sanitizeNextPath', () => {
     expect(sanitizeNextPath('//evil.example')).toBe('/dashboard');
   });
 
+  it('rejects host-escaping paths, slash or backslash', () => {
+    // WHATWG URL parsers treat \ as /, so /\evil.example resolves like //evil.example
+    expect(sanitizeNextPath('//evil.example')).toBe('/dashboard');
+    expect(sanitizeNextPath('/\\evil.example')).toBe('/dashboard');
+    expect(sanitizeNextPath('/dashboard\\@evil.example')).toBe('/dashboard');
+  });
+
   it('allows internal paths', () => {
     expect(sanitizeNextPath('/dashboard')).toBe('/dashboard');
     expect(sanitizeNextPath('/tools')).toBe('/tools');
