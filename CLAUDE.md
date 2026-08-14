@@ -247,7 +247,7 @@ components/garage/   # vehicle form
 lib/actions/         # server actions (sessions, tracks, vehicles, sag)
 lib/rag/             # RAG retrieval, prompt, policy, and validation helpers
 lib/supabase/        # client, server, middleware, admin clients
-lib/auth/            # getAuthenticatedUser(), isAuthenticated()
+lib/auth/            # getViewer(), isAuthenticated(), next-path sanitizing, error copy
 lib/utils.ts         # cn() utility (twMerge + clsx)
 lib/billing.ts       # plan/tier helpers
 lib/plans.ts         # plan definitions
