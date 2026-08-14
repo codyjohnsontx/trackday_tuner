@@ -14,20 +14,22 @@ export function SetPasswordForm() {
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [messageKey, setMessageKey] = useState(0);
   const [loading, setLoading] = useState(false);
 
-  // Checked on submit rather than on every keystroke: a mismatch warning that
-  // appears while the second field is still being typed is always wrong at first.
-  const mismatch = submitAttempted && password !== confirmation;
+  function showError(text: string) {
+    setErrorMessage(text);
+    setMessageKey((key) => key + 1);
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage('');
-    setSubmitAttempted(true);
 
+    // Checked on submit rather than on every keystroke: a mismatch warning that
+    // appears while the second field is still being typed is always wrong at first.
     if (password !== confirmation) {
-      setErrorMessage('Those two passwords do not match.');
+      showError('Those two passwords do not match.');
       return;
     }
 
@@ -38,7 +40,7 @@ export function SetPasswordForm() {
       const { error } = await supabase.auth.updateUser({ password });
 
       if (error) {
-        setErrorMessage(error.message);
+        showError(error.message);
         setLoading(false);
         return;
       }
@@ -46,7 +48,7 @@ export function SetPasswordForm() {
       router.replace('/dashboard');
       router.refresh();
     } catch {
-      setErrorMessage('Could not reach the server to save your password. Check your connection and try again.');
+      showError('Could not reach the server to save your password. Check your connection and try again.');
       setLoading(false);
     }
   }
@@ -59,7 +61,10 @@ export function SetPasswordForm() {
           type="password"
           autoComplete="new-password"
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          onChange={(event) => {
+            setPassword(event.target.value);
+            setErrorMessage('');
+          }}
           placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
           minLength={MIN_PASSWORD_LENGTH}
           required
@@ -69,10 +74,12 @@ export function SetPasswordForm() {
           type="password"
           autoComplete="new-password"
           value={confirmation}
-          onChange={(event) => setConfirmation(event.target.value)}
+          onChange={(event) => {
+            setConfirmation(event.target.value);
+            setErrorMessage('');
+          }}
           placeholder="Type it again"
           minLength={MIN_PASSWORD_LENGTH}
-          error={mismatch ? 'Those two passwords do not match.' : undefined}
           required
         />
 
@@ -81,7 +88,7 @@ export function SetPasswordForm() {
         </Button>
 
         {errorMessage ? (
-          <p role="alert" className="text-sm text-slower">
+          <p key={messageKey} role="alert" className="text-sm text-slower">
             {errorMessage}
           </p>
         ) : null}

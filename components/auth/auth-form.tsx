@@ -25,7 +25,18 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
   const [inviteCode, setInviteCode] = useState('');
   const [errorMessage, setErrorMessage] = useState(initialError);
   const [infoMessage, setInfoMessage] = useState('');
+  const [messageKey, setMessageKey] = useState(0);
   const [loading, setLoading] = useState(false);
+
+  function showError(text: string) {
+    setErrorMessage(text);
+    setMessageKey((key) => key + 1);
+  }
+
+  function showInfo(text: string) {
+    setInfoMessage(text);
+    setMessageKey((key) => key + 1);
+  }
 
   function switchMode(next: AuthMode) {
     setMode(next);
@@ -47,11 +58,11 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
       });
 
       if (error) {
-        setErrorMessage(error.message);
+        showError(error.message);
         setLoading(false);
       }
     } catch {
-      setErrorMessage('Could not reach the server to start that sign-in. Check your connection and try again.');
+      showError('Could not reach the server to start that sign-in. Check your connection and try again.');
       setLoading(false);
     }
   }
@@ -73,13 +84,13 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
         // the reply to this form must not be a way to find out who has one.
         if (error) {
           console.error('[auth-form] password reset request failed', error);
-          setErrorMessage('Could not send the reset link right now. Please wait a moment and try again.');
+          showError('Could not send the reset link right now. Please wait a moment and try again.');
         } else {
-          setInfoMessage(`If ${email} has an account, a reset link is on its way. It expires in an hour.`);
+          showInfo(`If ${email} has an account, a reset link is on its way. It expires in an hour.`);
         }
       } catch {
         // A failed request is not an answer about the account, so it may say so.
-        setErrorMessage('Could not reach the server to send the link. Check your connection and try again.');
+        showError('Could not reach the server to send the link. Check your connection and try again.');
       } finally {
         setLoading(false);
       }
@@ -92,7 +103,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
         const { error } = await supabase.auth.signInWithPassword({ email, password });
 
         if (error) {
-          setErrorMessage(error.message);
+          showError(error.message);
           setLoading(false);
           return;
         }
@@ -100,7 +111,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
         router.replace('/dashboard');
         router.refresh();
       } catch {
-        setErrorMessage('Could not reach the server to sign you in. Check your connection and try again.');
+        showError('Could not reach the server to sign you in. Check your connection and try again.');
         setLoading(false);
       }
       return;
@@ -115,21 +126,21 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
         });
         const result = await response.json() as { ok: boolean; error?: string };
         if (!response.ok || !result.ok) {
-          setErrorMessage(result.error ?? 'Unable to create your account.');
+          showError(result.error ?? 'Unable to create your account.');
           return;
         }
 
         const supabase = createClient();
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
-          setInfoMessage('Account created. Sign in with your email and password.');
+          showInfo('Account created. Sign in with your email and password.');
           setMode('sign-in');
           return;
         }
         router.replace('/dashboard');
         router.refresh();
       } catch {
-        setErrorMessage('Unable to create your account right now. Please try again.');
+        showError('Unable to create your account right now. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -142,7 +153,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
       const { data, error } = await supabase.auth.signUp({ email, password });
 
       if (error) {
-        setErrorMessage(error.message);
+        showError(error.message);
         setLoading(false);
         return;
       }
@@ -153,10 +164,10 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
         return;
       }
 
-      setInfoMessage('Account created. Check your email for confirmation, then sign in.');
+      showInfo('Account created. Check your email for confirmation, then sign in.');
       setLoading(false);
     } catch {
-      setErrorMessage('Could not reach the server to create your account. Check your connection and try again.');
+      showError('Could not reach the server to create your account. Check your connection and try again.');
       setLoading(false);
     }
   }
@@ -270,12 +281,12 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
       ) : null}
 
       {errorMessage ? (
-        <p role="alert" className="text-sm text-slower">
+        <p key={`error-${messageKey}`} role="alert" className="text-sm text-slower">
           {errorMessage}
         </p>
       ) : null}
       {infoMessage ? (
-        <p role="status" className="text-sm text-faster">
+        <p key={`info-${messageKey}`} role="status" className="text-sm text-faster">
           {infoMessage}
         </p>
       ) : null}
