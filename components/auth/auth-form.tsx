@@ -216,6 +216,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
           <Button
             variant={mode === 'sign-in' ? 'primary' : 'secondary'}
             className="min-h-11"
+            disabled={loading}
             onClick={() => switchMode('sign-in')}
           >
             Sign In
@@ -223,6 +224,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
           <Button
             variant={mode === 'sign-up' ? 'primary' : 'secondary'}
             className="min-h-11"
+            disabled={loading}
             onClick={() => switchMode('sign-up')}
           >
             Sign Up
@@ -269,13 +271,13 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
       </form>
 
       {mode === 'sign-in' ? (
-        <Button variant="ghost" size="sm" fullWidth onClick={() => switchMode('reset')}>
+        <Button variant="ghost" size="sm" fullWidth disabled={loading} onClick={() => switchMode('reset')}>
           Forgot your password?
         </Button>
       ) : null}
 
       {isReset ? (
-        <Button variant="ghost" size="sm" fullWidth onClick={() => switchMode('sign-in')}>
+        <Button variant="ghost" size="sm" fullWidth disabled={loading} onClick={() => switchMode('sign-in')}>
           Back to sign in
         </Button>
       ) : null}
