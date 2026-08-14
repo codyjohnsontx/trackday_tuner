@@ -337,7 +337,7 @@ Free → Pro conversion rate (after hitting limits / wanting compare/export/AI)
 
 ### Implemented
 
-- Authentication with Supabase and route-protected app pages.
+- Authentication with Supabase, including password recovery by email, and route-protected app pages.
 - Garage, tracks, and session logging workflows with free-tier limits.
 - Session history and compare-with-previous workflow.
 - Stripe checkout + customer portal + webhook sync for entitlements.
@@ -390,6 +390,14 @@ npm run dev
 
 Then open `http://localhost:3000`. Email confirmation is disabled locally in
 `supabase/config.toml`, so signing up logs you straight in.
+
+Password recovery does send mail. The local stack captures it rather than
+delivering it, so read the reset link in the mail viewer on
+`http://127.0.0.1:54324` (`local_smtp` in `supabase/config.toml`). Browse the app
+on `http://127.0.0.1:3000` while exercising that flow: `site_url` in the same file
+is the allow-list Supabase checks before returning a rider from an email link, and
+it names `127.0.0.1`, so a link followed from `localhost` lands on the site URL
+rather than on `/reset-password`.
 
 What that builds is the database, not everything the app touches. This repository
 does not provision the `vehicle-photos` storage bucket, so adding a vehicle with a

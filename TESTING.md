@@ -67,14 +67,22 @@ npx playwright test --project=android-chrome
 npx playwright test --project=ipad-safari
 ```
 
-## OAuth setup checklist (Supabase)
-- Enable Google and Apple providers in `Supabase Dashboard -> Auth -> Providers`.
-- Configure each provider's client credentials in Supabase.
+## Auth redirect setup checklist (Supabase)
+
+`/auth/callback` is not OAuth-only. Password recovery links land there too,
+carrying `?next=/reset-password`, so this checklist applies even when every OAuth
+provider is disabled - without it a rider clicking a reset link is sent back to
+the site URL instead of the reset form.
+
 - Add redirect URLs:
   - `http://127.0.0.1:3000/auth/callback`
   - `http://localhost:3000/auth/callback`
   - `https://<your-vercel-domain>/auth/callback`
 - Set `Site URL` per environment so Supabase redirects correctly.
+
+For OAuth specifically:
+- Enable Google and Apple providers in `Supabase Dashboard -> Auth -> Providers`.
+- Configure each provider's client credentials in Supabase.
 
 ## Stripe billing setup checklist
 - Create one recurring monthly Pro price in Stripe at `$2.99` and set `STRIPE_PRO_MONTHLY_PRICE_ID`.
