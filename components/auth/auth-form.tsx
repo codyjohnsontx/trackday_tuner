@@ -40,15 +40,19 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
 
     const supabase = createClient();
     const redirectTo = `${window.location.origin}/auth/callback?next=/dashboard`;
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo },
-    });
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo },
+      });
 
-    if (error) {
-      setErrorMessage(error.message);
+      if (error) {
+        setErrorMessage(error.message);
+        setLoading(false);
+      }
+    } catch {
+      setErrorMessage('Could not reach the server to start that sign-in. Check your connection and try again.');
       setLoading(false);
-      return;
     }
   }
 
@@ -68,7 +72,8 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
         // Deliberately the same answer whether or not that address has an account:
         // the reply to this form must not be a way to find out who has one.
         if (error) {
-          setErrorMessage(error.message);
+          console.error('[auth-form] password reset request failed', error);
+          setErrorMessage('Could not send the reset link right now. Please wait a moment and try again.');
         } else {
           setInfoMessage(`If ${email} has an account, a reset link is on its way. It expires in an hour.`);
         }
@@ -83,16 +88,21 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
 
     if (mode === 'sign-in') {
       const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      try {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-      if (error) {
-        setErrorMessage(error.message);
+        if (error) {
+          setErrorMessage(error.message);
+          setLoading(false);
+          return;
+        }
+
+        router.replace('/dashboard');
+        router.refresh();
+      } catch {
+        setErrorMessage('Could not reach the server to sign you in. Check your connection and try again.');
         setLoading(false);
-        return;
       }
-
-      router.replace('/dashboard');
-      router.refresh();
       return;
     }
 
@@ -128,22 +138,27 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
 
     const supabase = createClient();
 
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    try {
+      const { data, error } = await supabase.auth.signUp({ email, password });
 
-    if (error) {
-      setErrorMessage(error.message);
+      if (error) {
+        setErrorMessage(error.message);
+        setLoading(false);
+        return;
+      }
+
+      if (data.session) {
+        router.replace('/dashboard');
+        router.refresh();
+        return;
+      }
+
+      setInfoMessage('Account created. Check your email for confirmation, then sign in.');
       setLoading(false);
-      return;
+    } catch {
+      setErrorMessage('Could not reach the server to create your account. Check your connection and try again.');
+      setLoading(false);
     }
-
-    if (data.session) {
-      router.replace('/dashboard');
-      router.refresh();
-      return;
-    }
-
-    setInfoMessage('Account created. Check your email for confirmation, then sign in.');
-    setLoading(false);
   }
 
   const isReset = mode === 'reset';

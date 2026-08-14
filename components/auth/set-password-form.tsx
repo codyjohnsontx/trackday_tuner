@@ -14,18 +14,19 @@ export function SetPasswordForm() {
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // Checked on submit rather than on every keystroke: a mismatch warning that
   // appears while the second field is still being typed is always wrong at first.
-  const mismatch = confirmation.length > 0 && password !== confirmation;
+  const mismatch = submitAttempted && password !== confirmation;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage('');
+    setSubmitAttempted(true);
 
     if (password !== confirmation) {
-      setErrorMessage('Those two passwords do not match.');
       return;
     }
 
@@ -37,6 +38,7 @@ export function SetPasswordForm() {
 
       if (error) {
         setErrorMessage(error.message);
+        setLoading(false);
         return;
       }
 
@@ -44,7 +46,6 @@ export function SetPasswordForm() {
       router.refresh();
     } catch {
       setErrorMessage('Could not reach the server to save your password. Check your connection and try again.');
-    } finally {
       setLoading(false);
     }
   }
