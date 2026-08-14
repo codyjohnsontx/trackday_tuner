@@ -27,9 +27,37 @@ describe('sanitizeNextPath', () => {
     expect(sanitizeNextPath('/dashboard\\@evil.example')).toBe('/dashboard');
   });
 
+  it('rejects paths the parser strips back into a host', () => {
+    expect(sanitizeNextPath('/\t/evil.example')).toBe('/dashboard');
+    expect(sanitizeNextPath('/\n/evil.example')).toBe('/dashboard');
+    expect(sanitizeNextPath('/\r/evil.example')).toBe('/dashboard');
+    expect(sanitizeNextPath('/\t\\evil.example')).toBe('/dashboard');
+    expect(sanitizeNextPath('/\t/evil.example?next=/dashboard')).toBe('/dashboard');
+  });
+
+  it('keeps every accepted path on the callback origin', () => {
+    const origin = 'http://127.0.0.1:3000';
+    const hostile = [
+      '//evil.example',
+      '/\\evil.example',
+      '/\t/evil.example',
+      '/\n/evil.example',
+      '/\r/evil.example',
+      '/.//evil.example',
+      '/a/../..//evil.example',
+      ...Array.from({ length: 0x21 }, (_, code) => `/${String.fromCharCode(code)}/evil.example`),
+    ];
+
+    for (const next of hostile) {
+      expect(new URL(sanitizeNextPath(next), origin).origin).toBe(origin);
+    }
+  });
+
   it('allows internal paths', () => {
     expect(sanitizeNextPath('/dashboard')).toBe('/dashboard');
     expect(sanitizeNextPath('/tools')).toBe('/tools');
+    expect(sanitizeNextPath('/tools?a=1#b')).toBe('/tools?a=1#b');
+    expect(sanitizeNextPath('/sessions/abc-123')).toBe('/sessions/abc-123');
   });
 });
 
@@ -71,6 +99,18 @@ describe('GET /auth/callback', () => {
     );
 
     expect(response.headers.get('location')).toBe('http://127.0.0.1:3000/dashboard');
+  });
+
+  it('falls back to dashboard when next hides a host behind encoded whitespace', async () => {
+    exchangeCodeForSession.mockResolvedValue({ error: null });
+
+    for (const encoded of ['%09', '%0A', '%0D']) {
+      const response = await GET(
+        new Request(`http://127.0.0.1:3000/auth/callback?code=abc123&next=/${encoded}/evil.example`)
+      );
+
+      expect(response.headers.get('location')).toBe('http://127.0.0.1:3000/dashboard');
+    }
   });
 
   it('redirects to login error when exchange fails', async () => {
