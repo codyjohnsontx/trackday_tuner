@@ -9,6 +9,9 @@ import { createClient } from '@/lib/supabase/client';
 
 const MIN_PASSWORD_LENGTH = 8;
 
+const NETWORK_ERROR_MESSAGE =
+  'Could not reach the server to save your password. Check your connection and try again.';
+
 export function SetPasswordForm() {
   const router = useRouter();
   const [password, setPassword] = useState('');
@@ -40,7 +43,15 @@ export function SetPasswordForm() {
       const { error } = await supabase.auth.updateUser({ password });
 
       if (error) {
-        showError(error.message);
+        console.error('[set-password-form] password update failed', error);
+        // A dropped request comes back as a result rather than a rejection, carrying
+        // the browser's own "Failed to fetch", which is not something a rider can act
+        // on. It is also the only auth error here that is not about the password, so
+        // it is the only one replaced: "New password should be different from the old
+        // password" and its kind are exactly what they need to read.
+        // `isAuthRetryableFetchError` is this same check, but it is not re-exported by
+        // @supabase/supabase-js and @supabase/auth-js is not a dependency of this app.
+        showError(error.name === 'AuthRetryableFetchError' ? NETWORK_ERROR_MESSAGE : error.message);
         setLoading(false);
         return;
       }
@@ -48,7 +59,7 @@ export function SetPasswordForm() {
       router.replace('/dashboard');
       router.refresh();
     } catch {
-      showError('Could not reach the server to save your password. Check your connection and try again.');
+      showError(NETWORK_ERROR_MESSAGE);
       setLoading(false);
     }
   }

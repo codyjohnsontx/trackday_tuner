@@ -393,11 +393,22 @@ Then open `http://127.0.0.1:3000`. Email confirmation is disabled locally in
 
 Password recovery does send mail. The local stack captures it rather than
 delivering it, so read the reset link in the mail viewer on
-`http://127.0.0.1:54324` (`local_smtp` in `supabase/config.toml`). Browse the app
-on `http://127.0.0.1:3000` while exercising that flow: `site_url` in the same file
-is the allow-list Supabase checks before returning a rider from an email link, and
-it names `127.0.0.1`, so a link followed from `localhost` lands on the site URL
-rather than on `/reset-password`.
+`http://127.0.0.1:54324` (`local_smtp` in `supabase/config.toml`). Request the
+link with the app open on `http://127.0.0.1:3000`. That origin is required for
+this one step: the app asks Supabase to return the rider to whichever origin the
+browser is on, and `site_url` in the same file is the allow-list Supabase checks
+before honouring that, so a link requested from `localhost` comes back to the site
+URL rather than to `/reset-password`.
+
+Following the link does not reach the form on the first hop, and the detour is
+`next dev` rather than the app. The callback signs the rider in and sets the
+session cookie on `127.0.0.1`, then sends them to
+`http://localhost:3000/reset-password`: under `next dev` the request URL a route
+handler sees always reports `localhost`, whichever host the browser asked for, and
+the redirect is built from it. No cookie was set on `localhost`, so that page
+reads "Link expired". Put `127.0.0.1` back in the address bar and reload - the
+session is already there, the form appears, and the new password saves. The
+recovery code is spent by then and does not need to be used again.
 
 What that builds is the database, not everything the app touches. This repository
 does not provision the `vehicle-photos` storage bucket, so adding a vehicle with a
