@@ -4,6 +4,7 @@ import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/surface';
 import { type OAuthProvider, type OAuthProviderConfig } from '@/lib/auth/providers';
 import { createClient } from '@/lib/supabase/client';
 
@@ -59,19 +60,24 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
 
     if (mode === 'reset') {
       const supabase = createClient();
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
-      });
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+        });
 
-      // Deliberately the same answer whether or not that address has an account:
-      // the reply to this form must not be a way to find out who has one.
-      if (error) {
-        setErrorMessage(error.message);
-      } else {
-        setInfoMessage(`If ${email} has an account, a reset link is on its way. It expires in an hour.`);
+        // Deliberately the same answer whether or not that address has an account:
+        // the reply to this form must not be a way to find out who has one.
+        if (error) {
+          setErrorMessage(error.message);
+        } else {
+          setInfoMessage(`If ${email} has an account, a reset link is on its way. It expires in an hour.`);
+        }
+      } catch {
+        // A failed request is not an answer about the account, so it may say so.
+        setErrorMessage('Could not reach the server to send the link. Check your connection and try again.');
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
       return;
     }
 
@@ -143,7 +149,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
   const isReset = mode === 'reset';
 
   return (
-    <section className="space-y-4 rounded-card bg-surface p-4">
+    <Card className="space-y-4 p-4">
       {isReset ? (
         <div className="space-y-1">
           <h2 className="text-lg font-semibold text-ink">Reset your password</h2>
@@ -253,6 +259,6 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
       {inviteOnly && mode === 'sign-up' ? (
         <p className="text-xs text-ink-faint">No invitation yet? Join the waitlist from the home page.</p>
       ) : null}
-    </section>
+    </Card>
   );
 }

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { SetPasswordForm } from '@/components/auth/set-password-form';
 import { PageHeader } from '@/components/ui/page-header';
+import { Card } from '@/components/ui/surface';
 import { getViewer } from '@/lib/auth';
 
 /**
@@ -29,7 +30,7 @@ export default async function ResetPasswordPage() {
     return (
       <div className="space-y-5">
         <PageHeader title="New password" sub="You are browsing the demo right now." />
-        <section className="space-y-3 rounded-card bg-surface p-4">
+        <Card className="space-y-3 p-4">
           <p className="text-sm text-ink-dim">
             Leave the demo to finish setting your password. Your reset link stays valid.
           </p>
@@ -39,7 +40,7 @@ export default async function ResetPasswordPage() {
           >
             Exit Demo
           </Link>
-        </section>
+        </Card>
       </div>
     );
   }
@@ -47,7 +48,7 @@ export default async function ResetPasswordPage() {
   return (
     <div className="space-y-5">
       <PageHeader title="Link expired" sub="This password reset link is no longer usable." />
-      <section className="space-y-3 rounded-card bg-surface p-4">
+      <Card className="space-y-3 p-4">
         <p className="text-sm text-ink-dim">
           Reset links expire after an hour, work only once, and only open in the browser that asked
           for them. Request a fresh one and it will work.
@@ -58,7 +59,7 @@ export default async function ResetPasswordPage() {
         >
           Back to Sign In
         </Link>
-      </section>
+      </Card>
     </div>
   );
 }

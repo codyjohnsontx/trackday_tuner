@@ -388,7 +388,7 @@ created. To exercise the invite flow instead, leave it `true`, set
 npm run dev
 ```
 
-Then open `http://localhost:3000`. Email confirmation is disabled locally in
+Then open `http://127.0.0.1:3000`. Email confirmation is disabled locally in
 `supabase/config.toml`, so signing up logs you straight in.
 
 Password recovery does send mail. The local stack captures it rather than

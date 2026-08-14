@@ -4,6 +4,7 @@ import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/surface';
 import { createClient } from '@/lib/supabase/client';
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -31,47 +32,54 @@ export function SetPasswordForm() {
     setLoading(true);
 
     const supabase = createClient();
-    const { error } = await supabase.auth.updateUser({ password });
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
 
-    if (error) {
-      setErrorMessage(error.message);
+      if (error) {
+        setErrorMessage(error.message);
+        return;
+      }
+
+      router.replace('/dashboard');
+      router.refresh();
+    } catch {
+      setErrorMessage('Could not reach the server to save your password. Check your connection and try again.');
+    } finally {
       setLoading(false);
-      return;
     }
-
-    router.replace('/dashboard');
-    router.refresh();
   }
 
   return (
-    <form className="space-y-3 rounded-card bg-surface p-4" onSubmit={handleSubmit}>
-      <Input
-        label="New password"
-        type="password"
-        autoComplete="new-password"
-        value={password}
-        onChange={(event) => setPassword(event.target.value)}
-        placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
-        minLength={MIN_PASSWORD_LENGTH}
-        required
-      />
-      <Input
-        label="Confirm new password"
-        type="password"
-        autoComplete="new-password"
-        value={confirmation}
-        onChange={(event) => setConfirmation(event.target.value)}
-        placeholder="Type it again"
-        minLength={MIN_PASSWORD_LENGTH}
-        error={mismatch ? 'Those two passwords do not match.' : undefined}
-        required
-      />
+    <Card className="p-4">
+      <form className="space-y-3" onSubmit={handleSubmit}>
+        <Input
+          label="New password"
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+          minLength={MIN_PASSWORD_LENGTH}
+          required
+        />
+        <Input
+          label="Confirm new password"
+          type="password"
+          autoComplete="new-password"
+          value={confirmation}
+          onChange={(event) => setConfirmation(event.target.value)}
+          placeholder="Type it again"
+          minLength={MIN_PASSWORD_LENGTH}
+          error={mismatch ? 'Those two passwords do not match.' : undefined}
+          required
+        />
 
-      <Button type="submit" fullWidth loading={loading}>
-        Save New Password
-      </Button>
+        <Button type="submit" fullWidth loading={loading}>
+          Save New Password
+        </Button>
 
-      {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
-    </form>
+        {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
+      </form>
+    </Card>
   );
 }
