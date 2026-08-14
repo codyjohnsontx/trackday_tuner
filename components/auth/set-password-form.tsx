@@ -27,6 +27,7 @@ export function SetPasswordForm() {
     setSubmitAttempted(true);
 
     if (password !== confirmation) {
+      setErrorMessage('Those two passwords do not match.');
       return;
     }
 
@@ -79,7 +80,11 @@ export function SetPasswordForm() {
           Save New Password
         </Button>
 
-        {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
+        {errorMessage ? (
+          <p role="alert" className="text-sm text-slower">
+            {errorMessage}
+          </p>
+        ) : null}
       </form>
     </Card>
   );

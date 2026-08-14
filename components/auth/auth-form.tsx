@@ -269,8 +269,16 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
         </Button>
       ) : null}
 
-      {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
-      {infoMessage ? <p className="text-sm text-faster">{infoMessage}</p> : null}
+      {errorMessage ? (
+        <p role="alert" className="text-sm text-slower">
+          {errorMessage}
+        </p>
+      ) : null}
+      {infoMessage ? (
+        <p role="status" className="text-sm text-faster">
+          {infoMessage}
+        </p>
+      ) : null}
       {inviteOnly && mode === 'sign-up' ? (
         <p className="text-xs text-ink-faint">No invitation yet? Join the waitlist from the home page.</p>
       ) : null}
