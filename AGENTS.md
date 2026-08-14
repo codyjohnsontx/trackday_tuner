@@ -241,7 +241,7 @@ app/(app)/           # authenticated routes (layout enforces auth)
 app/api/             # API routes (stripe checkout/portal/webhooks/AI)
 components/ui/       # shadcn/ui-backed component wrappers
 components/layout/   # app shell, bottom nav
-components/auth/     # auth form
+components/auth/     # auth form, set-password form
 components/sessions/ # session form
 components/garage/   # vehicle form
 lib/actions/         # server actions (sessions, tracks, vehicles, sag)
