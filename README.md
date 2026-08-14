@@ -397,12 +397,11 @@ delivering it, so read the reset link in the mail viewer on
 link with the app open on `http://127.0.0.1:3000`. That origin is required for
 this one step: the app asks Supabase to return the rider to whichever origin the
 browser is on, and `site_url` plus `additional_redirect_urls` in the same file are
-the allow-list that return URL is checked against. `site_url` is matched on origin
-with the path and query ignored, which is why the app's
-`/auth/callback?next=/reset-password` return URL passes without being listed
-anywhere; any other origin has to match one of the `additional_redirect_urls`
-patterns. Anything else falls back to `site_url`, so a link requested from
-`localhost` comes back to the site URL rather than to `/reset-password`.
+the allow-list that return URL is checked against. A return URL that list does not
+accept falls back to `site_url`. Measured against the local stack as shipped: a
+link requested with the app on `http://127.0.0.1:3000` returns the rider to
+`/reset-password` there, while one requested from `localhost` comes back to the
+site URL instead.
 
 Following the link does not reach the form on the first hop, and the detour is
 `next dev` rather than the app. The callback signs the rider in and sets the
