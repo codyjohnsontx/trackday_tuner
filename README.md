@@ -396,9 +396,10 @@ delivering it, so read the reset link in the mail viewer on
 `http://127.0.0.1:54324` (`local_smtp` in `supabase/config.toml`). Request the
 link with the app open on `http://127.0.0.1:3000`. That origin is required for
 this one step: the app asks Supabase to return the rider to whichever origin the
-browser is on, and `site_url` in the same file is the allow-list Supabase checks
-before honouring that, so a link requested from `localhost` comes back to the site
-URL rather than to `/reset-password`.
+browser is on, and Supabase only honours a return URL that exactly matches
+`site_url` or an entry in `additional_redirect_urls` in the same file. Anything
+else falls back to `site_url`, so a link requested from `localhost` comes back to
+the site URL rather than to `/reset-password`.
 
 Following the link does not reach the form on the first hop, and the detour is
 `next dev` rather than the app. The callback signs the rider in and sets the

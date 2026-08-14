@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { SetPasswordForm } from '@/components/auth/set-password-form';
+import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/surface';
 import { getViewer } from '@/lib/auth';
@@ -34,12 +35,9 @@ export default async function ResetPasswordPage() {
           <p className="text-sm text-ink-dim">
             Leave the demo to finish setting your password. Your reset link stays valid.
           </p>
-          <Link
-            href="/demo/exit"
-            className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-ink px-4 text-sm font-semibold text-canvas transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
-          >
-            Exit Demo
-          </Link>
+          <Button asChild fullWidth>
+            <Link href="/demo/exit">Exit Demo</Link>
+          </Button>
         </Card>
       </div>
     );
@@ -53,12 +51,9 @@ export default async function ResetPasswordPage() {
           Reset links expire after an hour, work only once, and only open in the browser that asked
           for them. Request a fresh one and it will work.
         </p>
-        <Link
-          href="/login"
-          className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-ink px-4 text-sm font-semibold text-canvas transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
-        >
-          Back to Sign In
-        </Link>
+        <Button asChild fullWidth>
+          <Link href="/login">Back to Sign In</Link>
+        </Button>
       </Card>
     </div>
   );
