@@ -2,10 +2,15 @@ import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { AuthForm } from '@/components/auth/auth-form';
 import { getViewer } from '@/lib/auth';
+import { authErrorMessage } from '@/lib/auth/messages';
 import { getOAuthProviders } from '@/lib/auth/providers';
 import { isBetaInviteOnly } from '@/lib/env.server';
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   // A demo viewer is already "in" the app, so send them on rather than offering
   // a login form they cannot use.
   const viewer = await getViewer();
@@ -18,6 +23,11 @@ export default async function LoginPage() {
   // (dynamic process.env[key] access doesn't inline on the client bundle)
   const providers = getOAuthProviders();
   const inviteOnly = isBetaInviteOnly();
+
+  // `/auth/callback` can only report a failure through the URL. Without this the
+  // rider is bounced back to a login form with no idea their link had expired.
+  const { error } = await searchParams;
+  const initialError = authErrorMessage(typeof error === 'string' ? error : null) ?? '';
 
   return (
     <div className="-mx-4 -mt-5 sm:-mx-5 md:-mx-6">
@@ -47,7 +57,7 @@ export default async function LoginPage() {
       </div>
 
       <div className="px-4 pt-4 pb-2 sm:px-5 md:px-6">
-        <AuthForm providers={providers} inviteOnly={inviteOnly} />
+        <AuthForm providers={providers} inviteOnly={inviteOnly} initialError={initialError} />
         <a
           href="/demo"
           className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-full bg-surface px-4 text-sm font-semibold text-ink transition hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-signal/80"

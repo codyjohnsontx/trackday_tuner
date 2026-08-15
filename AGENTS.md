@@ -241,13 +241,14 @@ app/(app)/           # authenticated routes (layout enforces auth)
 app/api/             # API routes (stripe checkout/portal/webhooks/AI)
 components/ui/       # shadcn/ui-backed component wrappers
 components/layout/   # app shell, bottom nav
-components/auth/     # auth form
+components/auth/     # auth form, set-password form
 components/sessions/ # session form
 components/garage/   # vehicle form
 lib/actions/         # server actions (sessions, tracks, vehicles, sag)
 lib/rag/             # RAG retrieval, prompt, policy, and validation helpers
 lib/supabase/        # client, server, middleware, admin clients
-lib/auth/            # getAuthenticatedUser(), isAuthenticated()
+lib/auth/            # OAuth providers, next-path sanitizing, auth error copy
+lib/auth.ts          # getViewer(), isAuthenticated()
 lib/utils.ts         # cn() utility (twMerge + clsx)
 lib/billing.ts       # plan/tier helpers
 lib/plans.ts         # plan definitions

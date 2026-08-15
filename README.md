@@ -337,7 +337,7 @@ Free → Pro conversion rate (after hitting limits / wanting compare/export/AI)
 
 ### Implemented
 
-- Authentication with Supabase and route-protected app pages.
+- Authentication with Supabase, including password recovery by email, and route-protected app pages.
 - Garage, tracks, and session logging workflows with free-tier limits.
 - Session history and compare-with-previous workflow.
 - Stripe checkout + customer portal + webhook sync for entitlements.
@@ -388,8 +388,30 @@ created. To exercise the invite flow instead, leave it `true`, set
 npm run dev
 ```
 
-Then open `http://localhost:3000`. Email confirmation is disabled locally in
+Then open `http://127.0.0.1:3000`. Email confirmation is disabled locally in
 `supabase/config.toml`, so signing up logs you straight in.
+
+Password recovery does send mail. The local stack captures it rather than
+delivering it, so read the reset link in the mail viewer on
+`http://127.0.0.1:54324` (`local_smtp` in `supabase/config.toml`). Request the
+link with the app open on `http://127.0.0.1:3000`. That origin is required for
+this one step: the app asks Supabase to return the rider to whichever origin the
+browser is on, and `site_url` plus `additional_redirect_urls` in the same file are
+the allow-list that return URL is checked against. A return URL that list does not
+accept falls back to `site_url`. Measured against the local stack as shipped: a
+link requested with the app on `http://127.0.0.1:3000` returns the rider to
+`/reset-password` there, while one requested from `localhost` comes back to the
+site URL instead.
+
+Following the link does not reach the form on the first hop, and the detour is
+`next dev` rather than the app. The callback signs the rider in and sets the
+session cookie on `127.0.0.1`, then sends them to
+`http://localhost:3000/reset-password`: under `next dev` the request URL a route
+handler sees always reports `localhost`, whichever host the browser asked for, and
+the redirect is built from it. No cookie was set on `localhost`, so that page
+reads "Link expired". Put `127.0.0.1` back in the address bar and reload - the
+session is already there, the form appears, and the new password saves. The
+recovery code is spent by then and does not need to be used again.
 
 What that builds is the database, not everything the app touches. This repository
 does not provision the `vehicle-photos` storage bucket, so adding a vehicle with a

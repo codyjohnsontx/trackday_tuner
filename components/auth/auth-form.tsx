@@ -4,25 +4,45 @@ import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/surface';
 import { type OAuthProvider, type OAuthProviderConfig } from '@/lib/auth/providers';
 import { createClient } from '@/lib/supabase/client';
 
-type AuthMode = 'sign-in' | 'sign-up';
+type AuthMode = 'sign-in' | 'sign-up' | 'reset';
 
 interface AuthFormProps {
   providers: OAuthProviderConfig[];
   inviteOnly?: boolean;
+  /** Message from a redirect that landed here, e.g. an expired email link. */
+  initialError?: string;
 }
 
-export function AuthForm({ providers: oauthProviders, inviteOnly = false }: AuthFormProps) {
+export function AuthForm({ providers: oauthProviders, inviteOnly = false, initialError = '' }: AuthFormProps) {
   const router = useRouter();
   const [mode, setMode] = useState<AuthMode>('sign-in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [inviteCode, setInviteCode] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState(initialError);
   const [infoMessage, setInfoMessage] = useState('');
+  const [messageKey, setMessageKey] = useState(0);
   const [loading, setLoading] = useState(false);
+
+  function showError(text: string) {
+    setErrorMessage(text);
+    setMessageKey((key) => key + 1);
+  }
+
+  function showInfo(text: string) {
+    setInfoMessage(text);
+    setMessageKey((key) => key + 1);
+  }
+
+  function switchMode(next: AuthMode) {
+    setMode(next);
+    setErrorMessage('');
+    setInfoMessage('');
+  }
 
   async function handleOAuthSignIn(provider: OAuthProvider) {
     setLoading(true);
@@ -31,15 +51,19 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
 
     const supabase = createClient();
     const redirectTo = `${window.location.origin}/auth/callback?next=/dashboard`;
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo },
-    });
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo },
+      });
 
-    if (error) {
-      setErrorMessage(error.message);
+      if (error) {
+        showError(error.message);
+        setLoading(false);
+      }
+    } catch {
+      showError('Could not reach the server to start that sign-in. Check your connection and try again.');
       setLoading(false);
-      return;
     }
   }
 
@@ -49,18 +73,47 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
     setErrorMessage('');
     setInfoMessage('');
 
+    if (mode === 'reset') {
+      const supabase = createClient();
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+        });
+
+        // Deliberately the same answer whether or not that address has an account:
+        // the reply to this form must not be a way to find out who has one.
+        if (error) {
+          console.error('[auth-form] password reset request failed', error);
+          showError('Could not send the reset link right now. Please wait a moment and try again.');
+        } else {
+          showInfo(`If ${email} has an account, a reset link is on its way. It expires in an hour.`);
+        }
+      } catch {
+        // A failed request is not an answer about the account, so it may say so.
+        showError('Could not reach the server to send the link. Check your connection and try again.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (mode === 'sign-in') {
       const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      try {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-      if (error) {
-        setErrorMessage(error.message);
+        if (error) {
+          showError(error.message);
+          setLoading(false);
+          return;
+        }
+
+        router.replace('/dashboard');
+        router.refresh();
+      } catch {
+        showError('Could not reach the server to sign you in. Check your connection and try again.');
         setLoading(false);
-        return;
       }
-
-      router.replace('/dashboard');
-      router.refresh();
       return;
     }
 
@@ -73,21 +126,21 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
         });
         const result = await response.json() as { ok: boolean; error?: string };
         if (!response.ok || !result.ok) {
-          setErrorMessage(result.error ?? 'Unable to create your account.');
+          showError(result.error ?? 'Unable to create your account.');
           return;
         }
 
         const supabase = createClient();
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
-          setInfoMessage('Account created. Sign in with your email and password.');
+          showInfo('Account created. Sign in with your email and password.');
           setMode('sign-in');
           return;
         }
         router.replace('/dashboard');
         router.refresh();
       } catch {
-        setErrorMessage('Unable to create your account right now. Please try again.');
+        showError('Unable to create your account right now. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -96,27 +149,43 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
 
     const supabase = createClient();
 
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    try {
+      const { data, error } = await supabase.auth.signUp({ email, password });
 
-    if (error) {
-      setErrorMessage(error.message);
+      if (error) {
+        showError(error.message);
+        setLoading(false);
+        return;
+      }
+
+      if (data.session) {
+        router.replace('/dashboard');
+        router.refresh();
+        return;
+      }
+
+      showInfo('Account created. Check your email for confirmation, then sign in.');
       setLoading(false);
-      return;
+    } catch {
+      showError('Could not reach the server to create your account. Check your connection and try again.');
+      setLoading(false);
     }
-
-    if (data.session) {
-      router.replace('/dashboard');
-      router.refresh();
-      return;
-    }
-
-    setInfoMessage('Account created. Check your email for confirmation, then sign in.');
-    setLoading(false);
   }
 
+  const isReset = mode === 'reset';
+
   return (
-    <section className="space-y-4 rounded-card bg-surface p-4">
-      {!inviteOnly ? <div className="space-y-2">
+    <Card className="space-y-4 p-4">
+      {isReset ? (
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold text-ink">Reset your password</h2>
+          <p className="text-sm text-ink-dim">
+            Enter the email you signed up with and we will send you a link to set a new password.
+          </p>
+        </div>
+      ) : null}
+
+      {!inviteOnly && !isReset ? <div className="space-y-2">
         {oauthProviders.map((provider) => (
           <div key={provider.id} className="space-y-1">
             <Button
@@ -136,28 +205,32 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
         ))}
       </div> : null}
 
-      {!inviteOnly ? <div className="flex items-center gap-2">
+      {!inviteOnly && !isReset ? <div className="flex items-center gap-2">
         <span className="h-px flex-1 bg-surface-3" />
         <span className="text-xs uppercase tracking-wide text-ink-dim">or</span>
         <span className="h-px flex-1 bg-surface-3" />
       </div> : null}
 
-      <div className="grid grid-cols-2 gap-2 rounded-row bg-surface-2 p-1">
-        <Button
-          variant={mode === 'sign-in' ? 'primary' : 'secondary'}
-          className="min-h-11"
-          onClick={() => setMode('sign-in')}
-        >
-          Sign In
-        </Button>
-        <Button
-          variant={mode === 'sign-up' ? 'primary' : 'secondary'}
-          className="min-h-11"
-          onClick={() => setMode('sign-up')}
-        >
-          Sign Up
-        </Button>
-      </div>
+      {!isReset ? (
+        <div className="grid grid-cols-2 gap-2 rounded-row bg-surface-2 p-1">
+          <Button
+            variant={mode === 'sign-in' ? 'primary' : 'secondary'}
+            className="min-h-11"
+            disabled={loading}
+            onClick={() => switchMode('sign-in')}
+          >
+            Sign In
+          </Button>
+          <Button
+            variant={mode === 'sign-up' ? 'primary' : 'secondary'}
+            className="min-h-11"
+            disabled={loading}
+            onClick={() => switchMode('sign-up')}
+          >
+            Sign Up
+          </Button>
+        </div>
+      ) : null}
 
       <form className="space-y-3" onSubmit={handleSubmit}>
         <Input
@@ -179,27 +252,49 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false }: Auth
             required
           />
         ) : null}
-        <Input
-          label="Password"
-          type="password"
-          autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="At least 8 characters"
-          minLength={8}
-          required
-        />
+        {!isReset ? (
+          <Input
+            label="Password"
+            type="password"
+            autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="At least 8 characters"
+            minLength={8}
+            required
+          />
+        ) : null}
 
         <Button type="submit" fullWidth loading={loading}>
-          {mode === 'sign-in' ? 'Sign In' : 'Create Account'}
+          {isReset ? 'Send Reset Link' : mode === 'sign-in' ? 'Sign In' : 'Create Account'}
         </Button>
       </form>
 
-      {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
-      {infoMessage ? <p className="text-sm text-faster">{infoMessage}</p> : null}
+      {mode === 'sign-in' ? (
+        <Button variant="ghost" size="sm" fullWidth disabled={loading} onClick={() => switchMode('reset')}>
+          Forgot your password?
+        </Button>
+      ) : null}
+
+      {isReset ? (
+        <Button variant="ghost" size="sm" fullWidth disabled={loading} onClick={() => switchMode('sign-in')}>
+          Back to sign in
+        </Button>
+      ) : null}
+
+      {errorMessage ? (
+        <p key={`error-${messageKey}`} role="alert" className="text-sm text-slower">
+          {errorMessage}
+        </p>
+      ) : null}
+      {infoMessage ? (
+        <p key={`info-${messageKey}`} role="status" className="text-sm text-faster">
+          {infoMessage}
+        </p>
+      ) : null}
       {inviteOnly && mode === 'sign-up' ? (
         <p className="text-xs text-ink-faint">No invitation yet? Join the waitlist from the home page.</p>
       ) : null}
-    </section>
+    </Card>
   );
 }
