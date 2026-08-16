@@ -209,9 +209,11 @@ and execution order may legitimately diverge; the reason is recorded there.
    filters events to registered rider ids, but the public demo cannot sell the
    feature the gate is meant to validate. Also unblocks `F2`.
 
-9. **Core loop is only partly covered end to end** - `F2` - the other two e2e specs
-   cover auth redirects, the sag calculator, the converter, tracks, and AI rejection
-   paths. `tests/e2e/same-day-session-compare.spec.ts` now adds a vehicle, logs two
+9. **Core loop is only partly covered end to end** - `F2` - `auth-and-sag.spec.ts`
+   and `ai-tuning-advice.spec.ts` cover auth redirects, the sag calculator, the
+   converter, tracks, and AI rejection paths, and `signup-creates-profile.spec.ts`
+   covers the signup trigger rather than the loop.
+   `tests/e2e/same-day-session-compare.spec.ts` now adds a vehicle, logs two
    same-day sessions, and asserts both the rendered comparison and the persisted
    `session_changes` row, so add vehicle, log session, and compare are covered;
    recording an outcome is not. That spec drives the real E2E account and skips

@@ -31,6 +31,13 @@ test.describe('signing up outside the invite route', () => {
     !hasServiceRole(),
     'NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.',
   );
+  // Its own skip rather than a wider hasServiceRole(): this is the only spec that
+  // builds a rider's own session, and same-day-session-compare.spec.ts would start
+  // skipping on a variable it never reads.
+  test.skip(
+    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY is required to sign in as the new rider.',
+  );
   test.skip(
     !PUBLIC_SIGNUP,
     'Requires BETA_INVITE_ONLY=false, so the form signs up through GoTrue rather than /api/beta/signup.',

@@ -33,6 +33,14 @@ Unauthenticated guard tests run without them.
 `tests/e2e/same-day-session-compare.spec.ts` also needs `SUPABASE_SERVICE_ROLE_KEY`
 alongside the app's `NEXT_PUBLIC_SUPABASE_URL`, because it reads the persisted
 `session_changes` row back instead of trusting the panel; it skips without them.
+`tests/e2e/signup-creates-profile.spec.ts` needs `SUPABASE_SERVICE_ROLE_KEY` and
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` alongside `NEXT_PUBLIC_SUPABASE_URL`, because it
+signs up its own throwaway rider and then reads that rider's `profiles` row back
+under their own session. It also needs `BETA_INVITE_ONLY=false`, and it skips
+without any of them. That last gate is the unusual one and nothing else in this
+file has it: with invite-only on, the form posts to `/api/beta/signup`, which is
+the `profiles` writer that always worked, so the spec would exercise the wrong
+path entirely instead of the GoTrue signup whose trigger it exists to guard.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 ## Install browser runtime
