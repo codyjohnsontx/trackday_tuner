@@ -165,7 +165,10 @@ reproduced end to end against a local stack and is written up in the migration.
 stops inserting into `profiles`. Like everything else in that file it reads SQL as
 text: it cannot prove the insert *succeeds*, which depends on `security definer`,
 the owner's privileges and the pinned empty `search_path`. Only signing up against
-a rebuilt database shows that.
+a real database shows that. `tests/e2e/signup-creates-profile.spec.ts` is that
+walk, and it skips unless `BETA_INVITE_ONLY` is `false`, because with invite-only
+on the form posts to the route that always wrote the row - see `TESTING.md` for
+what it needs.
 
 **The baseline says the opposite, and it is right about the day it was written.**
 `20260223000000_init_baseline_schema.sql` states that nothing creates a `profiles`
@@ -253,8 +256,9 @@ them. That is fine for those two, which are `security invoker`, but a
 
 `tests/unit/migrations-bootstrap.test.ts` reads the SQL as text and fails if a
 migration alters or references a table nothing earlier creates, if those grants go
-missing, if a `security definer` function arrives without that decision, or if a
-migration re-grants execute schema-wide over a per-function `revoke`. It cannot
+missing, if a `security definer` function arrives without that decision, if a
+migration re-grants execute schema-wide over a per-function `revoke`, or if the
+migrations end with nothing writing `profiles` on signup (above). It cannot
 tell you a migration *runs* - only `supabase start` from a destroyed local stack
 proves that, and only then exercising the app against it proves PostgREST can see
 the result. It reads the decision rather than its effect, so once `public` is
