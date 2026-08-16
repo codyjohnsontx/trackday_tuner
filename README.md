@@ -368,7 +368,7 @@ for scripts, but not for your own shell, so run it as `npx supabase` here. That
 is also why `npm install` comes first: on a clean checkout there is no local copy
 yet and `npx` would fetch an unpinned CLI from the registry instead of the
 pinned one.
-See "Building a database from nothing" in `CLAUDE.md` for why two of those
+See "Building a database from nothing" in `CLAUDE.md` for which of those
 migrations exist only to make a clean build work, and for the caveat that
 applies to the hosted project.
 
