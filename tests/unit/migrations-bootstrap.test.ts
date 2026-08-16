@@ -306,6 +306,19 @@ function executeViolations(migrations: Migration[]): string[] {
 // trigger on some other table cannot lend its function name to this one.
 // `or replace` is matched because Postgres accepts it and re-pointing an existing
 // trigger at a different function is the shortest way to write that.
+// Postgres folds an unquoted identifier to lower case, so `On_Auth_User_Created`
+// and `on_auth_user_created` name one trigger and not two. Every name below is
+// compared folded, because a guard that can be evaded by changing the spelling of
+// an identifier is no guard. Only identity is folded: the violation messages echo
+// what the migration literally wrote, which is what you search the file for.
+//
+// Quoted identifiers are a different object and are out of scope here - `\w+`
+// never matches one, so `drop trigger "On_Auth_User_Created"` is not read as a
+// drop of the unquoted trigger, which is how Postgres reads it too.
+function foldIdentifier(identifier: string): string {
+  return identifier.toLowerCase();
+}
+
 const AUTH_USERS_TRIGGER_EVENT = new RegExp(
   [
     String.raw`create\s+(?:or\s+replace\s+)?trigger\s+(\w+)\s+after\s+insert\s+on\s+auth\.users\b[^;]*?execute\s+(?:function|procedure)\s+(?:public\.)?(\w+)`,
@@ -411,7 +424,7 @@ function profileWriterViolations(migrations: Migration[]): string[] {
       const [, createdTrigger, fn, droppedTrigger, droppedFunction] = match;
 
       if (createdTrigger !== undefined) {
-        installed.set(createdTrigger, { file, fn });
+        installed.set(foldIdentifier(createdTrigger), { file, fn });
         continue;
       }
 
@@ -419,7 +432,7 @@ function profileWriterViolations(migrations: Migration[]): string[] {
       // `drop trigger if exists` against a database that may not have one, and
       // that statement is a precaution rather than a regression.
       if (droppedTrigger !== undefined) {
-        if (installed.delete(droppedTrigger)) {
+        if (installed.delete(foldIdentifier(droppedTrigger))) {
           removed = { file, statement: `drop trigger ${droppedTrigger} on auth.users` };
         }
         continue;
@@ -433,7 +446,7 @@ function profileWriterViolations(migrations: Migration[]): string[] {
       // the trigger in `installed`, found the still-present function body from
       // the earlier migration, and reported nothing.
       for (const [trigger, entry] of installed) {
-        if (entry.fn.toLowerCase() !== droppedFunction.toLowerCase()) continue;
+        if (foldIdentifier(entry.fn) !== foldIdentifier(droppedFunction)) continue;
         installed.delete(trigger);
         removed = { file, statement: `drop function public.${droppedFunction}` };
       }
@@ -696,6 +709,23 @@ describe('the profiles-writer check, against migrations written wrongly on purpo
       ),
     ).toEqual([
       'profiles_signup_trigger_dropped_later.sql: drop trigger on_auth_user_created on auth.users leaves public.profiles with no writer',
+    ]);
+  });
+
+  it('catches a later migration that drops the signup trigger under a different case', () => {
+    // Postgres folds unquoted identifiers, so `On_Auth_User_Created` and
+    // `on_auth_user_created` are one trigger. Keying the bookkeeping on the
+    // identifier as written made the guard evadable by spelling - the same class
+    // of defect as everything else it exists to catch.
+    expect(
+      profileWriterViolations(
+        loadFixtures(
+          'profiles_signup_trigger_installed.sql',
+          'profiles_signup_trigger_dropped_case_variant_later.sql',
+        ),
+      ),
+    ).toEqual([
+      'profiles_signup_trigger_dropped_case_variant_later.sql: drop trigger On_Auth_User_Created on auth.users leaves public.profiles with no writer',
     ]);
   });
 

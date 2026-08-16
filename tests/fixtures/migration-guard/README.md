@@ -20,7 +20,7 @@ Each filename says what it is. The three role spellings - `anon`,
 `authenticated` and `public` - are covered separately because `public` is the
 one the real migrations revoke from, and the one the guard used to miss.
 
-Eight cover the profiles-writer check rather than execute.
+Nine cover the profiles-writer check rather than execute.
 `profiles_without_signup_trigger.sql` is the repository as it stood before
 `20260816001200`: a profiles table keyed to `auth.users` that nothing ever
 inserts into. Every statement in it applies cleanly, which is the point - the gap
@@ -36,10 +36,10 @@ whole remainder for a dollar tag read past the declaration and found an insert t
 function never runs. Every real migration uses `$$`, so it is latent - the fixture
 exists because the guard reading unrelated SQL is the failure it exists to prevent.
 
-The other five are that check judging the **final** state of an ordered list of
+The other six are that check judging the **final** state of an ordered list of
 migrations rather than the first file in it that installs a trigger.
 `profiles_signup_trigger_installed.sql` is the schema as `20260816001200` leaves
-it, correct on its own, and is loaded ahead of each of the four regressions:
+it, correct on its own, and is loaded ahead of each of the five regressions:
 `profiles_signup_trigger_dropped_later.sql` drops the trigger and puts nothing
 back, `profiles_signup_trigger_repointed_later.sql` keeps the trigger under the
 same name and points it at a function that writes something else,
@@ -48,10 +48,14 @@ and `create or replace`s the function body out from under it, and
 `profiles_signup_function_dropped_cascade_later.sql` writes the removal without the
 word `trigger` anywhere - Postgres refuses a plain `drop function` while a trigger
 depends on it, so cascade is what anyone removing it actually reaches for, and
-cascade takes the dependent trigger silently. All four arrive in a later file
+cascade takes the dependent trigger silently.
+`profiles_signup_trigger_dropped_case_variant_later.sql` is the plain drop again
+with the identifier spelled `On_Auth_User_Created`: Postgres folds unquoted names,
+so that is the same trigger, and a guard keying its bookkeeping on the name as
+written was evadable by changing the spelling. All five arrive in a later file
 because CLAUDE.md sends every correction to a new migration, which is what makes
 them the realistic shape of this regression and not a contrived one. The guard used
-to pass all four.
+to pass all five.
 
 Two more vary how the same function is written rather than which role it names:
 `definer_attributes_after_body.sql` puts `security definer` after the body, which
