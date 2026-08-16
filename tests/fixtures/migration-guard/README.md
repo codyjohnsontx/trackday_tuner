@@ -39,10 +39,10 @@ exists because the guard reading unrelated SQL is the failure it exists to preve
 The other five are that check judging the **final** state of an ordered list of
 migrations rather than the first file in it that installs a trigger.
 `profiles_signup_trigger_installed.sql` is the schema as `20260816001200` leaves
-it, correct on its own, and is loaded ahead of each of the three regressions:
+it, correct on its own, and is loaded ahead of each of the four regressions:
 `profiles_signup_trigger_dropped_later.sql` drops the trigger and puts nothing
 back, `profiles_signup_trigger_repointed_later.sql` keeps the trigger under the
-same name and points it at a function that writes something else, and
+same name and points it at a function that writes something else,
 `profiles_signup_function_replaced_later.sql` leaves the trigger entirely alone
 and `create or replace`s the function body out from under it, and
 `profiles_signup_function_dropped_cascade_later.sql` writes the removal without the

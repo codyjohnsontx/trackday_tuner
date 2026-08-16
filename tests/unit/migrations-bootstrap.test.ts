@@ -672,13 +672,13 @@ describe('the profiles-writer check, against migrations written wrongly on purpo
     ]);
   });
 
-  // The three below are the regression arriving in a *later* migration, which is
+  // The four below are the regression arriving in a *later* migration, which is
   // where CLAUDE.md sends every correction and so the only realistic place any of
   // this would change. Each pairs the schema as 20260816001200 leaves it with one
   // file undoing it. A guard that stopped at the first migration installing a
-  // trigger passed all three, which is what these were written to watch fail.
+  // trigger passed all four, which is what these were written to watch fail.
   it('accepts the installed trigger it judges the later regressions against', () => {
-    // The control. Without it the three below could pass on a fixture the guard
+    // The control. Without it the four below could pass on a fixture the guard
     // rejects for some unrelated reason, and the drop before the create in this
     // file must not read as the trigger being taken away.
     expect(profileWriterViolations(loadFixtures('profiles_signup_trigger_installed.sql'))).toEqual(
