@@ -140,10 +140,10 @@ to make that true, and both are easy to undo by accident:
   `permission denied for table ...`
 
 `20260816001200_add_profile_on_auth_user_created.sql` is **not** one of those two.
-It is the only thing that puts a row in `profiles`, so it is a production fix for
-existing deployments just as much as it is part of a clean build - an environment
-that skips it keeps the bug on every signup path, whatever its schema was built
-from.
+It is the only thing that puts a row in `profiles` for a rider who did not arrive
+through the beta invite route, so it is a production fix for existing deployments
+just as much as it is part of a clean build - an environment that skips it keeps
+the bug on every other signup path, whatever its schema was built from.
 
 **`profiles` is written by a trigger on `auth.users`, and it has to be.** A rider
 signing up through the ordinary form once `BETA_INVITE_ONLY` is off goes from the
