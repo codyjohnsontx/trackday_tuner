@@ -296,36 +296,60 @@ function executeViolations(migrations: Migration[]): string[] {
   ];
 }
 
-// The trigger that gives public.profiles a writer, and the function it calls.
-// `[^;]*?` keeps the search inside the one CREATE TRIGGER statement, so a trigger
-// on some other table cannot lend its function name to this one.
-const PROFILE_SIGNUP_TRIGGER =
-  /create\s+trigger\s+\w+\s+after\s+insert\s+on\s+auth\.users\b[^;]*?execute\s+(?:function|procedure)\s+(?:public\.)?(\w+)/i;
+// Every install and removal of an after-insert trigger on auth.users, matched by
+// one pattern so the two arms stay in the order they were written. That ordering
+// is the whole point: 20260816001200 drops the trigger and then creates it, which
+// nets to installed, while a later migration that drops it and stops there nets to
+// removed. Reading the arms with two separate scans would lose which came first.
+//
+// `[^;]*?` keeps the install arm inside the one CREATE TRIGGER statement, so a
+// trigger on some other table cannot lend its function name to this one.
+// `or replace` is matched because Postgres accepts it and re-pointing an existing
+// trigger at a different function is the shortest way to write that.
+const AUTH_USERS_TRIGGER_EVENT = new RegExp(
+  [
+    String.raw`create\s+(?:or\s+replace\s+)?trigger\s+(\w+)\s+after\s+insert\s+on\s+auth\.users\b[^;]*?execute\s+(?:function|procedure)\s+(?:public\.)?(\w+)`,
+    String.raw`drop\s+trigger\s+(?:if\s+exists\s+)?(\w+)\s+on\s+auth\.users\b`,
+  ].join('|'),
+  'gi',
+);
 
-// A function's declaration *including* its body. functionStatements() above
-// deliberately drops the body, because it is reading attributes and a `;` inside
-// a body would end the statement early. Here the body is the whole point: what
-// makes the trigger the fix is the insert written inside it.
-function functionSource(migrations: Migration[], name: string): string | null {
+// A function's declaration *including* its body, and the last one wins. Everything
+// else here reads the first declaration it finds, which is right for a table but
+// wrong for a function: `create or replace` in a later migration supersedes the
+// earlier body entirely, and CLAUDE.md sends every correction to a new migration,
+// so the later file is where a rewritten body would actually arrive.
+//
+// functionStatements() above deliberately drops the body, because it is reading
+// attributes and a `;` inside a body would end the statement early. Here the body
+// is the whole point: what makes the trigger the fix is the insert written inside
+// it.
+function lastFunctionDeclaration(
+  migrations: Migration[],
+  name: string,
+): { file: string; source: string } | null {
   const declaration = new RegExp(
     `create\\s+(?:or\\s+replace\\s+)?function\\s+(?:public\\.)?${name}\\b`,
-    'i',
+    'gi',
   );
+  let latest: { file: string; source: string } | null = null;
 
-  for (const { sql } of migrations) {
-    const match = declaration.exec(sql);
-    if (match === null) continue;
+  for (const { file, sql } of migrations) {
+    for (const match of sql.matchAll(declaration)) {
+      const rest = sql.slice(match.index);
+      const open = /\$\w*\$/.exec(rest);
+      if (open === null) {
+        latest = { file, source: rest };
+        continue;
+      }
 
-    const rest = sql.slice(match.index);
-    const open = /\$\w*\$/.exec(rest);
-    if (open === null) return rest;
-
-    const bodyStart = open.index + open[0].length;
-    const close = rest.indexOf(open[0], bodyStart);
-    return close === -1 ? rest : rest.slice(0, close);
+      const bodyStart = open.index + open[0].length;
+      const close = rest.indexOf(open[0], bodyStart);
+      latest = { file, source: close === -1 ? rest : rest.slice(0, close) };
+    }
   }
 
-  return null;
+  return latest;
 }
 
 // Every auth user must get a profiles row, and the migrations are the only place
@@ -344,35 +368,75 @@ function functionSource(migrations: Migration[], name: string): string | null {
 // row that is not there, and returns "Unable to link your billing account" for as
 // long as the account exists.
 //
-// WHAT THIS CATCHES: the trigger being dropped, renamed out from under its
-// trigger, or replaced by one that runs on signup and does something other than
-// create the row.
+// WHAT THIS CATCHES, and it is the state the whole ordered list of migrations
+// ends in rather than the first file that mentions a trigger: no trigger on
+// auth.users at all; a later migration dropping the one that is there; a trigger
+// pointed at a function no migration defines; and a function whose *last*
+// declaration runs on signup without inserting the row, whether that declaration
+// is the original or a `create or replace` in a later migration. CLAUDE.md sends
+// every correction to a new migration, so a later file is the ordinary way any of
+// those would arrive, not a hypothetical - which is why judging the first match
+// would have caught none of them.
 //
 // WHAT IT DOES NOT CATCH: it reads SQL as text like everything else here, so it
 // cannot see a trigger disabled on the hosted project, and it does not prove the
 // insert succeeds - `security definer`, the owner's privileges and search_path all
 // have to be right, and only signing up against a rebuilt database shows that.
-// That walk is recorded in the migration's own comments.
+// That walk is recorded in the migration's own comments. It follows triggers by
+// name, so a second trigger created under a different name and then dropped under
+// the first one's name is modelled the way Postgres models it and not the way a
+// careless reader would. It says nothing about a writer added any other way: an
+// application route or a hand-made dashboard trigger would satisfy the app and
+// still fail here, which is deliberate, because neither is in this repository.
 function profileWriterViolations(migrations: Migration[]): string[] {
+  const installed = new Map<string, { file: string; fn: string }>();
+  let removed: { file: string; trigger: string } | null = null;
+
   for (const { file, sql } of migrations) {
-    const trigger = PROFILE_SIGNUP_TRIGGER.exec(sql);
-    if (trigger === null) continue;
-
-    const name = trigger[1];
-    const source = functionSource(migrations, name);
-    if (source === null) {
-      return [`${file}: trigger on auth.users calls public.${name}, which no migration defines`];
+    for (const match of sql.matchAll(AUTH_USERS_TRIGGER_EVENT)) {
+      const [statement, createdTrigger, fn, droppedTrigger] = match;
+      if (/^create/i.test(statement)) {
+        installed.set(createdTrigger, { file, fn });
+        continue;
+      }
+      // Only a drop that removed something counts. 20260816001200 opens with
+      // `drop trigger if exists` against a database that may not have one, and
+      // that statement is a precaution rather than a regression.
+      if (installed.delete(droppedTrigger)) removed = { file, trigger: droppedTrigger };
     }
-    if (!/insert\s+into\s+public\.profiles\b/i.test(source)) {
-      return [
-        `${file}: public.${name} runs on every signup but never inserts into public.profiles`,
-      ];
+  }
+
+  if (installed.size === 0) {
+    return removed === null
+      ? ['no migration installs an after-insert trigger on auth.users']
+      : [
+          `${removed.file}: drop trigger ${removed.trigger} on auth.users leaves public.profiles with no writer`,
+        ];
+  }
+
+  const violations: string[] = [];
+
+  for (const { file, fn } of installed.values()) {
+    const declaration = lastFunctionDeclaration(migrations, fn);
+    if (declaration === null) {
+      violations.push(`${file}: trigger on auth.users calls public.${fn}, which no migration defines`);
+      continue;
+    }
+    if (!/insert\s+into\s+public\.profiles\b/i.test(declaration.source)) {
+      // Blamed on the file holding the declaration that actually runs, which is
+      // the one to change, and is the trigger's own file whenever the two agree.
+      violations.push(
+        `${declaration.file}: public.${fn} runs on every signup but never inserts into public.profiles`,
+      );
+      continue;
     }
 
+    // One surviving trigger that creates the row is the invariant. Anything else
+    // hanging off signup is somebody else's concern.
     return [];
   }
 
-  return ['no migration installs an after-insert trigger on auth.users'];
+  return violations;
 }
 
 const migrations = loadMigrations();
@@ -573,6 +637,66 @@ describe('the profiles-writer check, against migrations written wrongly on purpo
       profileWriterViolations(loadFixtures('signup_trigger_without_profile_insert.sql')),
     ).toEqual([
       'signup_trigger_without_profile_insert.sql: public.handle_new_auth_user runs on every signup but never inserts into public.profiles',
+    ]);
+  });
+
+  // The three below are the regression arriving in a *later* migration, which is
+  // where CLAUDE.md sends every correction and so the only realistic place any of
+  // this would change. Each pairs the schema as 20260816001200 leaves it with one
+  // file undoing it. A guard that stopped at the first migration installing a
+  // trigger passed all three, which is what these were written to watch fail.
+  it('accepts the installed trigger it judges the later regressions against', () => {
+    // The control. Without it the three below could pass on a fixture the guard
+    // rejects for some unrelated reason, and the drop before the create in this
+    // file must not read as the trigger being taken away.
+    expect(profileWriterViolations(loadFixtures('profiles_signup_trigger_installed.sql'))).toEqual(
+      [],
+    );
+  });
+
+  it('catches a later migration that drops the signup trigger', () => {
+    expect(
+      profileWriterViolations(
+        loadFixtures(
+          'profiles_signup_trigger_installed.sql',
+          'profiles_signup_trigger_dropped_later.sql',
+        ),
+      ),
+    ).toEqual([
+      'profiles_signup_trigger_dropped_later.sql: drop trigger on_auth_user_created on auth.users leaves public.profiles with no writer',
+    ]);
+  });
+
+  it('catches a later migration that re-points the signup trigger', () => {
+    // The trigger survives under the same name and still fires on every signup,
+    // so anything counting triggers rather than following the function it names
+    // sees nothing wrong here.
+    expect(
+      profileWriterViolations(
+        loadFixtures(
+          'profiles_signup_trigger_installed.sql',
+          'profiles_signup_trigger_repointed_later.sql',
+        ),
+      ),
+    ).toEqual([
+      'profiles_signup_trigger_repointed_later.sql: public.audit_new_auth_user runs on every signup but never inserts into public.profiles',
+    ]);
+  });
+
+  it('catches a later migration that replaces the signup function body', () => {
+    // Nothing about the trigger changes at all. `create or replace` supersedes
+    // the earlier body, so the insert is still there to read in the migration
+    // that installed it and no longer runs - which is why the last declaration
+    // is the one that counts, and why the later file is the one blamed.
+    expect(
+      profileWriterViolations(
+        loadFixtures(
+          'profiles_signup_trigger_installed.sql',
+          'profiles_signup_function_replaced_later.sql',
+        ),
+      ),
+    ).toEqual([
+      'profiles_signup_function_replaced_later.sql: public.handle_new_auth_user runs on every signup but never inserts into public.profiles',
     ]);
   });
 });

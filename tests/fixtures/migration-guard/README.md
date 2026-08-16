@@ -20,7 +20,7 @@ Each filename says what it is. The three role spellings - `anon`,
 `authenticated` and `public` - are covered separately because `public` is the
 one the real migrations revoke from, and the one the guard used to miss.
 
-Two cover the profiles-writer check rather than execute.
+Six cover the profiles-writer check rather than execute.
 `profiles_without_signup_trigger.sql` is the repository as it stood before
 `20260816001200`: a profiles table keyed to `auth.users` that nothing ever
 inserts into. Every statement in it applies cleanly, which is the point - the gap
@@ -28,6 +28,19 @@ was invisible until a rider tried to subscribe.
 `signup_trigger_without_profile_insert.sql` attaches a trigger in the right place
 whose function writes an analytics row instead, so a guard checking only that
 *some* after-insert trigger exists would pass it.
+
+The other four are that check judging the **final** state of an ordered list of
+migrations rather than the first file in it that installs a trigger.
+`profiles_signup_trigger_installed.sql` is the schema as `20260816001200` leaves
+it, correct on its own, and is loaded ahead of each of the three regressions:
+`profiles_signup_trigger_dropped_later.sql` drops the trigger and puts nothing
+back, `profiles_signup_trigger_repointed_later.sql` keeps the trigger under the
+same name and points it at a function that writes something else, and
+`profiles_signup_function_replaced_later.sql` leaves the trigger entirely alone
+and `create or replace`s the function body out from under it. All three arrive in
+a later file because CLAUDE.md sends every correction to a new migration, which is
+what makes them the realistic shape of this regression and not a contrived one.
+The guard used to pass all three.
 
 Two more vary how the same function is written rather than which role it names:
 `definer_attributes_after_body.sql` puts `security definer` after the body, which
