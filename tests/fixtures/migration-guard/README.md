@@ -20,7 +20,7 @@ Each filename says what it is. The three role spellings - `anon`,
 `authenticated` and `public` - are covered separately because `public` is the
 one the real migrations revoke from, and the one the guard used to miss.
 
-Nine cover the profiles-writer check rather than execute.
+Ten cover the profiles-writer check rather than execute.
 `profiles_without_signup_trigger.sql` is the repository as it stood before
 `20260816001200`: a profiles table keyed to `auth.users` that nothing ever
 inserts into. Every statement in it applies cleanly, which is the point - the gap
@@ -36,7 +36,7 @@ whole remainder for a dollar tag read past the declaration and found an insert t
 function never runs. Every real migration uses `$$`, so it is latent - the fixture
 exists because the guard reading unrelated SQL is the failure it exists to prevent.
 
-The other six are that check judging the **final** state of an ordered list of
+The other seven are that check judging the **final** state of an ordered list of
 migrations rather than the first file in it that installs a trigger.
 `profiles_signup_trigger_installed.sql` is the schema as `20260816001200` leaves
 it, correct on its own, and is loaded ahead of each of the five regressions:
@@ -56,6 +56,14 @@ written was evadable by changing the spelling. All five arrive in a later file
 because CLAUDE.md sends every correction to a new migration, which is what makes
 them the realistic shape of this regression and not a contrived one. The guard used
 to pass all five.
+
+`profiles_signup_function_dropped_without_cascade_later.sql` is the one fixture
+here the guard is meant to stay **quiet** about. `drop function` defaults to
+`restrict`, so Postgres refuses it while a trigger depends on the function: the
+statement errors and both objects survive. Reporting that as a removal would
+describe a database that cannot exist, and staying quiet costs nothing, because a
+migration that really does take the trigger away has to write `drop trigger`
+first.
 
 Two more vary how the same function is written rather than which role it names:
 `definer_attributes_after_body.sql` puts `security definer` after the body, which

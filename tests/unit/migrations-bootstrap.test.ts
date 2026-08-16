@@ -323,7 +323,7 @@ const AUTH_USERS_TRIGGER_EVENT = new RegExp(
   [
     String.raw`create\s+(?:or\s+replace\s+)?trigger\s+(\w+)\s+after\s+insert\s+on\s+auth\.users\b[^;]*?execute\s+(?:function|procedure)\s+(?:public\.)?(\w+)`,
     String.raw`drop\s+trigger\s+(?:if\s+exists\s+)?(\w+)\s+on\s+auth\.users\b`,
-    String.raw`drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?(\w+)`,
+    String.raw`drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?(\w+)\s*(?:\([^)]*\))?\s+cascade\b`,
   ].join('|'),
   'gi',
 );
@@ -396,7 +396,7 @@ function lastFunctionDeclaration(
 // WHAT THIS CATCHES, and it is the state the whole ordered list of migrations
 // ends in rather than the first file that mentions a trigger: no trigger on
 // auth.users at all; a later migration dropping the one that is there, either by
-// name or by dropping the function out from under it, which takes every dependent
+// name or by `drop function ... cascade`, which takes every dependent
 // trigger with it and never writes the word trigger anywhere; a trigger pointed at
 // a function no migration defines; and a function whose *last* declaration runs on
 // signup without inserting the row, whether that declaration
@@ -438,13 +438,17 @@ function profileWriterViolations(migrations: Migration[]): string[] {
         continue;
       }
 
-      // Dropping the function takes the trigger with it. `cascade` is what makes
-      // that silent - Postgres removes every dependent object without naming
-      // them - while the default `restrict` refuses and the migration fails to
-      // apply instead. Both leave a database with no writer, and neither writes
-      // `drop trigger` anywhere, so a scan reading only trigger statements kept
-      // the trigger in `installed`, found the still-present function body from
-      // the earlier migration, and reported nothing.
+      // A `cascade` drop of the function takes the trigger with it, silently and
+      // without writing `drop trigger` anywhere, so a scan reading only trigger
+      // statements kept the trigger in `installed`, found the still-present
+      // function body from the earlier migration, and reported nothing.
+      //
+      // `cascade` is required rather than incidental. `drop function` defaults to
+      // `restrict`, and Postgres refuses a restricted drop while a trigger depends
+      // on the function - the statement errors, and the function and trigger both
+      // survive. Matching those too would report a removal that cannot happen. It
+      // costs no coverage either: a migration that really does take the trigger
+      // away has to say `drop trigger` first, which the arm above already catches.
       for (const [trigger, entry] of installed) {
         if (foldIdentifier(entry.fn) !== foldIdentifier(droppedFunction)) continue;
         installed.delete(trigger);
@@ -746,6 +750,23 @@ describe('the profiles-writer check, against migrations written wrongly on purpo
     ).toEqual([
       'profiles_signup_function_dropped_cascade_later.sql: drop function public.handle_new_auth_user leaves public.profiles with no writer',
     ]);
+  });
+
+  it('stays quiet about a function drop that Postgres would refuse', () => {
+    // The other side of requiring `cascade`. A restricted drop - the default -
+    // cannot remove a function a trigger depends on: the statement errors and both
+    // objects survive, so calling it a removal would report a database that cannot
+    // exist. Nothing is lost by staying quiet, because a migration that really
+    // does take the trigger away has to write `drop trigger`, which the arm above
+    // catches on its own.
+    expect(
+      profileWriterViolations(
+        loadFixtures(
+          'profiles_signup_trigger_installed.sql',
+          'profiles_signup_function_dropped_without_cascade_later.sql',
+        ),
+      ),
+    ).toEqual([]);
   });
 
   it('reads only the declaration when a signup function body is not dollar-quoted', () => {
