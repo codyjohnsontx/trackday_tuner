@@ -20,27 +20,14 @@
 -- the bare `create policy` the rest of the migrations use.
 
 -- profiles ------------------------------------------------------------------
--- At most one row per auth user. When this baseline was written nothing created
--- that row automatically: no migration installed a trigger on auth.users, so
--- signing up through the ordinary email and password form left that user with no
--- profiles row at all, and the one writer was the beta signup route, which
--- inserts through the service-role client and so bypasses RLS entirely. That is
--- why the table has select and update policies for a user's own row but no insert
--- policy: a user is never the one creating it (the update policy is what lets
--- Stripe checkout link a customer id).
---
--- That gap is closed by 20260816001200_add_profile_on_auth_user_created.sql,
--- which installs an after-insert trigger on auth.users so every signup path gets
--- a row. Read that file before concluding from this one that nothing writes
--- profiles automatically. The policies below are unchanged by it and still
--- correct: the trigger inserts as the function's owner rather than as the user,
--- so there is still no insert policy to add here.
---
--- Comment only, on purpose. This migration is already applied on the remote, and
--- CLAUDE.md forbids editing an applied one because the edit changes the file
--- without changing the database. A comment is the one thing that cannot: replayed,
--- this file does exactly what it did before, and the guard in
--- tests/unit/migrations-bootstrap.test.ts strips comments before matching.
+-- At most one row per auth user, and nothing creates it automatically. No
+-- migration installs a trigger on auth.users, so signing up through the ordinary
+-- email and password form leaves that user with no profiles row at all. The one
+-- writer is the beta signup route, which inserts through the service-role client
+-- and so bypasses RLS entirely. That is why the table has select and update
+-- policies for a user's own row but no insert policy: a user is never the one
+-- creating it (the update policy is what lets Stripe checkout link a customer
+-- id).
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   tier text not null default 'free',
