@@ -310,6 +310,7 @@ const AUTH_USERS_TRIGGER_EVENT = new RegExp(
   [
     String.raw`create\s+(?:or\s+replace\s+)?trigger\s+(\w+)\s+after\s+insert\s+on\s+auth\.users\b[^;]*?execute\s+(?:function|procedure)\s+(?:public\.)?(\w+)`,
     String.raw`drop\s+trigger\s+(?:if\s+exists\s+)?(\w+)\s+on\s+auth\.users\b`,
+    String.raw`drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?(\w+)`,
   ].join('|'),
   'gi',
 );
@@ -338,8 +339,19 @@ function lastFunctionDeclaration(
     for (const match of sql.matchAll(declaration)) {
       const rest = sql.slice(match.index);
       const open = /\$\w*\$/.exec(rest);
-      if (open === null) {
-        latest = { file, source: rest };
+      const terminator = rest.indexOf(';');
+
+      // A dollar tag only opens *this* function's body when it comes before the
+      // statement's own terminator. Searching all of `rest` for one instead would
+      // read past the declaration on a function whose body is not dollar-quoted:
+      // with no tag anywhere it kept the entire rest of the file, and with a tag
+      // belonging to some later function it sliced up to that, so the profiles
+      // insert could be found in a statement this function never runs. Every
+      // migration and fixture here uses `$$`, so that was latent rather than
+      // live - but the guard reading unrelated SQL is exactly the failure it
+      // exists to prevent in the migrations.
+      if (open === null || (terminator !== -1 && terminator < open.index)) {
+        latest = { file, source: terminator === -1 ? rest : rest.slice(0, terminator + 1) };
         continue;
       }
 
@@ -370,9 +382,11 @@ function lastFunctionDeclaration(
 //
 // WHAT THIS CATCHES, and it is the state the whole ordered list of migrations
 // ends in rather than the first file that mentions a trigger: no trigger on
-// auth.users at all; a later migration dropping the one that is there; a trigger
-// pointed at a function no migration defines; and a function whose *last*
-// declaration runs on signup without inserting the row, whether that declaration
+// auth.users at all; a later migration dropping the one that is there, either by
+// name or by dropping the function out from under it, which takes every dependent
+// trigger with it and never writes the word trigger anywhere; a trigger pointed at
+// a function no migration defines; and a function whose *last* declaration runs on
+// signup without inserting the row, whether that declaration
 // is the original or a `create or replace` in a later migration. CLAUDE.md sends
 // every correction to a new migration, so a later file is the ordinary way any of
 // those would arrive, not a hypothetical - which is why judging the first match
@@ -390,28 +404,46 @@ function lastFunctionDeclaration(
 // still fail here, which is deliberate, because neither is in this repository.
 function profileWriterViolations(migrations: Migration[]): string[] {
   const installed = new Map<string, { file: string; fn: string }>();
-  let removed: { file: string; trigger: string } | null = null;
+  let removed: { file: string; statement: string } | null = null;
 
   for (const { file, sql } of migrations) {
     for (const match of sql.matchAll(AUTH_USERS_TRIGGER_EVENT)) {
-      const [statement, createdTrigger, fn, droppedTrigger] = match;
-      if (/^create/i.test(statement)) {
+      const [, createdTrigger, fn, droppedTrigger, droppedFunction] = match;
+
+      if (createdTrigger !== undefined) {
         installed.set(createdTrigger, { file, fn });
         continue;
       }
+
       // Only a drop that removed something counts. 20260816001200 opens with
       // `drop trigger if exists` against a database that may not have one, and
       // that statement is a precaution rather than a regression.
-      if (installed.delete(droppedTrigger)) removed = { file, trigger: droppedTrigger };
+      if (droppedTrigger !== undefined) {
+        if (installed.delete(droppedTrigger)) {
+          removed = { file, statement: `drop trigger ${droppedTrigger} on auth.users` };
+        }
+        continue;
+      }
+
+      // Dropping the function takes the trigger with it. `cascade` is what makes
+      // that silent - Postgres removes every dependent object without naming
+      // them - while the default `restrict` refuses and the migration fails to
+      // apply instead. Both leave a database with no writer, and neither writes
+      // `drop trigger` anywhere, so a scan reading only trigger statements kept
+      // the trigger in `installed`, found the still-present function body from
+      // the earlier migration, and reported nothing.
+      for (const [trigger, entry] of installed) {
+        if (entry.fn.toLowerCase() !== droppedFunction.toLowerCase()) continue;
+        installed.delete(trigger);
+        removed = { file, statement: `drop function public.${droppedFunction}` };
+      }
     }
   }
 
   if (installed.size === 0) {
     return removed === null
       ? ['no migration installs an after-insert trigger on auth.users']
-      : [
-          `${removed.file}: drop trigger ${removed.trigger} on auth.users leaves public.profiles with no writer`,
-        ];
+      : [`${removed.file}: ${removed.statement} leaves public.profiles with no writer`];
   }
 
   const violations: string[] = [];
@@ -664,6 +696,37 @@ describe('the profiles-writer check, against migrations written wrongly on purpo
       ),
     ).toEqual([
       'profiles_signup_trigger_dropped_later.sql: drop trigger on_auth_user_created on auth.users leaves public.profiles with no writer',
+    ]);
+  });
+
+  it('catches a later migration that drops the signup function with cascade', () => {
+    // The same removal written without the word `trigger` anywhere. Postgres
+    // refuses a plain `drop function` while a trigger depends on it, so cascade is
+    // the spelling anyone removing it actually reaches for, and cascade takes the
+    // dependent trigger silently. Reading only trigger statements kept the trigger
+    // installed, resolved the function to the still-present earlier body, found
+    // the insert in it, and reported nothing.
+    expect(
+      profileWriterViolations(
+        loadFixtures(
+          'profiles_signup_trigger_installed.sql',
+          'profiles_signup_function_dropped_cascade_later.sql',
+        ),
+      ),
+    ).toEqual([
+      'profiles_signup_function_dropped_cascade_later.sql: drop function public.handle_new_auth_user leaves public.profiles with no writer',
+    ]);
+  });
+
+  it('reads only the declaration when a signup function body is not dollar-quoted', () => {
+    // The body is a plain string literal, the function returns without writing the
+    // row, and an unrelated `insert into public.profiles` sits further down the
+    // same file. Searching the whole remainder for a dollar tag used to carry that
+    // insert into the function's source and accept it.
+    expect(
+      profileWriterViolations(loadFixtures('profiles_signup_function_not_dollar_quoted.sql')),
+    ).toEqual([
+      'profiles_signup_function_not_dollar_quoted.sql: public.handle_new_auth_user runs on every signup but never inserts into public.profiles',
     ]);
   });
 
