@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { test, expect } from '@playwright/test';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import type { Database } from '@/types/supabase';
 
@@ -25,6 +25,33 @@ import type { Database } from '@/types/supabase';
 // path. With BETA_INVITE_ONLY on, the form posts to /api/beta/signup, which is
 // the writer that always worked and not the one under test here.
 const PUBLIC_SIGNUP = (process.env.BETA_INVITE_ONLY ?? 'true') === 'false';
+
+/**
+ * Last resort for cleanup when the id was never captured.
+ *
+ * `listUsers()` is paginated and takes no email argument, so reading page one is
+ * not a lookup - it is a coin flip that gets quieter the more accounts the
+ * database holds, and a cleanup that silently finds nothing is worse than none.
+ * Page until the address turns up or the list runs out.
+ */
+async function findUserIdByEmail(
+  admin: SupabaseClient<Database>,
+  email: string,
+): Promise<string | null> {
+  const perPage = 200;
+  const wanted = email.toLowerCase();
+
+  for (let page = 1; page <= 100; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) return null;
+
+    const match = data.users.find((user) => user.email?.toLowerCase() === wanted);
+    if (match) return match.id;
+    if (data.users.length < perPage) return null;
+  }
+
+  return null;
+}
 
 test.describe('signing up outside the invite route', () => {
   test.skip(
@@ -69,13 +96,33 @@ test.describe('signing up outside the invite route', () => {
         await expect(passwordField).toHaveValue(password);
       }).toPass({ timeout: 10_000 });
 
+      // The rider exists from the moment GoTrue answers this, which is before the
+      // redirect below and long before the sign-in further down. Taking the id
+      // here is what lets the cleanup run no matter where the test fails after
+      // it. Registered before the click so the response cannot be missed, and
+      // settled to null rather than thrown so it can never be the failure.
+      const signupUserId = page
+        .waitForResponse(
+          (response) =>
+            response.url().includes('/auth/v1/signup') && response.request().method() === 'POST',
+          { timeout: 20_000 },
+        )
+        .then(async (response) => {
+          if (!response.ok()) return null;
+          // A session when confirmations are off, the bare user when they are on.
+          const body = (await response.json()) as { id?: string; user?: { id?: string } | null };
+          return body.user?.id ?? body.id ?? null;
+        })
+        .catch(() => null);
+
       await form.getByRole('button', { name: 'Create Account' }).click();
+      userId = await signupUserId;
+
       await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
 
-      // Nothing in the browser exposes the new user's id, and the point of this
-      // test is that no route handler saw the signup at all. Signing in with the
-      // anon key is the rider's own session, which is also the only client that
-      // can read their profile under RLS.
+      // The point of this test is that no route handler saw the signup at all.
+      // Signing in with the anon key is the rider's own session, which is also
+      // the only client that can read their profile under RLS.
       const anon = createClient<Database>(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -86,8 +133,9 @@ test.describe('signing up outside the invite route', () => {
         password,
       });
       expect(signInError).toBeNull();
-      userId = session.user?.id ?? null;
-      expect(userId).not.toBeNull();
+      const sessionUserId = session.user?.id ?? null;
+      expect(sessionUserId).not.toBeNull();
+      userId = sessionUserId;
 
       const { data: profile, error: profileError } = await anon
         .from('profiles')
@@ -111,8 +159,16 @@ test.describe('signing up outside the invite route', () => {
       expect(linkError).toBeNull();
       expect(linkedProfile?.id).toBe(userId);
     } finally {
-      // The profiles row goes with the auth user through the FK cascade.
-      if (userId) await admin.auth.admin.deleteUser(userId);
+      // Everything here is swallowed on purpose. A failure to tidy up must not
+      // throw over the assertion error underneath it, because that diagnostic is
+      // the reason this test exists.
+      try {
+        userId ??= await findUserIdByEmail(admin, email);
+        // The profiles row goes with the auth user through the FK cascade.
+        if (userId) await admin.auth.admin.deleteUser(userId);
+      } catch {
+        // Deliberately ignored - see above.
+      }
     }
   });
 });
