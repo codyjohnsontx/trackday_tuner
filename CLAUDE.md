@@ -116,8 +116,8 @@ the remote is the source of truth for what has been applied.
 
 ### Building a database from nothing
 
-`supabase start` on a clean machine builds the whole schema. Two files exist only
-to make that true, and both are easy to undo by accident:
+`supabase start` on a clean machine builds the whole schema. Three files exist only
+to make that true, and all three are easy to undo by accident:
 
 - `20260223000000_init_baseline_schema.sql` creates `profiles`, `vehicles`,
   `tracks` and `sessions`. Those four were originally made by hand in the
@@ -132,6 +132,32 @@ to make that true, and both are easy to undo by accident:
   `auto_expose_new_tables` in `supabase/config.toml`), so it applied every
   migration cleanly and then answered every PostgREST request with
   `permission denied for table ...`
+- `20260816001200_add_profile_on_auth_user_created.sql` is the only thing that
+  puts a row in `profiles`. Before it the sole writer was the beta signup route,
+  which reaches past RLS with the service-role key after redeeming an invite, so
+  a rider arriving any other way had no row at all
+
+**`profiles` is written by a trigger on `auth.users`, and it has to be.** A rider
+signing up through the ordinary form once `BETA_INVITE_ONLY` is off goes from the
+browser straight to GoTrue (`components/auth/auth-form.tsx` calls
+`supabase.auth.signUp`), and an OAuth signup is GoTrue talking to the provider.
+Neither reaches a route handler before the account exists, so **there is no
+application choke point to put this in** - the nearest thing, `getRealUser()` in
+`lib/auth.ts`, is on the read path of every authenticated page and would need the
+admin client anyway, since `authenticated` deliberately holds no INSERT here.
+
+Reading a missing row degrades correctly - `resolveUserAccess(null)` is the free
+tier - which is why this stayed invisible. Paying does not:
+`app/api/stripe/checkout/route.ts` attaches the Stripe customer by updating
+`profiles` and correctly refuses to charge when the update matches nothing, so a
+rider with no row gets `Unable to link your billing account` **forever**. That was
+reproduced end to end against a local stack and is written up in the migration.
+
+`tests/unit/migrations-bootstrap.test.ts` fails if that trigger goes missing or
+stops inserting into `profiles`. Like everything else in that file it reads SQL as
+text: it cannot prove the insert *succeeds*, which depends on `security definer`,
+the owner's privileges and the pinned empty `search_path`. Only signing up against
+a rebuilt database shows that.
 
 **Grants are per role and per table, and that is a security boundary rather than
 tidiness.** `anon` gets no table access at all, `service_role` gets everything

@@ -296,6 +296,85 @@ function executeViolations(migrations: Migration[]): string[] {
   ];
 }
 
+// The trigger that gives public.profiles a writer, and the function it calls.
+// `[^;]*?` keeps the search inside the one CREATE TRIGGER statement, so a trigger
+// on some other table cannot lend its function name to this one.
+const PROFILE_SIGNUP_TRIGGER =
+  /create\s+trigger\s+\w+\s+after\s+insert\s+on\s+auth\.users\b[^;]*?execute\s+(?:function|procedure)\s+(?:public\.)?(\w+)/i;
+
+// A function's declaration *including* its body. functionStatements() above
+// deliberately drops the body, because it is reading attributes and a `;` inside
+// a body would end the statement early. Here the body is the whole point: what
+// makes the trigger the fix is the insert written inside it.
+function functionSource(migrations: Migration[], name: string): string | null {
+  const declaration = new RegExp(
+    `create\\s+(?:or\\s+replace\\s+)?function\\s+(?:public\\.)?${name}\\b`,
+    'i',
+  );
+
+  for (const { sql } of migrations) {
+    const match = declaration.exec(sql);
+    if (match === null) continue;
+
+    const rest = sql.slice(match.index);
+    const open = /\$\w*\$/.exec(rest);
+    if (open === null) return rest;
+
+    const bodyStart = open.index + open[0].length;
+    const close = rest.indexOf(open[0], bodyStart);
+    return close === -1 ? rest : rest.slice(0, close);
+  }
+
+  return null;
+}
+
+// Every auth user must get a profiles row, and the migrations are the only place
+// that can be true of *every* signup path.
+//
+// This is the second bug of the same family as the missing tables above: not SQL
+// that fails to run, but SQL that runs and leaves the schema unable to support the
+// app. public.profiles shipped with a select policy, an update policy and no
+// insert policy, because its one writer was the beta signup route reaching past
+// RLS with the service-role key. That held only while every rider arrived through
+// an invite. A rider signing up any other way - the ordinary form once
+// BETA_INVITE_ONLY is off, or an OAuth provider - never touches a route handler
+// before the account exists, so no application code can be the choke point.
+// Reading degrades correctly (resolveUserAccess(null) is the free tier). Paying
+// does not: app/api/stripe/checkout/route.ts cannot attach a Stripe customer to a
+// row that is not there, and returns "Unable to link your billing account" for as
+// long as the account exists.
+//
+// WHAT THIS CATCHES: the trigger being dropped, renamed out from under its
+// trigger, or replaced by one that runs on signup and does something other than
+// create the row.
+//
+// WHAT IT DOES NOT CATCH: it reads SQL as text like everything else here, so it
+// cannot see a trigger disabled on the hosted project, and it does not prove the
+// insert succeeds - `security definer`, the owner's privileges and search_path all
+// have to be right, and only signing up against a rebuilt database shows that.
+// That walk is recorded in the migration's own comments.
+function profileWriterViolations(migrations: Migration[]): string[] {
+  for (const { file, sql } of migrations) {
+    const trigger = PROFILE_SIGNUP_TRIGGER.exec(sql);
+    if (trigger === null) continue;
+
+    const name = trigger[1];
+    const source = functionSource(migrations, name);
+    if (source === null) {
+      return [`${file}: trigger on auth.users calls public.${name}, which no migration defines`];
+    }
+    if (!/insert\s+into\s+public\.profiles\b/i.test(source)) {
+      return [
+        `${file}: public.${name} runs on every signup but never inserts into public.profiles`,
+      ];
+    }
+
+    return [];
+  }
+
+  return ['no migration installs an after-insert trigger on auth.users'];
+}
+
 const migrations = loadMigrations();
 
 describe('supabase migrations bootstrap a database from nothing', () => {
@@ -329,6 +408,10 @@ describe('supabase migrations bootstrap a database from nothing', () => {
     for (const table of ['profiles', 'vehicles', 'tracks', 'sessions']) {
       expect(created).toContain(table);
     }
+  });
+
+  it('gives profiles a writer that every signup path passes through', () => {
+    expect(profileWriterViolations(migrations)).toEqual([]);
   });
 
   it('defines every trigger function before a trigger calls it', () => {
@@ -449,7 +532,11 @@ describe('supabase migrations bootstrap a database from nothing', () => {
       ),
     );
 
-    expect([...definers].sort()).toEqual(['consume_beta_rate_limit', 'create_beta_invite']);
+    expect([...definers].sort()).toEqual([
+      'consume_beta_rate_limit',
+      'create_beta_invite',
+      'handle_new_auth_user',
+    ]);
   });
 
   it('leaves execute on a function to the migration that creates it', () => {
@@ -469,6 +556,27 @@ describe('supabase migrations bootstrap a database from nothing', () => {
 // The tests above pass against a repository that got it right, and would pass just
 // as happily against a deleted check. These feed the same analysis SQL that got it
 // wrong, so what the guard catches is observed rather than assumed.
+describe('the profiles-writer check, against migrations written wrongly on purpose', () => {
+  it('catches a schema whose profiles table nothing ever writes to', () => {
+    // The repository as it stood before 20260816001200. Nothing about this SQL
+    // fails to apply, which is why the gap survived until someone tried to pay.
+    expect(profileWriterViolations(loadFixtures('profiles_without_signup_trigger.sql'))).toEqual([
+      'no migration installs an after-insert trigger on auth.users',
+    ]);
+  });
+
+  it('catches a signup trigger that does something other than create the row', () => {
+    // Checking only that a trigger exists would pass this. Analytics, audit rows
+    // and welcome emails all belong on auth.users insert and none of them is the
+    // fix, so the guard reads the function body rather than the attachment.
+    expect(
+      profileWriterViolations(loadFixtures('signup_trigger_without_profile_insert.sql')),
+    ).toEqual([
+      'signup_trigger_without_profile_insert.sql: public.handle_new_auth_user runs on every signup but never inserts into public.profiles',
+    ]);
+  });
+});
+
 describe('the execute check, against migrations written wrongly on purpose', () => {
   it('catches a security definer function whose migration never mentions execute', () => {
     expect(executeViolations(loadFixtures('definer_without_revoke.sql'))).toEqual([

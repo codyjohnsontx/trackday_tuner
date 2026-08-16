@@ -20,6 +20,15 @@ Each filename says what it is. The three role spellings - `anon`,
 `authenticated` and `public` - are covered separately because `public` is the
 one the real migrations revoke from, and the one the guard used to miss.
 
+Two cover the profiles-writer check rather than execute.
+`profiles_without_signup_trigger.sql` is the repository as it stood before
+`20260816001200`: a profiles table keyed to `auth.users` that nothing ever
+inserts into. Every statement in it applies cleanly, which is the point - the gap
+was invisible until a rider tried to subscribe.
+`signup_trigger_without_profile_insert.sql` attaches a trigger in the right place
+whose function writes an analytics row instead, so a guard checking only that
+*some* after-insert trigger exists would pass it.
+
 Two more vary how the same function is written rather than which role it names:
 `definer_attributes_after_body.sql` puts `security definer` after the body, which
 Postgres accepts because its option list is order-independent, and
