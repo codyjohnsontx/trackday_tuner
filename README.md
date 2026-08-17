@@ -331,6 +331,7 @@ Free → Pro conversion rate (after hitting limits / wanting compare/export/AI)
 - Session logging supports both `motorcycle` and `car` modes.
 - Session modules are optional per session and can be added/removed.
 - Advanced fields are hidden by default and available through per-module toggles.
+- The session weather answer is required: the row opens with nothing selected and a save is refused until the rider chooses, because `sessions.conditions` is NOT NULL.
 - Partial entry is supported and can be saved locally as a draft.
 
 ## Implemented vs Planned
