@@ -37,6 +37,7 @@ import {
 } from '@/lib/actions/sessions';
 import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
 import { COMPARABLE_SESSION_FETCH_LIMIT, COMPARABLE_SESSION_LIMIT } from '@/lib/session-compare';
+import { TRACK_NAME_MATCH_LIMIT } from '@/lib/session-track';
 import type {
   CreateSessionInput,
   Session,
@@ -75,6 +76,29 @@ function createQuery(response: QueryResponse = {}) {
   return query;
 }
 
+/** A `like` pattern as the expression it stands for: `%` is any run, `\` escapes. */
+function likeExpression(pattern: string): RegExp {
+  let source = '';
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === '\\') {
+      index += 1;
+      if (index < pattern.length) source += pattern[index].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      continue;
+    }
+    if (char === '%') {
+      source += '[\\s\\S]*';
+      continue;
+    }
+    if (char === '_') {
+      source += '[\\s\\S]';
+      continue;
+    }
+    source += char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${source}$`, 'i');
+}
+
 /**
  * A tracks query that answers `ilike` and `eq` the way the database does, so the
  * filter the action builds is what decides the match rather than the mock.
@@ -89,19 +113,18 @@ function createTrackNameQuery(rows: { id: string; name: string }[]) {
 
   query.select = vi.fn(() => query);
   query.or = vi.fn(() => query);
-  query.limit = vi.fn(() => query);
+  query.order = vi.fn(() => query);
+  query.limit = vi.fn((count: number) => {
+    matched = matched.slice(0, count);
+    return query;
+  });
   query.eq = vi.fn((column: string, value: unknown) => {
     if (column === 'name') matched = matched.filter((row) => row.name === value);
     return query;
   });
   query.ilike = vi.fn((column: string, pattern: string) => {
     if (column !== 'name') return query;
-    // `%` is any run of characters, and the comparison folds case.
-    const source = pattern
-      .split('%')
-      .map((literal) => literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-      .join('[\\s\\S]*');
-    const expression = new RegExp(`^${source}$`, 'i');
+    const expression = likeExpression(pattern);
     matched = matched.filter((row) => expression.test(row.name));
     return query;
   });
@@ -109,6 +132,16 @@ function createTrackNameQuery(rows: { id: string; name: string }[]) {
     Promise.resolve({ data: matched, error: null }).then(onFulfilled, onRejected);
 
   return query;
+}
+
+/**
+ * The wildcard lookup that follows an exact-match miss.
+ *
+ * Reaching for a typed name is two queries now, narrowest first, so a test whose
+ * exact pattern finds nothing has one more `from('tracks')` to account for.
+ */
+function createWildcardLookup(rows: { id: string; name: string }[] = []) {
+  return createQuery({ base: { data: rows, error: null } });
 }
 
 const validInput: CreateSessionInput = {
@@ -327,7 +360,7 @@ describe('sessions actions', () => {
     );
   });
 
-  it('finds a doubled-space spelling through the narrowed track query', async () => {
+  it('finds a doubled-space spelling on the exact-match fast path', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
 
@@ -362,9 +395,54 @@ describe('sessions actions', () => {
     expect(insertQuery.insert).toHaveBeenCalledWith(
       expect.objectContaining({ track_id: 'track-9', track_name: 'Eagles Canyon Raceway' }),
     );
-    // Narrowed and bounded in the database rather than read whole and folded here.
-    expect(visibleTracks.ilike).toHaveBeenCalled();
+    // The fold happens before the query, so the ordinary case is answered by a
+    // pattern carrying no wildcard at all - nothing here depends on the bound.
+    expect(visibleTracks.ilike).toHaveBeenCalledWith('name', 'eagles canyon raceway');
+    expect(visibleTracks.order).toHaveBeenCalled();
     expect(visibleTracks.limit).toHaveBeenCalled();
+  });
+
+  it('falls back to the wildcard pattern for a stored spelling the fold reaches', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    // Stored with doubled spacing, typed without: the exact pattern cannot reach
+    // it, and only the wildcard one keeps this off a second row.
+    const rows = [{ id: 'track-9', name: 'Eagles  Canyon Raceway' }];
+    const exactLookup = createTrackNameQuery(rows);
+    const wildcardLookup = createTrackNameQuery(rows);
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return exactLookup;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return wildcardLookup;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementation(() =>
+        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
+      );
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({
+      ...validInput,
+      track_id: null,
+      track_name: 'Eagles Canyon Raceway',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ track_id: 'track-9', track_name: 'Eagles  Canyon Raceway' }),
+    );
+    expect(wildcardLookup.ilike).toHaveBeenCalledWith('name', '%eagles%canyon%raceway%');
   });
 
   it('finds a decomposed accent on its precomposed row through the narrowed track query', async () => {
@@ -404,6 +482,63 @@ describe('sessions actions', () => {
     );
   });
 
+  it('creates no track when the name lookup came back full', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    // A result set that reached the bound. None of these folds equal to the typed
+    // name, but the rider's own row may be the one the bound cut off.
+    const truncated = createQuery({
+      base: {
+        data: Array.from({ length: TRACK_NAME_MATCH_LIMIT }, (_, index) => ({
+          id: `track-${index}`,
+          name: `Other Circuit ${index}`,
+        })),
+        error: null,
+      },
+    });
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return truncated;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementation(() =>
+        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
+      );
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({
+      ...validInput,
+      track_id: null,
+      track_name: 'Harris Hill Raceway',
+    });
+
+    // A truncated read is not evidence the circuit is new. The session saves under
+    // the typed name, which every read surface still matches, rather than spending
+    // a custom-track slot on a row the rider may already have.
+    expect(result.ok).toBe(true);
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ track_id: null, track_name: 'Harris Hill Raceway' }),
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[sessions] visible tracks lookup truncated',
+      expect.objectContaining({
+        userId: 'user-1',
+        trackName: 'Harris Hill Raceway',
+        limit: TRACK_NAME_MATCH_LIMIT,
+      }),
+    );
+    errorSpy.mockRestore();
+  });
+
   it('saves a typed track the rider has never logged as a track of their own', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
@@ -419,6 +554,10 @@ describe('sessions actions', () => {
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('tracks');
         return visibleTracks;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return createWildcardLookup();
       })
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('tracks');
@@ -463,6 +602,7 @@ describe('sessions actions', () => {
     const from = vi
       .fn()
       .mockImplementationOnce(() => visibleTracks)
+      .mockImplementationOnce(() => createWildcardLookup())
       .mockImplementationOnce(() => trackInsert)
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
@@ -502,6 +642,7 @@ describe('sessions actions', () => {
         return sessionCount;
       })
       .mockImplementationOnce(() => visibleTracks)
+      .mockImplementationOnce(() => createWildcardLookup())
       .mockImplementationOnce(() => trackCount)
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
@@ -540,6 +681,7 @@ describe('sessions actions', () => {
     const from = vi
       .fn()
       .mockImplementationOnce(() => visibleTracks)
+      .mockImplementationOnce(() => createWildcardLookup())
       .mockImplementationOnce(() => trackInsert)
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
@@ -651,6 +793,7 @@ describe('sessions actions', () => {
       .fn()
       .mockImplementationOnce(() => trackLookup)
       .mockImplementationOnce(() => visibleTracks)
+      .mockImplementationOnce(() => createWildcardLookup())
       .mockImplementationOnce(() => trackInsert)
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
@@ -746,6 +889,7 @@ describe('sessions actions', () => {
     const from = vi
       .fn()
       .mockImplementationOnce(() => visibleTracks)
+      .mockImplementationOnce(() => createWildcardLookup())
       .mockImplementationOnce(() => trackInsert)
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
@@ -774,7 +918,7 @@ describe('sessions actions', () => {
     // ON DELETE SET NULL, so deleting the track now would strip the circuit off a
     // session the rider still has.
     expect(trackRollback.delete).not.toHaveBeenCalled();
-    expect(from).toHaveBeenCalledTimes(5);
+    expect(from).toHaveBeenCalledTimes(6);
     expect(errorSpy).toHaveBeenCalledWith(
       '[sessions] session rollback failed',
       expect.objectContaining({ userId: 'user-1', sessionId: 'sess-1', error: 'no rows deleted' }),
@@ -801,6 +945,7 @@ describe('sessions actions', () => {
     const from = vi
       .fn()
       .mockImplementationOnce(() => visibleTracks)
+      .mockImplementationOnce(() => createWildcardLookup())
       .mockImplementationOnce(() => trackInsert)
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
@@ -829,7 +974,7 @@ describe('sessions actions', () => {
     // ON DELETE SET NULL, so removing the track now would strip the circuit off a
     // session the rider still has. A stray track is the lesser failure.
     expect(trackRollback.delete).not.toHaveBeenCalled();
-    expect(from).toHaveBeenCalledTimes(5);
+    expect(from).toHaveBeenCalledTimes(6);
     expect(errorSpy).toHaveBeenCalledWith(
       '[sessions] session rollback failed',
       expect.objectContaining({ userId: 'user-1', sessionId: 'sess-1', error: 'delete refused' }),

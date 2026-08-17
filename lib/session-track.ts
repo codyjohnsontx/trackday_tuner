@@ -33,6 +33,17 @@ export function trackNameKey(value: string | null | undefined): string {
 }
 
 /**
+ * How many rows a name lookup reads before it stops believing its own answer.
+ *
+ * A bound is not a detail of the query: a truncated result and an empty one are
+ * the same value, and reading the second as "this circuit is new" is what creates
+ * the duplicate row. The number is small on purpose - the caller treats reaching
+ * it as an unproven answer rather than an absent one, so a bound low enough to
+ * hit is better than a high one that hides the same cliff further out.
+ */
+export const TRACK_NAME_MATCH_LIMIT = 50;
+
+/**
  * True for a character a `like` pattern cannot state literally.
  *
  * Two kinds qualify. `%`, `_`, `\` and PostgREST's `*` alias are wildcards, so a
@@ -47,6 +58,23 @@ function needsWildcard(char: string): boolean {
 }
 
 /**
+ * The typed name as a `like` pattern that matches that name and nothing else.
+ *
+ * This is the lookup that answers the ordinary case - a rider retyping a circuit
+ * they have logged before, stored the way this app stores it - and it answers it
+ * precisely, because it carries no wildcard whose breadth could depend on how the
+ * name is spelled. `like` folds nothing, so the key does the folding first and
+ * `ilike` supplies the case; a wildcard the name itself contains is escaped
+ * rather than honoured.
+ */
+export function trackNameExactPattern(value: string | null | undefined): string {
+  const key = trackNameKey(value);
+  if (!key) return '%';
+
+  return key.replace(/[\\%_]/g, '\\$&');
+}
+
+/**
  * A `like` pattern that narrows a track query to the rows a typed name could mean.
  *
  * The lookup used to read every track the rider can see and fold in memory, which
@@ -56,21 +84,23 @@ function needsWildcard(char: string): boolean {
  *
  * It is a narrowing step and not the decision: `findSavedTrackByName` still says
  * whether two spellings are one circuit, so this pattern must never be tighter
- * than the fold. Spacing becomes `%` because the fold collapses runs of it, and
- * every character the pattern cannot state literally becomes `%` too. Wider than
- * the fold is only wasted rows; narrower is the duplicate row this exists to
- * prevent.
+ * than the fold. Spacing becomes `%` because the fold collapses runs of it, every
+ * character the pattern cannot state literally becomes `%` too, and the whole
+ * pattern is open at both ends because the fold trims but a stored row may not
+ * have been trimmed. Wider than the fold costs rows the fold then rejects, and
+ * `TRACK_NAME_MATCH_LIMIT` decides what happens when there are too many of them;
+ * narrower is the duplicate row this exists to prevent, silently.
  */
 export function trackNameSearchPattern(value: string | null | undefined): string {
   const key = trackNameKey(value);
   if (!key) return '%';
 
-  let pattern = '';
+  let pattern = '%';
   for (const char of key) {
     pattern += char === ' ' || needsWildcard(char) ? '%' : char;
   }
 
-  return pattern.replace(/%+/g, '%');
+  return `${pattern}%`.replace(/%+/g, '%');
 }
 
 /** The saved track a typed name means, or null when the rider is naming a new one. */

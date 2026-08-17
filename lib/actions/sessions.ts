@@ -27,7 +27,13 @@ import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
 import { validateLaps } from '@/lib/lap-times';
 import { MISSING_CONDITIONS_MESSAGE, isSessionCondition } from '@/lib/session-answers';
-import { findSavedTrackByName, normalizeTrackName, trackNameSearchPattern } from '@/lib/session-track';
+import {
+  TRACK_NAME_MATCH_LIMIT,
+  findSavedTrackByName,
+  normalizeTrackName,
+  trackNameExactPattern,
+  trackNameSearchPattern,
+} from '@/lib/session-track';
 import {
   baselineReferenceLabel,
   baselineToComparableSession,
@@ -394,14 +400,76 @@ function visibleTracksFilter(userId: string): string {
 }
 
 /**
- * How many name candidates the fold is given to choose between.
+ * What a name lookup found, including the case where it cannot say.
  *
- * The pattern is deliberately wider than the fold, so more than one row can come
- * back for one typed name, but not many: these are the tracks whose name matches
- * it character for character apart from spacing and accents. The bound is here so
- * the query can never quietly become the whole tracks table again.
+ * `unproven` is the one that matters. A read that failed, and a read that came
+ * back full, both leave the question open - and the caller's next move on an open
+ * question must not be the insert, because a circuit the rider already has would
+ * get a second row and spend one of a free rider's three slots.
  */
-const TRACK_NAME_MATCH_LIMIT = 50;
+type VisibleTrackLookup =
+  | { status: 'found'; track: { id: string; name: string } }
+  | { status: 'absent' }
+  | { status: 'unproven'; log: string; detail: Record<string, unknown> };
+
+/**
+ * The saved track a typed name means, looked for in the database rather than read
+ * whole and folded here.
+ *
+ * Two queries, narrowest first. The exact pattern answers a rider retyping a
+ * circuit they have logged before and cannot be widened by how the name is
+ * spelled, so the ordinary case never depends on the bound at all. Only when that
+ * misses does the wildcard pattern go looking for the spellings the fold accepts
+ * but `like` does not - doubled spacing, a decomposed accent, a stored row that
+ * was never trimmed - and that pattern can be broad enough to match a great many
+ * rows.
+ *
+ * Which is why reaching the limit is `unproven` and not `absent`. The rows come
+ * back ordered so the same request cannot answer differently twice, and
+ * `findSavedTrackByName` still decides on whatever came back.
+ */
+async function findVisibleTrackByName(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  typed: string,
+): Promise<VisibleTrackLookup> {
+  const exact = trackNameExactPattern(typed);
+  const wildcard = trackNameSearchPattern(typed);
+  const patterns = wildcard === exact ? [exact] : [exact, wildcard];
+
+  for (const pattern of patterns) {
+    const { data, error } = await supabase
+      .from('tracks')
+      .select('id, name')
+      .or(visibleTracksFilter(userId))
+      .ilike('name', pattern)
+      .order('name', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(TRACK_NAME_MATCH_LIMIT);
+
+    if (error) {
+      return {
+        status: 'unproven',
+        log: '[sessions] visible tracks lookup failed',
+        detail: { userId, error: error.message },
+      };
+    }
+
+    const rows = (data ?? []) as { id: string; name: string }[];
+    const matched = findSavedTrackByName(typed, rows);
+    if (matched) return { status: 'found', track: matched };
+
+    if (rows.length >= TRACK_NAME_MATCH_LIMIT) {
+      return {
+        status: 'unproven',
+        log: '[sessions] visible tracks lookup truncated',
+        detail: { userId, trackName: typed, pattern, limit: TRACK_NAME_MATCH_LIMIT },
+      };
+    }
+  }
+
+  return { status: 'absent' };
+}
 
 /**
  * The circuit a session names, resolved to a track row.
@@ -454,28 +522,22 @@ async function resolveSessionTrack(
   if (!typed) return { trackId: null, trackName: null, createdTrack: false };
 
   // A name typed out in full lands on the row it names rather than beside it.
-  // The pattern narrows the query to the rows the typed name could mean without
-  // being tighter than the fold that decides it - see lib/session-track.ts.
-  const { data: visible, error: visibleError } = await supabase
-    .from('tracks')
-    .select('id, name')
-    .or(visibleTracksFilter(userId))
-    .ilike('name', trackNameSearchPattern(typed))
-    .limit(TRACK_NAME_MATCH_LIMIT);
+  const lookup = await findVisibleTrackByName(supabase, userId, typed);
 
-  if (visibleError) {
-    // Same reasoning: an empty list from a failed select looks exactly like a
-    // circuit the rider has never logged, and creating one would duplicate a
-    // track they already have. The session still saves under the typed name.
-    console.error('[sessions] visible tracks lookup failed', {
-      userId,
-      error: visibleError.message,
-    });
+  if (lookup.status === 'unproven') {
+    // An answer the lookup could not give is not the answer "no such circuit". A
+    // failed select and a truncated one both look exactly like a track the rider
+    // has never logged, and creating one would duplicate a track they already
+    // have. The session still saves under the typed name, which every read
+    // surface still matches - a missing link is recoverable and a second row on a
+    // three-slot plan is not.
+    console.error(lookup.log, lookup.detail);
     return { trackId: null, trackName: typed, createdTrack: false };
   }
 
-  const matched = findSavedTrackByName(typed, (visible ?? []) as { id: string; name: string }[]);
-  if (matched) return { trackId: matched.id, trackName: matched.name, createdTrack: false };
+  if (lookup.status === 'found') {
+    return { trackId: lookup.track.id, trackName: lookup.track.name, createdTrack: false };
+  }
 
   if (!hasProAccess) {
     const { count } = await supabase

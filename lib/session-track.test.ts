@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   findSavedTrackByName,
   normalizeTrackName,
+  trackNameExactPattern,
   trackNameKey,
   trackNameSearchPattern,
 } from '@/lib/session-track';
@@ -77,6 +78,12 @@ describe('narrowing a track query to a typed name', () => {
     expect(matches(pattern, 'Auto\u0301dromo Hermanos Rodri\u0301guez')).toBe(true);
   });
 
+  it('reaches a stored row nobody trimmed', () => {
+    // The fold trims both sides, so a pattern anchored at both ends would be
+    // narrower than the fold for any row that was inserted with the spacing on it.
+    expect(matches(trackNameSearchPattern('Eagles Canyon Raceway'), '  Eagles Canyon Raceway ')).toBe(true);
+  });
+
   it('does not widen into circuits the fold calls different', () => {
     expect(matches(trackNameSearchPattern('Barber Motorsports Park'), 'Barber Motorsport Park')).toBe(false);
     expect(matches(trackNameSearchPattern('COTA'), 'Circuit of the Americas')).toBe(false);
@@ -85,5 +92,19 @@ describe('narrowing a track query to a typed name', () => {
   it('matches everything rather than nothing when no name was typed', () => {
     expect(trackNameSearchPattern('   ')).toBe('%');
     expect(trackNameSearchPattern(null)).toBe('%');
+  });
+
+  it('states the typed name literally on the exact pattern', () => {
+    // No wildcard at all, so nothing about how the name is spelled can widen this
+    // lookup into one the bound has to truncate.
+    expect(trackNameExactPattern('  Eagles  Canyon Raceway ')).toBe('eagles canyon raceway');
+    expect(trackNameExactPattern('COTA')).toBe('cota');
+    expect(matches(trackNameExactPattern('Eagles Canyon Raceway'), 'Eagles Canyon Raceway')).toBe(true);
+    expect(matches(trackNameExactPattern('Eagles Canyon Raceway'), 'Eagles  Canyon Raceway')).toBe(false);
+  });
+
+  it('escapes a wildcard the typed name itself contains', () => {
+    expect(trackNameExactPattern('50% Circuit')).toBe('50\\% circuit');
+    expect(trackNameExactPattern('Snake_Alley')).toBe('snake\\_alley');
   });
 });
