@@ -54,6 +54,17 @@ async function findUserIdByEmail(
 }
 
 test.describe('signing up outside the invite route', () => {
+  // This spec's own explicit waits already total 50s - 10s for the hydration
+  // retry, 20s for the /auth/v1/signup response, 20s for the redirect to
+  // /dashboard - against the 30s default in playwright.config.ts, so a run that
+  // is going perfectly still dies at 30. On top of that sum sit a cold
+  // `npm run dev` compiling /login and /dashboard on demand, six device projects
+  // sharing that one server, and three Supabase round trips after the redirect.
+  // 120s is the 50s plus headroom for all of it. If a wait below grows, grow
+  // this number too - the waits are sized for a cold dev server on purpose and
+  // must not be shortened to fit a budget.
+  test.describe.configure({ timeout: 120_000 });
+
   test.skip(
     !hasServiceRole(),
     'NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.',
@@ -70,105 +81,125 @@ test.describe('signing up outside the invite route', () => {
     'Requires BETA_INVITE_ONLY=false, so the form signs up through GoTrue rather than /api/beta/signup.',
   );
 
+  // Held out here rather than in the test body so the hook below can still see
+  // them once the body is gone.
+  let signupEmail: string | null = null;
+  let signupUserId: string | null = null;
+
+  // The account is thrown away here rather than in a `finally` inside the test.
+  // Playwright abandons the test body when the test times out, so a `finally`
+  // there never runs and the throwaway auth user - and the profiles row this
+  // test exists to create - is left behind in a shared database, where the next
+  // run reads it as "the trigger did not fire". A hook runs on its own timeout
+  // after an aborted body, so it survives exactly the failure that leaks.
+  test.afterEach(async () => {
+    const email = signupEmail;
+    const captured = signupUserId;
+    signupEmail = null;
+    signupUserId = null;
+    if (!email) return;
+
+    // Everything here is swallowed on purpose. A failure to tidy up must not
+    // throw over the assertion error underneath it, because that diagnostic is
+    // the reason this test exists.
+    try {
+      const admin = createTestAdminClient();
+      const userId = captured ?? (await findUserIdByEmail(admin, email));
+      // The profiles row goes with the auth user through the FK cascade.
+      if (userId) await admin.auth.admin.deleteUser(userId);
+    } catch {
+      // Deliberately ignored - see above.
+    }
+  });
+
   test('creates the profiles row the checkout route has to link to', async ({ page }, testInfo) => {
     // One account per project, thrown away at the end: several device projects
     // share one database, and a signup that reused an address would fail as
     // "User already registered" rather than proving anything.
     const email = `signup-profile-${testInfo.project.name}-${randomUUID()}@example.com`;
     const password = `pw-${randomUUID()}`;
-    let userId: string | null = null;
+    // Published before the first navigation, so the fallback lookup in the hook
+    // has an address to search on however early this fails.
+    signupEmail = email;
     const admin = createTestAdminClient();
 
-    try {
-      await page.goto('/login');
-      await page.getByRole('button', { name: /^Sign Up$/ }).click();
+    await page.goto('/login');
+    await page.getByRole('button', { name: /^Sign Up$/ }).click();
 
-      const form = page.locator('form');
-      const emailField = form.getByLabel('Email');
-      const passwordField = form.getByLabel('Password');
+    const form = page.locator('form');
+    const emailField = form.getByLabel('Email');
+    const passwordField = form.getByLabel('Password');
 
-      // Controlled inputs, so anything typed before React hydrates is discarded.
-      // Same retry as helpers/auth.ts signIn().
-      await expect(async () => {
-        await emailField.fill(email);
-        await passwordField.fill(password);
-        await expect(emailField).toHaveValue(email);
-        await expect(passwordField).toHaveValue(password);
-      }).toPass({ timeout: 10_000 });
+    // Controlled inputs, so anything typed before React hydrates is discarded.
+    // Same retry as helpers/auth.ts signIn().
+    await expect(async () => {
+      await emailField.fill(email);
+      await passwordField.fill(password);
+      await expect(emailField).toHaveValue(email);
+      await expect(passwordField).toHaveValue(password);
+    }).toPass({ timeout: 10_000 });
 
-      // The rider exists from the moment GoTrue answers this, which is before the
-      // redirect below and long before the sign-in further down. Taking the id
-      // here is what lets the cleanup run no matter where the test fails after
-      // it. Registered before the click so the response cannot be missed, and
-      // settled to null rather than thrown so it can never be the failure.
-      const signupUserId = page
-        .waitForResponse(
-          (response) =>
-            response.url().includes('/auth/v1/signup') && response.request().method() === 'POST',
-          { timeout: 20_000 },
-        )
-        .then(async (response) => {
-          if (!response.ok()) return null;
-          // A session when confirmations are off, the bare user when they are on.
-          const body = (await response.json()) as { id?: string; user?: { id?: string } | null };
-          return body.user?.id ?? body.id ?? null;
-        })
-        .catch(() => null);
+    // The rider exists from the moment GoTrue answers this, which is before the
+    // redirect below and long before the sign-in further down. Taking the id
+    // here is what lets the cleanup run no matter where the test fails after
+    // it. Registered before the click so the response cannot be missed, and
+    // settled to null rather than thrown so it can never be the failure.
+    const signupResponseUserId = page
+      .waitForResponse(
+        (response) =>
+          response.url().includes('/auth/v1/signup') && response.request().method() === 'POST',
+        { timeout: 20_000 },
+      )
+      .then(async (response) => {
+        if (!response.ok()) return null;
+        // A session when confirmations are off, the bare user when they are on.
+        const body = (await response.json()) as { id?: string; user?: { id?: string } | null };
+        return body.user?.id ?? body.id ?? null;
+      })
+      .catch(() => null);
 
-      await form.getByRole('button', { name: 'Create Account' }).click();
-      userId = await signupUserId;
+    await form.getByRole('button', { name: 'Create Account' }).click();
+    signupUserId = await signupResponseUserId;
 
-      await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
 
-      // The point of this test is that no route handler saw the signup at all.
-      // Signing in with the anon key is the rider's own session, which is also
-      // the only client that can read their profile under RLS.
-      const anon = createClient<Database>(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        { auth: { persistSession: false, autoRefreshToken: false } },
-      );
-      const { data: session, error: signInError } = await anon.auth.signInWithPassword({
-        email,
-        password,
-      });
-      expect(signInError).toBeNull();
-      const sessionUserId = session.user?.id ?? null;
-      expect(sessionUserId).not.toBeNull();
-      userId = sessionUserId;
+    // The point of this test is that no route handler saw the signup at all.
+    // Signing in with the anon key is the rider's own session, which is also
+    // the only client that can read their profile under RLS.
+    const anon = createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { auth: { persistSession: false, autoRefreshToken: false } },
+    );
+    const { data: session, error: signInError } = await anon.auth.signInWithPassword({
+      email,
+      password,
+    });
+    expect(signInError).toBeNull();
+    const sessionUserId = session.user?.id ?? null;
+    expect(sessionUserId).not.toBeNull();
+    signupUserId = sessionUserId;
 
-      const { data: profile, error: profileError } = await anon
-        .from('profiles')
-        .select('id, tier')
-        .eq('id', userId!)
-        .maybeSingle();
+    const { data: profile, error: profileError } = await anon
+      .from('profiles')
+      .select('id, tier')
+      .eq('id', sessionUserId!)
+      .maybeSingle();
 
-      expect(profileError).toBeNull();
-      // The whole defect in one assertion: this was null for every rider who
-      // arrived any way other than an invite.
-      expect(profile).not.toBeNull();
-      expect(profile?.tier).toBe('free');
+    expect(profileError).toBeNull();
+    // The whole defect in one assertion: this was null for every rider who
+    // arrived any way other than an invite.
+    expect(profile).not.toBeNull();
+    expect(profile?.tier).toBe('free');
 
-      const { data: linkedProfile, error: linkError } = await admin
-        .from('profiles')
-        .update({ stripe_customer_id: `cus_e2e_${randomUUID().slice(0, 8)}` })
-        .eq('id', userId!)
-        .select('id')
-        .maybeSingle();
+    const { data: linkedProfile, error: linkError } = await admin
+      .from('profiles')
+      .update({ stripe_customer_id: `cus_e2e_${randomUUID().slice(0, 8)}` })
+      .eq('id', sessionUserId!)
+      .select('id')
+      .maybeSingle();
 
-      expect(linkError).toBeNull();
-      expect(linkedProfile?.id).toBe(userId);
-    } finally {
-      // Everything here is swallowed on purpose. A failure to tidy up must not
-      // throw over the assertion error underneath it, because that diagnostic is
-      // the reason this test exists.
-      try {
-        userId ??= await findUserIdByEmail(admin, email);
-        // The profiles row goes with the auth user through the FK cascade.
-        if (userId) await admin.auth.admin.deleteUser(userId);
-      } catch {
-        // Deliberately ignored - see above.
-      }
-    }
+    expect(linkError).toBeNull();
+    expect(linkedProfile?.id).toBe(sessionUserId);
   });
 });

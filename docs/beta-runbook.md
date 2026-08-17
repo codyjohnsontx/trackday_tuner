@@ -14,8 +14,9 @@
    `20260816001200`, which is not beta-specific but installs the trigger that
    gives every signup path a `profiles` row - without it a rider who did not
    arrive through the invite route can never subscribe. On a deployment whose
-   database already predates this work, those five are what is left to apply,
-   and after `20260816001200` run the audit below. Migrations build the schema
+   database already predates this work, those five are what is left to apply;
+   run the check below before `20260816001200` and the audit below after it.
+   Migrations build the schema
    and nothing else: the repository does not provision the `vehicle-photos`
    storage bucket, so on a deployment standing up its own database, adding a
    vehicle with a photo fails with "Bucket not found" until that bucket is
@@ -29,6 +30,38 @@
 
 Never change `BETA_INVITE_SECRET` while active invitations exist; invitation hashes
 cannot be recovered after rotation.
+
+### Before applying the profiles trigger: confirm the hosted table takes its insert
+
+`20260816001200` puts a `profiles` insert on the path of **every** signup,
+including the invite route that is the only live path today, and the insert is
+deliberately not wrapped in an exception handler - swallowing a failure would
+recreate the exact bug it fixes. So a hosted `public.profiles` that will not
+accept it fails all signups rather than only the new path.
+
+That is worth checking rather than assuming, because these four tables were
+originally made by hand in the dashboard and `npm run db:status` compares
+recorded migration versions, not schema - it cannot see a column added or
+tightened in the dashboard afterwards (see CLAUDE.md). Confirm the hosted table
+accepts what the trigger writes:
+
+```sql
+insert into public.profiles (id, tier) values (new.id, 'free')
+on conflict (id) do nothing;
+```
+
+which needs `id` to be `uuid` and the conflict target, `tier` to be `text`
+accepting `'free'`, and **every other column to be nullable or defaulted** -
+a `not null` column with no default added out of band is exactly what breaks
+this. `npx supabase db diff --linked` prints the SQL that would reconcile the
+live schema with the migration files; read what it says about `public.profiles`.
+Empty output means no difference *the diff engine models* was found, not proof
+the two are identical, so read the column list itself when the table matters as
+much as it does here.
+
+If the hosted table does not match, **STOP and escalate rather than improvising**
+- reshaping a live table is a product-owner decision, and this runbook
+prescribes none.
 
 ### Audit accounts that predate the profiles trigger
 
