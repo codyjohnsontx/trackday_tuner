@@ -14,6 +14,7 @@ import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supab
 
 const SESSION_DATE = '2019-07-19';
 const TRACK_NAME = 'PW Fahrenheit Track';
+const SESSION_DRAFT_KEY = 'track_tuner:draft:session_form_new';
 
 async function createRunVehicle(page: Page, nickname: string): Promise<string> {
   await page.goto('/garage/new');
@@ -85,6 +86,11 @@ test.describe('a rider who reads in Fahrenheit', () => {
     ).toHaveAttribute('aria-pressed', 'true');
 
     await page.goto('/sessions/new');
+    // A draft left behind by another run would fill these fields before the test
+    // does, and the reload below is about the draft this test writes.
+    await page.evaluate((key) => localStorage.removeItem(key), SESSION_DRAFT_KEY);
+    await page.reload();
+
     // The fields say what unit they are asking for.
     await expect(page.getByLabel(/^Ambient Temp \(°F\)$/)).toBeVisible();
     await expect(page.getByLabel(/^Track Temp \(°F\)$/)).toBeVisible();
@@ -102,6 +108,43 @@ test.describe('a rider who reads in Fahrenheit', () => {
     // 88 used to be rejected outright for being above the Celsius maximum.
     await page.getByLabel(/^Ambient Temp \(°F\)$/).fill('68');
     await page.getByLabel(/^Track Temp \(°F\)$/).fill('88');
+
+    // The draft is written by an effect, so wait for it to carry what was typed
+    // rather than reloading on a timer. Storing it was never the broken half.
+    await expect
+      .poll(
+        () =>
+          page.evaluate((key) => {
+            const raw = localStorage.getItem(key);
+            if (!raw) return null;
+            const draft = JSON.parse(raw) as {
+              ambientTemperature?: string;
+              trackTemperature?: string;
+              temperatureUnit?: string;
+            };
+            return {
+              ambientTemperature: draft.ambientTemperature,
+              trackTemperature: draft.trackTemperature,
+              temperatureUnit: draft.temperatureUnit,
+            };
+          }, SESSION_DRAFT_KEY),
+        { timeout: 10_000 },
+      )
+      .toEqual({ ambientTemperature: '68', trackTemperature: '88', temperatureUnit: 'f' });
+
+    // Coming back to the form restores that draft while the unit preference is
+    // still arriving from storage, and the two together used to read the text a
+    // second time: 68 came back as 154.4, the Fahrenheit of 68 Celsius.
+    await page.reload();
+
+    // Hydration has put the draft's date back, and the °F in the label is the
+    // preference having settled - the reread landed on the render after it.
+    await expect(page.getByLabel('Date', { exact: true })).toHaveValue(SESSION_DATE);
+    await expect(page.getByLabel(/^Ambient Temp \(°F\)$/)).toBeVisible();
+    await page.waitForTimeout(1_000);
+
+    await expect(page.getByLabel(/^Ambient Temp \(°F\)$/)).toHaveValue('68');
+    await expect(page.getByLabel(/^Track Temp \(°F\)$/)).toHaveValue('88');
 
     await page.getByRole('button', { name: 'Save Session' }).click();
     await expect(page).toHaveURL(/\/sessions\/[0-9a-f-]{36}$/, { timeout: 20_000 });
