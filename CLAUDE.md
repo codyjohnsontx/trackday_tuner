@@ -364,11 +364,15 @@ The same shape applies to anything derived rather than given:
   editor's entry boxes alongside the list. A save has to run
   `commitLapEditorValue` to get a lap array at all, because text a rider typed
   but never pressed "Add" on used to be dropped silently
-- **Track names** typed rather than picked are resolved server-side by
-  `resolveSessionTrack` in `lib/actions/sessions.ts`, using
-  `lib/session-track.ts` to fold case and spacing. Creating the row is best
-  effort: at the free-plan track cap, or on an insert error, the session still
-  saves with the name alone
+- **Track names** are resolved server-side by `resolveSessionTrack` in
+  `lib/actions/sessions.ts`, using `lib/session-track.ts` to fold case and
+  spacing. A supplied `track_id` is looked up in the same seeded-or-own scope the
+  picker offers rather than trusted, and the row's own name wins over what was
+  typed, so a session cannot store an id and a name that point at different
+  circuits. Creating a row for a name that matches none is best effort: at the
+  free-plan track cap, or on an insert error, the session still saves with the
+  name alone - and a row this code did create is deleted again when the session
+  it was written for does not survive
 
 ## Units
 

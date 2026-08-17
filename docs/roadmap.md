@@ -217,7 +217,8 @@ and execution order may legitimately diverge; the reason is recorded there.
    `session_changes` row, so add vehicle, log session, and compare are covered.
    Recording an outcome joined them on 2026-08-17 in
    `tests/e2e/session-answers.spec.ts`, alongside new specs for pasted lap times,
-   the track row a typed name creates, the temperature unit, and the sag history.
+   the track row a typed name creates, the local date the form prefills, the
+   temperature unit, and the sag history and its mid-delete selection race.
    Those specs drive the real E2E account and skip without its credentials (see
    `TESTING.md`), and E2E is still skipped in CI by default. Demo mode is a
    deterministic fixture that needs no Supabase and no secrets, and no test uses
@@ -235,9 +236,10 @@ and execution order may legitimately diverge; the reason is recorded there.
     text, so the front and rear sag sections emit `fully_extended_(l0)`,
     `bike_only_(l1)`, and `rider_on_bike_(l2)` twice each. Tapping a rear label
     focuses the front input and screen readers announce the wrong field. Prefix the
-    ids or use `useId()`. The sag e2e test fails on this: both `Fully Extended (L0)`
-    labels resolve to the front input, so it cannot reach the rear fields. That
-    failure is expected until this item lands, not a test defect.
+    ids or use `useId()`. `tests/e2e/auth-and-sag.spec.ts` fails on this: both
+    `Fully Extended (L0)` labels resolve to the front input, so it cannot reach the
+    rear fields. That failure is expected until this item lands, not a test defect.
+    The other sag specs stay clear of it by only driving the front section.
 
 12. **Nothing is statically rendered** - `F3` - the root layout awaits
     `isDemoMode()`, which reads cookies and opts the whole tree out of static
