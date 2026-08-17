@@ -16,11 +16,10 @@
    arrive through the invite route can never subscribe. On a deployment whose
    database already predates this work, those five are what is left to apply;
    run the check below before `20260816001200` and the audit below after it.
-   Migrations build the schema
-   and nothing else: the repository does not provision the `vehicle-photos`
-   storage bucket, so on a deployment standing up its own database, adding a
-   vehicle with a photo fails with "Bucket not found" until that bucket is
-   created out of band.
+   Migrations build the schema and nothing else: the repository does not
+   provision the `vehicle-photos` storage bucket, so on a deployment standing up
+   its own database, adding a vehicle with a photo fails with "Bucket not found"
+   until that bucket is created out of band.
 2. Set `BETA_INVITE_ONLY=true`, a long random `BETA_INVITE_SECRET`, and a distinct
    `BETA_FORM_RATE_LIMIT_SECRET` in the deployment environment.
 3. Deploy and verify the public home page, waitlist, invitation signup, session
@@ -42,26 +41,49 @@ accept it fails all signups rather than only the new path.
 That is worth checking rather than assuming, because these four tables were
 originally made by hand in the dashboard and `npm run db:status` compares
 recorded migration versions, not schema - it cannot see a column added or
-tightened in the dashboard afterwards (see CLAUDE.md). Confirm the hosted table
-accepts what the trigger writes:
+tightened in the dashboard afterwards (see CLAUDE.md). The trigger supplies `id`
+and `tier` and nothing else, so two things can stop its insert, and each has a
+query.
+
+First, a column the insert never supplies that the table demands:
 
 ```sql
-insert into public.profiles (id, tier) values (new.id, 'free')
-on conflict (id) do nothing;
+select column_name, data_type
+from information_schema.columns
+where table_schema = 'public'
+and table_name = 'profiles'
+and column_name not in ('id', 'tier')
+and is_nullable = 'NO'
+and column_default is null
+order by ordinal_position;
 ```
 
-which needs `id` to be `uuid` and the conflict target, `tier` to be `text`
-accepting `'free'`, and **every other column to be nullable or defaulted** -
-a `not null` column with no default added out of band is exactly what breaks
-this. `npx supabase db diff --linked` prints the SQL that would reconcile the
-live schema with the migration files; read what it says about `public.profiles`.
-Empty output means no difference *the diff engine models* was found, not proof
-the two are identical, so read the column list itself when the table matters as
-much as it does here.
+The expected result is zero rows. Any row it returns is a column the trigger's
+insert never sets and the table will not default, so applying the migration would
+make **every** signup fail - including the invite route, which is the only live
+path today. That is the whole reason this check exists.
 
-If the hosted table does not match, **STOP and escalate rather than improvising**
-- reshaping a live table is a product-owner decision, and this runbook
-prescribes none.
+Second, the check constraint on `tier` no longer admitting `'free'`:
+
+```sql
+select conname, pg_get_constraintdef(oid)
+from pg_constraint
+where conrelid = 'public.profiles'::regclass and contype = 'c';
+```
+
+Expect a check on `tier` that admits `'free'` - the baseline writes it as
+`check (tier in ('free', 'pro'))`. One narrowed by hand to exclude `'free'`
+rejects every row the trigger writes.
+
+Those two queries are the narrow, decisive version of the question for this one
+insert. `npx supabase db diff --linked` sits beside them as the broader drift
+check: it prints the SQL that would reconcile the live schema with the migration
+files, so read what it says about `public.profiles`. Empty output means no
+difference *the diff engine models* was found, not proof the two are identical.
+
+If either query does not come back as described, **STOP and escalate rather than
+improvising** - reshaping a live table is a product-owner decision, and this
+runbook prescribes none.
 
 ### Audit accounts that predate the profiles trigger
 
