@@ -94,13 +94,25 @@ export function temperatureUnitSuffix(unit: TemperatureUnit): string {
 }
 
 function round(value: number, places: number): number {
-  const factor = 10 ** places;
-  // Number.EPSILON nudges values that land on a floating-point tie (33.35 is held
-  // as 33.34999...) up to the decimal the rider actually typed.
-  const rounded = Math.round((value + Number.EPSILON) * factor) / factor;
+  if (!Number.isFinite(value)) return value;
+
+  // Shift the exponent rather than multiplying by a power of ten. The multiply is
+  // where the representation error shows up - `1.005 * 100` is 100.49999999999999,
+  // which rounds down to the wrong decimal - and a `Number.EPSILON` nudge cannot
+  // correct it: EPSILON is 2.22e-16 while one ULP near 33 is about 3.6e-15, so
+  // adding it returns the same double.
+  const shifted = Math.round(shiftExponent(value, places));
+  const rounded = shiftExponent(shifted, -places);
+
   // 0 F stores as -17.78 C and reads back as -0.004, which rounds to -0.
   // Freezing point is not a negative temperature.
   return rounded === 0 ? 0 : rounded;
+}
+
+/** `value` x 10^places, done on the decimal string so the multiply cannot drift. */
+function shiftExponent(value: number, places: number): number {
+  const [mantissa, exponent] = `${value}e`.split('e');
+  return Number(`${mantissa}e${Number(exponent || 0) + places}`);
 }
 
 /** A stored Celsius reading as the number shown in the rider's unit. */

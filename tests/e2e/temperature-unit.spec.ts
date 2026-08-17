@@ -182,7 +182,7 @@ test.describe('a rider who reads in Fahrenheit', () => {
     // otherwise fails on the Date assertion below, naming nothing about vehicles.
     createdVehicleId = await createRunVehicle(
       page,
-      `PW Legacy Draft ${testInfo.project.name} w${testInfo.workerIndex} ${Date.now()}`,
+      `PW Legacy Draft ${runResourceId(testInfo)}`,
     );
 
     // Exactly what the shipped app stored before this change: Celsius text under

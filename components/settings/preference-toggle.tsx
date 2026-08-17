@@ -1,5 +1,6 @@
 'use client';
 
+import { Card } from '@/components/ui/surface';
 import { cn } from '@/lib/utils';
 
 interface PreferenceToggleProps<T extends string> {
@@ -29,7 +30,7 @@ export function PreferenceToggle<T extends string>({
   onChange,
 }: PreferenceToggleProps<T>) {
   return (
-    <div className="rounded-card bg-surface p-4">
+    <Card className="p-4">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">{title}</h2>
       <p className="mt-2 text-sm text-ink-dim">{description}</p>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
@@ -55,6 +56,6 @@ export function PreferenceToggle<T extends string>({
           ))}
         </div>
       </div>
-    </div>
+    </Card>
   );
 }

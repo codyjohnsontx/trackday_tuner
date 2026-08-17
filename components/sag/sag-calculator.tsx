@@ -35,9 +35,15 @@ function formStateKey(
   label: string,
   notes: string,
 ): string {
-  return [front.l0, front.l1, front.l2, rear.l0, rear.l1, rear.l2, label, notes]
-    .map((value) => value.trim())
-    .join('|');
+  // Serialized rather than joined: a rider can type the delimiter. Label "a|b"
+  // with notes "c" joined on "|" is the same string as label "a" with notes
+  // "b|c", and a collision reads as no unsaved work - which is exactly the
+  // silent discard this key exists to prevent.
+  return JSON.stringify(
+    [front.l0, front.l1, front.l2, rear.l0, rear.l1, rear.l2, label, notes].map((value) =>
+      value.trim(),
+    ),
+  );
 }
 
 const EMPTY_FORM_STATE_KEY = formStateKey(emptySide, emptySide, '', '');

@@ -1,6 +1,7 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
+import { runResourceId } from '@/tests/e2e/helpers/run-id';
 
 /**
  * The Date field used to be seeded from `toISOString()`, which is UTC, so an
@@ -68,7 +69,7 @@ test.describe('a rider logging in the evening', () => {
 
     createdVehicleId = await createRunVehicle(
       page,
-      `PW Evening ${testInfo.project.name} w${testInfo.workerIndex} ${Date.now()}`,
+      `PW Evening ${runResourceId(testInfo)}`,
     );
 
     // Fixed time only - the timers stay real so React can still hydrate.

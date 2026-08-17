@@ -44,6 +44,11 @@ data instead of failing it. The identifier has to carry the Playwright *project*
 as well as the worker: `workerIndex` repeats across the six device projects, so
 two of them can otherwise agree on one. Build it with `runResourceId(testInfo)`
 from `tests/e2e/helpers/run-id.ts`, and scope the spec's cleanup to it.
+That account also has to be on the **Pro** tier. These specs create a vehicle and
+a custom track per run across parallel device projects, and the free-plan caps
+(one vehicle, three custom tracks) make track resolution fall back to a name-only
+session - so the `track_id` and track-row assertions fail for a reason that has
+nothing to do with what is under test.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 ## Install browser runtime

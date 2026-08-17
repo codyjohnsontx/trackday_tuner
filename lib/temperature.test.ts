@@ -52,6 +52,19 @@ describe('converting what the rider typed into what gets stored', () => {
   });
 });
 
+describe('rounding at a decimal tie', () => {
+  it('records the half-away-from-zero convention the shift rounding gives', () => {
+    // -35.25 C is exactly -31.45 F, a tie at one decimal. This pins the
+    // convention rather than proving a bug fix: across every hundredth of a
+    // degree from -40 to 160 F and -40 to 95 C, the exponent-shift rounding and
+    // the multiply-then-round it replaced disagree on exactly two inputs, both
+    // negative ties. The reason for the change was that the old comment was
+    // false - a Number.EPSILON nudge cannot move a double at this magnitude -
+    // not that riders were seeing wrong numbers.
+    expect(convertTemperatureInput('-35.25', 'c', 'f')).toBe('-31.5');
+  });
+});
+
 describe('when Web Storage refuses the write', () => {
   const realLocalStorage = globalThis.localStorage;
 
