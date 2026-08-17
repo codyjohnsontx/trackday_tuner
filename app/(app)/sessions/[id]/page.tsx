@@ -90,8 +90,8 @@ function buildCompareRows(
     rows.push(
       {
         label: 'Tires: Condition',
-        current: currentEnabledModules.tires ? current.tires.condition : '',
-        previous: previousEnabledModules.tires ? previous.tires.condition : '',
+        current: currentEnabledModules.tires ? current.tires.condition ?? '' : '',
+        previous: previousEnabledModules.tires ? previous.tires.condition ?? '' : '',
       },
       {
         label: 'Tires: Front Brand',
@@ -416,7 +416,7 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
 
       {enabledModules.tires ? (
         <SectionCard title="Tires">
-          <DetailRow label="Condition" value={session.tires.condition} />
+          <DetailRow label="Condition" value={session.tires.condition ?? ''} />
           <DetailRow label="Front Brand" value={session.tires.front.brand} />
           <DetailRow label="Front Compound" value={session.tires.front.compound} />
           <DetailRow label="Front Pressure" value={session.tires.front.pressure} />

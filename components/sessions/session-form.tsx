@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { Clock, Copy } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { ChoiceRow } from '@/components/ui/choice-row';
 import { Input } from '@/components/ui/input';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { LapTimeEditor } from '@/components/sessions/lap-time-editor';
@@ -16,6 +17,13 @@ import {
 import { createSession } from '@/lib/actions/sessions';
 import { clearDraft, loadDraft, saveDraft } from '@/lib/drafts';
 import { todayLocalDate } from '@/lib/local-date';
+import {
+  MISSING_CONDITIONS_MESSAGE,
+  SESSION_CONDITION_OPTIONS,
+  TIRE_CONDITION_OPTIONS,
+  isSessionCondition,
+  normalizeTireCondition,
+} from '@/lib/session-answers';
 import { trackProductEvent } from '@/lib/product-events.client';
 import { copyLastSessionSetup } from '@/lib/session-copy';
 import {
@@ -89,13 +97,13 @@ interface SessionDraft {
   date: string;
   startTime: string;
   sessionNumber: string;
-  conditions: SessionCondition;
+  conditions: SessionCondition | null;
   ambientTemperatureC: string;
   trackTemperatureC: string;
   humidityPercent: string;
   weatherCondition: string;
   surfaceCondition: string;
-  tireCondition: TireCondition;
+  tireCondition: TireCondition | null;
   frontTire: typeof emptyTireEnd;
   rearTire: typeof emptyTireEnd;
   suspensionDirection: SuspensionDirection;
@@ -163,13 +171,15 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [sessionNumber, setSessionNumber] = useState('');
-  const [conditions, setConditions] = useState<SessionCondition>('sunny');
+  // Weather and tire condition start unanswered. Seeding them with a default
+  // filed a claim the rider never made - see lib/session-answers.ts.
+  const [conditions, setConditions] = useState<SessionCondition | null>(null);
   const [ambientTemperatureC, setAmbientTemperatureC] = useState('');
   const [trackTemperatureC, setTrackTemperatureC] = useState('');
   const [humidityPercent, setHumidityPercent] = useState('');
   const [weatherCondition, setWeatherCondition] = useState('');
   const [surfaceCondition, setSurfaceCondition] = useState('');
-  const [tireCondition, setTireCondition] = useState<TireCondition>('scrubbed');
+  const [tireCondition, setTireCondition] = useState<TireCondition | null>(null);
   const [frontTire, setFrontTire] = useState(emptyTireEnd);
   const [rearTire, setRearTire] = useState(emptyTireEnd);
   const [suspensionDirection, setSuspensionDirection] = useState<SuspensionDirection>('out');
@@ -237,13 +247,13 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setDate(draft.date || todayLocalDate());
     setStartTime(draft.startTime ?? '');
     setSessionNumber(draft.sessionNumber ?? '');
-    setConditions(draft.conditions ?? 'sunny');
+    setConditions(isSessionCondition(draft.conditions) ? draft.conditions : null);
     setAmbientTemperatureC(draft.ambientTemperatureC ?? '');
     setTrackTemperatureC(draft.trackTemperatureC ?? '');
     setHumidityPercent(draft.humidityPercent ?? '');
     setWeatherCondition(draft.weatherCondition ?? '');
     setSurfaceCondition(draft.surfaceCondition ?? '');
-    setTireCondition(draft.tireCondition ?? 'scrubbed');
+    setTireCondition(normalizeTireCondition(draft.tireCondition));
     setFrontTire(draft.frontTire ?? emptyTireEnd);
     setRearTire(draft.rearTire ?? emptyTireEnd);
     setSuspensionDirection(draft.suspensionDirection ?? 'out');
@@ -433,6 +443,14 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       return;
     }
 
+    // `sessions.conditions` is NOT NULL and every read surface treats it as
+    // something the rider said, so an unanswered weather row blocks the save
+    // rather than being filled in for them.
+    if (!conditions) {
+      setErrorMessage(MISSING_CONDITIONS_MESSAGE);
+      return;
+    }
+
     // Text still sitting in the lap editor's entry boxes is part of what the
     // rider is saving, so it is folded in here rather than dropped.
     const committedLaps = commitLapEditorValue(lapEditorValue);
@@ -546,20 +564,6 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     });
   }
 
-  const conditionOptions: { value: SessionCondition; label: string }[] = [
-    { value: 'sunny', label: 'Sunny' },
-    { value: 'overcast', label: 'Overcast' },
-    { value: 'rainy', label: 'Rainy' },
-    { value: 'mixed', label: 'Mixed' },
-  ];
-
-  const tireConditionOptions: { value: TireCondition; label: string }[] = [
-    { value: 'new', label: 'New' },
-    { value: 'scrubbed', label: 'Scrubbed' },
-    { value: 'used', label: 'Used' },
-    { value: 'worn', label: 'Worn' },
-  ];
-
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
       <div className="space-y-3 rounded-card bg-surface p-4">
@@ -660,19 +664,12 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
 
       <div className="space-y-3 rounded-card bg-surface p-4">
         <span className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Conditions</span>
-        <div className="grid grid-cols-4 gap-2 rounded-row bg-surface-2 p-1">
-          {conditionOptions.map((option) => (
-            <Button
-              key={option.value}
-              type="button"
-              variant={conditions === option.value ? 'primary' : 'secondary'}
-              className="min-h-11 px-1 text-xs"
-              onClick={() => setConditions(option.value)}
-            >
-              {option.label}
-            </Button>
-          ))}
-        </div>
+        <ChoiceRow
+          label="Weather"
+          options={SESSION_CONDITION_OPTIONS}
+          value={conditions}
+          onChange={setConditions}
+        />
         <div className="grid gap-3 sm:grid-cols-3">
           <Input
             label="Ambient Temp (C)"
@@ -751,19 +748,12 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
 
           <div className="space-y-2">
             <span className="text-xs font-medium text-ink-dim">Condition</span>
-            <div className="grid grid-cols-4 gap-2 rounded-row bg-surface-2 p-1">
-              {tireConditionOptions.map((option) => (
-                <Button
-                  key={option.value}
-                  type="button"
-                  variant={tireCondition === option.value ? 'primary' : 'secondary'}
-                  className="min-h-11 px-1 text-xs"
-                  onClick={() => setTireCondition(option.value)}
-                >
-                  {option.label}
-                </Button>
-              ))}
-            </div>
+            <ChoiceRow
+              label="Tire condition"
+              options={TIRE_CONDITION_OPTIONS}
+              value={tireCondition}
+              onChange={setTireCondition}
+            />
           </div>
 
           <Button

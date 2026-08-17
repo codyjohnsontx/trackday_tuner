@@ -13,7 +13,7 @@ export interface CopiedSessionSetup {
   trackId: string | null;
   trackQuery: string;
   conditions: SessionCondition;
-  tireCondition: TireCondition;
+  tireCondition: TireCondition | null;
   frontTire: { brand: string; compound: string; pressure: string };
   rearTire: { brand: string; compound: string; pressure: string };
   suspensionDirection: SuspensionDirection;

@@ -34,6 +34,7 @@ import {
   getTelemetrySummaries,
   replaceSessionLaps,
 } from '@/lib/actions/sessions';
+import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
 import { COMPARABLE_SESSION_FETCH_LIMIT, COMPARABLE_SESSION_LIMIT } from '@/lib/session-compare';
 import type {
   CreateSessionInput,
@@ -166,6 +167,20 @@ describe('sessions actions', () => {
     const result = await createSession(validInput);
 
     expect(result).toEqual({ ok: false, error: 'Not authenticated.' });
+  });
+
+  it('refuses a session whose weather the rider never answered', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(), rpc: vi.fn() } as never);
+
+    const result = await createSession({
+      ...validInput,
+      conditions: null as unknown as CreateSessionInput['conditions'],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).toBe(MISSING_CONDITIONS_MESSAGE);
   });
 
   it('enforces free tier session limit', async () => {

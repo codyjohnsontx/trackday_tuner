@@ -26,6 +26,7 @@ import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
 import { validateLaps } from '@/lib/lap-times';
+import { MISSING_CONDITIONS_MESSAGE, isSessionCondition } from '@/lib/session-answers';
 import {
   baselineReferenceLabel,
   baselineToComparableSession,
@@ -315,6 +316,11 @@ export async function createSession(
 
   const lapValidationError = validateLaps(input.laps ?? []);
   if (lapValidationError) return { ok: false, error: lapValidationError };
+
+  // The same rule the form checks. `sessions.conditions` is NOT NULL, so a
+  // session with no weather answer has to be refused here rather than saved
+  // with whatever the form happened to open with. See lib/session-answers.ts.
+  if (!isSessionCondition(input.conditions)) return { ok: false, error: MISSING_CONDITIONS_MESSAGE };
 
   const profile = await getUserProfile();
   if (!resolveUserAccess(profile).hasProAccess) {

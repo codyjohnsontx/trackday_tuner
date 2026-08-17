@@ -92,6 +92,9 @@ async function logSessionWithoutStartTime(
   await page.getByLabel('Track', { exact: true }).fill(TRACK_NAME);
   await page.getByLabel('Date', { exact: true }).fill(SESSION_DATE);
   await page.getByLabel('Session Number (optional)').fill(sessionNumber);
+  // Weather opens unanswered and the save refuses without it, so this session has
+  // to say what the sky was doing. See lib/session-answers.ts.
+  await page.getByRole('group', { name: 'Weather' }).getByRole('button', { name: 'Sunny' }).click();
   await page.getByLabel('Front Pressure', { exact: true }).fill(frontPressure);
 
   // The whole point of the test: Start Time stays empty.
