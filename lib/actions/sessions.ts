@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { getRealUser } from '@/lib/auth';
 import {
   getDemoComparableSessions,
@@ -27,6 +27,7 @@ import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
 import { validateLaps } from '@/lib/lap-times';
 import { MISSING_CONDITIONS_MESSAGE, isSessionCondition } from '@/lib/session-answers';
+import { findSavedTrackByName, normalizeTrackName } from '@/lib/session-track';
 import {
   baselineReferenceLabel,
   baselineToComparableSession,
@@ -303,6 +304,86 @@ export async function getSessionLaps(sessionId: string): Promise<SessionLap[]> {
   return (data ?? []) as SessionLap[];
 }
 
+/** Which track row a session belongs to, and the name stored alongside it. */
+interface ResolvedSessionTrack {
+  trackId: string | null;
+  trackName: string | null;
+  /** A new `tracks` row was written, so the tracks list changed. */
+  createdTrack: boolean;
+}
+
+/**
+ * The circuit a session names, resolved to a track row.
+ *
+ * A name the rider typed is matched against the tracks they can already see, and
+ * saved as a track of their own when it matches none - otherwise `track_id` stays
+ * null forever and the session is missing from /tracks, from the track page, and
+ * from anything that groups by track id. See lib/session-track.ts.
+ *
+ * Creating the row is never allowed to fail the save. A free rider already at
+ * their custom-track limit, or an insert that errors, falls back to the name-only
+ * session this app has always stored, which every read surface still matches by
+ * name.
+ */
+async function resolveSessionTrack(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  hasProAccess: boolean,
+  trackId: string | null,
+  trackName: string | null,
+): Promise<ResolvedSessionTrack> {
+  const typed = normalizeTrackName(trackName);
+
+  if (trackId) {
+    if (typed) return { trackId, trackName: typed, createdTrack: false };
+
+    // Picked from the list without typing: denormalise the name off the row.
+    const { data } = await supabase.from('tracks').select('name').eq('id', trackId).single();
+    return { trackId, trackName: normalizeTrackName(data?.name), createdTrack: false };
+  }
+
+  if (!typed) return { trackId: null, trackName: null, createdTrack: false };
+
+  // Seeded tracks plus the rider's own - the same list the form's picker offers,
+  // so a name typed out in full lands on the row it names rather than beside it.
+  const { data: visible } = await supabase
+    .from('tracks')
+    .select('id, name')
+    .or(`is_seeded.eq.true,created_by.eq.${userId}`);
+
+  const matched = findSavedTrackByName(typed, (visible ?? []) as { id: string; name: string }[]);
+  if (matched) return { trackId: matched.id, trackName: matched.name, createdTrack: false };
+
+  if (!hasProAccess) {
+    const { count } = await supabase
+      .from('tracks')
+      .select('id', { count: 'exact', head: true })
+      .eq('created_by', userId)
+      .eq('is_seeded', false);
+
+    if ((count ?? 0) >= getFreePlanLimit('tracks')) {
+      return { trackId: null, trackName: typed, createdTrack: false };
+    }
+  }
+
+  const { data: created, error } = await supabase
+    .from('tracks')
+    .insert({ name: typed, location: null, is_seeded: false, created_by: userId })
+    .select('id, name')
+    .single();
+
+  if (error || !created) {
+    console.error('[sessions] track auto-save failed', {
+      userId,
+      trackName: typed,
+      error: error?.message ?? 'no row returned',
+    });
+    return { trackId: null, trackName: typed, createdTrack: false };
+  }
+
+  return { trackId: created.id, trackName: created.name, createdTrack: true };
+}
+
 export async function createSession(
   input: CreateSessionInput,
 ): Promise<ActionResult<Session>> {
@@ -323,7 +404,8 @@ export async function createSession(
   if (!isSessionCondition(input.conditions)) return { ok: false, error: MISSING_CONDITIONS_MESSAGE };
 
   const profile = await getUserProfile();
-  if (!resolveUserAccess(profile).hasProAccess) {
+  const hasProAccess = resolveUserAccess(profile).hasProAccess;
+  if (!hasProAccess) {
     const { count } = await supabase
       .from('sessions')
       .select('id', { count: 'exact', head: true })
@@ -337,22 +419,13 @@ export async function createSession(
     }
   }
 
-  // Denormalize track name if track_id is set but track_name was not provided
-  let trackName = input.track_name;
-  if (input.track_id && !trackName) {
-    const { data: trackData } = await supabase
-      .from('tracks')
-      .select('name')
-      .eq('id', input.track_id)
-      .single();
-    trackName = trackData?.name ?? null;
-  }
+  const track = await resolveSessionTrack(supabase, user.id, hasProAccess, input.track_id, input.track_name);
 
   const payload: TableInsert<'sessions'> = {
     user_id: user.id,
     vehicle_id: input.vehicle_id,
-    track_id: input.track_id,
-    track_name: trackName,
+    track_id: track.trackId,
+    track_name: track.trackName,
     date: input.date,
     start_time: input.start_time ?? null,
     session_number: input.session_number ?? null,
@@ -522,6 +595,13 @@ export async function createSession(
 
   revalidatePath('/sessions');
   revalidatePath('/dashboard');
+  if (track.createdTrack) {
+    // The tracks list, the track's own page and the picker that will fill this
+    // field next time all read the row just written.
+    revalidateTag('tracks');
+    revalidatePath('/tracks');
+    revalidatePath('/sessions/new');
+  }
   return { ok: true, data: createdSession };
 }
 
