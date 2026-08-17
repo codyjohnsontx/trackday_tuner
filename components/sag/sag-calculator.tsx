@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SagSection, type SagSectionValues } from '@/components/sag/sag-section';
 import { SagHistoryList } from '@/components/sag/sag-history-list';
-import { createSagEntry } from '@/lib/actions/sag';
+import { createSagEntry, deleteSagEntry } from '@/lib/actions/sag';
 import { clearDraft, loadDraft, saveDraft } from '@/lib/drafts';
 import { parseMeasurement } from '@/lib/sag';
 import { PageHeader } from '@/components/ui/page-header';
@@ -21,10 +21,24 @@ const emptySide: SagSectionValues = {
   l2: '',
 };
 
+/** The measurements on screen, as one comparable value. */
+function measurementsKey(front: SagSectionValues, rear: SagSectionValues): string {
+  return [front.l0, front.l1, front.l2, rear.l0, rear.l1, rear.l2]
+    .map((value) => value.trim())
+    .join('|');
+}
+
+const EMPTY_MEASUREMENTS_KEY = measurementsKey(emptySide, emptySide);
+
 export function SagCalculator({ initialEntries }: SagCalculatorProps) {
   const draftKey = 'sag_calculator';
   const [entries, setEntries] = useState<SagEntry[]>(initialEntries);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // What the form held the last time it was saved or loaded. Anything else on
+  // screen is work a tap on the history list would destroy.
+  const [committedKey, setCommittedKey] = useState(EMPTY_MEASUREMENTS_KEY);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState('');
 
   const [front, setFront] = useState<SagSectionValues>(emptySide);
   const [rear, setRear] = useState<SagSectionValues>(emptySide);
@@ -34,6 +48,9 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
   const [successMessage, setSuccessMessage] = useState('');
   const [draftMessage, setDraftMessage] = useState('');
   const [isPending, startTransition] = useTransition();
+  // Separate from the save transition so deleting an entry does not relabel the
+  // Save button "Saving...".
+  const [, startHistoryTransition] = useTransition();
 
   useEffect(() => {
     const draft = loadDraft<{
@@ -61,6 +78,7 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
     setLabel('');
     setNotes('');
     setSelectedId(null);
+    setCommittedKey(EMPTY_MEASUREMENTS_KEY);
     setErrorMessage('');
     setSuccessMessage('');
     setDraftMessage('');
@@ -68,21 +86,44 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
   }
 
   function loadEntry(entry: SagEntry) {
-    setSelectedId(entry.id);
-    setFront({
+    const loadedFront = {
       l0: entry.front_l0?.toString() ?? '',
       l1: entry.front_l1?.toString() ?? '',
       l2: entry.front_l2?.toString() ?? '',
-    });
-    setRear({
+    };
+    const loadedRear = {
       l0: entry.rear_l0?.toString() ?? '',
       l1: entry.rear_l1?.toString() ?? '',
       l2: entry.rear_l2?.toString() ?? '',
-    });
+    };
+
+    setSelectedId(entry.id);
+    setFront(loadedFront);
+    setRear(loadedRear);
+    setCommittedKey(measurementsKey(loadedFront, loadedRear));
     setLabel(entry.label ?? '');
     setNotes(entry.notes ?? '');
     setErrorMessage('');
+    setHistoryError('');
     setSuccessMessage('Loaded saved entry.');
+  }
+
+  function removeEntry(entry: SagEntry) {
+    setHistoryError('');
+    setDeletingId(entry.id);
+    startHistoryTransition(async () => {
+      const result = await deleteSagEntry(entry.id);
+      setDeletingId(null);
+      if (!result.ok) {
+        setHistoryError(result.error);
+        return;
+      }
+
+      setEntries((previous) => previous.filter((item) => item.id !== entry.id));
+      // The measurements stay on screen; only the saved row is gone, so the form
+      // is no longer a copy of anything.
+      if (selectedId === entry.id) setSelectedId(null);
+    });
   }
 
   function handleSave(event: React.FormEvent<HTMLFormElement>) {
@@ -109,6 +150,7 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
 
       setEntries((prev) => [result.data, ...prev]);
       setSelectedId(result.data.id);
+      setCommittedKey(measurementsKey(front, rear));
       setSuccessMessage('Sag entry saved.');
     });
   }
@@ -162,7 +204,15 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
         </form>
       </section>
 
-      <SagHistoryList entries={entries} selectedId={selectedId} onSelect={loadEntry} />
+      <SagHistoryList
+        entries={entries}
+        selectedId={selectedId}
+        hasUnsavedWork={measurementsKey(front, rear) !== committedKey}
+        onSelect={loadEntry}
+        onDelete={removeEntry}
+        deletingId={deletingId}
+        errorMessage={historyError}
+      />
     </div>
   );
 }

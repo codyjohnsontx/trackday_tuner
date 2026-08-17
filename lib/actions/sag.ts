@@ -73,3 +73,36 @@ export async function createSagEntry(
 
   return { ok: true, data: data as SagEntry };
 }
+
+/**
+ * Remove a saved sag entry.
+ *
+ * `sag_entries` shipped with a "delete own" RLS policy and a delete grant to
+ * `authenticated` from the day the table was created, and nothing ever called
+ * them - so a mistyped measurement stayed in the history forever, beside the
+ * corrected one, with no way to tell which was which.
+ */
+export async function deleteSagEntry(id: string): Promise<ActionResult> {
+  const demoError = await assertNotDemoMode();
+  if (demoError) return demoError;
+
+  const user = await getRealUser();
+  if (!user) return { ok: false, error: 'Not authenticated.' };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('sag_entries')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .select('id');
+
+  if (error) return { ok: false, error: error.message };
+  // RLS turns someone else's row into zero rows deleted rather than an error, so
+  // silence here would report success for a delete that did not happen.
+  if (!data || data.length === 0) return { ok: false, error: 'Sag entry not found.' };
+
+  revalidatePath('/sag');
+
+  return { ok: true, data: undefined };
+}
