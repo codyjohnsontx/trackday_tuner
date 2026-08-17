@@ -110,6 +110,103 @@ export function aggregateLaps(laps: CreateSessionLapInput[]): LapAggregate {
   };
 }
 
+/**
+ * Everything the lap editor is holding: the laps already in the list, plus the
+ * raw text still sitting in its two entry boxes.
+ *
+ * The two travel together deliberately. The editor used to keep the entry-box
+ * text in its own `useState`, so text a rider had typed or pasted but not yet
+ * pressed "Add" on was invisible to the save handler and was dropped without a
+ * word - reproduced against main by pasting four laps and pressing Save, which
+ * stored a session with zero laps and no warning. Callers now hold one value and
+ * have to run it through `commitLapEditorValue` to get a lap list at all, so
+ * there is no shape of this data that lets a save quietly leave text behind.
+ */
+export interface LapEditorValue {
+  laps: CreateSessionLapInput[];
+  pending: { quick: string; paste: string };
+}
+
+export const EMPTY_LAP_EDITOR_VALUE: LapEditorValue = {
+  laps: [],
+  pending: { quick: '', paste: '' },
+};
+
+export function lapEditorValueFrom(laps: CreateSessionLapInput[]): LapEditorValue {
+  return { laps, pending: { quick: '', paste: '' } };
+}
+
+export interface LapAppendResult {
+  laps: CreateSessionLapInput[];
+  error: string | null;
+  /** False when the raw text was blank, so a caller can skip a needless state write. */
+  changed: boolean;
+}
+
+export function appendQuickLap(laps: CreateSessionLapInput[], raw: string): LapAppendResult {
+  if (!raw.trim()) return { laps, error: null, changed: false };
+
+  const lapTimeMs = parseLapTime(raw);
+  if (lapTimeMs === null) {
+    return {
+      laps,
+      error: 'Use M:SS.mmm or total seconds, between 10 seconds and 20 minutes.',
+      changed: false,
+    };
+  }
+
+  const nextNumber = laps.reduce((max, lap) => Math.max(max, lap.lap_number), 0) + 1;
+  return {
+    laps: [...laps, { lap_number: nextNumber, lap_time_ms: lapTimeMs, included: true }],
+    error: null,
+    changed: true,
+  };
+}
+
+export function appendPastedLaps(laps: CreateSessionLapInput[], raw: string): LapAppendResult {
+  if (!raw.trim()) return { laps, error: null, changed: false };
+
+  const parsed = parseLapList(raw);
+  const errors = parsed.flatMap((line) => (line.error ? [line.error] : []));
+  if (errors.length > 0) return { laps, error: errors.join(' '), changed: false };
+
+  const existingNumbers = new Set(laps.map((lap) => lap.lap_number));
+  let nextNumber = laps.reduce((max, lap) => Math.max(max, lap.lap_number), 0) + 1;
+  const appended = parsed.flatMap((line) => {
+    if (!line.lap) return [];
+    let lapNumber = line.lap.lap_number;
+    while (existingNumbers.has(lapNumber)) lapNumber = nextNumber++;
+    existingNumbers.add(lapNumber);
+    return [{ ...line.lap, lap_number: lapNumber }];
+  });
+
+  const candidate = [...laps, ...appended].sort((a, b) => a.lap_number - b.lap_number);
+  const validationError = validateLaps(candidate);
+  if (validationError) return { laps, error: validationError, changed: false };
+
+  return { laps: candidate, error: null, changed: true };
+}
+
+export type LapCommitResult =
+  | { ok: true; laps: CreateSessionLapInput[] }
+  | { ok: false; error: string };
+
+/**
+ * The lap list a save should actually store: the list on screen with any text
+ * still in the entry boxes folded in. Unparseable text fails the commit rather
+ * than being discarded, so a rider is told what could not be read instead of
+ * finding out later that it was never saved.
+ */
+export function commitLapEditorValue(value: LapEditorValue): LapCommitResult {
+  const quick = appendQuickLap(value.laps, value.pending.quick);
+  if (quick.error) return { ok: false, error: quick.error };
+
+  const pasted = appendPastedLaps(quick.laps, value.pending.paste);
+  if (pasted.error) return { ok: false, error: pasted.error };
+
+  return { ok: true, laps: pasted.laps };
+}
+
 export function formatLapTimeInput(milliseconds: number): string {
   const minutes = Math.floor(milliseconds / 60_000);
   const seconds = Math.floor((milliseconds % 60_000) / 1000);

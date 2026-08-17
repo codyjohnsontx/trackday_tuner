@@ -3,63 +3,48 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { aggregateLaps, formatLapTimeInput, parseLapList, parseLapTime, validateLaps } from '@/lib/lap-times';
+import {
+  aggregateLaps,
+  appendPastedLaps,
+  appendQuickLap,
+  formatLapTimeInput,
+  type LapAppendResult,
+  type LapEditorValue,
+} from '@/lib/lap-times';
 import type { CreateSessionLapInput } from '@/types';
 
 interface LapTimeEditorProps {
-  value: CreateSessionLapInput[];
-  onChange: (laps: CreateSessionLapInput[]) => void;
-  onValidationChange?: (message: string) => void;
+  /**
+   * The whole editor state, entry boxes included. Held by the caller so its save
+   * handler can see text the rider typed but never pressed "Add" on - see
+   * `commitLapEditorValue` in lib/lap-times.ts.
+   */
+  value: LapEditorValue;
+  onChange: (value: LapEditorValue) => void;
 }
 
-export function LapTimeEditor({ value, onChange, onValidationChange }: LapTimeEditorProps) {
-  const [quickValue, setQuickValue] = useState('');
-  const [pasteValue, setPasteValue] = useState('');
+export function LapTimeEditor({ value, onChange }: LapTimeEditorProps) {
+  const { laps, pending } = value;
   const [message, setMessage] = useState('');
-  const metrics = useMemo(() => aggregateLaps(value), [value]);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const metrics = useMemo(() => aggregateLaps(laps), [laps]);
 
-  function report(next: string) {
-    setMessage(next);
-    onValidationChange?.(next);
+  function setLaps(next: CreateSessionLapInput[]) {
+    onChange({ ...value, laps: next });
   }
 
-  function addQuickLap() {
-    const lapTimeMs = parseLapTime(quickValue);
-    if (lapTimeMs === null) {
-      report('Use M:SS.mmm or total seconds, between 10 seconds and 20 minutes.');
-      return;
-    }
-    const nextNumber = value.reduce((max, lap) => Math.max(max, lap.lap_number), 0) + 1;
-    onChange([...value, { lap_number: nextNumber, lap_time_ms: lapTimeMs, included: true }]);
-    setQuickValue('');
-    report('');
+  function setPending(next: Partial<LapEditorValue['pending']>) {
+    onChange({ ...value, pending: { ...pending, ...next } });
   }
 
-  function addPastedLaps() {
-    const parsed = parseLapList(pasteValue);
-    const errors = parsed.flatMap((line) => (line.error ? [line.error] : []));
-    if (errors.length > 0) {
-      report(errors.join(' '));
+  /** Applies an append result, clearing whichever box it consumed. */
+  function apply(result: LapAppendResult, cleared: Partial<LapEditorValue['pending']>) {
+    if (result.error) {
+      setMessage(result.error);
       return;
     }
-    const existingNumbers = new Set(value.map((lap) => lap.lap_number));
-    let nextNumber = value.reduce((max, lap) => Math.max(max, lap.lap_number), 0) + 1;
-    const valid = parsed.flatMap((line) => {
-      if (!line.lap) return [];
-      let lapNumber = line.lap.lap_number;
-      while (existingNumbers.has(lapNumber)) lapNumber = nextNumber++;
-      existingNumbers.add(lapNumber);
-      return [{ ...line.lap, lap_number: lapNumber }];
-    });
-    const candidate = [...value, ...valid].sort((a, b) => a.lap_number - b.lap_number);
-    const validationError = validateLaps(candidate);
-    if (validationError) {
-      report(validationError);
-      return;
-    }
-    onChange(candidate);
-    setPasteValue('');
-    report('');
+    onChange({ laps: result.laps, pending: { ...pending, ...cleared } });
+    setMessage('');
   }
 
   return (
@@ -75,29 +60,45 @@ export function LapTimeEditor({ value, onChange, onValidationChange }: LapTimeEd
         <label className="space-y-1">
           <span className="text-xs font-medium text-ink-dim">Quick add</span>
           <input
-            value={quickValue}
-            onChange={(event) => setQuickValue(event.target.value)}
+            value={pending.quick}
+            onChange={(event) => setPending({ quick: event.target.value })}
             placeholder="1:42.350"
             inputMode="decimal"
             className="min-h-11 w-full rounded-row bg-surface-3 px-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
           />
         </label>
-        <Button type="button" variant="secondary" className="mt-5 min-h-11 px-3" onClick={addQuickLap}>
+        <Button
+          type="button"
+          variant="secondary"
+          className="mt-5 min-h-11 px-3"
+          disabled={!pending.quick.trim()}
+          onClick={() => apply(appendQuickLap(laps, pending.quick), { quick: '' })}
+        >
           <Plus className="mr-1 h-4 w-4" aria-hidden /> Add
         </Button>
       </div>
 
-      <details className="group rounded-row bg-surface-3 p-3">
+      <details
+        className="group rounded-row bg-surface-3 p-3"
+        open={pasteOpen}
+        onToggle={(event) => setPasteOpen(event.currentTarget.open)}
+      >
         <summary className="cursor-pointer text-sm font-medium text-ink">Paste several laps</summary>
         <div className="mt-3 space-y-2">
           <textarea
-            value={pasteValue}
-            onChange={(event) => setPasteValue(event.target.value)}
+            value={pending.paste}
+            onChange={(event) => setPending({ paste: event.target.value })}
             rows={4}
             placeholder={'1:42.350\n1:41.920\nLap 3: 1:41.700'}
             className="w-full rounded-row bg-surface-3 px-3 py-3 font-mono text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
           />
-          <Button type="button" variant="secondary" fullWidth onClick={addPastedLaps} disabled={!pasteValue.trim()}>
+          <Button
+            type="button"
+            variant="secondary"
+            fullWidth
+            onClick={() => apply(appendPastedLaps(laps, pending.paste), { paste: '' })}
+            disabled={!pending.paste.trim()}
+          >
             Parse and add laps
           </Button>
         </div>
@@ -105,7 +106,7 @@ export function LapTimeEditor({ value, onChange, onValidationChange }: LapTimeEd
 
       {message ? <p className="text-sm text-signal">{message}</p> : null}
 
-      {value.length > 0 ? (
+      {laps.length > 0 ? (
         <>
           <div className="grid grid-cols-4 gap-2 border-y border-white/5 py-3 text-center">
             <div><p className="text-[10px] uppercase text-ink-faint">Count</p><p className="text-sm font-semibold">{metrics.lap_count}</p></div>
@@ -114,7 +115,7 @@ export function LapTimeEditor({ value, onChange, onValidationChange }: LapTimeEd
             <div><p className="text-[10px] uppercase text-ink-faint">Spread</p><p className="text-sm font-semibold">{metrics.consistency_spread_ms == null ? '—' : `${(metrics.consistency_spread_ms / 1000).toFixed(3)}s`}</p></div>
           </div>
           <ul className="divide-y divide-white/5">
-            {value.map((lap, index) => (
+            {laps.map((lap, index) => (
               // lap_number is unique by construction: appends take max+1 and
               // pasted laps are de-duplicated against the existing set. Mixing
               // the index back in would remount every row below a deletion.
@@ -125,7 +126,7 @@ export function LapTimeEditor({ value, onChange, onValidationChange }: LapTimeEd
                   <input
                     type="checkbox"
                     checked={lap.included}
-                    onChange={(event) => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, included: event.target.checked } : item))}
+                    onChange={(event) => setLaps(laps.map((item, itemIndex) => itemIndex === index ? { ...item, included: event.target.checked } : item))}
                     className="h-5 w-5 accent-signal"
                   />
                   Count
@@ -134,7 +135,7 @@ export function LapTimeEditor({ value, onChange, onValidationChange }: LapTimeEd
                   type="button"
                   aria-label={`Remove lap ${lap.lap_number}`}
                   className="flex min-h-11 min-w-11 items-center justify-center rounded-row text-ink-faint hover:bg-surface-3 hover:text-slower focus-visible:ring-2 focus-visible:ring-signal/80"
-                  onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
+                  onClick={() => setLaps(laps.filter((_, itemIndex) => itemIndex !== index))}
                 >
                   <Trash2 className="h-4 w-4" aria-hidden />
                 </button>

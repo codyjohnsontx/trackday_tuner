@@ -7,6 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { LapTimeEditor } from '@/components/sessions/lap-time-editor';
+import {
+  EMPTY_LAP_EDITOR_VALUE,
+  commitLapEditorValue,
+  lapEditorValueFrom,
+  type LapEditorValue,
+} from '@/lib/lap-times';
 import { createSession } from '@/lib/actions/sessions';
 import { clearDraft, loadDraft, saveDraft } from '@/lib/drafts';
 import { todayLocalDate } from '@/lib/local-date';
@@ -102,7 +108,9 @@ interface SessionDraft {
   drivetrain: typeof emptyDrivetrain;
   aero: typeof emptyAero;
   notes: string;
-  laps: CreateSessionLapInput[];
+  /** Absent on drafts saved before the editor started carrying its entry boxes. */
+  lapEditor?: LapEditorValue;
+  laps?: CreateSessionLapInput[];
 }
 
 function ModuleHeader({
@@ -178,8 +186,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const [drivetrain, setDrivetrain] = useState(emptyDrivetrain);
   const [aero, setAero] = useState(emptyAero);
   const [notes, setNotes] = useState('');
-  const [laps, setLaps] = useState<CreateSessionLapInput[]>([]);
-  const [lapValidationMessage, setLapValidationMessage] = useState('');
+  const [lapEditorValue, setLapEditorValue] = useState<LapEditorValue>(EMPTY_LAP_EDITOR_VALUE);
   const [errorMessage, setErrorMessage] = useState('');
   const [draftMessage, setDraftMessage] = useState('');
 
@@ -249,7 +256,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setDrivetrain(draft.drivetrain ?? emptyDrivetrain);
     setAero(draft.aero ?? emptyAero);
     setNotes(draft.notes ?? '');
-    setLaps(draft.laps ?? []);
+    setLapEditorValue(draft.lapEditor ?? lapEditorValueFrom(draft.laps ?? []));
     setDraftMessage('Draft restored from this device.');
     hydratedRef.current = true;
   }, [initialVehicleType, vehicles]);
@@ -282,7 +289,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       drivetrain,
       aero,
       notes,
-      laps,
+      lapEditor: lapEditorValue,
     });
   }, [
     vehicleId,
@@ -310,7 +317,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     drivetrain,
     aero,
     notes,
-    laps,
+    lapEditorValue,
   ]);
 
   useEffect(() => {
@@ -426,10 +433,14 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       return;
     }
 
-    if (lapValidationMessage) {
-      setErrorMessage('Resolve the lap-time parsing message before saving.');
+    // Text still sitting in the lap editor's entry boxes is part of what the
+    // rider is saving, so it is folded in here rather than dropped.
+    const committedLaps = commitLapEditorValue(lapEditorValue);
+    if (!committedLaps.ok) {
+      setErrorMessage(committedLaps.error);
       return;
     }
+    const laps = committedLaps.laps;
 
     const parsedSessionNumber = sessionNumber.trim() ? Number(sessionNumber.trim()) : null;
     if (
@@ -971,11 +982,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
         </div>
       ) : null}
 
-      <LapTimeEditor
-        value={laps}
-        onChange={setLaps}
-        onValidationChange={setLapValidationMessage}
-      />
+      <LapTimeEditor value={lapEditorValue} onChange={setLapEditorValue} />
 
       <div className="space-y-2 rounded-card bg-surface p-4">
         <label htmlFor="session-notes" className="block text-xs font-semibold uppercase tracking-wider text-ink-faint">
