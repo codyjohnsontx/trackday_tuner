@@ -161,14 +161,14 @@ tier - which is why this stayed invisible. Paying does not:
 rider with no row gets `Unable to link your billing account` **forever**. That was
 reproduced end to end against a local stack and is written up in the migration.
 
-`tests/unit/migrations-bootstrap.test.ts` fails if that trigger goes missing or
-stops inserting into `profiles`. Like everything else in that file it reads SQL as
-text: it cannot prove the insert *succeeds*, which depends on `security definer`,
-the owner's privileges and the pinned empty `search_path`. Only signing up against
-a real database shows that. `tests/e2e/signup-creates-profile.spec.ts` is that
-walk, and it skips unless `BETA_INVITE_ONLY` is `false`, because with invite-only
-on the form posts to the route that always wrote the row - see `TESTING.md` for
-what it needs.
+`tests/unit/migrations-bootstrap.test.ts` fails if that trigger goes missing, ends
+up disabled, or stops inserting into `profiles`. Like everything else in that file
+it reads SQL as text: it cannot prove the insert *succeeds*, which depends on
+`security definer`, the owner's privileges and the pinned empty `search_path`.
+Only signing up against a real database shows that.
+`tests/e2e/signup-creates-profile.spec.ts` is that walk, and it skips unless
+`BETA_INVITE_ONLY` is `false`, because with invite-only on the form posts to the
+route that always wrote the row - see `TESTING.md` for what it needs.
 
 **The baseline says the opposite, and it is right about the day it was written.**
 `20260223000000_init_baseline_schema.sql` states that nothing creates a `profiles`
