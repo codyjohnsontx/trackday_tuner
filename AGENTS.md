@@ -376,7 +376,9 @@ Temperature is stored in Celsius in every column, prompt and export.
 `lib/temperature.ts` is the only place it becomes a number a rider reads or
 types, and their unit is a device preference (localStorage, like the 12h/24h
 clock) read through `useTemperatureUnit` (`components/ui/temperature-display.tsx`).
-Convert at the edge; never widen a stored column.
+Text a rider is still typing belongs in `useTemperatureInput` from that same file,
+which re-expresses it when the unit changes and knows the preference arriving from
+storage on mount is not a change. Convert at the edge; never widen a stored column.
 
 The session comparison page is the exception and still prints Celsius: its rows
 and context-flag strings are built server-side in `lib/session-compare.ts`, where

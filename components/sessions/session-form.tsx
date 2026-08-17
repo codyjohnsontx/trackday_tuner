@@ -33,7 +33,7 @@ import {
   sanitizeEnabledModules,
   sessionModuleConfigs,
 } from '@/lib/session-modules';
-import { useTemperatureUnit } from '@/components/ui/temperature-display';
+import { useTemperatureInput, useTemperatureUnit } from '@/components/ui/temperature-display';
 import {
   convertTemperatureInput,
   displayTemperatureBound,
@@ -186,8 +186,8 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   // filed a claim the rider never made - see lib/session-answers.ts.
   const [conditions, setConditions] = useState<SessionCondition | null>(null);
   // Held as the rider typed it, in their unit; converted to Celsius on save.
-  const [ambientTemperature, setAmbientTemperature] = useState('');
-  const [trackTemperature, setTrackTemperature] = useState('');
+  const [ambientTemperature, setAmbientTemperature] = useTemperatureInput();
+  const [trackTemperature, setTrackTemperature] = useTemperatureInput();
   const [humidityPercent, setHumidityPercent] = useState('');
   const [weatherCondition, setWeatherCondition] = useState('');
   const [surfaceCondition, setSurfaceCondition] = useState('');
@@ -212,10 +212,6 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const [errorMessage, setErrorMessage] = useState('');
   const [draftMessage, setDraftMessage] = useState('');
   const temperatureUnit = useTemperatureUnit();
-  // Null until the first run of the effect below, so the preference arriving
-  // from storage on mount is recorded rather than treated as the rider flipping
-  // the toggle - which would convert a restored draft a second time.
-  const previousTemperatureUnitRef = useRef<TemperatureUnit | null>(null);
 
   const selectedVehicle = useMemo(
     () => vehicles.find((vehicle) => vehicle.id === vehicleId) ?? null,
@@ -292,7 +288,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setLapEditorValue(draft.lapEditor ?? lapEditorValueFrom(draft.laps ?? []));
     setDraftMessage('Draft restored from this device.');
     hydratedRef.current = true;
-  }, [initialVehicleType, vehicles]);
+  }, [initialVehicleType, vehicles, setAmbientTemperature, setTrackTemperature]);
 
   useEffect(() => {
     if (!hydratedRef.current) return;
@@ -354,16 +350,6 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     notes,
     lapEditorValue,
   ]);
-
-  // The rider flipping the Settings toggle in another tab must not silently turn
-  // the 68 in the box into 68 of the other unit.
-  useEffect(() => {
-    const previous = previousTemperatureUnitRef.current;
-    previousTemperatureUnitRef.current = temperatureUnit;
-    if (previous === null || previous === temperatureUnit) return;
-    setAmbientTemperature((raw) => convertTemperatureInput(raw, previous, temperatureUnit));
-    setTrackTemperature((raw) => convertTemperatureInput(raw, previous, temperatureUnit));
-  }, [temperatureUnit]);
 
   useEffect(() => {
     const previous = previousEnabledModulesRef.current;

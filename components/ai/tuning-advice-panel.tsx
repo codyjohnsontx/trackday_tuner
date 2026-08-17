@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
-import { useTemperatureUnit } from '@/components/ui/temperature-display';
+import { useTemperatureInput, useTemperatureUnit } from '@/components/ui/temperature-display';
 import { classifyRaceEngineerQuestion } from '@/lib/rag/domain-guard';
 import {
   displayTemperatureBound,
@@ -161,9 +161,9 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
   const [question, setQuestion] = useState('');
   const [symptoms, setSymptoms] = useState<string[]>([]);
   const [intent, setIntent] = useState<string>('');
-  const [temperature, setTemperature] = useState<string>('');
   // The field is typed in the rider's unit and sent as Celsius, which is what
   // `temperature_c` means everywhere behind it.
+  const [temperature, setTemperature] = useTemperatureInput();
   const temperatureUnit = useTemperatureUnit();
   const minTemperature = displayTemperatureBound(MIN_TEMPERATURE_C, temperatureUnit);
   const maxTemperature = displayTemperatureBound(MAX_TEMPERATURE_C, temperatureUnit);

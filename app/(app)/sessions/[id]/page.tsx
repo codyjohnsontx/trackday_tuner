@@ -36,11 +36,19 @@ const conditionLabel: Record<string, string> = {
   mixed: 'Mixed',
 };
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+/**
+ * A value that reads differently per device - a temperature, a clock time -
+ * arrives as its own client component and carries its own text styling.
+ */
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 py-1.5">
       <span className="text-sm text-ink-dim">{label}</span>
-      <span className="text-sm font-medium text-ink">{value || '—'}</span>
+      {typeof value === 'string' ? (
+        <span className="text-sm font-medium text-ink">{value || '—'}</span>
+      ) : (
+        value
+      )}
     </div>
   );
 }
@@ -391,26 +399,23 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
         {session.session_number ? (
           <DetailRow label="Session Number" value={session.session_number.toString()} />
         ) : null}
-        <div className="flex items-center justify-between gap-3 py-1.5">
-          <span className="text-sm text-ink-dim">Start Time</span>
-          <TimeDisplay time={session.start_time} />
-        </div>
+        <DetailRow label="Start Time" value={<TimeDisplay time={session.start_time} />} />
         <DetailRow label="Conditions" value={conditionLabel[session.conditions] ?? session.conditions} />
       </SectionCard>
 
       {environment ? (
         <SectionCard title="Environment">
           {environment.ambient_temperature_c != null ? (
-            <div className="flex items-center justify-between gap-3 py-1.5">
-              <span className="text-sm text-ink-dim">Ambient Temp</span>
-              <TemperatureDisplay celsius={environment.ambient_temperature_c} />
-            </div>
+            <DetailRow
+              label="Ambient Temp"
+              value={<TemperatureDisplay celsius={environment.ambient_temperature_c} />}
+            />
           ) : null}
           {environment.track_temperature_c != null ? (
-            <div className="flex items-center justify-between gap-3 py-1.5">
-              <span className="text-sm text-ink-dim">Track Temp</span>
-              <TemperatureDisplay celsius={environment.track_temperature_c} />
-            </div>
+            <DetailRow
+              label="Track Temp"
+              value={<TemperatureDisplay celsius={environment.track_temperature_c} />}
+            />
           ) : null}
           {environment.humidity_percent != null ? (
             <DetailRow label="Humidity" value={`${environment.humidity_percent}%`} />
