@@ -394,9 +394,8 @@ belongs in `tests/e2e/`.
 
 `npm run test:e2e` **skips itself in CI** unless `RUN_E2E=1`, so an e2e spec is
 evidence a change works, not a gate that will catch its regression. Run the specs
-locally against a Supabase stack (`E2E_EMAIL` / `E2E_PASSWORD` /
-`SUPABASE_SERVICE_ROLE_KEY` in `.env.local`) and watch each new one fail before it
-passes.
+locally against a Supabase stack - `TESTING.md` owns the environment they need -
+and watch each new one fail before it passes.
 
 ## Current AI Status
 

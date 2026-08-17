@@ -30,9 +30,12 @@ NEXT_PUBLIC_STRIPE_FOUNDER_PROMO_CODE=FOUNDER100
 
 `E2E_EMAIL` and `E2E_PASSWORD` are required only for authenticated smoke tests.
 Unauthenticated guard tests run without them.
-`tests/e2e/same-day-session-compare.spec.ts` also needs `SUPABASE_SERVICE_ROLE_KEY`
-alongside the app's `NEXT_PUBLIC_SUPABASE_URL`, because it reads the persisted
-`session_changes` row back instead of trusting the panel; it skips without them.
+Specs that assert what was persisted, or that seed and clean up their own rows,
+also need `SUPABASE_SERVICE_ROLE_KEY` alongside the app's
+`NEXT_PUBLIC_SUPABASE_URL`. They reach the database through
+`tests/e2e/helpers/supabase.ts` rather than trusting what the screen shows, and
+each skips itself with a message naming what it needed the key for, so that
+import is the list.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 ## Install browser runtime
