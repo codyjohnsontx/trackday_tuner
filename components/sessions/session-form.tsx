@@ -9,6 +9,7 @@ import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { LapTimeEditor } from '@/components/sessions/lap-time-editor';
 import { createSession } from '@/lib/actions/sessions';
 import { clearDraft, loadDraft, saveDraft } from '@/lib/drafts';
+import { todayLocalDate } from '@/lib/local-date';
 import { trackProductEvent } from '@/lib/product-events.client';
 import { copyLastSessionSetup } from '@/lib/session-copy';
 import {
@@ -42,7 +43,6 @@ interface SessionFormProps {
   latestSessionsByVehicle?: Record<string, Session>;
 }
 
-const today = new Date().toISOString().split('T')[0];
 const sessionDraftKey = 'session_form_new';
 
 const emptyTireEnd = { brand: '', compound: '', pressure: '' };
@@ -149,7 +149,10 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const [trackQuery, setTrackQuery] = useState('');
   const [trackId, setTrackId] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [date, setDate] = useState(today);
+  // Seeded on mount rather than at render, because the rider's calendar day is
+  // only knowable in their browser: SSR would stamp the server's day (UTC in
+  // production) into the markup and hydrate over it. See lib/local-date.ts.
+  const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [sessionNumber, setSessionNumber] = useState('');
   const [conditions, setConditions] = useState<SessionCondition>('sunny');
@@ -213,6 +216,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   useEffect(() => {
     const draft = loadDraft<SessionDraft>(sessionDraftKey);
     if (!draft) {
+      setDate(todayLocalDate());
       hydratedRef.current = true;
       return;
     }
@@ -223,7 +227,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setVehicleId(draft.vehicleId ?? '');
     setTrackQuery(draft.trackQuery ?? '');
     setTrackId(draft.trackId ?? null);
-    setDate(draft.date ?? today);
+    setDate(draft.date || todayLocalDate());
     setStartTime(draft.startTime ?? '');
     setSessionNumber(draft.sessionNumber ?? '');
     setConditions(draft.conditions ?? 'sunny');
