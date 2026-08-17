@@ -40,8 +40,10 @@ All six device projects sign in as that one account, so any row a spec creates
 has to carry a per-run identifier. A fixed track name or sag label lets one
 project's cleanup delete a row another project is still using, and
 `sessions.track_id` is `ON DELETE SET NULL`, so that rewrites the other run's
-data instead of failing it. Existing specs build the identifier from
-`TEST_WORKER_INDEX` and `Date.now()` and scope their cleanup to it.
+data instead of failing it. The identifier has to carry the Playwright *project*
+as well as the worker: `workerIndex` repeats across the six device projects, so
+two of them can otherwise agree on one. Build it with `runResourceId(testInfo)`
+from `tests/e2e/helpers/run-id.ts`, and scope the spec's cleanup to it.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 ## Install browser runtime

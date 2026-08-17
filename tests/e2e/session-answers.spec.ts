@@ -1,6 +1,7 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
+import { runResourceId } from '@/tests/e2e/helpers/run-id';
 
 /**
  * A default is not an answer.
@@ -16,11 +17,9 @@ import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supab
  */
 
 const SESSION_DATE = '2019-04-02';
-// Unique per run: all six device projects drive one shared E2E account, so a
-// fixed name lets one project's cleanup delete a track another project's session
-// still points at - and `sessions.track_id` is ON DELETE SET NULL, so that
-// silently rewrites the other run's data.
-const TRACK_NAME = `PW Unanswered Track ${process.env.TEST_WORKER_INDEX ?? '0'}-${Date.now()}`;
+// Set per test from runResourceId, which carries the device project as well as
+// the worker - see tests/e2e/helpers/run-id.ts.
+let trackName = '';
 
 async function createRunVehicle(page: Page, nickname: string): Promise<string> {
   await page.goto('/garage/new');
@@ -73,17 +72,21 @@ test.describe('answers the rider did not give', () => {
     // Saving a session creates the track row its name asks for, so the run has to
     // take that with it. The name is unique to this run, so this cannot reach a
     // track another device project is still using.
-    await admin.from('tracks').delete().eq('name', TRACK_NAME);
+    if (trackName) {
+      await admin.from('tracks').delete().eq('name', trackName);
+      trackName = '';
+    }
   });
 
   test('opens unanswered, refuses to save without weather, and stores only what was answered', async ({
     page,
   }, testInfo: TestInfo) => {
+    trackName = `PW Unanswered Track ${runResourceId(testInfo)}`;
     await signIn(page);
 
     const vehicleId = await createRunVehicle(
       page,
-      `PW Unanswered ${testInfo.project.name} w${testInfo.workerIndex} ${Date.now()}`,
+      `PW Unanswered ${runResourceId(testInfo)}`,
     );
     createdVehicleId = vehicleId;
 
@@ -113,7 +116,7 @@ test.describe('answers the rider did not give', () => {
       await expect(vehicleSelect).toHaveValue(vehicleId);
     }).toPass({ timeout: 10_000 });
 
-    await page.getByLabel('Track', { exact: true }).fill(TRACK_NAME);
+    await page.getByLabel('Track', { exact: true }).fill(trackName);
     await page.getByLabel('Date', { exact: true }).fill(SESSION_DATE);
 
     // Saving with the weather unanswered is refused rather than filled in.
@@ -149,9 +152,10 @@ test.describe('answers the rider did not give', () => {
   }, testInfo: TestInfo) => {
     await signIn(page);
 
+    trackName = `PW Verdict Track ${runResourceId(testInfo)}`;
     const vehicleId = await createRunVehicle(
       page,
-      `PW Verdict ${testInfo.project.name} w${testInfo.workerIndex} ${Date.now()}`,
+      `PW Verdict ${runResourceId(testInfo)}`,
     );
     createdVehicleId = vehicleId;
 
@@ -166,7 +170,7 @@ test.describe('answers the rider did not give', () => {
           user_id: (await admin.from('vehicles').select('user_id').eq('id', vehicleId).single())
             .data!.user_id,
           vehicle_id: vehicleId,
-          track_name: TRACK_NAME,
+          track_name: trackName,
           date,
           session_number: index + 1,
           conditions: 'overcast',

@@ -159,6 +159,13 @@ describe('flipping the unit under a half-typed value', () => {
     expect(convertTemperatureInput('  ', 'f', 'c')).toBe('  ');
   });
 
+  it('keeps storage precision on the way into Celsius', () => {
+    // Celsius is the stored unit. Rounding 92 F to 33.3 C here means the rider's
+    // own number reads back as 91.9 F the next time they look at it.
+    expect(convertTemperatureInput('92', 'f', 'c')).toBe('33.33');
+    expect(toDisplayTemperature(Number(convertTemperatureInput('92', 'f', 'c')), 'f')).toBe(92);
+  });
+
   it('is a no-op when the unit did not change', () => {
     expect(convertTemperatureInput('20.5', 'c', 'c')).toBe('20.5');
   });

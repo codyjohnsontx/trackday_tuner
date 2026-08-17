@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
+import { runResourceId } from '@/tests/e2e/helpers/run-id';
 
 /**
  * Deleting one sag entry while the rider taps another.
@@ -16,9 +17,9 @@ import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supab
  * control, which is what makes the result the same every run.
  */
 
-const RUN = `${process.env.TEST_WORKER_INDEX ?? '0'}-${Date.now()}`;
-const ENTRY_A = `PW Race A ${RUN}`;
-const ENTRY_B = `PW Race B ${RUN}`;
+// Carries the device project as well as the worker - see helpers/run-id.ts.
+let entryA = '';
+let entryB = '';
 const SIDE_A = { l0: '590', l1: '560', l2: '555' };
 const SIDE_B = { l0: '600', l1: '572', l2: '566' };
 
@@ -51,26 +52,31 @@ test.describe('deleting a sag entry while another is tapped', () => {
   test.skip(!hasServiceRole(), 'SUPABASE_SERVICE_ROLE_KEY is required to clean up entries');
 
   test.afterEach(async () => {
-    await createTestAdminClient().from('sag_entries').delete().in('label', [ENTRY_A, ENTRY_B]);
+    if (!entryA) return;
+    await createTestAdminClient().from('sag_entries').delete().in('label', [entryA, entryB]);
+    entryA = '';
+    entryB = '';
   });
 
   test('leaves the entry the rider moved to selected and its measurements committed', async ({
     page,
-  }) => {
+  }, testInfo) => {
+    entryA = `PW Race A ${runResourceId(testInfo)}`;
+    entryB = `PW Race B ${runResourceId(testInfo)}`;
     await signIn(page);
 
     await page.goto('/sag');
     await page.evaluate(() => localStorage.removeItem('track_tuner:draft:sag_calculator'));
     await page.reload();
 
-    await saveEntry(page, ENTRY_A, SIDE_A);
-    await saveEntry(page, ENTRY_B, SIDE_B);
+    await saveEntry(page, entryA, SIDE_A);
+    await saveEntry(page, entryB, SIDE_B);
 
-    const rowA = page.getByRole('listitem').filter({ hasText: ENTRY_A });
-    const rowB = page.getByRole('listitem').filter({ hasText: ENTRY_B });
+    const rowA = page.getByRole('listitem').filter({ hasText: entryA });
+    const rowB = page.getByRole('listitem').filter({ hasText: entryB });
 
     // Load A, so A is the selection the delete below is about to remove.
-    await rowA.getByRole('button', { name: ENTRY_A }).click();
+    await rowA.getByRole('button', { name: entryA }).click();
     await expect(page.getByText('Loaded saved entry.')).toBeVisible();
 
     // Hold the delete open. Only the delete is delayed: it is armed after both
@@ -92,21 +98,21 @@ test.describe('deleting a sag entry while another is tapped', () => {
     await page.mouse.up();
 
     // Mid-flight, the rider changes their mind and opens B.
-    await rowB.getByRole('button', { name: ENTRY_B }).click();
+    await rowB.getByRole('button', { name: entryB }).click();
     await expect(page.getByText('Loaded saved entry.')).toBeVisible();
     const front = page.locator('section').filter({ hasText: 'Front' }).first();
     await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue(SIDE_B.l0);
 
     // Now let the delete land.
     releaseDelete!();
-    await expect(page.getByRole('listitem').filter({ hasText: ENTRY_A })).toHaveCount(0, {
+    await expect(page.getByRole('listitem').filter({ hasText: entryA })).toHaveCount(0, {
       timeout: 20_000,
     });
 
     // B is still the loaded entry and its measurements are still committed, so
     // reopening it is not treated as overwriting unsaved work. Under the stale
     // read this asks for confirmation instead.
-    await rowB.getByRole('button', { name: ENTRY_B }).click();
+    await rowB.getByRole('button', { name: entryB }).click();
     await expect(page.getByText(/Loading this entry replaces the measurements on screen/)).toHaveCount(0);
   });
 });

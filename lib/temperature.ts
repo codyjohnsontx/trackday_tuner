@@ -138,7 +138,13 @@ export function convertTemperatureInput(
   const parsed = Number(trimmed);
   if (!Number.isFinite(parsed)) return raw;
   const celsius = from === 'f' ? fahrenheitToCelsius(parsed) : parsed;
-  return String(round(to === 'f' ? celsiusToFahrenheit(celsius) : celsius, 1));
+  // Celsius is the stored unit, so text converted into it keeps storage
+  // precision: 92 F is 33.33 C, and rounding that to 33.3 on the way into the
+  // box means the rider's own number reads back as 91.9 F. Fahrenheit is only
+  // ever displayed, so one decimal is right on the way out.
+  return to === 'f'
+    ? String(round(celsiusToFahrenheit(celsius), 1))
+    : String(round(celsius, 2));
 }
 
 /**

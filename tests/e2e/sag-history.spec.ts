@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
+import { runResourceId } from '@/tests/e2e/helpers/run-id';
 
 /**
  * The sag history was a list of timestamps: an entry saved without a label read
@@ -39,16 +40,20 @@ test.describe('the sag history', () => {
 
   // Every device project drives the same E2E account, so a label shared between
   // them puts two rows on screen: the row locator trips strict mode and the
-  // final toHaveCount(0) sees the other project's surviving row.
-  const label = `PW Sag ${process.env.TEST_WORKER_INDEX ?? '0'}-${Date.now()}`;
+  // final toHaveCount(0) sees the other project's surviving row. The worker index
+  // repeats across projects, so the identifier carries the project name too.
+  let label = '';
 
   test.afterEach(async () => {
+    if (!label) return;
     await createTestAdminClient().from('sag_entries').delete().eq('label', label);
+    label = '';
   });
 
   test('shows what each entry measured, asks before replacing unsaved work, and deletes', async ({
     page,
-  }) => {
+  }, testInfo) => {
+    label = `PW Sag ${runResourceId(testInfo)}`;
     await signIn(page);
 
     await page.goto('/sag');

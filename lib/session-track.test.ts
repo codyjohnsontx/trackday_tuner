@@ -15,6 +15,14 @@ describe('naming a circuit', () => {
     expect(trackNameKey('  Eagles Canyon ')).toBe('eagles canyon');
   });
 
+  it('folds a decomposed accent onto its precomposed form', () => {
+    // Typed with a combining acute versus a single precomposed character: one
+    // circuit, and without NFC it would split into two rows.
+    expect(trackNameKey('Auto\u0301dromo Hermanos Rodri\u0301guez')).toBe(
+      trackNameKey('Autódromo Hermanos Rodríguez'),
+    );
+  });
+
   it('does not fold two genuinely different circuits together', () => {
     expect(trackNameKey('Barber Motorsports Park')).not.toBe(trackNameKey('Barber Motorsport Park'));
   });

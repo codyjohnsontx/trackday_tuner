@@ -83,7 +83,9 @@ export function LapTimeEditor({ value, onChange }: LapTimeEditorProps) {
         open={pasteOpen}
         onToggle={(event) => setPasteOpen(event.currentTarget.open)}
       >
-        <summary className="cursor-pointer text-sm font-medium text-ink">Paste several laps</summary>
+        <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium text-ink">
+          Paste several laps
+        </summary>
         <div className="mt-3 space-y-2">
           <textarea
             value={pending.paste}

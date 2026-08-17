@@ -22,13 +22,26 @@ const emptySide: SagSectionValues = {
 };
 
 /** The measurements on screen, as one comparable value. */
-function measurementsKey(front: SagSectionValues, rear: SagSectionValues): string {
-  return [front.l0, front.l1, front.l2, rear.l0, rear.l1, rear.l2]
+/**
+ * Everything loading an entry would overwrite, as one comparable value.
+ *
+ * The label and the notes belong in here with the measurements: `loadEntry`
+ * replaces all four, so leaving the two text fields out meant a rider who had
+ * retitled an entry or written a note - and touched nothing else - counted as
+ * having no unsaved work, and the next tap discarded it without asking.
+ */
+function formStateKey(
+  front: SagSectionValues,
+  rear: SagSectionValues,
+  label: string,
+  notes: string,
+): string {
+  return [front.l0, front.l1, front.l2, rear.l0, rear.l1, rear.l2, label, notes]
     .map((value) => value.trim())
     .join('|');
 }
 
-const EMPTY_MEASUREMENTS_KEY = measurementsKey(emptySide, emptySide);
+const EMPTY_FORM_STATE_KEY = formStateKey(emptySide, emptySide, '', '');
 
 export function SagCalculator({ initialEntries }: SagCalculatorProps) {
   const draftKey = 'sag_calculator';
@@ -36,7 +49,7 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
   const [selectedId, setSelectedIdState] = useState<string | null>(null);
   // What the form held the last time it was saved or loaded. Anything else on
   // screen is work a tap on the history list would destroy.
-  const [committedKey, setCommittedKey] = useState(EMPTY_MEASUREMENTS_KEY);
+  const [committedKey, setCommittedKey] = useState(EMPTY_FORM_STATE_KEY);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   // Read across the await in removeEntry. The transition closure captures the
   // selection from the render that made it, so a rider who taps another entry
@@ -89,7 +102,7 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
     setLabel('');
     setNotes('');
     setSelectedId(null);
-    setCommittedKey(EMPTY_MEASUREMENTS_KEY);
+    setCommittedKey(EMPTY_FORM_STATE_KEY);
     setErrorMessage('');
     setSuccessMessage('');
     setDraftMessage('');
@@ -111,7 +124,7 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
     setSelectedId(entry.id);
     setFront(loadedFront);
     setRear(loadedRear);
-    setCommittedKey(measurementsKey(loadedFront, loadedRear));
+    setCommittedKey(formStateKey(loadedFront, loadedRear, entry.label ?? '', entry.notes ?? ''));
     setLabel(entry.label ?? '');
     setNotes(entry.notes ?? '');
     setErrorMessage('');
@@ -136,7 +149,7 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
       // committed any more, which is what makes loading over them ask first.
       if (selectedIdRef.current === entry.id) {
         setSelectedId(null);
-        setCommittedKey(EMPTY_MEASUREMENTS_KEY);
+        setCommittedKey(EMPTY_FORM_STATE_KEY);
       }
     });
   }
@@ -165,7 +178,7 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
 
       setEntries((prev) => [result.data, ...prev]);
       setSelectedId(result.data.id);
-      setCommittedKey(measurementsKey(front, rear));
+      setCommittedKey(formStateKey(front, rear, label, notes));
       setSuccessMessage('Sag entry saved.');
     });
   }
@@ -222,7 +235,7 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
       <SagHistoryList
         entries={entries}
         selectedId={selectedId}
-        hasUnsavedWork={measurementsKey(front, rear) !== committedKey}
+        hasUnsavedWork={formStateKey(front, rear, label, notes) !== committedKey}
         onSelect={loadEntry}
         onDelete={removeEntry}
         deletingId={deletingId}

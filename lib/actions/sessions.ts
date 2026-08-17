@@ -416,12 +416,20 @@ async function resolveSessionTrack(
     // still satisfies the foreign key, and storing the typed name beside it
     // would persist a session whose id and name name different circuits. The
     // row's own name is the canonical one, so it wins over what was typed.
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('tracks')
       .select('id, name')
       .eq('id', trackId)
       .or(visibleTracksFilter(userId))
       .maybeSingle();
+
+    if (error) {
+      // A failed query is not an invisible row. Falling through here would
+      // create a second row for a circuit the rider already has and spend one of
+      // their custom-track slots on it, so the id they picked is kept instead.
+      console.error('[sessions] track lookup failed', { userId, trackId, error: error.message });
+      return { trackId, trackName: typed, createdTrack: false };
+    }
 
     const resolvedName = normalizeTrackName((data as { name?: string } | null)?.name);
     if (data && resolvedName) return { trackId, trackName: resolvedName, createdTrack: false };
@@ -432,10 +440,21 @@ async function resolveSessionTrack(
   if (!typed) return { trackId: null, trackName: null, createdTrack: false };
 
   // A name typed out in full lands on the row it names rather than beside it.
-  const { data: visible } = await supabase
+  const { data: visible, error: visibleError } = await supabase
     .from('tracks')
     .select('id, name')
     .or(visibleTracksFilter(userId));
+
+  if (visibleError) {
+    // Same reasoning: an empty list from a failed select looks exactly like a
+    // circuit the rider has never logged, and creating one would duplicate a
+    // track they already have. The session still saves under the typed name.
+    console.error('[sessions] visible tracks lookup failed', {
+      userId,
+      error: visibleError.message,
+    });
+    return { trackId: null, trackName: typed, createdTrack: false };
+  }
 
   const matched = findSavedTrackByName(typed, (visible ?? []) as { id: string; name: string }[]);
   if (matched) return { trackId: matched.id, trackName: matched.name, createdTrack: false };

@@ -1,6 +1,7 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
+import { runResourceId } from '@/tests/e2e/helpers/run-id';
 
 /**
  * Lap times a rider entered but never pressed "Add" on used to be dropped by the
@@ -11,11 +12,9 @@ import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supab
  */
 
 const SESSION_DATE = '2019-05-11';
-// Unique per run: all six device projects drive one shared E2E account, so a
-// fixed name lets one project's cleanup delete a track another project's session
-// still points at - and `sessions.track_id` is ON DELETE SET NULL, so that
-// silently rewrites the other run's data.
-const TRACK_NAME = `PW Lap Paste Track ${process.env.TEST_WORKER_INDEX ?? '0'}-${Date.now()}`;
+// Set per test from runResourceId, which carries the device project as well as
+// the worker - see tests/e2e/helpers/run-id.ts.
+let trackName = '';
 const PASTED_LAPS = ['1:42.350', '1:41.920', '1:41.700', '1:41.480'];
 const QUICK_LAP = '1:40.900';
 
@@ -69,16 +68,17 @@ test.describe('lap times left in the editor entry boxes', () => {
     // Saving a session creates the track row its name asks for, so the run has to
     // take that with it. The name is unique to this run, so this cannot reach a
     // track another device project is still using.
-    await admin.from('tracks').delete().eq('name', TRACK_NAME);
+    if (trackName) {
+      await admin.from('tracks').delete().eq('name', trackName);
+      trackName = '';
+    }
   });
 
   test('saves pasted and quick-add laps that were never added', async ({ page }, testInfo: TestInfo) => {
     await signIn(page);
 
-    const vehicleId = await createRunVehicle(
-      page,
-      `PW Lap Paste ${testInfo.project.name} w${testInfo.workerIndex} ${Date.now()}`,
-    );
+    trackName = `PW Lap Paste Track ${runResourceId(testInfo)}`;
+    const vehicleId = await createRunVehicle(page, `PW Lap Paste ${runResourceId(testInfo)}`);
     createdVehicleId = vehicleId;
 
     await page.goto('/sessions/new');
@@ -90,7 +90,7 @@ test.describe('lap times left in the editor entry boxes', () => {
       await expect(vehicleSelect).toHaveValue(vehicleId);
     }).toPass({ timeout: 10_000 });
 
-    await page.getByLabel('Track', { exact: true }).fill(TRACK_NAME);
+    await page.getByLabel('Track', { exact: true }).fill(trackName);
     await page.getByLabel('Date', { exact: true }).fill(SESSION_DATE);
     await page.getByRole('group', { name: 'Weather' }).getByRole('button', { name: 'Sunny' }).click();
 

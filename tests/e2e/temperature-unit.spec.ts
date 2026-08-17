@@ -1,6 +1,7 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
+import { runResourceId } from '@/tests/e2e/helpers/run-id';
 
 /**
  * The app only spoke Celsius, to a rider base whose tracks are all in Texas: an
@@ -13,11 +14,9 @@ import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supab
  */
 
 const SESSION_DATE = '2019-07-19';
-// Unique per run: all six device projects drive one shared E2E account, so a
-// fixed name lets one project's cleanup delete a track another project's session
-// still points at - and `sessions.track_id` is ON DELETE SET NULL, so that
-// silently rewrites the other run's data.
-const TRACK_NAME = `PW Fahrenheit Track ${process.env.TEST_WORKER_INDEX ?? '0'}-${Date.now()}`;
+// Set per test from runResourceId, which carries the device project as well as
+// the worker - see tests/e2e/helpers/run-id.ts.
+let trackName = '';
 const SESSION_DRAFT_KEY = 'track_tuner:draft:session_form_new';
 
 async function createRunVehicle(page: Page, nickname: string): Promise<string> {
@@ -69,7 +68,10 @@ test.describe('a rider who reads in Fahrenheit', () => {
     // Saving a session creates the track row its name asks for, so the run has to
     // take that with it. The name is unique to this run, so this cannot reach a
     // track another device project is still using.
-    await admin.from('tracks').delete().eq('name', TRACK_NAME);
+    if (trackName) {
+      await admin.from('tracks').delete().eq('name', trackName);
+      trackName = '';
+    }
   });
 
   test('enters and reads Fahrenheit while the database keeps Celsius', async ({
@@ -77,10 +79,8 @@ test.describe('a rider who reads in Fahrenheit', () => {
   }, testInfo: TestInfo) => {
     await signIn(page);
 
-    const vehicleId = await createRunVehicle(
-      page,
-      `PW Fahrenheit ${testInfo.project.name} w${testInfo.workerIndex} ${Date.now()}`,
-    );
+    trackName = `PW Fahrenheit Track ${runResourceId(testInfo)}`;
+    const vehicleId = await createRunVehicle(page, `PW Fahrenheit ${runResourceId(testInfo)}`);
     createdVehicleId = vehicleId;
 
     await page.goto('/settings');
@@ -105,7 +105,7 @@ test.describe('a rider who reads in Fahrenheit', () => {
       await expect(vehicleSelect).toHaveValue(vehicleId);
     }).toPass({ timeout: 10_000 });
 
-    await page.getByLabel('Track', { exact: true }).fill(TRACK_NAME);
+    await page.getByLabel('Track', { exact: true }).fill(trackName);
     await page.getByLabel('Date', { exact: true }).fill(SESSION_DATE);
     await page.getByRole('group', { name: 'Weather' }).getByRole('button', { name: 'Sunny' }).click();
 

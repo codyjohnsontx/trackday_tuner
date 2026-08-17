@@ -50,7 +50,7 @@ export function ChoiceRow<T extends string>({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            'min-h-11 rounded-row px-1 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80',
+            'min-h-11 min-w-11 rounded-row px-1 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80',
             value === option.value ? 'bg-ink text-canvas' : 'text-ink-dim hover:text-ink',
           )}
         >

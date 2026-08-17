@@ -22,7 +22,14 @@ export function normalizeTrackName(value: string | null | undefined): string | n
 
 /** Two spellings of the same circuit, as a comparable key. */
 export function trackNameKey(value: string | null | undefined): string {
-  return (value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+  // NFC as well as case and spacing: an accent typed decomposed ("Auto\u0301dromo")
+  // is the same circuit as the precomposed form, and folding only the first two
+  // would still split it into two rows.
+  return (value ?? '')
+    .normalize('NFC')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
 }
 
 /** The saved track a typed name means, or null when the rider is naming a new one. */

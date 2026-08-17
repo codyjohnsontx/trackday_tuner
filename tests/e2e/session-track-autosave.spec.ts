@@ -1,6 +1,7 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
+import { runResourceId } from '@/tests/e2e/helpers/run-id';
 
 /**
  * A circuit typed into the Track field used to store `track_id` null forever, so
@@ -16,10 +17,11 @@ import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supab
 const SESSION_DATE = '2019-06-08';
 // One per-run identifier, spelled two ways. A fixed name would let a stale row
 // from an earlier run satisfy the "reuses it" assertion without this run ever
-// creating a track, which is the half of the test that matters.
-const RUN_ID = `${process.env.TEST_WORKER_INDEX ?? '0'}${Date.now()}`;
-const TYPED_NAME = `PW Harris Hill Raceway ${RUN_ID}`;
-const RETYPED_NAME = `pw harris  hill RACEWAY  ${RUN_ID}`;
+// creating a track, which is the half of the test that matters. The identifier
+// carries the device project as well as the worker - see helpers/run-id.ts.
+let runId = '';
+let typedName = '';
+let retypedName = '';
 
 async function createRunVehicle(page: Page, nickname: string): Promise<string> {
   await page.goto('/garage/new');
@@ -103,15 +105,16 @@ test.describe('a track name the rider types', () => {
   }, testInfo: TestInfo) => {
     await signIn(page);
 
-    const vehicleId = await createRunVehicle(
-      page,
-      `PW Track Autosave ${testInfo.project.name} w${testInfo.workerIndex} ${Date.now()}`,
-    );
+    runId = runResourceId(testInfo);
+    typedName = `PW Harris Hill Raceway ${runId}`;
+    retypedName = `pw harris  hill RACEWAY  ${runId}`;
+
+    const vehicleId = await createRunVehicle(page, `PW Track Autosave ${runId}`);
     createdVehicleId = vehicleId;
 
     const admin = createTestAdminClient();
 
-    const firstSessionId = await logSession(page, vehicleId, TYPED_NAME);
+    const firstSessionId = await logSession(page, vehicleId, typedName);
     createdSessionIds.push(firstSessionId);
 
     const { data: first } = await admin
@@ -121,7 +124,7 @@ test.describe('a track name the rider types', () => {
       .single();
 
     expect(first?.track_id).toBeTruthy();
-    expect(first?.track_name).toBe(TYPED_NAME);
+    expect(first?.track_name).toBe(typedName);
     createdTrackIds.push(first!.track_id as string);
 
     const { data: track } = await admin
@@ -130,12 +133,12 @@ test.describe('a track name the rider types', () => {
       .eq('id', first!.track_id as string)
       .single();
 
-    expect(track?.name).toBe(TYPED_NAME);
+    expect(track?.name).toBe(typedName);
     expect(track?.is_seeded).toBe(false);
     expect(track?.created_by).toBeTruthy();
 
     // The same circuit, retyped the way a rider actually retypes it.
-    const secondSessionId = await logSession(page, vehicleId, RETYPED_NAME);
+    const secondSessionId = await logSession(page, vehicleId, retypedName);
     createdSessionIds.push(secondSessionId);
 
     const { data: second } = await admin
@@ -145,7 +148,7 @@ test.describe('a track name the rider types', () => {
       .single();
 
     expect(second?.track_id).toBe(first?.track_id);
-    expect(second?.track_name).toBe(TYPED_NAME);
+    expect(second?.track_name).toBe(typedName);
 
     // One circuit, not two.
     const { data: tracks } = await admin
@@ -154,7 +157,7 @@ test.describe('a track name the rider types', () => {
       .eq('created_by', track!.created_by as string)
       // Scoped to this run's identifier: '%Harris Hill%' would also count rows
       // another device project created at the same moment.
-      .ilike('name', `%${RUN_ID}%`);
+      .ilike('name', `%${runId}%`);
     expect(tracks).toHaveLength(1);
   });
 });
