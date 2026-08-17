@@ -53,14 +53,27 @@ describe('converting what the rider typed into what gets stored', () => {
 });
 
 describe('rounding at a decimal tie', () => {
-  it('records the half-away-from-zero convention the shift rounding gives', () => {
-    // -35.25 C is exactly -31.45 F, a tie at one decimal. This pins the
-    // convention rather than proving a bug fix: across every hundredth of a
-    // degree from -40 to 160 F and -40 to 95 C, the exponent-shift rounding and
-    // the multiply-then-round it replaced disagree on exactly two inputs, both
-    // negative ties. The reason for the change was that the old comment was
-    // false - a Number.EPSILON nudge cannot move a double at this magnitude -
-    // not that riders were seeing wrong numbers.
+  it('breaks a tie toward positive infinity, not away from zero', () => {
+    // Math.round on the exponent-shifted decimal, so a tie goes up rather than
+    // outward: -17.25 reads -17.2, where half-away-from-zero would say -17.3.
+    // These pin the convention and nothing more - the multiply-then-round this
+    // replaced agrees on every genuine tie, so they would pass against it too.
+    expect(toDisplayTemperature(17.25, 'c')).toBe(17.3);
+    expect(toDisplayTemperature(-17.25, 'c')).toBe(-17.2);
+    expect(toDisplayTemperature(-0.15, 'c')).toBe(-0.1);
+  });
+
+  it('rounds a near-tie by where the double actually sits', () => {
+    // This one does discriminate, and it is the reason the describe above can be
+    // honest about not doing so. -35.25 C is not -31.45 F but
+    // -31.450000000000003, just past the tie and therefore rounding away from
+    // it; multiplying by ten pulls that double back onto exactly -314.5, which
+    // then ties upward to the wrong decimal. Across every hundredth of a degree
+    // from -40 to 160 F and -40 to 95 C the two roundings differ on exactly two
+    // inputs, both negative near-ties like this. So no rider was seeing a wrong
+    // number - the defect was a false comment, claiming a Number.EPSILON nudge
+    // fixed something it is too small to move at this magnitude.
+    expect(celsiusToFahrenheit(-35.25)).toBe(-31.450000000000003);
     expect(convertTemperatureInput('-35.25', 'c', 'f')).toBe('-31.5');
   });
 });

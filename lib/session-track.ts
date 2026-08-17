@@ -44,6 +44,14 @@ export function trackNameKey(value: string | null | undefined): string {
 export const TRACK_NAME_MATCH_LIMIT = 50;
 
 /**
+ * PostgREST's alias for `%`, which it substitutes into a `like` value before SQL
+ * ever sees it. The substitution is unconditional, so nothing escapes it: `\*`
+ * arrives as `\%`, a literal percent sign rather than the asterisk the rider
+ * typed. This is the one wildcard neither pattern below can state.
+ */
+const POSTGREST_WILDCARD_ALIAS = '*';
+
+/**
  * True for a character a `like` pattern cannot state literally.
  *
  * Two kinds qualify. `%`, `_`, `\` and PostgREST's `*` alias are wildcards, so a
@@ -53,7 +61,7 @@ export const TRACK_NAME_MATCH_LIMIT = 50;
  * hold either spelling, and `like` compares code points.
  */
 function needsWildcard(char: string): boolean {
-  if (char === '%' || char === '_' || char === '\\' || char === '*') return true;
+  if (char === '%' || char === '_' || char === '\\' || char === POSTGREST_WILDCARD_ALIAS) return true;
   return char.normalize('NFD') !== char || /\p{M}/u.test(char);
 }
 
@@ -64,12 +72,20 @@ function needsWildcard(char: string): boolean {
  * they have logged before, stored the way this app stores it - and it answers it
  * precisely, because it carries no wildcard whose breadth could depend on how the
  * name is spelled. `like` folds nothing, so the key does the folding first and
- * `ilike` supplies the case; a wildcard the name itself contains is escaped
+ * `ilike` supplies the case; `%`, `_` and `\` the name itself contains are escaped
  * rather than honoured.
+ *
+ * `*` is the one that cannot be, so a name carrying one has no exact pattern and
+ * means the search pattern instead - the same thing `needsWildcard` already says
+ * about it. Escaping it would be worse than having no exact lookup: the caller
+ * would run a wildcard query believing it narrow, and a wildcard query that fills
+ * `TRACK_NAME_MATCH_LIMIT` is unproven, which is the name-only session this
+ * pattern exists to avoid.
  */
 export function trackNameExactPattern(value: string | null | undefined): string {
   const key = trackNameKey(value);
   if (!key) return '%';
+  if (key.includes(POSTGREST_WILDCARD_ALIAS)) return trackNameSearchPattern(value);
 
   return key.replace(/[\\%_]/g, '\\$&');
 }

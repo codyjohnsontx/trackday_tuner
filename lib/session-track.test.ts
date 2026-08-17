@@ -56,12 +56,32 @@ describe('matching a typed name against saved tracks', () => {
 });
 
 describe('narrowing a track query to a typed name', () => {
-  /** What `ilike` does with the pattern: `%` is any run of characters, case folded. */
+  /**
+   * What the database does with the pattern, both halves of it. PostgREST
+   * substitutes its `*` alias into the value first - modelling only SQL `LIKE`,
+   * where `*` is an ordinary character, is what let an unescapable wildcard reach
+   * the "exact" pattern unnoticed. Then `ilike` reads `%` as any run of
+   * characters, `_` as any one, and a backslash as escaping the next, case folded.
+   */
   function matches(pattern: string, storedName: string): boolean {
-    const source = pattern
-      .split('%')
-      .map((literal) => literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-      .join('[\\s\\S]*');
+    const rewritten = pattern.replace(/\*/g, '%');
+    const literal = (char: string) => char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    let source = '';
+    for (let i = 0; i < rewritten.length; i += 1) {
+      const char = rewritten[i];
+      if (char === '\\' && i + 1 < rewritten.length) {
+        i += 1;
+        source += literal(rewritten[i]);
+      } else if (char === '%') {
+        source += '[\\s\\S]*';
+      } else if (char === '_') {
+        source += '[\\s\\S]';
+      } else {
+        source += literal(char);
+      }
+    }
+
     return new RegExp(`^${source}$`, 'i').test(storedName);
   }
 
@@ -106,5 +126,24 @@ describe('narrowing a track query to a typed name', () => {
   it('escapes a wildcard the typed name itself contains', () => {
     expect(trackNameExactPattern('50% Circuit')).toBe('50\\% circuit');
     expect(trackNameExactPattern('Snake_Alley')).toBe('snake\\_alley');
+    // Escaped means stated, not honoured: it reaches the circuit the rider named
+    // and not the ones the bare wildcard would have swept in.
+    expect(matches(trackNameExactPattern('50% Circuit'), '50% Circuit')).toBe(true);
+    expect(matches(trackNameExactPattern('50% Circuit'), '50 Percent Circuit')).toBe(false);
+    expect(matches(trackNameExactPattern('Snake_Alley'), 'Snake_Alley')).toBe(true);
+    expect(matches(trackNameExactPattern('Snake_Alley'), 'Snake Alley')).toBe(false);
+  });
+
+  it('has no exact pattern for the wildcard escaping cannot reach', () => {
+    // PostgREST substitutes `*` for `%` in a like value unconditionally, so `\*`
+    // would arrive as `\%` - a literal percent sign rather than the asterisk the
+    // rider typed. There is no pattern that states such a name exactly, so it
+    // means the search pattern, and the caller runs one query instead of a broad
+    // one it believes is narrow.
+    expect(trackNameExactPattern('Turn *3 Kart Track')).toBe(
+      trackNameSearchPattern('Turn *3 Kart Track'),
+    );
+    expect(trackNameExactPattern('Turn *3 Kart Track')).not.toContain('*');
+    expect(matches(trackNameExactPattern('Turn *3 Kart Track'), 'Turn *3 Kart Track')).toBe(true);
   });
 });
