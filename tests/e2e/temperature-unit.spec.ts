@@ -61,6 +61,10 @@ test.describe('a rider who reads in Fahrenheit', () => {
       await admin.from('vehicles').delete().eq('id', createdVehicleId);
       createdVehicleId = null;
     }
+    // Saving a session now creates the track row its name asks for, so the run
+    // has to take that with it. The FK is ON DELETE SET NULL, so this is safe
+    // even while another device project still holds a session at the same track.
+    await admin.from('tracks').delete().eq('name', TRACK_NAME);
   });
 
   test('enters and reads Fahrenheit while the database keeps Celsius', async ({
