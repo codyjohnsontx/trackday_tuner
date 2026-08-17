@@ -3,7 +3,13 @@
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
+import { useTemperatureUnit } from '@/components/ui/temperature-display';
 import { classifyRaceEngineerQuestion } from '@/lib/rag/domain-guard';
+import {
+  displayTemperatureBound,
+  temperatureUnitSuffix,
+  toStoredCelsius,
+} from '@/lib/temperature';
 import type { AdviceResponse } from '@/lib/rag/schema';
 import { cn } from '@/lib/utils';
 
@@ -156,6 +162,11 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
   const [symptoms, setSymptoms] = useState<string[]>([]);
   const [intent, setIntent] = useState<string>('');
   const [temperature, setTemperature] = useState<string>('');
+  // The field is typed in the rider's unit and sent as Celsius, which is what
+  // `temperature_c` means everywhere behind it.
+  const temperatureUnit = useTemperatureUnit();
+  const minTemperature = displayTemperatureBound(MIN_TEMPERATURE_C, temperatureUnit);
+  const maxTemperature = displayTemperatureBound(MAX_TEMPERATURE_C, temperatureUnit);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [response, setResponse] = useState<ApiSuccessBody | null>(null);
@@ -266,16 +277,16 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
     if (temperature.trim().length > 0) {
       const parsed = Number(temperature);
       if (!Number.isFinite(parsed)) {
-        setError('Temperature must be a number in Celsius.');
+        setError('Temperature must be a number.');
         return;
       }
-      if (parsed < MIN_TEMPERATURE_C || parsed > MAX_TEMPERATURE_C) {
+      if (parsed < minTemperature || parsed > maxTemperature) {
         setError(
-          `Temperature must be between ${MIN_TEMPERATURE_C}\u00b0C and ${MAX_TEMPERATURE_C}\u00b0C.`,
+          `Temperature must be between ${minTemperature}${temperatureUnitSuffix(temperatureUnit)} and ${maxTemperature}${temperatureUnitSuffix(temperatureUnit)}.`,
         );
         return;
       }
-      body.temperature_c = parsed;
+      body.temperature_c = toStoredCelsius(parsed, temperatureUnit);
     }
 
     setLoading(true);
@@ -392,7 +403,9 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
         </label>
 
         <label htmlFor="race_engineer_temperature" className="block space-y-2">
-          <span className="text-sm font-medium text-ink">Ambient temperature (C, optional)</span>
+          <span className="text-sm font-medium text-ink">
+            Ambient temperature ({temperatureUnitSuffix(temperatureUnit)}, optional)
+          </span>
           <input
             id="race_engineer_temperature"
             type="number"
@@ -400,9 +413,9 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
             step="any"
             value={temperature}
             onChange={(e) => setTemperatureValue(e.target.value)}
-            placeholder="24"
-            min={-40}
-            max={70}
+            placeholder={temperatureUnit === 'f' ? '75' : '24'}
+            min={minTemperature}
+            max={maxTemperature}
             className="flex w-full rounded-row bg-surface-2 px-4 py-3 text-base text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
           />
         </label>

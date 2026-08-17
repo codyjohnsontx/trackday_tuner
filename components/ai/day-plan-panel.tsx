@@ -6,6 +6,8 @@ import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import type { AdviceResponse } from '@/lib/rag/schema';
 import type { Vehicle } from '@/types';
 import { cn } from '@/lib/utils';
+import { useTemperatureUnit } from '@/components/ui/temperature-display';
+import { temperatureUnitSuffix, toStoredCelsius } from '@/lib/temperature';
 
 interface DayPlanPanelProps {
   vehicles: Vehicle[];
@@ -106,8 +108,10 @@ const demoDayPlanAdvice: AdviceResponse = {
 export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelProps) {
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id ?? '');
   const [trackName, setTrackName] = useState('');
-  const [ambientTemperatureC, setAmbientTemperatureC] = useState('');
-  const [trackTemperatureC, setTrackTemperatureC] = useState('');
+  // Typed in the rider's unit; the route stores and reasons in Celsius.
+  const [ambientTemperature, setAmbientTemperature] = useState('');
+  const [trackTemperature, setTrackTemperature] = useState('');
+  const temperatureUnit = useTemperatureUnit();
   const [weatherCondition, setWeatherCondition] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -158,12 +162,14 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
       return;
     }
 
-    const ambient = parseOptionalNumber(ambientTemperatureC);
-    const track = parseOptionalNumber(trackTemperatureC);
-    if (Number.isNaN(ambient) || Number.isNaN(track)) {
+    const ambientTyped = parseOptionalNumber(ambientTemperature);
+    const trackTyped = parseOptionalNumber(trackTemperature);
+    if (Number.isNaN(ambientTyped) || Number.isNaN(trackTyped)) {
       setError('Temperatures must be numbers.');
       return;
     }
+    const ambient = ambientTyped === undefined ? undefined : toStoredCelsius(ambientTyped, temperatureUnit);
+    const track = trackTyped === undefined ? undefined : toStoredCelsius(trackTyped, temperatureUnit);
 
     setLoading(true);
     try {
@@ -247,26 +253,30 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
             />
           </label>
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-ink">Ambient C</span>
+            <span className="text-sm font-medium text-ink">
+              Ambient {temperatureUnitSuffix(temperatureUnit)}
+            </span>
             <input
-              value={ambientTemperatureC}
-              onChange={(event) => setAmbientTemperatureC(event.target.value)}
+              value={ambientTemperature}
+              onChange={(event) => setAmbientTemperature(event.target.value)}
               type="number"
               inputMode="decimal"
               step="any"
-              placeholder="24"
+              placeholder={temperatureUnit === 'f' ? '75' : '24'}
               className="w-full rounded-row bg-surface-2 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             />
           </label>
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-ink">Track C</span>
+            <span className="text-sm font-medium text-ink">
+              Track {temperatureUnitSuffix(temperatureUnit)}
+            </span>
             <input
-              value={trackTemperatureC}
-              onChange={(event) => setTrackTemperatureC(event.target.value)}
+              value={trackTemperature}
+              onChange={(event) => setTrackTemperature(event.target.value)}
               type="number"
               inputMode="decimal"
               step="any"
-              placeholder="36"
+              placeholder={temperatureUnit === 'f' ? '97' : '36'}
               className="w-full rounded-row bg-surface-2 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             />
           </label>

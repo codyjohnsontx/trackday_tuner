@@ -9,6 +9,7 @@ import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
 import { DemoBanner } from '@/components/demo/demo-banner';
 import { isDemoMode } from '@/lib/demo/mode';
 import { Button } from '@/components/ui/button';
+import { TemperatureDisplay } from '@/components/ui/temperature-display';
 import { TimeDisplay } from '@/components/ui/time-display';
 import { SessionCompare, type CompareRow } from '@/components/sessions/session-compare';
 import { SessionBaselinePanel } from '@/components/sessions/session-baseline-panel';
@@ -400,10 +401,16 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
       {environment ? (
         <SectionCard title="Environment">
           {environment.ambient_temperature_c != null ? (
-            <DetailRow label="Ambient Temp" value={`${environment.ambient_temperature_c}°C`} />
+            <div className="flex items-center justify-between gap-3 py-1.5">
+              <span className="text-sm text-ink-dim">Ambient Temp</span>
+              <TemperatureDisplay celsius={environment.ambient_temperature_c} />
+            </div>
           ) : null}
           {environment.track_temperature_c != null ? (
-            <DetailRow label="Track Temp" value={`${environment.track_temperature_c}°C`} />
+            <div className="flex items-center justify-between gap-3 py-1.5">
+              <span className="text-sm text-ink-dim">Track Temp</span>
+              <TemperatureDisplay celsius={environment.track_temperature_c} />
+            </div>
           ) : null}
           {environment.humidity_percent != null ? (
             <DetailRow label="Humidity" value={`${environment.humidity_percent}%`} />

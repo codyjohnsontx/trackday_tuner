@@ -33,6 +33,15 @@ import {
   sanitizeEnabledModules,
   sessionModuleConfigs,
 } from '@/lib/session-modules';
+import { useTemperatureUnit } from '@/components/ui/temperature-display';
+import {
+  convertTemperatureInput,
+  displayTemperatureBound,
+  readTemperatureUnit,
+  temperatureUnitSuffix,
+  toStoredCelsius,
+  type TemperatureUnit,
+} from '@/lib/temperature';
 import { cn } from '@/lib/utils';
 import type {
   Alignment,
@@ -98,8 +107,10 @@ interface SessionDraft {
   startTime: string;
   sessionNumber: string;
   conditions: SessionCondition | null;
-  ambientTemperatureC: string;
-  trackTemperatureC: string;
+  /** As typed, in `temperatureUnit`. Older drafts have no unit and were Celsius. */
+  ambientTemperature: string;
+  trackTemperature: string;
+  temperatureUnit?: TemperatureUnit;
   humidityPercent: string;
   weatherCondition: string;
   surfaceCondition: string;
@@ -174,8 +185,9 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   // Weather and tire condition start unanswered. Seeding them with a default
   // filed a claim the rider never made - see lib/session-answers.ts.
   const [conditions, setConditions] = useState<SessionCondition | null>(null);
-  const [ambientTemperatureC, setAmbientTemperatureC] = useState('');
-  const [trackTemperatureC, setTrackTemperatureC] = useState('');
+  // Held as the rider typed it, in their unit; converted to Celsius on save.
+  const [ambientTemperature, setAmbientTemperature] = useState('');
+  const [trackTemperature, setTrackTemperature] = useState('');
   const [humidityPercent, setHumidityPercent] = useState('');
   const [weatherCondition, setWeatherCondition] = useState('');
   const [surfaceCondition, setSurfaceCondition] = useState('');
@@ -199,6 +211,11 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const [lapEditorValue, setLapEditorValue] = useState<LapEditorValue>(EMPTY_LAP_EDITOR_VALUE);
   const [errorMessage, setErrorMessage] = useState('');
   const [draftMessage, setDraftMessage] = useState('');
+  const temperatureUnit = useTemperatureUnit();
+  // Null until the first run of the effect below, so the preference arriving
+  // from storage on mount is recorded rather than treated as the rider flipping
+  // the toggle - which would convert a restored draft a second time.
+  const previousTemperatureUnitRef = useRef<TemperatureUnit | null>(null);
 
   const selectedVehicle = useMemo(
     () => vehicles.find((vehicle) => vehicle.id === vehicleId) ?? null,
@@ -248,8 +265,14 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setStartTime(draft.startTime ?? '');
     setSessionNumber(draft.sessionNumber ?? '');
     setConditions(isSessionCondition(draft.conditions) ? draft.conditions : null);
-    setAmbientTemperatureC(draft.ambientTemperatureC ?? '');
-    setTrackTemperatureC(draft.trackTemperatureC ?? '');
+    // A draft typed in one unit, reopened under another, is re-expressed rather
+    // than reread as if the number had always meant the current unit.
+    // Read from storage rather than from the hook: the hook's own effect has not
+    // committed its state by the time this one runs, so it still reads Celsius.
+    const draftUnit = draft.temperatureUnit ?? 'c';
+    const currentUnit = readTemperatureUnit();
+    setAmbientTemperature(convertTemperatureInput(draft.ambientTemperature ?? '', draftUnit, currentUnit));
+    setTrackTemperature(convertTemperatureInput(draft.trackTemperature ?? '', draftUnit, currentUnit));
     setHumidityPercent(draft.humidityPercent ?? '');
     setWeatherCondition(draft.weatherCondition ?? '');
     setSurfaceCondition(draft.surfaceCondition ?? '');
@@ -281,8 +304,9 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       startTime,
       sessionNumber,
       conditions,
-      ambientTemperatureC,
-      trackTemperatureC,
+      ambientTemperature,
+      trackTemperature,
+      temperatureUnit,
       humidityPercent,
       weatherCondition,
       surfaceCondition,
@@ -309,8 +333,9 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     startTime,
     sessionNumber,
     conditions,
-    ambientTemperatureC,
-    trackTemperatureC,
+    ambientTemperature,
+    trackTemperature,
+    temperatureUnit,
     humidityPercent,
     weatherCondition,
     surfaceCondition,
@@ -329,6 +354,16 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     notes,
     lapEditorValue,
   ]);
+
+  // The rider flipping the Settings toggle in another tab must not silently turn
+  // the 68 in the box into 68 of the other unit.
+  useEffect(() => {
+    const previous = previousTemperatureUnitRef.current;
+    previousTemperatureUnitRef.current = temperatureUnit;
+    if (previous === null || previous === temperatureUnit) return;
+    setAmbientTemperature((raw) => convertTemperatureInput(raw, previous, temperatureUnit));
+    setTrackTemperature((raw) => convertTemperatureInput(raw, previous, temperatureUnit));
+  }, [temperatureUnit]);
 
   useEffect(() => {
     const previous = previousEnabledModulesRef.current;
@@ -395,6 +430,27 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       throw new Error(`${label} must be between ${min} and ${max}.`);
     }
     return parsed;
+  }
+
+  /**
+   * A temperature the rider typed in their unit, as the Celsius value stored.
+   * The bounds are the column's, quoted back in the unit they typed in.
+   */
+  function parseTemperature(
+    label: string,
+    value: string,
+    minCelsius: number,
+    maxCelsius: number,
+  ): number | null {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    const min = displayTemperatureBound(minCelsius, temperatureUnit);
+    const max = displayTemperatureBound(maxCelsius, temperatureUnit);
+    if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+      throw new Error(`${label} must be between ${min} and ${max}${temperatureUnitSuffix(temperatureUnit)}.`);
+    }
+    return toStoredCelsius(parsed, temperatureUnit);
   }
 
   function toggleModule(module: ModuleToggleKey) {
@@ -473,8 +529,10 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     let parsedTrackTemperature: number | null;
     let parsedHumidity: number | null;
     try {
-      parsedAmbientTemperature = parseOptionalNumber('Ambient temperature', ambientTemperatureC, -40, 70);
-      parsedTrackTemperature = parseOptionalNumber('Track temperature', trackTemperatureC, -40, 95);
+      // Bounds are Celsius in the database and quoted in the rider's unit, so 88 F
+      // is inside the range that used to reject it for being above 70.
+      parsedAmbientTemperature = parseTemperature('Ambient temperature', ambientTemperature, -40, 70);
+      parsedTrackTemperature = parseTemperature('Track temperature', trackTemperature, -40, 95);
       parsedHumidity = parseOptionalNumber('Humidity', humidityPercent, 0, 100);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Invalid environment value.');
@@ -672,22 +730,22 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
         />
         <div className="grid gap-3 sm:grid-cols-3">
           <Input
-            label="Ambient Temp (C)"
+            label={`Ambient Temp (${temperatureUnitSuffix(temperatureUnit)})`}
             type="number"
             inputMode="decimal"
             step="any"
-            placeholder="24"
-            value={ambientTemperatureC}
-            onChange={(event) => setAmbientTemperatureC(event.target.value)}
+            placeholder={temperatureUnit === 'f' ? '75' : '24'}
+            value={ambientTemperature}
+            onChange={(event) => setAmbientTemperature(event.target.value)}
           />
           <Input
-            label="Track Temp (C)"
+            label={`Track Temp (${temperatureUnitSuffix(temperatureUnit)})`}
             type="number"
             inputMode="decimal"
             step="any"
-            placeholder="36"
-            value={trackTemperatureC}
-            onChange={(event) => setTrackTemperatureC(event.target.value)}
+            placeholder={temperatureUnit === 'f' ? '97' : '36'}
+            value={trackTemperature}
+            onChange={(event) => setTrackTemperature(event.target.value)}
           />
           <Input
             label="Humidity (%)"

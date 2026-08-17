@@ -56,8 +56,8 @@ describe('session-history helpers', () => {
     expect(summary.timeLabel).toBe('1:15 PM');
     expect(summary.environmentRows).toEqual(
       expect.arrayContaining([
-        { label: 'Ambient', value: '26 C' },
-        { label: 'Track', value: '38 C' },
+        { label: 'Ambient', value: '26°C' },
+        { label: 'Track', value: '38°C' },
       ]),
     );
     expect(summary.tireRows[0]).toEqual({ label: 'Front Tire', value: '31' });
