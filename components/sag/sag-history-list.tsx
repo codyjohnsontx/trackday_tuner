@@ -30,6 +30,11 @@ function formatDate(dateString: string): string {
   });
 }
 
+/** What the entry is called on screen, for a row heading or an announcement. */
+function entryTitle(entry: SagEntry): string {
+  return entry.label?.trim() || 'Untitled Entry';
+}
+
 /**
  * The measurements themselves, so two entries can be told apart without opening
  * them. Rendered with spans because it sits inside the row's own button, which
@@ -71,6 +76,14 @@ export function SagHistoryList({
   // The entry a rider asked to load while the form still held unsaved work.
   const [pendingLoad, setPendingLoad] = useState<SagEntry | null>(null);
 
+  // The confirmation panel below is rendered with the row it belongs to, so it
+  // enters the DOM together with its text. Assistive technology has to already be
+  // watching a live region to announce a change to it, so the announcement is made
+  // from this region instead, which is mounted for as long as the list is.
+  const pendingAnnouncement = pendingLoad
+    ? `Loading ${entryTitle(pendingLoad)} replaces the measurements on screen, which are not saved yet.`
+    : '';
+
   function handleSelect(entry: SagEntry) {
     // Reloading the entry already selected discards edits just as thoroughly as
     // loading a different one, so both ask.
@@ -84,6 +97,10 @@ export function SagHistoryList({
   return (
     <section className="space-y-3 rounded-card bg-surface p-4">
       <h2 className="text-base font-semibold text-ink">History</h2>
+
+      <p aria-live="polite" className="sr-only">
+        {pendingAnnouncement}
+      </p>
 
       {errorMessage ? (
         <p role="alert" className="text-sm text-slower">
@@ -109,9 +126,7 @@ export function SagHistoryList({
                   className="min-h-11 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
                   onClick={() => handleSelect(entry)}
                 >
-                  <span className="block text-sm font-semibold text-ink">
-                    {entry.label?.trim() || 'Untitled Entry'}
-                  </span>
+                  <span className="block text-sm font-semibold text-ink">{entryTitle(entry)}</span>
                   <span className="mt-0.5 block text-xs text-ink-faint">
                     {formatDate(entry.created_at)}
                   </span>
@@ -132,7 +147,7 @@ export function SagHistoryList({
               </div>
 
               {pendingLoad?.id === entry.id ? (
-                <div aria-live="polite" className="mt-3 space-y-2 rounded-plate bg-surface-3 p-3">
+                <div className="mt-3 space-y-2 rounded-plate bg-surface-3 p-3">
                   <p className="text-xs text-ink-dim">
                     Loading this entry replaces the measurements on screen, which are not saved yet.
                   </p>

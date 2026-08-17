@@ -134,7 +134,7 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
       // The measurements stay on screen; only the saved row is gone, so the form
       // is no longer a copy of anything and is now the last of them. Nothing is
       // committed any more, which is what makes loading over them ask first.
-      if (selectedId === entry.id) {
+      if (selectedIdRef.current === entry.id) {
         setSelectedId(null);
         setCommittedKey(EMPTY_MEASUREMENTS_KEY);
       }

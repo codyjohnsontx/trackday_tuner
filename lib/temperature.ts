@@ -32,28 +32,49 @@ export function parseTemperatureUnit(value: string | null): TemperatureUnit {
  * exists to close, arriving through the failure path instead.
  */
 let unitFallback: TemperatureUnit | null = null;
+/**
+ * What the store still held when that write was refused. A rider who had already
+ * saved a preference leaves the old value sitting in the key, so without this the
+ * store would answer for a choice it never accepted and the new unit would revert
+ * on the next read - a toggle that moved on screen and changed nothing.
+ */
+let unitFallbackShadowed: string | null = null;
+
+function readStoredUnit(): string | null {
+  try {
+    return localStorage.getItem(TEMPERATURE_UNIT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
 
 export function readTemperatureUnit(): TemperatureUnit {
   if (typeof window === 'undefined') return 'c';
-  try {
-    const stored = localStorage.getItem(TEMPERATURE_UNIT_STORAGE_KEY);
-    // A readable store is authoritative; the fallback only covers a failed write.
-    if (stored !== null) return parseTemperatureUnit(stored);
-    return unitFallback ?? 'c';
-  } catch {
-    return unitFallback ?? 'c';
+  const stored = readStoredUnit();
+
+  if (unitFallback !== null) {
+    // The fallback outranks the value it was refused against, and only that one:
+    // anything else in the key is a later choice - another tab writing it - and a
+    // readable store is authoritative again.
+    if (stored === unitFallbackShadowed) return unitFallback;
+    unitFallback = null;
+    unitFallbackShadowed = null;
   }
+
+  return stored === null ? 'c' : parseTemperatureUnit(stored);
 }
 
 export function writeTemperatureUnit(unit: TemperatureUnit): void {
   if (typeof window === 'undefined') return;
-  unitFallback = unit;
   try {
     window.localStorage.setItem(TEMPERATURE_UNIT_STORAGE_KEY, unit);
     unitFallback = null;
+    unitFallbackShadowed = null;
   } catch {
     // Storage refused it, so `unitFallback` is now the only record of the choice
-    // and readTemperatureUnit() answers from there until storage works again.
+    // and readTemperatureUnit() answers from there until a write succeeds.
+    unitFallback = unit;
+    unitFallbackShadowed = readStoredUnit();
   }
   window.dispatchEvent(
     new CustomEvent<TemperatureUnit>(TEMPERATURE_UNIT_CHANGE_EVENT, { detail: unit }),

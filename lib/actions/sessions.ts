@@ -112,6 +112,40 @@ async function rollbackAutoCreatedTrack(
   }
 }
 
+/**
+ * Undo a session row that did not survive the writes that follow it.
+ *
+ * The auto-created track only goes with it when the session row actually went.
+ * `sessions.track_id` is `on delete set null`, so deleting the track from under a
+ * session the delete left behind strips the circuit off a row the rider still
+ * has - silently, and on a save this action already reported as failed. A stray
+ * track is the lesser of the two, so a refused delete keeps it.
+ */
+async function rollbackCreatedSession(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  userId: string;
+  sessionId: string;
+  track: ResolvedSessionTrack;
+  failureLog: string;
+}): Promise<void> {
+  const { error } = await params.supabase
+    .from('sessions')
+    .delete()
+    .eq('id', params.sessionId)
+    .eq('user_id', params.userId);
+
+  if (error) {
+    console.error(params.failureLog, {
+      userId: params.userId,
+      sessionId: params.sessionId,
+      error: error.message,
+    });
+    return;
+  }
+
+  await rollbackAutoCreatedTrack(params.supabase, params.userId, params.track);
+}
+
 export async function getSessions(vehicleId?: string, limit?: number): Promise<Session[]> {
   if (await isDemoMode()) {
     return getDemoSessions(vehicleId, limit);
@@ -346,6 +380,16 @@ interface ResolvedSessionTrack {
 }
 
 /**
+ * The tracks a rider can reach: the seeded ones plus their own, which is the list
+ * the form's picker offers. Written once because the id lookup and the typed-name
+ * search have to ask for the same set - an id resolving in a scope the name search
+ * does not use is exactly the id/name divergence `resolveSessionTrack` closes.
+ */
+function visibleTracksFilter(userId: string): string {
+  return `is_seeded.eq.true,created_by.eq.${userId}`;
+}
+
+/**
  * The circuit a session names, resolved to a track row.
  *
  * A name the rider typed is matched against the tracks they can already see, and
@@ -376,7 +420,7 @@ async function resolveSessionTrack(
       .from('tracks')
       .select('id, name')
       .eq('id', trackId)
-      .or(`is_seeded.eq.true,created_by.eq.${userId}`)
+      .or(visibleTracksFilter(userId))
       .maybeSingle();
 
     const resolvedName = normalizeTrackName((data as { name?: string } | null)?.name);
@@ -387,12 +431,11 @@ async function resolveSessionTrack(
 
   if (!typed) return { trackId: null, trackName: null, createdTrack: false };
 
-  // Seeded tracks plus the rider's own - the same list the form's picker offers,
-  // so a name typed out in full lands on the row it names rather than beside it.
+  // A name typed out in full lands on the row it names rather than beside it.
   const { data: visible } = await supabase
     .from('tracks')
     .select('id, name')
-    .or(`is_seeded.eq.true,created_by.eq.${userId}`);
+    .or(visibleTracksFilter(userId));
 
   const matched = findSavedTrackByName(typed, (visible ?? []) as { id: string; name: string }[]);
   if (matched) return { trackId: matched.id, trackName: matched.name, createdTrack: false };
@@ -501,19 +544,13 @@ export async function createSession(
     laps: input.laps ?? [],
   });
   if (lapError) {
-    const { error: rollbackError } = await supabase
-      .from('sessions')
-      .delete()
-      .eq('id', createdSession.id)
-      .eq('user_id', user.id);
-    if (rollbackError) {
-      console.error('[sessions] session rollback after lap failure failed', {
-        userId: user.id,
-        sessionId: createdSession.id,
-        error: rollbackError.message,
-      });
-    }
-    await rollbackAutoCreatedTrack(supabase, user.id, track);
+    await rollbackCreatedSession({
+      supabase,
+      userId: user.id,
+      sessionId: createdSession.id,
+      track,
+      failureLog: '[sessions] session rollback after lap failure failed',
+    });
     return { ok: false, error: lapError };
   }
 
@@ -539,19 +576,13 @@ export async function createSession(
         sessionId: createdSession.id,
         error: environmentError.message,
       });
-      const { error: rollbackError } = await supabase
-        .from('sessions')
-        .delete()
-        .eq('id', createdSession.id)
-        .eq('user_id', user.id);
-      if (rollbackError) {
-        console.error('[sessions] session rollback failed', {
-          userId: user.id,
-          sessionId: createdSession.id,
-          error: rollbackError.message,
-        });
-      }
-      await rollbackAutoCreatedTrack(supabase, user.id, track);
+      await rollbackCreatedSession({
+        supabase,
+        userId: user.id,
+        sessionId: createdSession.id,
+        track,
+        failureLog: '[sessions] session rollback failed',
+      });
       return { ok: false, error: environmentError.message };
     }
   }

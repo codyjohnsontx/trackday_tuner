@@ -612,6 +612,61 @@ describe('sessions actions', () => {
     errorSpy.mockRestore();
   });
 
+  it('keeps the auto-created track when the session it belongs to could not be deleted', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const visibleTracks = createQuery({ base: { data: [], error: null } });
+    const trackInsert = createQuery({
+      single: { data: { id: 'track-new', name: 'Harris Hill Raceway' }, error: null },
+    });
+    const sessionInsert = createQuery({
+      single: { data: { id: 'sess-1', ...validInput }, error: null },
+    });
+    const environmentInsert = createQuery({ base: { data: null, error: { message: 'env failed' } } });
+    const sessionRollback = createQuery({ base: { data: null, error: { message: 'delete refused' } } });
+    const trackRollback = createQuery({ base: { data: null, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => visibleTracks)
+      .mockImplementationOnce(() => trackInsert)
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return sessionInsert;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('session_environment');
+        return environmentInsert;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return sessionRollback;
+      })
+      .mockImplementation(() => trackRollback);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({
+      ...validInput,
+      track_id: null,
+      track_name: 'Harris Hill Raceway',
+      environment: { ambient_temperature_c: 24, source: 'manual' },
+    });
+
+    expect(result).toEqual({ ok: false, error: 'env failed' });
+    // The session row survived its own delete, and `sessions.track_id` is
+    // ON DELETE SET NULL, so removing the track now would strip the circuit off a
+    // session the rider still has. A stray track is the lesser failure.
+    expect(trackRollback.delete).not.toHaveBeenCalled();
+    expect(from).toHaveBeenCalledTimes(5);
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[sessions] session rollback failed',
+      expect.objectContaining({ userId: 'user-1', sessionId: 'sess-1', error: 'delete refused' }),
+    );
+    errorSpy.mockRestore();
+  });
+
   it('persists change records against the previous session and the active baseline', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
