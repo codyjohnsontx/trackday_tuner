@@ -108,9 +108,17 @@ interface SessionDraft {
   sessionNumber: string;
   conditions: SessionCondition | null;
   /** As typed, in `temperatureUnit`. Older drafts have no unit and were Celsius. */
-  ambientTemperature: string;
-  trackTemperature: string;
+  ambientTemperature?: string;
+  trackTemperature?: string;
   temperatureUnit?: TemperatureUnit;
+  /**
+   * What drafts saved before the unit preference existed called the same two
+   * fields. They were always Celsius. Read so that a rider who upgrades holding
+   * a draft keeps the temperatures they typed instead of silently losing them to
+   * the save effect that runs straight after this restore.
+   */
+  ambientTemperatureC?: string;
+  trackTemperatureC?: string;
   humidityPercent: string;
   weatherCondition: string;
   surfaceCondition: string;
@@ -267,8 +275,10 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     // committed its state by the time this one runs, so it still reads Celsius.
     const draftUnit = draft.temperatureUnit ?? 'c';
     const currentUnit = readTemperatureUnit();
-    setAmbientTemperature(convertTemperatureInput(draft.ambientTemperature ?? '', draftUnit, currentUnit));
-    setTrackTemperature(convertTemperatureInput(draft.trackTemperature ?? '', draftUnit, currentUnit));
+    const ambientText = draft.ambientTemperature ?? draft.ambientTemperatureC ?? '';
+    const trackText = draft.trackTemperature ?? draft.trackTemperatureC ?? '';
+    setAmbientTemperature(convertTemperatureInput(ambientText, draftUnit, currentUnit));
+    setTrackTemperature(convertTemperatureInput(trackText, draftUnit, currentUnit));
     setHumidityPercent(draft.humidityPercent ?? '');
     setWeatherCondition(draft.weatherCondition ?? '');
     setSurfaceCondition(draft.surfaceCondition ?? '');

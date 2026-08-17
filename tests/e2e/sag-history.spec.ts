@@ -37,7 +37,10 @@ test.describe('the sag history', () => {
   test.skip(!hasE2EAuth(), 'E2E_EMAIL and E2E_PASSWORD env vars are required');
   test.skip(!hasServiceRole(), 'SUPABASE_SERVICE_ROLE_KEY is required to clean up entries');
 
-  const label = `PW Sag ${Date.now()}`;
+  // Every device project drives the same E2E account, so a label shared between
+  // them puts two rows on screen: the row locator trips strict mode and the
+  // final toHaveCount(0) sees the other project's surviving row.
+  const label = `PW Sag ${process.env.TEST_WORKER_INDEX ?? '0'}-${Date.now()}`;
 
   test.afterEach(async () => {
     await createTestAdminClient().from('sag_entries').delete().eq('label', label);
@@ -66,7 +69,7 @@ test.describe('the sag history', () => {
 
     // Measurements typed after the save are not in any entry.
     await fillFront(page, UNSAVED);
-    await row.getByRole('button', { name: new RegExp(label) }).click();
+    await row.getByRole('button', { name: label }).click();
     await expect(page.getByText(/Loading this entry replaces the measurements on screen/)).toBeVisible();
 
     await page.getByRole('button', { name: 'Keep editing' }).click();
@@ -76,7 +79,7 @@ test.describe('the sag history', () => {
     await expect(front.getByLabel('Rider On Bike (L2)')).toHaveValue(UNSAVED.l2);
 
     // Asking again and accepting does load it.
-    await row.getByRole('button', { name: new RegExp(label) }).click();
+    await row.getByRole('button', { name: label }).click();
     await page.getByRole('button', { name: 'Load anyway' }).click();
     await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue(FRONT.l0);
 

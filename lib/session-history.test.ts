@@ -64,6 +64,16 @@ describe('session-history helpers', () => {
     expect(summary.suspensionRows[0].value).toContain('10');
   });
 
+  it('shows the stored Celsius readings in the unit the rider reads in', () => {
+    const summary = buildSessionHistorySummary(session(), environment(), 'f');
+    expect(summary.environmentRows).toEqual(
+      expect.arrayContaining([
+        { label: 'Ambient', value: '78.8°F' },
+        { label: 'Track', value: '100.4°F' },
+      ]),
+    );
+  });
+
   it('truncates long note previews cleanly', () => {
     const preview = getNotesPreview(
       'This is a long note that should be truncated at a word boundary so the inline accordion summary stays tidy and does not turn into a full detail page replacement.',

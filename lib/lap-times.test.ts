@@ -93,6 +93,21 @@ describe('committing pending lap-editor text', () => {
     expect(!result.ok && result.error).toContain('Line 1');
   });
 
+  it('refuses a quick-add that would push the session past the lap ceiling', () => {
+    const full = Array.from({ length: 200 }, (_, index) => ({
+      lap_number: index + 1,
+      lap_time_ms: 100_000,
+      included: true,
+    }));
+
+    const result = commitLapEditorValue({ laps: full, pending: { quick: '1:40.900', paste: '' } });
+
+    // Returning ok here would hand the server a list it is going to reject, after
+    // telling the rider the save was fine.
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).toContain('200');
+  });
+
   it('renumbers pasted laps around ones already in the list', () => {
     const result = commitLapEditorValue({
       laps: [{ lap_number: 1, lap_time_ms: 103000, included: true }],

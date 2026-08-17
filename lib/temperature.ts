@@ -24,21 +24,36 @@ export function parseTemperatureUnit(value: string | null): TemperatureUnit {
   return value === 'f' ? 'f' : 'c';
 }
 
+/**
+ * What the rider chose when storage would not keep it - Safari private mode, a
+ * full quota, storage disabled. Without this the label follows the new unit while
+ * every reader of the stored preference still says Celsius, and the session form
+ * stores a Fahrenheit number as if it were Celsius: the exact defect this module
+ * exists to close, arriving through the failure path instead.
+ */
+let unitFallback: TemperatureUnit | null = null;
+
 export function readTemperatureUnit(): TemperatureUnit {
   if (typeof window === 'undefined') return 'c';
   try {
-    return parseTemperatureUnit(localStorage.getItem(TEMPERATURE_UNIT_STORAGE_KEY));
+    const stored = localStorage.getItem(TEMPERATURE_UNIT_STORAGE_KEY);
+    // A readable store is authoritative; the fallback only covers a failed write.
+    if (stored !== null) return parseTemperatureUnit(stored);
+    return unitFallback ?? 'c';
   } catch {
-    return 'c';
+    return unitFallback ?? 'c';
   }
 }
 
 export function writeTemperatureUnit(unit: TemperatureUnit): void {
   if (typeof window === 'undefined') return;
+  unitFallback = unit;
   try {
     window.localStorage.setItem(TEMPERATURE_UNIT_STORAGE_KEY, unit);
+    unitFallback = null;
   } catch {
-    // Ignore storage failures so the in-memory UI state can still update.
+    // Storage refused it, so `unitFallback` is now the only record of the choice
+    // and readTemperatureUnit() answers from there until storage works again.
   }
   window.dispatchEvent(
     new CustomEvent<TemperatureUnit>(TEMPERATURE_UNIT_CHANGE_EVENT, { detail: unit }),

@@ -11,7 +11,11 @@ import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supab
  */
 
 const SESSION_DATE = '2019-05-11';
-const TRACK_NAME = 'PW Lap Paste Track';
+// Unique per run: all six device projects drive one shared E2E account, so a
+// fixed name lets one project's cleanup delete a track another project's session
+// still points at - and `sessions.track_id` is ON DELETE SET NULL, so that
+// silently rewrites the other run's data.
+const TRACK_NAME = `PW Lap Paste Track ${process.env.TEST_WORKER_INDEX ?? '0'}-${Date.now()}`;
 const PASTED_LAPS = ['1:42.350', '1:41.920', '1:41.700', '1:41.480'];
 const QUICK_LAP = '1:40.900';
 
@@ -62,9 +66,9 @@ test.describe('lap times left in the editor entry boxes', () => {
       await admin.from('vehicles').delete().eq('id', createdVehicleId);
       createdVehicleId = null;
     }
-    // Saving a session now creates the track row its name asks for, so the run
-    // has to take that with it. The FK is ON DELETE SET NULL, so this is safe
-    // even while another device project still holds a session at the same track.
+    // Saving a session creates the track row its name asks for, so the run has to
+    // take that with it. The name is unique to this run, so this cannot reach a
+    // track another device project is still using.
     await admin.from('tracks').delete().eq('name', TRACK_NAME);
   });
 

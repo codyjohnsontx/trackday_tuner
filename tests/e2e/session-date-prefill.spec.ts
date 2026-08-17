@@ -82,7 +82,18 @@ test.describe('a rider logging in the evening', () => {
 
     // The two calendars genuinely disagree at this instant, so the assertion
     // below cannot pass by accident.
-    expect(await page.evaluate(() => new Date().toISOString().split('T')[0])).toBe(UTC_DAY);
+    expect(
+      await page.evaluate(() => {
+        // UTC getters rather than toISOString(), which this repository's own rule
+        // forbids - including in the test that guards the rule.
+        const now = new Date();
+        return [
+          String(now.getUTCFullYear()).padStart(4, '0'),
+          String(now.getUTCMonth() + 1).padStart(2, '0'),
+          String(now.getUTCDate()).padStart(2, '0'),
+        ].join('-');
+      }),
+    ).toBe(UTC_DAY);
 
     const dateField = page.getByLabel('Date', { exact: true });
     await expect(dateField).toHaveValue(RIDERS_DAY, { timeout: 15_000 });

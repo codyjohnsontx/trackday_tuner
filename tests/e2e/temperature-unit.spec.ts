@@ -13,7 +13,11 @@ import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supab
  */
 
 const SESSION_DATE = '2019-07-19';
-const TRACK_NAME = 'PW Fahrenheit Track';
+// Unique per run: all six device projects drive one shared E2E account, so a
+// fixed name lets one project's cleanup delete a track another project's session
+// still points at - and `sessions.track_id` is ON DELETE SET NULL, so that
+// silently rewrites the other run's data.
+const TRACK_NAME = `PW Fahrenheit Track ${process.env.TEST_WORKER_INDEX ?? '0'}-${Date.now()}`;
 const SESSION_DRAFT_KEY = 'track_tuner:draft:session_form_new';
 
 async function createRunVehicle(page: Page, nickname: string): Promise<string> {
@@ -62,9 +66,9 @@ test.describe('a rider who reads in Fahrenheit', () => {
       await admin.from('vehicles').delete().eq('id', createdVehicleId);
       createdVehicleId = null;
     }
-    // Saving a session now creates the track row its name asks for, so the run
-    // has to take that with it. The FK is ON DELETE SET NULL, so this is safe
-    // even while another device project still holds a session at the same track.
+    // Saving a session creates the track row its name asks for, so the run has to
+    // take that with it. The name is unique to this run, so this cannot reach a
+    // track another device project is still using.
     await admin.from('tracks').delete().eq('name', TRACK_NAME);
   });
 
@@ -165,5 +169,48 @@ test.describe('a rider who reads in Fahrenheit', () => {
     // And read back to the rider as the numbers they typed.
     await expect(page.getByText('68°F')).toBeVisible();
     await expect(page.getByText('88°F')).toBeVisible();
+  });
+
+  test('keeps the temperatures in a draft written before the unit preference existed', async ({
+    page,
+  }) => {
+    await signIn(page);
+
+    // Exactly what the shipped app stored before this change: Celsius text under
+    // the old key names, and no unit recorded. Reading only the new keys left both
+    // fields empty and the draft-saving effect then overwrote the rider's values,
+    // so coming back to the form lost them for good.
+    await page.goto('/sessions/new');
+    await page.evaluate((key) => {
+      window.localStorage.setItem(
+        key,
+        JSON.stringify({
+          trackQuery: 'PW Legacy Draft Track',
+          trackId: null,
+          date: '2019-07-19',
+          startTime: '',
+          sessionNumber: '',
+          conditions: 'sunny',
+          ambientTemperatureC: '24',
+          trackTemperatureC: '36',
+          humidityPercent: '55',
+          notes: 'legacy draft',
+          laps: [],
+        }),
+      );
+    }, SESSION_DRAFT_KEY);
+    await page.reload();
+
+    // Hydration has run: the draft's own date is back on screen.
+    await expect(page.getByLabel('Date', { exact: true })).toHaveValue('2019-07-19');
+    // Humidity proves the draft was restored at all, so an empty temperature below
+    // is the temperatures being dropped rather than the draft being ignored.
+    await expect(page.getByLabel(/^Humidity/)).toHaveValue('55');
+
+    await expect(page.getByLabel(/^Ambient Temp/)).toHaveValue('24');
+    await expect(page.getByLabel(/^Track Temp/)).toHaveValue('36');
+
+    // Leave no draft behind for the other spec in this file.
+    await page.evaluate((key) => window.localStorage.removeItem(key), SESSION_DRAFT_KEY);
   });
 });

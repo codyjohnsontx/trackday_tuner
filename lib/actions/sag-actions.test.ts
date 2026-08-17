@@ -4,6 +4,10 @@ vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
 }));
 
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({ get: vi.fn(() => undefined) })),
+}));
+
 vi.mock('@/lib/auth', () => ({
   getRealUser: vi.fn(),
 }));
@@ -13,7 +17,9 @@ vi.mock('@/lib/supabase/server', () => ({
 }));
 
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
 import { getRealUser } from '@/lib/auth';
+import { DEMO_COOKIE_NAME } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
 import { createSagEntry, deleteSagEntry } from '@/lib/actions/sag';
 
@@ -42,6 +48,7 @@ function createQuery(response: QueryResponse = {}) {
 describe('sag actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(cookies).mockResolvedValue({ get: vi.fn(() => undefined) } as never);
   });
 
   it('returns auth error while logged out', async () => {
@@ -136,5 +143,18 @@ describe('sag actions', () => {
     vi.mocked(getRealUser).mockResolvedValue(null);
 
     expect(await deleteSagEntry('sag-1')).toEqual({ ok: false, error: 'Not authenticated.' });
+  });
+
+  it('refuses to delete in demo mode, before it even looks at the user', async () => {
+    vi.mocked(cookies).mockResolvedValue({
+      get: vi.fn((name: string) => (name === DEMO_COOKIE_NAME ? { value: '1' } : undefined)),
+    } as never);
+
+    const result = await deleteSagEntry('sag-1');
+
+    expect(result.ok).toBe(false);
+    // The demo guard runs first, so no client is ever built and nothing is deleted.
+    expect(createClient).not.toHaveBeenCalled();
+    expect(getRealUser).not.toHaveBeenCalled();
   });
 });

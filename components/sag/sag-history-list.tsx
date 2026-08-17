@@ -85,7 +85,11 @@ export function SagHistoryList({
     <section className="space-y-3 rounded-card bg-surface p-4">
       <h2 className="text-base font-semibold text-ink">History</h2>
 
-      {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
+      {errorMessage ? (
+        <p role="alert" className="text-sm text-slower">
+          {errorMessage}
+        </p>
+      ) : null}
 
       {entries.length === 0 ? (
         <p className="text-sm text-ink-faint">No sag entries saved yet.</p>
@@ -128,7 +132,7 @@ export function SagHistoryList({
               </div>
 
               {pendingLoad?.id === entry.id ? (
-                <div className="mt-3 space-y-2 rounded-plate bg-surface-3 p-3">
+                <div aria-live="polite" className="mt-3 space-y-2 rounded-plate bg-surface-3 p-3">
                   <p className="text-xs text-ink-dim">
                     Loading this entry replaces the measurements on screen, which are not saved yet.
                   </p>

@@ -67,6 +67,7 @@ function createQuery(response: QueryResponse = {}) {
   query.order = vi.fn(() => query);
   query.limit = vi.fn(() => query);
   query.single = vi.fn(async () => single);
+  query.maybeSingle = vi.fn(async () => single);
   query.then = (onFulfilled: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
     Promise.resolve(base).then(onFulfilled, onRejected);
 
@@ -408,6 +409,154 @@ describe('sessions actions', () => {
     expect(result.ok).toBe(true);
     expect(insertQuery.insert).toHaveBeenCalledWith(
       expect.objectContaining({ track_id: null, track_name: 'Harris Hill Raceway' }),
+    );
+  });
+
+  it('removes the track it just created when the session insert fails', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const visibleTracks = createQuery({ base: { data: [], error: null } });
+    const trackInsert = createQuery({
+      single: { data: { id: 'track-new', name: 'Harris Hill Raceway' }, error: null },
+    });
+    const sessionInsert = createQuery({ single: { data: null, error: { message: 'session refused' } } });
+    const trackRollback = createQuery({ base: { data: null, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => visibleTracks)
+      .mockImplementationOnce(() => trackInsert)
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return sessionInsert;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return trackRollback;
+      })
+      .mockImplementation(() => createQuery({ base: { data: [], error: null } }));
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({
+      ...validInput,
+      track_id: null,
+      track_name: 'Harris Hill Raceway',
+    });
+
+    expect(result.ok).toBe(false);
+    // The rider did not save a session, so they must not be left holding a track
+    // for it - on the free plan that would consume one of only three slots.
+    expect(trackRollback.delete).toHaveBeenCalled();
+    expect(trackRollback.eq).toHaveBeenCalledWith('id', 'track-new');
+    expect(trackRollback.eq).toHaveBeenCalledWith('created_by', 'user-1');
+  });
+
+  it('leaves a track it did not create alone when the session insert fails', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const visibleTracks = createQuery({
+      base: { data: [{ id: 'track-9', name: 'Eagles Canyon Raceway' }], error: null },
+    });
+    const sessionInsert = createQuery({ single: { data: null, error: { message: 'session refused' } } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => visibleTracks)
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return sessionInsert;
+      })
+      .mockImplementation(() => {
+        throw new Error('nothing else should be queried');
+      });
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({
+      ...validInput,
+      track_id: null,
+      track_name: 'Eagles Canyon Raceway',
+    });
+
+    expect(result.ok).toBe(false);
+    // Matched, not created: it was already the rider's own track.
+    expect(from).toHaveBeenCalledTimes(2);
+  });
+
+  it('stores the track row\'s own name rather than a name typed beside its id', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const trackLookup = createQuery({
+      single: { data: { id: 'track-1', name: 'Road America' }, error: null },
+    });
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return trackLookup;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementation(() =>
+        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
+      );
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({
+      ...validInput,
+      track_id: 'track-1',
+      track_name: 'Somewhere Else Entirely',
+    });
+
+    expect(result.ok).toBe(true);
+    // The id and the name must name the same circuit.
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ track_id: 'track-1', track_name: 'Road America' }),
+    );
+  });
+
+  it('falls back to the typed name when the track id is not one the rider can see', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    // Someone else's track: RLS hides the row, so the lookup returns nothing.
+    const trackLookup = createQuery({ single: { data: null, error: null } });
+    const visibleTracks = createQuery({ base: { data: [], error: null } });
+    const trackInsert = createQuery({
+      single: { data: { id: 'track-mine', name: 'Harris Hill Raceway' }, error: null },
+    });
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => trackLookup)
+      .mockImplementationOnce(() => visibleTracks)
+      .mockImplementationOnce(() => trackInsert)
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementation(() =>
+        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
+      );
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({
+      ...validInput,
+      track_id: 'someone-elses-track',
+      track_name: 'Harris Hill Raceway',
+    });
+
+    expect(result.ok).toBe(true);
+    // Never stores a link the rider cannot follow.
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ track_id: 'track-mine', track_name: 'Harris Hill Raceway' }),
     );
   });
 

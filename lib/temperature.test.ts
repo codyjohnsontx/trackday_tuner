@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   celsiusToFahrenheit,
   convertTemperatureInput,
@@ -6,8 +6,10 @@ import {
   fahrenheitToCelsius,
   formatTemperature,
   parseTemperatureUnit,
+  readTemperatureUnit,
   toDisplayTemperature,
   toStoredCelsius,
+  writeTemperatureUnit,
 } from '@/lib/temperature';
 
 describe('the rider unit preference', () => {
@@ -47,6 +49,42 @@ describe('converting what the rider typed into what gets stored', () => {
     expect(celsiusToFahrenheit(-40)).toBe(-40);
     expect(fahrenheitToCelsius(212)).toBe(100);
     expect(fahrenheitToCelsius(-40)).toBe(-40);
+  });
+});
+
+describe('when Web Storage refuses the write', () => {
+  const realLocalStorage = globalThis.localStorage;
+
+  afterEach(() => {
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: realLocalStorage,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(globalThis, 'window', { value: undefined, configurable: true, writable: true });
+  });
+
+  it('still answers with the unit the rider chose', () => {
+    // Safari private mode, a full quota, storage disabled: setItem throws and the
+    // choice would otherwise be visible in the label while every reader of the
+    // preference still said Celsius - which stores a Fahrenheit number as Celsius.
+    const throwingStorage = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('QuotaExceededError');
+      },
+    };
+    const fakeWindow = { localStorage: throwingStorage, dispatchEvent: () => true };
+    Object.defineProperty(globalThis, 'window', { value: fakeWindow, configurable: true, writable: true });
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: throwingStorage,
+      configurable: true,
+      writable: true,
+    });
+
+    writeTemperatureUnit('f');
+
+    expect(readTemperatureUnit()).toBe('f');
   });
 });
 

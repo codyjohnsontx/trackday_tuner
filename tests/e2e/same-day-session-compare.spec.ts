@@ -19,7 +19,11 @@ import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supab
 // Far enough from real logging that the two sessions created here are the only rows
 // the previous-session lookup can choose between.
 const SESSION_DATE = '2019-03-14';
-const TRACK_NAME = 'PW Same-Day Track';
+// Unique per run: all six device projects drive one shared E2E account, so a
+// fixed name lets one project's cleanup delete a track another project's session
+// still points at - and `sessions.track_id` is ON DELETE SET NULL, so that
+// silently rewrites the other run's data.
+const TRACK_NAME = `PW Same-Day Track ${process.env.TEST_WORKER_INDEX ?? '0'}-${Date.now()}`;
 const FIRST_FRONT_PRESSURE = '33';
 const SECOND_FRONT_PRESSURE = '35';
 
@@ -138,9 +142,9 @@ test.describe('same-day sessions logged without a start time', () => {
       await admin.from('vehicles').delete().eq('id', createdVehicleId);
       createdVehicleId = null;
     }
-    // Saving a session now creates the track row its name asks for, so the run
-    // has to take that with it. The FK is ON DELETE SET NULL, so this is safe
-    // even while another device project still holds a session at the same track.
+    // Saving a session creates the track row its name asks for, so the run has to
+    // take that with it. The name is unique to this run, so this cannot reach a
+    // track another device project is still using.
     await admin.from('tracks').delete().eq('name', TRACK_NAME);
   });
 

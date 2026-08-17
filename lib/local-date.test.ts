@@ -12,7 +12,10 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  process.env.TZ = originalTimeZone;
+  // Assigning undefined would store the string "undefined" and leave every later
+  // suite in an unparseable zone.
+  if (originalTimeZone === undefined) delete process.env.TZ;
+  else process.env.TZ = originalTimeZone;
 });
 
 describe('todayLocalDate', () => {

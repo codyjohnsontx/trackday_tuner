@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SagSection, type SagSectionValues } from '@/components/sag/sag-section';
@@ -33,11 +33,22 @@ const EMPTY_MEASUREMENTS_KEY = measurementsKey(emptySide, emptySide);
 export function SagCalculator({ initialEntries }: SagCalculatorProps) {
   const draftKey = 'sag_calculator';
   const [entries, setEntries] = useState<SagEntry[]>(initialEntries);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedIdState] = useState<string | null>(null);
   // What the form held the last time it was saved or loaded. Anything else on
   // screen is work a tap on the history list would destroy.
   const [committedKey, setCommittedKey] = useState(EMPTY_MEASUREMENTS_KEY);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Read across the await in removeEntry. The transition closure captures the
+  // selection from the render that made it, so a rider who taps another entry
+  // while a delete is in flight would otherwise have that entry deselected and
+  // its freshly loaded measurements counted as unsaved work.
+  const selectedIdRef = useRef<string | null>(null);
+
+  /** Keeps the ref and the state in step, so neither can answer for the other. */
+  function setSelectedId(next: string | null) {
+    selectedIdRef.current = next;
+    setSelectedIdState(next);
+  }
   const [historyError, setHistoryError] = useState('');
 
   const [front, setFront] = useState<SagSectionValues>(emptySide);

@@ -156,11 +156,13 @@ export function appendQuickLap(laps: CreateSessionLapInput[], raw: string): LapA
   }
 
   const nextNumber = laps.reduce((max, lap) => Math.max(max, lap.lap_number), 0) + 1;
-  return {
-    laps: [...laps, { lap_number: nextNumber, lap_time_ms: lapTimeMs, included: true }],
-    error: null,
-    changed: true,
-  };
+  const candidate = [...laps, { lap_number: nextNumber, lap_time_ms: lapTimeMs, included: true }];
+  // The same check the paste path runs. Without it a quick-add past the session
+  // lap ceiling comes back as a successful commit and only fails at the server.
+  const validationError = validateLaps(candidate);
+  if (validationError) return { laps, error: validationError, changed: false };
+
+  return { laps: candidate, error: null, changed: true };
 }
 
 export function appendPastedLaps(laps: CreateSessionLapInput[], raw: string): LapAppendResult {

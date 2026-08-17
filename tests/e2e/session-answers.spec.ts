@@ -16,7 +16,11 @@ import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supab
  */
 
 const SESSION_DATE = '2019-04-02';
-const TRACK_NAME = 'PW Unanswered Track';
+// Unique per run: all six device projects drive one shared E2E account, so a
+// fixed name lets one project's cleanup delete a track another project's session
+// still points at - and `sessions.track_id` is ON DELETE SET NULL, so that
+// silently rewrites the other run's data.
+const TRACK_NAME = `PW Unanswered Track ${process.env.TEST_WORKER_INDEX ?? '0'}-${Date.now()}`;
 
 async function createRunVehicle(page: Page, nickname: string): Promise<string> {
   await page.goto('/garage/new');
@@ -66,9 +70,9 @@ test.describe('answers the rider did not give', () => {
       await admin.from('vehicles').delete().eq('id', createdVehicleId);
       createdVehicleId = null;
     }
-    // Saving a session now creates the track row its name asks for, so the run
-    // has to take that with it. The FK is ON DELETE SET NULL, so this is safe
-    // even while another device project still holds a session at the same track.
+    // Saving a session creates the track row its name asks for, so the run has to
+    // take that with it. The name is unique to this run, so this cannot reach a
+    // track another device project is still using.
     await admin.from('tracks').delete().eq('name', TRACK_NAME);
   });
 

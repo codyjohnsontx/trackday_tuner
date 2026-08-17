@@ -79,6 +79,39 @@ async function persistSessionLaps(params: {
   return error?.message ?? null;
 }
 
+/**
+ * Undo the track row `resolveSessionTrack` wrote, when the session it was written
+ * for does not survive.
+ *
+ * The track is inserted before the session so the session can link to it, so
+ * every failure path after that point would otherwise leave a circuit in the
+ * rider's tracks list for a session that was never saved - and burn one of a free
+ * rider's three custom-track slots. Only a row this call created is removed;
+ * anything matched or picked was already theirs.
+ */
+async function rollbackAutoCreatedTrack(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  track: ResolvedSessionTrack,
+): Promise<void> {
+  if (!track.createdTrack || !track.trackId) return;
+
+  const { error } = await supabase
+    .from('tracks')
+    .delete()
+    .eq('id', track.trackId)
+    .eq('created_by', userId)
+    .eq('is_seeded', false);
+
+  if (error) {
+    console.error('[sessions] auto-created track rollback failed', {
+      userId,
+      trackId: track.trackId,
+      error: error.message,
+    });
+  }
+}
+
 export async function getSessions(vehicleId?: string, limit?: number): Promise<Session[]> {
   if (await isDemoMode()) {
     return getDemoSessions(vehicleId, limit);
@@ -335,11 +368,21 @@ async function resolveSessionTrack(
   const typed = normalizeTrackName(trackName);
 
   if (trackId) {
-    if (typed) return { trackId, trackName: typed, createdTrack: false };
+    // The id is resolved rather than trusted. A `track_id` the rider cannot see
+    // still satisfies the foreign key, and storing the typed name beside it
+    // would persist a session whose id and name name different circuits. The
+    // row's own name is the canonical one, so it wins over what was typed.
+    const { data } = await supabase
+      .from('tracks')
+      .select('id, name')
+      .eq('id', trackId)
+      .or(`is_seeded.eq.true,created_by.eq.${userId}`)
+      .maybeSingle();
 
-    // Picked from the list without typing: denormalise the name off the row.
-    const { data } = await supabase.from('tracks').select('name').eq('id', trackId).single();
-    return { trackId, trackName: normalizeTrackName(data?.name), createdTrack: false };
+    const resolvedName = normalizeTrackName((data as { name?: string } | null)?.name);
+    if (data && resolvedName) return { trackId, trackName: resolvedName, createdTrack: false };
+    // Unreachable or unknown id: fall through and resolve the typed name instead
+    // of saving a link the rider cannot follow.
   }
 
   if (!typed) return { trackId: null, trackName: null, createdTrack: false };
@@ -444,7 +487,10 @@ export async function createSession(
     .select()
     .single();
 
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    await rollbackAutoCreatedTrack(supabase, user.id, track);
+    return { ok: false, error: error.message };
+  }
 
   const createdSession = data as Session;
 
@@ -467,6 +513,7 @@ export async function createSession(
         error: rollbackError.message,
       });
     }
+    await rollbackAutoCreatedTrack(supabase, user.id, track);
     return { ok: false, error: lapError };
   }
 
@@ -504,6 +551,7 @@ export async function createSession(
           error: rollbackError.message,
         });
       }
+      await rollbackAutoCreatedTrack(supabase, user.id, track);
       return { ok: false, error: environmentError.message };
     }
   }

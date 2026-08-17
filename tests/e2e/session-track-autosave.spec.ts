@@ -14,8 +14,12 @@ import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supab
  */
 
 const SESSION_DATE = '2019-06-08';
-const TYPED_NAME = 'PW Harris Hill Raceway';
-const RETYPED_NAME = 'pw harris  hill RACEWAY';
+// One per-run identifier, spelled two ways. A fixed name would let a stale row
+// from an earlier run satisfy the "reuses it" assertion without this run ever
+// creating a track, which is the half of the test that matters.
+const RUN_ID = `${process.env.TEST_WORKER_INDEX ?? '0'}${Date.now()}`;
+const TYPED_NAME = `PW Harris Hill Raceway ${RUN_ID}`;
+const RETYPED_NAME = `pw harris  hill RACEWAY  ${RUN_ID}`;
 
 async function createRunVehicle(page: Page, nickname: string): Promise<string> {
   await page.goto('/garage/new');
@@ -148,7 +152,9 @@ test.describe('a track name the rider types', () => {
       .from('tracks')
       .select('id')
       .eq('created_by', track!.created_by as string)
-      .ilike('name', '%Harris Hill%');
+      // Scoped to this run's identifier: '%Harris Hill%' would also count rows
+      // another device project created at the same moment.
+      .ilike('name', `%${RUN_ID}%`);
     expect(tracks).toHaveLength(1);
   });
 });
