@@ -173,8 +173,17 @@ test.describe('a rider who reads in Fahrenheit', () => {
 
   test('keeps the temperatures in a draft written before the unit preference existed', async ({
     page,
-  }) => {
+  }, testInfo: TestInfo) => {
     await signIn(page);
+
+    // /sessions/new redirects to /garage/new for a rider with no vehicle, and the
+    // sibling test's afterEach takes its vehicle with it. Seeding one here keeps
+    // this guard from depending on what the shared account happens to hold - it
+    // otherwise fails on the Date assertion below, naming nothing about vehicles.
+    createdVehicleId = await createRunVehicle(
+      page,
+      `PW Legacy Draft ${testInfo.project.name} w${testInfo.workerIndex} ${Date.now()}`,
+    );
 
     // Exactly what the shipped app stored before this change: Celsius text under
     // the old key names, and no unit recorded. Reading only the new keys left both
