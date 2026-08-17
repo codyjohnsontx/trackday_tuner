@@ -27,7 +27,7 @@ import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
 import { validateLaps } from '@/lib/lap-times';
 import { MISSING_CONDITIONS_MESSAGE, isSessionCondition } from '@/lib/session-answers';
-import { findSavedTrackByName, normalizeTrackName } from '@/lib/session-track';
+import { findSavedTrackByName, normalizeTrackName, trackNameSearchPattern } from '@/lib/session-track';
 import {
   baselineReferenceLabel,
   baselineToComparableSession,
@@ -128,17 +128,21 @@ async function rollbackCreatedSession(params: {
   track: ResolvedSessionTrack;
   failureLog: string;
 }): Promise<void> {
-  const { error } = await params.supabase
+  const { data, error } = await params.supabase
     .from('sessions')
     .delete()
     .eq('id', params.sessionId)
-    .eq('user_id', params.userId);
+    .eq('user_id', params.userId)
+    .select('id');
 
-  if (error) {
+  // RLS turns a row this delete may not touch into zero rows deleted rather than
+  // an error, so silence is not proof the session went - and the track may only
+  // follow a session that did. See deleteSagEntry in lib/actions/sag.ts.
+  if (error || !data || data.length === 0) {
     console.error(params.failureLog, {
       userId: params.userId,
       sessionId: params.sessionId,
-      error: error.message,
+      error: error?.message ?? 'no rows deleted',
     });
     return;
   }
@@ -390,6 +394,16 @@ function visibleTracksFilter(userId: string): string {
 }
 
 /**
+ * How many name candidates the fold is given to choose between.
+ *
+ * The pattern is deliberately wider than the fold, so more than one row can come
+ * back for one typed name, but not many: these are the tracks whose name matches
+ * it character for character apart from spacing and accents. The bound is here so
+ * the query can never quietly become the whole tracks table again.
+ */
+const TRACK_NAME_MATCH_LIMIT = 50;
+
+/**
  * The circuit a session names, resolved to a track row.
  *
  * A name the rider typed is matched against the tracks they can already see, and
@@ -440,10 +454,14 @@ async function resolveSessionTrack(
   if (!typed) return { trackId: null, trackName: null, createdTrack: false };
 
   // A name typed out in full lands on the row it names rather than beside it.
+  // The pattern narrows the query to the rows the typed name could mean without
+  // being tighter than the fold that decides it - see lib/session-track.ts.
   const { data: visible, error: visibleError } = await supabase
     .from('tracks')
     .select('id, name')
-    .or(visibleTracksFilter(userId));
+    .or(visibleTracksFilter(userId))
+    .ilike('name', trackNameSearchPattern(typed))
+    .limit(TRACK_NAME_MATCH_LIMIT);
 
   if (visibleError) {
     // Same reasoning: an empty list from a failed select looks exactly like a

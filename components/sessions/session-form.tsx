@@ -403,7 +403,6 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     const copied = copyLastSessionSetup(latestSessionForVehicle, selectedVehicleType);
     setTrackId(copied.trackId);
     setTrackQuery(copied.trackQuery);
-    setConditions(copied.conditions);
     setTireCondition(copied.tireCondition);
     setFrontTire(copied.frontTire);
     setRearTire(copied.rearTire);
@@ -415,7 +414,9 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setGeometry(copied.geometry);
     setDrivetrain(copied.drivetrain);
     setAero(copied.aero);
-    setDraftMessage('Last setup copied. Date, time, session number, environment, and notes were left unchanged.');
+    setDraftMessage(
+      'Last setup copied. Weather was not carried over, and date, time, session number, environment, and notes were left unchanged.',
+    );
   }
 
   function parseOptionalNumber(label: string, value: string, min: number, max: number): number | null {
@@ -807,6 +808,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
               options={TIRE_CONDITION_OPTIONS}
               value={tireCondition}
               onChange={setTireCondition}
+              clearable
             />
           </div>
 

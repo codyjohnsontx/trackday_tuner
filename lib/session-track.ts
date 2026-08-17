@@ -32,6 +32,47 @@ export function trackNameKey(value: string | null | undefined): string {
     .toLowerCase();
 }
 
+/**
+ * True for a character a `like` pattern cannot state literally.
+ *
+ * Two kinds qualify. `%`, `_`, `\` and PostgREST's `*` alias are wildcards, so a
+ * name containing one has to give up matching it exactly rather than depend on
+ * escaping surviving the wire. Anything whose NFD form differs from itself, and
+ * any combining mark, is a composition the key folds away: the stored row may
+ * hold either spelling, and `like` compares code points.
+ */
+function needsWildcard(char: string): boolean {
+  if (char === '%' || char === '_' || char === '\\' || char === '*') return true;
+  return char.normalize('NFD') !== char || /\p{M}/u.test(char);
+}
+
+/**
+ * A `like` pattern that narrows a track query to the rows a typed name could mean.
+ *
+ * The lookup used to read every track the rider can see and fold in memory, which
+ * PostgREST truncates at `max_rows` - so past that a circuit they already have
+ * reads as one they have never logged, and gets duplicated into one of their
+ * three custom-track slots. This narrows it in the database instead.
+ *
+ * It is a narrowing step and not the decision: `findSavedTrackByName` still says
+ * whether two spellings are one circuit, so this pattern must never be tighter
+ * than the fold. Spacing becomes `%` because the fold collapses runs of it, and
+ * every character the pattern cannot state literally becomes `%` too. Wider than
+ * the fold is only wasted rows; narrower is the duplicate row this exists to
+ * prevent.
+ */
+export function trackNameSearchPattern(value: string | null | undefined): string {
+  const key = trackNameKey(value);
+  if (!key) return '%';
+
+  let pattern = '';
+  for (const char of key) {
+    pattern += char === ' ' || needsWildcard(char) ? '%' : char;
+  }
+
+  return pattern.replace(/%+/g, '%');
+}
+
 /** The saved track a typed name means, or null when the rider is naming a new one. */
 export function findSavedTrackByName<T extends { name: string }>(
   name: string | null | undefined,

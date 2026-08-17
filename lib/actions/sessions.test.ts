@@ -62,6 +62,7 @@ function createQuery(response: QueryResponse = {}) {
   query.in = vi.fn(() => query);
   query.neq = vi.fn(() => query);
   query.or = vi.fn(() => query);
+  query.ilike = vi.fn(() => query);
   query.lt = vi.fn(() => query);
   query.lte = vi.fn(() => query);
   query.order = vi.fn(() => query);
@@ -70,6 +71,42 @@ function createQuery(response: QueryResponse = {}) {
   query.maybeSingle = vi.fn(async () => single);
   query.then = (onFulfilled: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
     Promise.resolve(base).then(onFulfilled, onRejected);
+
+  return query;
+}
+
+/**
+ * A tracks query that answers `ilike` and `eq` the way the database does, so the
+ * filter the action builds is what decides the match rather than the mock.
+ *
+ * The lookup is narrowed server-side now, which means a filter tighter than the
+ * fold - matching the raw typed string, say - silently stops finding circuits the
+ * rider already has. Only a query mock that applies the filter can catch that.
+ */
+function createTrackNameQuery(rows: { id: string; name: string }[]) {
+  let matched = rows;
+  const query: Record<string, unknown> = {};
+
+  query.select = vi.fn(() => query);
+  query.or = vi.fn(() => query);
+  query.limit = vi.fn(() => query);
+  query.eq = vi.fn((column: string, value: unknown) => {
+    if (column === 'name') matched = matched.filter((row) => row.name === value);
+    return query;
+  });
+  query.ilike = vi.fn((column: string, pattern: string) => {
+    if (column !== 'name') return query;
+    // `%` is any run of characters, and the comparison folds case.
+    const source = pattern
+      .split('%')
+      .map((literal) => literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('[\\s\\S]*');
+    const expression = new RegExp(`^${source}$`, 'i');
+    matched = matched.filter((row) => expression.test(row.name));
+    return query;
+  });
+  query.then = (onFulfilled: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
+    Promise.resolve({ data: matched, error: null }).then(onFulfilled, onRejected);
 
   return query;
 }
@@ -287,6 +324,83 @@ describe('sessions actions', () => {
     expect(result.ok).toBe(true);
     expect(insertQuery.insert).toHaveBeenCalledWith(
       expect.objectContaining({ track_id: 'track-9', track_name: 'Eagles Canyon Raceway' }),
+    );
+  });
+
+  it('finds a doubled-space spelling through the narrowed track query', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const visibleTracks = createTrackNameQuery([
+      { id: 'track-9', name: 'Eagles Canyon Raceway' },
+      { id: 'track-8', name: 'Harris Hill Raceway' },
+    ]);
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return visibleTracks;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementation(() =>
+        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
+      );
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({
+      ...validInput,
+      track_id: null,
+      track_name: 'eagles  canyon raceway',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ track_id: 'track-9', track_name: 'Eagles Canyon Raceway' }),
+    );
+    // Narrowed and bounded in the database rather than read whole and folded here.
+    expect(visibleTracks.ilike).toHaveBeenCalled();
+    expect(visibleTracks.limit).toHaveBeenCalled();
+  });
+
+  it('finds a decomposed accent on its precomposed row through the narrowed track query', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const precomposedName = 'Aut\u00f3dromo Hermanos Rodr\u00edguez';
+    const visibleTracks = createTrackNameQuery([{ id: 'track-7', name: precomposedName }]);
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return visibleTracks;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementation(() =>
+        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
+      );
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    // Typed with combining acutes against a row stored precomposed: one circuit,
+    // and a filter that compared the raw string would create a second row for it.
+    const result = await createSession({
+      ...validInput,
+      track_id: null,
+      track_name: 'Auto\u0301dromo Hermanos Rodri\u0301guez',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ track_id: 'track-7', track_name: precomposedName }),
     );
   });
 
@@ -572,7 +686,7 @@ describe('sessions actions', () => {
       base: { data: null, error: { message: 'env failed' } },
     });
     const rollbackQuery = createQuery({
-      base: { data: null, error: null },
+      base: { data: [{ id: 'sess-1' }], error: null },
     });
 
     const from = vi
@@ -608,6 +722,62 @@ describe('sessions actions', () => {
         sessionId: 'sess-1',
         error: 'env failed',
       }),
+    );
+    errorSpy.mockRestore();
+  });
+
+  it('keeps the auto-created track when the session delete removed no row', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const visibleTracks = createQuery({ base: { data: [], error: null } });
+    const trackInsert = createQuery({
+      single: { data: { id: 'track-new', name: 'Harris Hill Raceway' }, error: null },
+    });
+    const sessionInsert = createQuery({
+      single: { data: { id: 'sess-1', ...validInput }, error: null },
+    });
+    const environmentInsert = createQuery({ base: { data: null, error: { message: 'env failed' } } });
+    // No error, and no row either: RLS refusing a delete looks exactly like this.
+    const sessionRollback = createQuery({ base: { data: [], error: null } });
+    const trackRollback = createQuery({ base: { data: null, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => visibleTracks)
+      .mockImplementationOnce(() => trackInsert)
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return sessionInsert;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('session_environment');
+        return environmentInsert;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return sessionRollback;
+      })
+      .mockImplementation(() => trackRollback);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({
+      ...validInput,
+      track_id: null,
+      track_name: 'Harris Hill Raceway',
+      environment: { ambient_temperature_c: 24, source: 'manual' },
+    });
+
+    expect(result).toEqual({ ok: false, error: 'env failed' });
+    // Silence is not proof the session went, and `sessions.track_id` is
+    // ON DELETE SET NULL, so deleting the track now would strip the circuit off a
+    // session the rider still has.
+    expect(trackRollback.delete).not.toHaveBeenCalled();
+    expect(from).toHaveBeenCalledTimes(5);
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[sessions] session rollback failed',
+      expect.objectContaining({ userId: 'user-1', sessionId: 'sess-1', error: 'no rows deleted' }),
     );
     errorSpy.mockRestore();
   });

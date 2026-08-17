@@ -21,7 +21,6 @@ const emptySide: SagSectionValues = {
   l2: '',
 };
 
-/** The measurements on screen, as one comparable value. */
 /**
  * Everything loading an entry would overwrite, as one comparable value.
  *

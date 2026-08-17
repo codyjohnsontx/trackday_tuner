@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { findSavedTrackByName, normalizeTrackName, trackNameKey } from '@/lib/session-track';
+import {
+  findSavedTrackByName,
+  normalizeTrackName,
+  trackNameKey,
+  trackNameSearchPattern,
+} from '@/lib/session-track';
 
 describe('naming a circuit', () => {
   it('treats blank input as no track at all', () => {
@@ -46,5 +51,39 @@ describe('matching a typed name against saved tracks', () => {
   it('returns null rather than matching everything on a blank name', () => {
     expect(findSavedTrackByName('', tracks)).toBeNull();
     expect(findSavedTrackByName(null, tracks)).toBeNull();
+  });
+});
+
+describe('narrowing a track query to a typed name', () => {
+  /** What `ilike` does with the pattern: `%` is any run of characters, case folded. */
+  function matches(pattern: string, storedName: string): boolean {
+    const source = pattern
+      .split('%')
+      .map((literal) => literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('[\\s\\S]*');
+    return new RegExp(`^${source}$`, 'i').test(storedName);
+  }
+
+  it('still reaches every spelling the fold calls one circuit', () => {
+    // Narrower than the fold means a duplicate row for a circuit the rider has.
+    const pattern = trackNameSearchPattern('eagles  canyon raceway');
+    expect(matches(pattern, 'Eagles Canyon Raceway')).toBe(true);
+    expect(matches(pattern, 'EAGLES  CANYON  RACEWAY')).toBe(true);
+  });
+
+  it('reaches either Unicode composition of an accent', () => {
+    const pattern = trackNameSearchPattern('Aut\u00f3dromo Hermanos Rodr\u00edguez');
+    expect(matches(pattern, 'Aut\u00f3dromo Hermanos Rodr\u00edguez')).toBe(true);
+    expect(matches(pattern, 'Auto\u0301dromo Hermanos Rodri\u0301guez')).toBe(true);
+  });
+
+  it('does not widen into circuits the fold calls different', () => {
+    expect(matches(trackNameSearchPattern('Barber Motorsports Park'), 'Barber Motorsport Park')).toBe(false);
+    expect(matches(trackNameSearchPattern('COTA'), 'Circuit of the Americas')).toBe(false);
+  });
+
+  it('matches everything rather than nothing when no name was typed', () => {
+    expect(trackNameSearchPattern('   ')).toBe('%');
+    expect(trackNameSearchPattern(null)).toBe('%');
   });
 });

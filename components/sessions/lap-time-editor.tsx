@@ -26,7 +26,6 @@ interface LapTimeEditorProps {
 export function LapTimeEditor({ value, onChange }: LapTimeEditorProps) {
   const { laps, pending } = value;
   const [message, setMessage] = useState('');
-  const [pasteOpen, setPasteOpen] = useState(false);
   const metrics = useMemo(() => aggregateLaps(laps), [laps]);
 
   function setLaps(next: CreateSessionLapInput[]) {
@@ -78,11 +77,7 @@ export function LapTimeEditor({ value, onChange }: LapTimeEditorProps) {
         </Button>
       </div>
 
-      <details
-        className="group rounded-row bg-surface-3 p-3"
-        open={pasteOpen}
-        onToggle={(event) => setPasteOpen(event.currentTarget.open)}
-      >
+      <details className="group rounded-row bg-surface-3 p-3">
         <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium text-ink">
           Paste several laps
         </summary>
