@@ -6,6 +6,18 @@ import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import type { AdviceResponse } from '@/lib/rag/schema';
 import type { Vehicle } from '@/types';
 import { cn } from '@/lib/utils';
+import { useTemperatureInput, useTemperatureUnit } from '@/components/ui/temperature-display';
+import {
+  displayTemperatureBound,
+  temperatureUnitSuffix,
+  toStoredCelsius,
+} from '@/lib/temperature';
+
+// What `app/api/ai/day-plan/route.ts` accepts, in the Celsius it validates in.
+const MIN_AMBIENT_C = -40;
+const MAX_AMBIENT_C = 70;
+const MIN_TRACK_C = -40;
+const MAX_TRACK_C = 95;
 
 interface DayPlanPanelProps {
   vehicles: Vehicle[];
@@ -106,8 +118,14 @@ const demoDayPlanAdvice: AdviceResponse = {
 export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelProps) {
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id ?? '');
   const [trackName, setTrackName] = useState('');
-  const [ambientTemperatureC, setAmbientTemperatureC] = useState('');
-  const [trackTemperatureC, setTrackTemperatureC] = useState('');
+  // Typed in the rider's unit; the route stores and reasons in Celsius.
+  const [ambientTemperature, setAmbientTemperature] = useTemperatureInput();
+  const [trackTemperature, setTrackTemperature] = useTemperatureInput();
+  const temperatureUnit = useTemperatureUnit();
+  const minAmbient = displayTemperatureBound(MIN_AMBIENT_C, temperatureUnit);
+  const maxAmbient = displayTemperatureBound(MAX_AMBIENT_C, temperatureUnit);
+  const minTrack = displayTemperatureBound(MIN_TRACK_C, temperatureUnit);
+  const maxTrack = displayTemperatureBound(MAX_TRACK_C, temperatureUnit);
   const [weatherCondition, setWeatherCondition] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -158,12 +176,25 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
       return;
     }
 
-    const ambient = parseOptionalNumber(ambientTemperatureC);
-    const track = parseOptionalNumber(trackTemperatureC);
-    if (Number.isNaN(ambient) || Number.isNaN(track)) {
+    const ambientTyped = parseOptionalNumber(ambientTemperature);
+    const trackTyped = parseOptionalNumber(trackTemperature);
+    if (Number.isNaN(ambientTyped) || Number.isNaN(trackTyped)) {
       setError('Temperatures must be numbers.');
       return;
     }
+    // The route's bounds, quoted back in the unit the rider typed in - it answers
+    // in Celsius, which reads as nonsense under a field labelled °F.
+    const suffix = temperatureUnitSuffix(temperatureUnit);
+    if (ambientTyped !== undefined && (ambientTyped < minAmbient || ambientTyped > maxAmbient)) {
+      setError(`Ambient temperature must be between ${minAmbient}${suffix} and ${maxAmbient}${suffix}.`);
+      return;
+    }
+    if (trackTyped !== undefined && (trackTyped < minTrack || trackTyped > maxTrack)) {
+      setError(`Track temperature must be between ${minTrack}${suffix} and ${maxTrack}${suffix}.`);
+      return;
+    }
+    const ambient = ambientTyped === undefined ? undefined : toStoredCelsius(ambientTyped, temperatureUnit);
+    const track = trackTyped === undefined ? undefined : toStoredCelsius(trackTyped, temperatureUnit);
 
     setLoading(true);
     try {
@@ -247,26 +278,34 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
             />
           </label>
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-ink">Ambient C</span>
+            <span className="text-sm font-medium text-ink">
+              Ambient {temperatureUnitSuffix(temperatureUnit)}
+            </span>
             <input
-              value={ambientTemperatureC}
-              onChange={(event) => setAmbientTemperatureC(event.target.value)}
+              value={ambientTemperature}
+              onChange={(event) => setAmbientTemperature(event.target.value)}
               type="number"
               inputMode="decimal"
               step="any"
-              placeholder="24"
+              min={minAmbient}
+              max={maxAmbient}
+              placeholder={temperatureUnit === 'f' ? '75' : '24'}
               className="w-full rounded-row bg-surface-2 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             />
           </label>
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-ink">Track C</span>
+            <span className="text-sm font-medium text-ink">
+              Track {temperatureUnitSuffix(temperatureUnit)}
+            </span>
             <input
-              value={trackTemperatureC}
-              onChange={(event) => setTrackTemperatureC(event.target.value)}
+              value={trackTemperature}
+              onChange={(event) => setTrackTemperature(event.target.value)}
               type="number"
               inputMode="decimal"
               step="any"
-              placeholder="36"
+              min={minTrack}
+              max={maxTrack}
+              placeholder={temperatureUnit === 'f' ? '97' : '36'}
               className="w-full rounded-row bg-surface-2 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             />
           </label>

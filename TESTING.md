@@ -30,9 +30,27 @@ NEXT_PUBLIC_STRIPE_FOUNDER_PROMO_CODE=FOUNDER100
 
 `E2E_EMAIL` and `E2E_PASSWORD` are required only for authenticated smoke tests.
 Unauthenticated guard tests run without them.
-`tests/e2e/same-day-session-compare.spec.ts` also needs `SUPABASE_SERVICE_ROLE_KEY`
-alongside the app's `NEXT_PUBLIC_SUPABASE_URL`, because it reads the persisted
-`session_changes` row back instead of trusting the panel; it skips without them.
+Specs that assert what was persisted, or that seed and clean up their own rows,
+also need `SUPABASE_SERVICE_ROLE_KEY` alongside the app's
+`NEXT_PUBLIC_SUPABASE_URL`. They reach the database through
+`tests/e2e/helpers/supabase.ts` rather than trusting what the screen shows, and
+each skips itself with a message naming what it needed the key for, so that
+import is the list.
+All six device projects sign in as that one account, so any row a spec creates
+has to carry a per-run identifier. A fixed track name or sag label lets one
+project's cleanup delete a row another project is still using, and
+`sessions.track_id` is `ON DELETE SET NULL`, so that rewrites the other run's
+data instead of failing it. The identifier has to carry the Playwright *project*
+as well as the worker: `workerIndex` repeats across the six device projects, so
+two of them can otherwise agree on one. Build it with `runResourceId(testInfo)`
+from `tests/e2e/helpers/run-id.ts`, and scope the spec's cleanup to it.
+That account also has to be on the **Pro** tier. These specs create a vehicle, a
+custom track and sessions per run across parallel device projects, and every
+free-plan cap in `lib/plans.ts` sits below what six projects need at once. Each
+one fails a spec for a reason that has nothing to do with what is under test: the
+vehicle and session caps refuse the save outright, and at the track cap
+resolution falls back to a name-only session, so the `track_id` and track-row
+assertions fail.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 ## Install browser runtime

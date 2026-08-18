@@ -333,7 +333,14 @@ export function buildContextFlags(context: BuildContext, currentLapMetrics: LapM
     }
   }
 
-  if (currentSession.tires.condition !== baselineSession.tires.condition) {
+  // Only a difference between two answered conditions is a mismatch: one side
+  // being unrecorded says nothing about the tires, and reading "changed from
+  // null to used" would be worse than saying nothing.
+  if (
+    currentSession.tires.condition &&
+    baselineSession.tires.condition &&
+    currentSession.tires.condition !== baselineSession.tires.condition
+  ) {
     flags.push({
       key: 'tire-condition-mismatch',
       severity: 'warning',

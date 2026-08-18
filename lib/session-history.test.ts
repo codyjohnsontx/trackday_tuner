@@ -56,12 +56,22 @@ describe('session-history helpers', () => {
     expect(summary.timeLabel).toBe('1:15 PM');
     expect(summary.environmentRows).toEqual(
       expect.arrayContaining([
-        { label: 'Ambient', value: '26 C' },
-        { label: 'Track', value: '38 C' },
+        { label: 'Ambient', value: '26°C' },
+        { label: 'Track', value: '38°C' },
       ]),
     );
     expect(summary.tireRows[0]).toEqual({ label: 'Front Tire', value: '31' });
     expect(summary.suspensionRows[0].value).toContain('10');
+  });
+
+  it('shows the stored Celsius readings in the unit the rider reads in', () => {
+    const summary = buildSessionHistorySummary(session(), environment(), 'f');
+    expect(summary.environmentRows).toEqual(
+      expect.arrayContaining([
+        { label: 'Ambient', value: '78.8°F' },
+        { label: 'Track', value: '100.4°F' },
+      ]),
+    );
   });
 
   it('truncates long note previews cleanly', () => {

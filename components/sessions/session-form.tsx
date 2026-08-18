@@ -4,11 +4,26 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { Clock, Copy } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { ChoiceRow } from '@/components/ui/choice-row';
 import { Input } from '@/components/ui/input';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { LapTimeEditor } from '@/components/sessions/lap-time-editor';
+import {
+  EMPTY_LAP_EDITOR_VALUE,
+  commitLapEditorValue,
+  lapEditorValueFrom,
+  type LapEditorValue,
+} from '@/lib/lap-times';
 import { createSession } from '@/lib/actions/sessions';
 import { clearDraft, loadDraft, saveDraft } from '@/lib/drafts';
+import { todayLocalDate } from '@/lib/local-date';
+import {
+  MISSING_CONDITIONS_MESSAGE,
+  SESSION_CONDITION_OPTIONS,
+  TIRE_CONDITION_OPTIONS,
+  isSessionCondition,
+  normalizeTireCondition,
+} from '@/lib/session-answers';
 import { trackProductEvent } from '@/lib/product-events.client';
 import { copyLastSessionSetup } from '@/lib/session-copy';
 import {
@@ -18,6 +33,15 @@ import {
   sanitizeEnabledModules,
   sessionModuleConfigs,
 } from '@/lib/session-modules';
+import { useTemperatureInput, useTemperatureUnit } from '@/components/ui/temperature-display';
+import {
+  convertTemperatureInput,
+  displayTemperatureBound,
+  readTemperatureUnit,
+  temperatureUnitSuffix,
+  toStoredCelsius,
+  type TemperatureUnit,
+} from '@/lib/temperature';
 import { cn } from '@/lib/utils';
 import type {
   Alignment,
@@ -42,7 +66,6 @@ interface SessionFormProps {
   latestSessionsByVehicle?: Record<string, Session>;
 }
 
-const today = new Date().toISOString().split('T')[0];
 const sessionDraftKey = 'session_form_new';
 
 const emptyTireEnd = { brand: '', compound: '', pressure: '' };
@@ -83,13 +106,23 @@ interface SessionDraft {
   date: string;
   startTime: string;
   sessionNumber: string;
-  conditions: SessionCondition;
-  ambientTemperatureC: string;
-  trackTemperatureC: string;
+  conditions: SessionCondition | null;
+  /** As typed, in `temperatureUnit`. Older drafts have no unit and were Celsius. */
+  ambientTemperature?: string;
+  trackTemperature?: string;
+  temperatureUnit?: TemperatureUnit;
+  /**
+   * What drafts saved before the unit preference existed called the same two
+   * fields. They were always Celsius. Read so that a rider who upgrades holding
+   * a draft keeps the temperatures they typed instead of silently losing them to
+   * the save effect that runs straight after this restore.
+   */
+  ambientTemperatureC?: string;
+  trackTemperatureC?: string;
   humidityPercent: string;
   weatherCondition: string;
   surfaceCondition: string;
-  tireCondition: TireCondition;
+  tireCondition: TireCondition | null;
   frontTire: typeof emptyTireEnd;
   rearTire: typeof emptyTireEnd;
   suspensionDirection: SuspensionDirection;
@@ -102,7 +135,9 @@ interface SessionDraft {
   drivetrain: typeof emptyDrivetrain;
   aero: typeof emptyAero;
   notes: string;
-  laps: CreateSessionLapInput[];
+  /** Absent on drafts saved before the editor started carrying its entry boxes. */
+  lapEditor?: LapEditorValue;
+  laps?: CreateSessionLapInput[];
 }
 
 function ModuleHeader({
@@ -149,16 +184,22 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const [trackQuery, setTrackQuery] = useState('');
   const [trackId, setTrackId] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [date, setDate] = useState(today);
+  // Seeded on mount rather than at render, because the rider's calendar day is
+  // only knowable in their browser: SSR would stamp the server's day (UTC in
+  // production) into the markup and hydrate over it. See lib/local-date.ts.
+  const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [sessionNumber, setSessionNumber] = useState('');
-  const [conditions, setConditions] = useState<SessionCondition>('sunny');
-  const [ambientTemperatureC, setAmbientTemperatureC] = useState('');
-  const [trackTemperatureC, setTrackTemperatureC] = useState('');
+  // Weather and tire condition start unanswered. Seeding them with a default
+  // filed a claim the rider never made - see lib/session-answers.ts.
+  const [conditions, setConditions] = useState<SessionCondition | null>(null);
+  // Held as the rider typed it, in their unit; converted to Celsius on save.
+  const [ambientTemperature, setAmbientTemperature] = useTemperatureInput();
+  const [trackTemperature, setTrackTemperature] = useTemperatureInput();
   const [humidityPercent, setHumidityPercent] = useState('');
   const [weatherCondition, setWeatherCondition] = useState('');
   const [surfaceCondition, setSurfaceCondition] = useState('');
-  const [tireCondition, setTireCondition] = useState<TireCondition>('scrubbed');
+  const [tireCondition, setTireCondition] = useState<TireCondition | null>(null);
   const [frontTire, setFrontTire] = useState(emptyTireEnd);
   const [rearTire, setRearTire] = useState(emptyTireEnd);
   const [suspensionDirection, setSuspensionDirection] = useState<SuspensionDirection>('out');
@@ -175,10 +216,10 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const [drivetrain, setDrivetrain] = useState(emptyDrivetrain);
   const [aero, setAero] = useState(emptyAero);
   const [notes, setNotes] = useState('');
-  const [laps, setLaps] = useState<CreateSessionLapInput[]>([]);
-  const [lapValidationMessage, setLapValidationMessage] = useState('');
+  const [lapEditorValue, setLapEditorValue] = useState<LapEditorValue>(EMPTY_LAP_EDITOR_VALUE);
   const [errorMessage, setErrorMessage] = useState('');
   const [draftMessage, setDraftMessage] = useState('');
+  const temperatureUnit = useTemperatureUnit();
 
   const selectedVehicle = useMemo(
     () => vehicles.find((vehicle) => vehicle.id === vehicleId) ?? null,
@@ -213,6 +254,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   useEffect(() => {
     const draft = loadDraft<SessionDraft>(sessionDraftKey);
     if (!draft) {
+      setDate(todayLocalDate());
       hydratedRef.current = true;
       return;
     }
@@ -223,16 +265,24 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setVehicleId(draft.vehicleId ?? '');
     setTrackQuery(draft.trackQuery ?? '');
     setTrackId(draft.trackId ?? null);
-    setDate(draft.date ?? today);
+    setDate(draft.date || todayLocalDate());
     setStartTime(draft.startTime ?? '');
     setSessionNumber(draft.sessionNumber ?? '');
-    setConditions(draft.conditions ?? 'sunny');
-    setAmbientTemperatureC(draft.ambientTemperatureC ?? '');
-    setTrackTemperatureC(draft.trackTemperatureC ?? '');
+    setConditions(isSessionCondition(draft.conditions) ? draft.conditions : null);
+    // A draft typed in one unit, reopened under another, is re-expressed rather
+    // than reread as if the number had always meant the current unit.
+    // Read from storage rather than from the hook: the hook's own effect has not
+    // committed its state by the time this one runs, so it still reads Celsius.
+    const draftUnit = draft.temperatureUnit ?? 'c';
+    const currentUnit = readTemperatureUnit();
+    const ambientText = draft.ambientTemperature ?? draft.ambientTemperatureC ?? '';
+    const trackText = draft.trackTemperature ?? draft.trackTemperatureC ?? '';
+    setAmbientTemperature(convertTemperatureInput(ambientText, draftUnit, currentUnit));
+    setTrackTemperature(convertTemperatureInput(trackText, draftUnit, currentUnit));
     setHumidityPercent(draft.humidityPercent ?? '');
     setWeatherCondition(draft.weatherCondition ?? '');
     setSurfaceCondition(draft.surfaceCondition ?? '');
-    setTireCondition(draft.tireCondition ?? 'scrubbed');
+    setTireCondition(normalizeTireCondition(draft.tireCondition));
     setFrontTire(draft.frontTire ?? emptyTireEnd);
     setRearTire(draft.rearTire ?? emptyTireEnd);
     setSuspensionDirection(draft.suspensionDirection ?? 'out');
@@ -245,10 +295,10 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setDrivetrain(draft.drivetrain ?? emptyDrivetrain);
     setAero(draft.aero ?? emptyAero);
     setNotes(draft.notes ?? '');
-    setLaps(draft.laps ?? []);
+    setLapEditorValue(draft.lapEditor ?? lapEditorValueFrom(draft.laps ?? []));
     setDraftMessage('Draft restored from this device.');
     hydratedRef.current = true;
-  }, [initialVehicleType, vehicles]);
+  }, [initialVehicleType, vehicles, setAmbientTemperature, setTrackTemperature]);
 
   useEffect(() => {
     if (!hydratedRef.current) return;
@@ -260,8 +310,9 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       startTime,
       sessionNumber,
       conditions,
-      ambientTemperatureC,
-      trackTemperatureC,
+      ambientTemperature,
+      trackTemperature,
+      temperatureUnit,
       humidityPercent,
       weatherCondition,
       surfaceCondition,
@@ -278,7 +329,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       drivetrain,
       aero,
       notes,
-      laps,
+      lapEditor: lapEditorValue,
     });
   }, [
     vehicleId,
@@ -288,8 +339,9 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     startTime,
     sessionNumber,
     conditions,
-    ambientTemperatureC,
-    trackTemperatureC,
+    ambientTemperature,
+    trackTemperature,
+    temperatureUnit,
     humidityPercent,
     weatherCondition,
     surfaceCondition,
@@ -306,7 +358,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     drivetrain,
     aero,
     notes,
-    laps,
+    lapEditorValue,
   ]);
 
   useEffect(() => {
@@ -351,7 +403,6 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     const copied = copyLastSessionSetup(latestSessionForVehicle, selectedVehicleType);
     setTrackId(copied.trackId);
     setTrackQuery(copied.trackQuery);
-    setConditions(copied.conditions);
     setTireCondition(copied.tireCondition);
     setFrontTire(copied.frontTire);
     setRearTire(copied.rearTire);
@@ -363,7 +414,9 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setGeometry(copied.geometry);
     setDrivetrain(copied.drivetrain);
     setAero(copied.aero);
-    setDraftMessage('Last setup copied. Date, time, session number, environment, and notes were left unchanged.');
+    setDraftMessage(
+      'Last setup copied. Weather was not carried over, and date, time, session number, environment, and notes were left unchanged.',
+    );
   }
 
   function parseOptionalNumber(label: string, value: string, min: number, max: number): number | null {
@@ -374,6 +427,27 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       throw new Error(`${label} must be between ${min} and ${max}.`);
     }
     return parsed;
+  }
+
+  /**
+   * A temperature the rider typed in their unit, as the Celsius value stored.
+   * The bounds are the column's, quoted back in the unit they typed in.
+   */
+  function parseTemperature(
+    label: string,
+    value: string,
+    minCelsius: number,
+    maxCelsius: number,
+  ): number | null {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    const min = displayTemperatureBound(minCelsius, temperatureUnit);
+    const max = displayTemperatureBound(maxCelsius, temperatureUnit);
+    if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+      throw new Error(`${label} must be between ${min} and ${max}${temperatureUnitSuffix(temperatureUnit)}.`);
+    }
+    return toStoredCelsius(parsed, temperatureUnit);
   }
 
   function toggleModule(module: ModuleToggleKey) {
@@ -422,10 +496,22 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       return;
     }
 
-    if (lapValidationMessage) {
-      setErrorMessage('Resolve the lap-time parsing message before saving.');
+    // `sessions.conditions` is NOT NULL and every read surface treats it as
+    // something the rider said, so an unanswered weather row blocks the save
+    // rather than being filled in for them.
+    if (!conditions) {
+      setErrorMessage(MISSING_CONDITIONS_MESSAGE);
       return;
     }
+
+    // Text still sitting in the lap editor's entry boxes is part of what the
+    // rider is saving, so it is folded in here rather than dropped.
+    const committedLaps = commitLapEditorValue(lapEditorValue);
+    if (!committedLaps.ok) {
+      setErrorMessage(committedLaps.error);
+      return;
+    }
+    const laps = committedLaps.laps;
 
     const parsedSessionNumber = sessionNumber.trim() ? Number(sessionNumber.trim()) : null;
     if (
@@ -440,8 +526,10 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     let parsedTrackTemperature: number | null;
     let parsedHumidity: number | null;
     try {
-      parsedAmbientTemperature = parseOptionalNumber('Ambient temperature', ambientTemperatureC, -40, 70);
-      parsedTrackTemperature = parseOptionalNumber('Track temperature', trackTemperatureC, -40, 95);
+      // Bounds are Celsius in the database and quoted in the rider's unit, so 88 F
+      // is inside the range that used to reject it for being above 70.
+      parsedAmbientTemperature = parseTemperature('Ambient temperature', ambientTemperature, -40, 70);
+      parsedTrackTemperature = parseTemperature('Track temperature', trackTemperature, -40, 95);
       parsedHumidity = parseOptionalNumber('Humidity', humidityPercent, 0, 100);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Invalid environment value.');
@@ -530,20 +618,6 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       }, 700);
     });
   }
-
-  const conditionOptions: { value: SessionCondition; label: string }[] = [
-    { value: 'sunny', label: 'Sunny' },
-    { value: 'overcast', label: 'Overcast' },
-    { value: 'rainy', label: 'Rainy' },
-    { value: 'mixed', label: 'Mixed' },
-  ];
-
-  const tireConditionOptions: { value: TireCondition; label: string }[] = [
-    { value: 'new', label: 'New' },
-    { value: 'scrubbed', label: 'Scrubbed' },
-    { value: 'used', label: 'Used' },
-    { value: 'worn', label: 'Worn' },
-  ];
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
@@ -645,37 +719,30 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
 
       <div className="space-y-3 rounded-card bg-surface p-4">
         <span className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Conditions</span>
-        <div className="grid grid-cols-4 gap-2 rounded-row bg-surface-2 p-1">
-          {conditionOptions.map((option) => (
-            <Button
-              key={option.value}
-              type="button"
-              variant={conditions === option.value ? 'primary' : 'secondary'}
-              className="min-h-11 px-1 text-xs"
-              onClick={() => setConditions(option.value)}
-            >
-              {option.label}
-            </Button>
-          ))}
-        </div>
+        <ChoiceRow
+          label="Weather"
+          options={SESSION_CONDITION_OPTIONS}
+          value={conditions}
+          onChange={setConditions}
+        />
         <div className="grid gap-3 sm:grid-cols-3">
           <Input
-            label="Ambient Temp (C)"
+            label={`Ambient Temp (${temperatureUnitSuffix(temperatureUnit)})`}
             type="number"
             inputMode="decimal"
             step="any"
-            placeholder="24"
-            value={ambientTemperatureC}
-            onChange={(event) => setAmbientTemperatureC(event.target.value)}
+            placeholder={temperatureUnit === 'f' ? '75' : '24'}
+            value={ambientTemperature}
+            onChange={(event) => setAmbientTemperature(event.target.value)}
           />
           <Input
-            label="Track Temp (C)"
+            label={`Track Temp (${temperatureUnitSuffix(temperatureUnit)})`}
             type="number"
             inputMode="decimal"
             step="any"
-            placeholder="36"
-            value={trackTemperatureC}
-            onChange={(event) => setTrackTemperatureC(event.target.value)}
+            placeholder={temperatureUnit === 'f' ? '97' : '36'}
+            value={trackTemperature}
+            onChange={(event) => setTrackTemperature(event.target.value)}
           />
           <Input
             label="Humidity (%)"
@@ -736,19 +803,13 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
 
           <div className="space-y-2">
             <span className="text-xs font-medium text-ink-dim">Condition</span>
-            <div className="grid grid-cols-4 gap-2 rounded-row bg-surface-2 p-1">
-              {tireConditionOptions.map((option) => (
-                <Button
-                  key={option.value}
-                  type="button"
-                  variant={tireCondition === option.value ? 'primary' : 'secondary'}
-                  className="min-h-11 px-1 text-xs"
-                  onClick={() => setTireCondition(option.value)}
-                >
-                  {option.label}
-                </Button>
-              ))}
-            </div>
+            <ChoiceRow
+              label="Tire condition"
+              options={TIRE_CONDITION_OPTIONS}
+              value={tireCondition}
+              onChange={setTireCondition}
+              clearable
+            />
           </div>
 
           <Button
@@ -967,11 +1028,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
         </div>
       ) : null}
 
-      <LapTimeEditor
-        value={laps}
-        onChange={setLaps}
-        onValidationChange={setLapValidationMessage}
-      />
+      <LapTimeEditor value={lapEditorValue} onChange={setLapEditorValue} />
 
       <div className="space-y-2 rounded-card bg-surface p-4">
         <label htmlFor="session-notes" className="block text-xs font-semibold uppercase tracking-wider text-ink-faint">

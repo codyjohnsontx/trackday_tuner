@@ -342,6 +342,67 @@ e2e suite asserts a rendered colour.
   sites once hand-rolled the raw filter and all three went blind to same-day
   sessions logged without a start time
 
+## What a Rider Told You
+
+Three of this app's stored fields are answers, and a default is not one. The
+session form's weather and tire-condition rows and the outcome panel's verdict
+all once opened with an option pressed, so a rider who scrolled past filed a
+claim into the setup diff, the prompts and the recommendation learning record.
+`lib/session-answers.ts` holds the rule and `ChoiceRow`
+(`components/ui/choice-row.tsx`) renders a row where `null` is a value. Which of
+the three blocks a save follows the column: `sessions.conditions` and
+`session_feedback.outcome` are NOT NULL so they are required, and
+`tires.condition` is inside JSON so it stores null.
+
+The same shape applies to anything derived rather than given:
+
+- **Dates** come from `todayLocalDate` (`lib/local-date.ts`), never
+  `toISOString()`, which is UTC and hands an evening rider west of Greenwich
+  tomorrow's date. The rider's calendar day is only knowable in their browser, so
+  it is seeded on mount rather than during SSR
+- **Lap times** live in a `LapEditorValue` (`lib/lap-times.ts`) that carries the
+  editor's entry boxes alongside the list. A save has to run
+  `commitLapEditorValue` to get a lap array at all, because text a rider typed
+  but never pressed "Add" on used to be dropped silently
+- **Track names** are resolved server-side by `resolveSessionTrack` in
+  `lib/actions/sessions.ts`, using `lib/session-track.ts` to fold case, spacing
+  and accent composition. A supplied `track_id` is looked up in the same
+  seeded-or-own scope the picker offers rather than trusted, and the row's own
+  name wins over what was typed, so a session cannot store an id and a name that
+  point at different circuits. Creating a row for a name that matches none is
+  best effort: at the free-plan track cap, on an insert error, or when the name
+  lookup could not answer - it failed, or filled `TRACK_NAME_MATCH_LIMIT` and so
+  proves nothing - the session still saves with the name alone, and a row this
+  code did create is deleted again when the session it was written for does not
+  survive
+
+## Units
+
+Temperature is stored in Celsius in every column, prompt and export.
+`lib/temperature.ts` is the only place it becomes a number a rider reads or
+types, and their unit is a device preference (localStorage, like the 12h/24h
+clock) read through `useTemperatureUnit` (`components/ui/temperature-display.tsx`).
+Text a rider is still typing belongs in `useTemperatureInput` from that same file,
+which re-expresses it when the unit changes and knows the preference arriving from
+storage on mount is not a change. Convert at the edge; never widen a stored column.
+
+The session comparison page is the exception and still prints Celsius: its rows
+and context-flag strings are built server-side in `lib/session-compare.ts`, where
+a localStorage preference cannot be read.
+
+## What the Test Suites Cover
+
+`vitest.config.ts` collects `app/**`, `lib/**` and `tests/unit/**` only, and the
+project has no React testing library, so **no component renders in the unit
+suite**. Logic that needs a regression test belongs in `lib/`; behaviour that only
+exists on screen (a row opening unpressed, a save refusing, a confirm appearing)
+belongs in `tests/e2e/`.
+
+`npm run test:e2e` **skips itself in CI** unless `RUN_E2E=1`, so an e2e spec is
+evidence a change works, not a gate that will catch its regression. Run the specs
+locally against a Supabase stack - `TESTING.md` owns the environment they need -
+and watch each new one fail before it passes.
+
 ## Current AI Status
 
 AI routes are active for tuning advice, recommendation feedback, and day planning.

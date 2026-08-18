@@ -46,7 +46,6 @@ describe('copyLastSessionSetup', () => {
 
     expect(copied.trackId).toBe('track-1');
     expect(copied.trackQuery).toBe('Road America');
-    expect(copied.conditions).toBe('overcast');
     expect(copied.frontTire.pressure).toBe('31');
     expect(copied.rearSusp.rebound).toBe('10');
     expect(copied.geometry.sag_front).toBe('35');
@@ -55,5 +54,16 @@ describe('copyLastSessionSetup', () => {
     expect(copied).not.toHaveProperty('startTime');
     expect(copied).not.toHaveProperty('sessionNumber');
     expect(copied).not.toHaveProperty('notes');
+  });
+
+  it('leaves the weather for the rider to answer about the session they just rode', () => {
+    const copied = copyLastSessionSetup(previous, 'motorcycle');
+
+    // Weather is an observation of the day rather than a setting, so carrying it
+    // over would pre-press the row and file a claim about conditions nobody has
+    // looked at yet.
+    expect(copied).not.toHaveProperty('conditions');
+    // The tire condition is part of the setup, and does come over.
+    expect(copied.tireCondition).toBe('used');
   });
 });
