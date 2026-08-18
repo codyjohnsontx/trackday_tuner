@@ -55,6 +55,8 @@ and table_name = 'profiles'
 and column_name not in ('id', 'tier')
 and is_nullable = 'NO'
 and column_default is null
+and is_identity = 'NO'
+and is_generated = 'NEVER'
 order by ordinal_position;
 ```
 
@@ -62,6 +64,18 @@ The expected result is zero rows. Any row it returns is a column the trigger's
 insert never sets and the table will not default, so applying the migration would
 make **every** signup fail - including the invite route, which is the only live
 path today. That is the whole reason this check exists.
+
+The last two conditions are not padding, and each was watched mattering rather
+than reasoned about. An identity column reports `column_default` as null even
+though the server supplies its value from an implicit sequence, and a generated
+column declared `not null` reports null there too because it is computed rather
+than defaulted. An unqualified generated column is already excluded, since
+`information_schema` reports it nullable. Drop either condition and a table
+carrying such a column comes back non-empty, while with both in place it still
+takes the trigger's `insert into public.profiles (id, tier)` exactly as written.
+A check whose documented answer is "zero rows, otherwise stop and escalate" has
+to be right in both directions: a false row here halts a deployment that would
+have been fine.
 
 Second, the check constraint on `tier` no longer admitting `'free'`:
 
