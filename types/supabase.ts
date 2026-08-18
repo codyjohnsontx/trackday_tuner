@@ -39,7 +39,12 @@ export type TireEnd = {
 export type Tires = {
   front: TireEnd;
   rear: TireEnd;
-  condition: TireCondition;
+  /**
+   * Null when the rider never answered the condition row. The form used to open
+   * with "Scrubbed" pressed, so this was a claim nobody made - see
+   * lib/session-answers.ts. Readers render it as unrecorded rather than guessing.
+   */
+  condition: TireCondition | null;
 };
 export type Suspension = {
   front: SuspensionEnd;

@@ -6,6 +6,7 @@ import { useId, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { DataPlate } from '@/components/ui/condition';
 import { Eyebrow } from '@/components/ui/surface';
+import { useTemperatureUnit } from '@/components/ui/temperature-display';
 import { buildSessionHistorySummary } from '@/lib/session-history';
 import { cn } from '@/lib/utils';
 import type { Session, SessionEnvironment } from '@/types';
@@ -30,13 +31,14 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 }
 
 export function SessionHistoryList({ items }: SessionHistoryListProps) {
+  const temperatureUnit = useTemperatureUnit();
   const [openSessionId, setOpenSessionId] = useState<string | null>(null);
   const listId = useId();
 
   return (
     <ul className="space-y-3">
       {items.map(({ session, vehicleNickname, environment }) => {
-        const summary = buildSessionHistorySummary(session, environment);
+        const summary = buildSessionHistorySummary(session, environment, temperatureUnit);
         const isOpen = openSessionId === session.id;
         const contentId = `${listId}-${session.id}`;
 

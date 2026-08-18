@@ -3,6 +3,7 @@ import {
   UpgradeToProButton,
 } from '@/components/billing/billing-buttons';
 import { DemoBanner } from '@/components/demo/demo-banner';
+import { TemperatureUnitSettings } from '@/components/settings/temperature-unit-settings';
 import { TimeFormatSettings } from '@/components/settings/time-format-settings';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { isDemoMode } from '@/lib/demo/mode';
@@ -68,6 +69,7 @@ export default async function SettingsPage() {
       )}
 
       <TimeFormatSettings />
+      <TemperatureUnitSettings />
     </div>
   );
 }

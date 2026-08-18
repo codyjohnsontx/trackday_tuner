@@ -1,6 +1,8 @@
+import type { ReactNode } from 'react';
 import { ChartNoAxesColumn } from 'lucide-react';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { CardGroup, Eyebrow } from '@/components/ui/surface';
+import { TemperatureDisplay } from '@/components/ui/temperature-display';
 import type { SessionAnalyticsSummary } from '@/lib/session-export';
 
 interface SessionAnalyticsPanelProps {
@@ -8,7 +10,7 @@ interface SessionAnalyticsPanelProps {
   tier: 'free' | 'pro';
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="rounded-row bg-surface-2 p-4">
       <Eyebrow>{label}</Eyebrow>
@@ -69,9 +71,14 @@ export function SessionAnalyticsPanel({ analytics, tier }: SessionAnalyticsPanel
           <Stat
             label="Avg track"
             value={
-              analytics.environmentSnapshots.averageTrackTemperatureC === null
-                ? '--'
-                : `${analytics.environmentSnapshots.averageTrackTemperatureC} C`
+              analytics.environmentSnapshots.averageTrackTemperatureC === null ? (
+                '--'
+              ) : (
+                <TemperatureDisplay
+                  celsius={analytics.environmentSnapshots.averageTrackTemperatureC}
+                  className="text-xl font-semibold"
+                />
+              )
             }
           />
         </div>

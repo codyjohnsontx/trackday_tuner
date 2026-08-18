@@ -2,18 +2,26 @@ import { sanitizeEnabledModules } from '@/lib/session-modules';
 import type {
   Alignment,
   Session,
-  SessionCondition,
   SessionEnabledModules,
   SuspensionDirection,
   TireCondition,
   VehicleType,
 } from '@/types';
 
+/**
+ * The setup carried into a new session, which is the machine and not the day.
+ *
+ * Weather is deliberately absent. It is an observation of the session being
+ * logged rather than a setting the rider dialled in, so copying the last one
+ * would file a claim about conditions nobody has looked at yet - the same
+ * fabricated answer a pre-pressed default used to produce. The row stays
+ * unanswered and `createSession` asks for it. Tire condition is part of the
+ * setup and does come over.
+ */
 export interface CopiedSessionSetup {
   trackId: string | null;
   trackQuery: string;
-  conditions: SessionCondition;
-  tireCondition: TireCondition;
+  tireCondition: TireCondition | null;
   frontTire: { brand: string; compound: string; pressure: string };
   rearTire: { brand: string; compound: string; pressure: string };
   suspensionDirection: SuspensionDirection;
@@ -60,7 +68,6 @@ export function copyLastSessionSetup(session: Session, vehicleType: VehicleType)
   return {
     trackId: session.track_id,
     trackQuery: session.track_name ?? '',
-    conditions: session.conditions,
     tireCondition: session.tires.condition,
     frontTire: { ...session.tires.front },
     rearTire: { ...session.tires.rear },

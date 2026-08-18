@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { getRealUser } from '@/lib/auth';
 import {
   getDemoComparableSessions,
@@ -26,6 +26,14 @@ import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
 import { validateLaps } from '@/lib/lap-times';
+import { MISSING_CONDITIONS_MESSAGE, isSessionCondition } from '@/lib/session-answers';
+import {
+  TRACK_NAME_MATCH_LIMIT,
+  findSavedTrackByName,
+  normalizeTrackName,
+  trackNameExactPattern,
+  trackNameSearchPattern,
+} from '@/lib/session-track';
 import {
   baselineReferenceLabel,
   baselineToComparableSession,
@@ -75,6 +83,77 @@ async function persistSessionLaps(params: {
     p_laps: params.laps as unknown as Json,
   });
   return error?.message ?? null;
+}
+
+/**
+ * Undo the track row `resolveSessionTrack` wrote, when the session it was written
+ * for does not survive.
+ *
+ * The track is inserted before the session so the session can link to it, so
+ * every failure path after that point would otherwise leave a circuit in the
+ * rider's tracks list for a session that was never saved - and burn one of a free
+ * rider's three custom-track slots. Only a row this call created is removed;
+ * anything matched or picked was already theirs.
+ */
+async function rollbackAutoCreatedTrack(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  track: ResolvedSessionTrack,
+): Promise<void> {
+  if (!track.createdTrack || !track.trackId) return;
+
+  const { error } = await supabase
+    .from('tracks')
+    .delete()
+    .eq('id', track.trackId)
+    .eq('created_by', userId)
+    .eq('is_seeded', false);
+
+  if (error) {
+    console.error('[sessions] auto-created track rollback failed', {
+      userId,
+      trackId: track.trackId,
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * Undo a session row that did not survive the writes that follow it.
+ *
+ * The auto-created track only goes with it when the session row actually went.
+ * `sessions.track_id` is `on delete set null`, so deleting the track from under a
+ * session the delete left behind strips the circuit off a row the rider still
+ * has - silently, and on a save this action already reported as failed. A stray
+ * track is the lesser of the two, so a refused delete keeps it.
+ */
+async function rollbackCreatedSession(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  userId: string;
+  sessionId: string;
+  track: ResolvedSessionTrack;
+  failureLog: string;
+}): Promise<void> {
+  const { data, error } = await params.supabase
+    .from('sessions')
+    .delete()
+    .eq('id', params.sessionId)
+    .eq('user_id', params.userId)
+    .select('id');
+
+  // RLS turns a row this delete may not touch into zero rows deleted rather than
+  // an error, so silence is not proof the session went - and the track may only
+  // follow a session that did. See deleteSagEntry in lib/actions/sag.ts.
+  if (error || !data || data.length === 0) {
+    console.error(params.failureLog, {
+      userId: params.userId,
+      sessionId: params.sessionId,
+      error: error?.message ?? 'no rows deleted',
+    });
+    return;
+  }
+
+  await rollbackAutoCreatedTrack(params.supabase, params.userId, params.track);
 }
 
 export async function getSessions(vehicleId?: string, limit?: number): Promise<Session[]> {
@@ -302,6 +381,194 @@ export async function getSessionLaps(sessionId: string): Promise<SessionLap[]> {
   return (data ?? []) as SessionLap[];
 }
 
+/** Which track row a session belongs to, and the name stored alongside it. */
+interface ResolvedSessionTrack {
+  trackId: string | null;
+  trackName: string | null;
+  /** A new `tracks` row was written, so the tracks list changed. */
+  createdTrack: boolean;
+}
+
+/**
+ * The tracks a rider can reach: the seeded ones plus their own, which is the list
+ * the form's picker offers. Written once because the id lookup and the typed-name
+ * search have to ask for the same set - an id resolving in a scope the name search
+ * does not use is exactly the id/name divergence `resolveSessionTrack` closes.
+ */
+function visibleTracksFilter(userId: string): string {
+  return `is_seeded.eq.true,created_by.eq.${userId}`;
+}
+
+/**
+ * What a name lookup found, including the case where it cannot say.
+ *
+ * `unproven` is the one that matters. A read that failed, and a read that came
+ * back full, both leave the question open - and the caller's next move on an open
+ * question must not be the insert, because a circuit the rider already has would
+ * get a second row and spend one of a free rider's three slots.
+ */
+type VisibleTrackLookup =
+  | { status: 'found'; track: { id: string; name: string } }
+  | { status: 'absent' }
+  | { status: 'unproven'; log: string; detail: Record<string, unknown> };
+
+/**
+ * The saved track a typed name means, looked for in the database rather than read
+ * whole and folded here.
+ *
+ * Two queries, narrowest first. The exact pattern answers a rider retyping a
+ * circuit they have logged before and cannot be widened by how the name is
+ * spelled, so the ordinary case never depends on the bound at all. Only when that
+ * misses does the wildcard pattern go looking for the spellings the fold accepts
+ * but `like` does not - doubled spacing, a decomposed accent, a stored row that
+ * was never trimmed - and that pattern can be broad enough to match a great many
+ * rows.
+ *
+ * Which is why reaching the limit is `unproven` and not `absent`. The rows come
+ * back ordered so the same request cannot answer differently twice, and
+ * `findSavedTrackByName` still decides on whatever came back.
+ */
+async function findVisibleTrackByName(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  typed: string,
+): Promise<VisibleTrackLookup> {
+  const exact = trackNameExactPattern(typed);
+  const wildcard = trackNameSearchPattern(typed);
+  const patterns = wildcard === exact ? [exact] : [exact, wildcard];
+
+  for (const pattern of patterns) {
+    const { data, error } = await supabase
+      .from('tracks')
+      .select('id, name')
+      .or(visibleTracksFilter(userId))
+      .ilike('name', pattern)
+      .order('name', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(TRACK_NAME_MATCH_LIMIT);
+
+    if (error) {
+      return {
+        status: 'unproven',
+        log: '[sessions] visible tracks lookup failed',
+        detail: { userId, error: error.message },
+      };
+    }
+
+    const rows = (data ?? []) as { id: string; name: string }[];
+    const matched = findSavedTrackByName(typed, rows);
+    if (matched) return { status: 'found', track: matched };
+
+    if (rows.length >= TRACK_NAME_MATCH_LIMIT) {
+      return {
+        status: 'unproven',
+        log: '[sessions] visible tracks lookup truncated',
+        detail: { userId, trackName: typed, pattern, limit: TRACK_NAME_MATCH_LIMIT },
+      };
+    }
+  }
+
+  return { status: 'absent' };
+}
+
+/**
+ * The circuit a session names, resolved to a track row.
+ *
+ * A name the rider typed is matched against the tracks they can already see, and
+ * saved as a track of their own when it matches none - otherwise `track_id` stays
+ * null forever and the session is missing from /tracks, from the track page, and
+ * from anything that groups by track id. See lib/session-track.ts.
+ *
+ * Creating the row is never allowed to fail the save. A free rider already at
+ * their custom-track limit, or an insert that errors, falls back to the name-only
+ * session this app has always stored, which every read surface still matches by
+ * name.
+ */
+async function resolveSessionTrack(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  hasProAccess: boolean,
+  trackId: string | null,
+  trackName: string | null,
+): Promise<ResolvedSessionTrack> {
+  const typed = normalizeTrackName(trackName);
+
+  if (trackId) {
+    // The id is resolved rather than trusted. A `track_id` the rider cannot see
+    // still satisfies the foreign key, and storing the typed name beside it
+    // would persist a session whose id and name name different circuits. The
+    // row's own name is the canonical one, so it wins over what was typed.
+    const { data, error } = await supabase
+      .from('tracks')
+      .select('id, name')
+      .eq('id', trackId)
+      .or(visibleTracksFilter(userId))
+      .maybeSingle();
+
+    if (error) {
+      // A failed query is not an invisible row. Falling through here would
+      // create a second row for a circuit the rider already has and spend one of
+      // their custom-track slots on it, so the id they picked is kept instead.
+      console.error('[sessions] track lookup failed', { userId, trackId, error: error.message });
+      return { trackId, trackName: typed, createdTrack: false };
+    }
+
+    const resolvedName = normalizeTrackName((data as { name?: string } | null)?.name);
+    if (data && resolvedName) return { trackId, trackName: resolvedName, createdTrack: false };
+    // Unreachable or unknown id: fall through and resolve the typed name instead
+    // of saving a link the rider cannot follow.
+  }
+
+  if (!typed) return { trackId: null, trackName: null, createdTrack: false };
+
+  // A name typed out in full lands on the row it names rather than beside it.
+  const lookup = await findVisibleTrackByName(supabase, userId, typed);
+
+  if (lookup.status === 'unproven') {
+    // An answer the lookup could not give is not the answer "no such circuit". A
+    // failed select and a truncated one both look exactly like a track the rider
+    // has never logged, and creating one would duplicate a track they already
+    // have. The session still saves under the typed name, which every read
+    // surface still matches - a missing link is recoverable and a second row on a
+    // three-slot plan is not.
+    console.error(lookup.log, lookup.detail);
+    return { trackId: null, trackName: typed, createdTrack: false };
+  }
+
+  if (lookup.status === 'found') {
+    return { trackId: lookup.track.id, trackName: lookup.track.name, createdTrack: false };
+  }
+
+  if (!hasProAccess) {
+    const { count } = await supabase
+      .from('tracks')
+      .select('id', { count: 'exact', head: true })
+      .eq('created_by', userId)
+      .eq('is_seeded', false);
+
+    if ((count ?? 0) >= getFreePlanLimit('tracks')) {
+      return { trackId: null, trackName: typed, createdTrack: false };
+    }
+  }
+
+  const { data: created, error } = await supabase
+    .from('tracks')
+    .insert({ name: typed, location: null, is_seeded: false, created_by: userId })
+    .select('id, name')
+    .single();
+
+  if (error || !created) {
+    console.error('[sessions] track auto-save failed', {
+      userId,
+      trackName: typed,
+      error: error?.message ?? 'no row returned',
+    });
+    return { trackId: null, trackName: typed, createdTrack: false };
+  }
+
+  return { trackId: created.id, trackName: created.name, createdTrack: true };
+}
+
 export async function createSession(
   input: CreateSessionInput,
 ): Promise<ActionResult<Session>> {
@@ -316,8 +583,14 @@ export async function createSession(
   const lapValidationError = validateLaps(input.laps ?? []);
   if (lapValidationError) return { ok: false, error: lapValidationError };
 
+  // The same rule the form checks. `sessions.conditions` is NOT NULL, so a
+  // session with no weather answer has to be refused here rather than saved
+  // with whatever the form happened to open with. See lib/session-answers.ts.
+  if (!isSessionCondition(input.conditions)) return { ok: false, error: MISSING_CONDITIONS_MESSAGE };
+
   const profile = await getUserProfile();
-  if (!resolveUserAccess(profile).hasProAccess) {
+  const hasProAccess = resolveUserAccess(profile).hasProAccess;
+  if (!hasProAccess) {
     const { count } = await supabase
       .from('sessions')
       .select('id', { count: 'exact', head: true })
@@ -331,22 +604,13 @@ export async function createSession(
     }
   }
 
-  // Denormalize track name if track_id is set but track_name was not provided
-  let trackName = input.track_name;
-  if (input.track_id && !trackName) {
-    const { data: trackData } = await supabase
-      .from('tracks')
-      .select('name')
-      .eq('id', input.track_id)
-      .single();
-    trackName = trackData?.name ?? null;
-  }
+  const track = await resolveSessionTrack(supabase, user.id, hasProAccess, input.track_id, input.track_name);
 
   const payload: TableInsert<'sessions'> = {
     user_id: user.id,
     vehicle_id: input.vehicle_id,
-    track_id: input.track_id,
-    track_name: trackName,
+    track_id: track.trackId,
+    track_name: track.trackName,
     date: input.date,
     start_time: input.start_time ?? null,
     session_number: input.session_number ?? null,
@@ -365,7 +629,10 @@ export async function createSession(
     .select()
     .single();
 
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    await rollbackAutoCreatedTrack(supabase, user.id, track);
+    return { ok: false, error: error.message };
+  }
 
   const createdSession = data as Session;
 
@@ -376,18 +643,13 @@ export async function createSession(
     laps: input.laps ?? [],
   });
   if (lapError) {
-    const { error: rollbackError } = await supabase
-      .from('sessions')
-      .delete()
-      .eq('id', createdSession.id)
-      .eq('user_id', user.id);
-    if (rollbackError) {
-      console.error('[sessions] session rollback after lap failure failed', {
-        userId: user.id,
-        sessionId: createdSession.id,
-        error: rollbackError.message,
-      });
-    }
+    await rollbackCreatedSession({
+      supabase,
+      userId: user.id,
+      sessionId: createdSession.id,
+      track,
+      failureLog: '[sessions] session rollback after lap failure failed',
+    });
     return { ok: false, error: lapError };
   }
 
@@ -413,18 +675,13 @@ export async function createSession(
         sessionId: createdSession.id,
         error: environmentError.message,
       });
-      const { error: rollbackError } = await supabase
-        .from('sessions')
-        .delete()
-        .eq('id', createdSession.id)
-        .eq('user_id', user.id);
-      if (rollbackError) {
-        console.error('[sessions] session rollback failed', {
-          userId: user.id,
-          sessionId: createdSession.id,
-          error: rollbackError.message,
-        });
-      }
+      await rollbackCreatedSession({
+        supabase,
+        userId: user.id,
+        sessionId: createdSession.id,
+        track,
+        failureLog: '[sessions] session rollback failed',
+      });
       return { ok: false, error: environmentError.message };
     }
   }
@@ -516,6 +773,13 @@ export async function createSession(
 
   revalidatePath('/sessions');
   revalidatePath('/dashboard');
+  if (track.createdTrack) {
+    // The tracks list, the track's own page and the picker that will fill this
+    // field next time all read the row just written.
+    revalidateTag('tracks');
+    revalidatePath('/tracks');
+    revalidatePath('/sessions/new');
+  }
   return { ok: true, data: createdSession };
 }
 

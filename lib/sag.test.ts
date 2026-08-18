@@ -5,6 +5,7 @@ import {
   calcSagPct,
   parseMeasurement,
   roundForDisplay,
+  summarizeSagEntry,
 } from '@/lib/sag';
 
 describe('calcFreeSag', () => {
@@ -88,5 +89,44 @@ describe('roundForDisplay', () => {
   it('rounds to one decimal place', () => {
     expect(roundForDisplay(20)).toBe('20.0');
     expect(roundForDisplay(20.36)).toBe('20.4');
+  });
+});
+
+describe('summarizing a saved entry for the history list', () => {
+  const empty = {
+    front_l0: null,
+    front_l1: null,
+    front_l2: null,
+    rear_l0: null,
+    rear_l1: null,
+    rear_l2: null,
+  };
+
+  it('reports free and rider sag per axle so two entries can be told apart', () => {
+    expect(
+      summarizeSagEntry({
+        front_l0: 590,
+        front_l1: 560,
+        front_l2: 555,
+        rear_l0: 320,
+        rear_l1: 305,
+        rear_l2: 288,
+      }),
+    ).toEqual([
+      { axle: 'Front', freeSagMm: 30, riderSagMm: 35 },
+      { axle: 'Rear', freeSagMm: 15, riderSagMm: 32 },
+    ]);
+  });
+
+  it('leaves out an axle that was never measured', () => {
+    expect(summarizeSagEntry({ ...empty, front_l0: 590, front_l2: 555 })).toEqual([
+      { axle: 'Front', freeSagMm: null, riderSagMm: 35 },
+    ]);
+  });
+
+  it('says nothing at all for an entry with no usable measurements', () => {
+    expect(summarizeSagEntry(empty)).toEqual([]);
+    // L0 alone cannot produce a sag figure.
+    expect(summarizeSagEntry({ ...empty, front_l0: 590 })).toEqual([]);
   });
 });

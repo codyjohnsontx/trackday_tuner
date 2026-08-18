@@ -1,3 +1,4 @@
+import { formatTemperature, type TemperatureUnit } from '@/lib/temperature';
 import type { Session, SessionEnvironment } from '@/types';
 import { truncateAtWordBoundary } from '@/lib/utils';
 
@@ -54,13 +55,21 @@ export interface SessionHistorySummary {
 export function buildSessionHistorySummary(
   session: Session,
   environment?: SessionEnvironment | null,
+  /** The unit the rider reads in; readings are stored in Celsius regardless. */
+  temperatureUnit: TemperatureUnit = 'c',
 ): SessionHistorySummary {
   const environmentRows: Array<{ label: string; value: string }> = [];
   if (environment?.ambient_temperature_c != null) {
-    environmentRows.push({ label: 'Ambient', value: `${environment.ambient_temperature_c} C` });
+    environmentRows.push({
+      label: 'Ambient',
+      value: formatTemperature(environment.ambient_temperature_c, temperatureUnit),
+    });
   }
   if (environment?.track_temperature_c != null) {
-    environmentRows.push({ label: 'Track', value: `${environment.track_temperature_c} C` });
+    environmentRows.push({
+      label: 'Track',
+      value: formatTemperature(environment.track_temperature_c, temperatureUnit),
+    });
   }
   if (environment?.humidity_percent != null) {
     environmentRows.push({ label: 'Humidity', value: `${environment.humidity_percent}%` });

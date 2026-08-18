@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import { LapTimeEditor } from '@/components/sessions/lap-time-editor';
 import { replaceSessionLaps } from '@/lib/actions/sessions';
+import { commitLapEditorValue, lapEditorValueFrom, type LapEditorValue } from '@/lib/lap-times';
 import { trackProductEvent } from '@/lib/product-events.client';
 import { cn } from '@/lib/utils';
 import type { CreateSessionLapInput, SessionLap } from '@/types';
@@ -18,12 +19,12 @@ function Message({ message }: { message: { text: string; ok: boolean } }) {
 
 export function SessionLapsPanel({ sessionId, vehicleId, initialLaps, demoMode }: { sessionId: string; vehicleId: string; initialLaps: SessionLap[]; demoMode: boolean }) {
   const [editing, setEditing] = useState(false);
-  const [laps, setLaps] = useState<CreateSessionLapInput[]>(initialLaps.map((lap) => ({
+  const [editorValue, setEditorValue] = useState<LapEditorValue>(() => lapEditorValueFrom(initialLaps.map((lap) => ({
     lap_number: lap.lap_number,
     lap_time_ms: lap.lap_time_ms,
     included: lap.included,
-  })));
-  const [savedLaps, setSavedLaps] = useState(laps);
+  }))));
+  const [savedLaps, setSavedLaps] = useState<CreateSessionLapInput[]>(editorValue.laps);
   // Severity travels with the text. Saving also collapses the editor, so the
   // confirmation has to survive into the collapsed view or it is never seen.
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
@@ -51,10 +52,17 @@ export function SessionLapsPanel({ sessionId, vehicleId, initialLaps, demoMode }
 
   function save() {
     setMessage(null);
+    // Text still sitting in the lap editor's entry boxes is part of what the
+    // rider is saving, so it is folded in here rather than dropped.
+    const committed = commitLapEditorValue(editorValue);
+    if (!committed.ok) { setMessage({ text: committed.error, ok: false }); return; }
+    const laps = committed.laps;
+
     startTransition(async () => {
       const result = await replaceSessionLaps(sessionId, laps);
       if (!result.ok) { setMessage({ text: result.error, ok: false }); return; }
       trackProductEvent('lap_data_saved', { session_id: sessionId, vehicle_id: vehicleId, properties: { lap_count: laps.length, source: 'session_edit' } });
+      setEditorValue(lapEditorValueFrom(laps));
       setSavedLaps(laps);
       setEditing(false);
       setMessage({ text: 'Lap data saved.', ok: true });
@@ -63,10 +71,10 @@ export function SessionLapsPanel({ sessionId, vehicleId, initialLaps, demoMode }
 
   return (
     <div className="space-y-3">
-      <LapTimeEditor value={laps} onChange={setLaps} />
+      <LapTimeEditor value={editorValue} onChange={setEditorValue} />
       {message ? <Message message={message} /> : null}
       <div className="grid grid-cols-2 gap-2">
-        <Button type="button" variant="secondary" onClick={() => { setLaps(savedLaps); setEditing(false); }}>Cancel</Button>
+        <Button type="button" variant="secondary" onClick={() => { setEditorValue(lapEditorValueFrom(savedLaps)); setEditing(false); }}>Cancel</Button>
         <Button type="button" loading={pending} onClick={save}>Save laps</Button>
       </div>
     </div>

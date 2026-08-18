@@ -9,6 +9,7 @@ import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
 import { DemoBanner } from '@/components/demo/demo-banner';
 import { isDemoMode } from '@/lib/demo/mode';
 import { Button } from '@/components/ui/button';
+import { TemperatureDisplay } from '@/components/ui/temperature-display';
 import { TimeDisplay } from '@/components/ui/time-display';
 import { SessionCompare, type CompareRow } from '@/components/sessions/session-compare';
 import { SessionBaselinePanel } from '@/components/sessions/session-baseline-panel';
@@ -35,11 +36,19 @@ const conditionLabel: Record<string, string> = {
   mixed: 'Mixed',
 };
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+/**
+ * A value that reads differently per device - a temperature, a clock time -
+ * arrives as its own client component and carries its own text styling.
+ */
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 py-1.5">
       <span className="text-sm text-ink-dim">{label}</span>
-      <span className="text-sm font-medium text-ink">{value || '—'}</span>
+      {typeof value === 'string' ? (
+        <span className="text-sm font-medium text-ink">{value || '—'}</span>
+      ) : (
+        value
+      )}
     </div>
   );
 }
@@ -90,8 +99,8 @@ function buildCompareRows(
     rows.push(
       {
         label: 'Tires: Condition',
-        current: currentEnabledModules.tires ? current.tires.condition : '',
-        previous: previousEnabledModules.tires ? previous.tires.condition : '',
+        current: currentEnabledModules.tires ? current.tires.condition ?? '' : '',
+        previous: previousEnabledModules.tires ? previous.tires.condition ?? '' : '',
       },
       {
         label: 'Tires: Front Brand',
@@ -390,20 +399,23 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
         {session.session_number ? (
           <DetailRow label="Session Number" value={session.session_number.toString()} />
         ) : null}
-        <div className="flex items-center justify-between gap-3 py-1.5">
-          <span className="text-sm text-ink-dim">Start Time</span>
-          <TimeDisplay time={session.start_time} />
-        </div>
+        <DetailRow label="Start Time" value={<TimeDisplay time={session.start_time} />} />
         <DetailRow label="Conditions" value={conditionLabel[session.conditions] ?? session.conditions} />
       </SectionCard>
 
       {environment ? (
         <SectionCard title="Environment">
           {environment.ambient_temperature_c != null ? (
-            <DetailRow label="Ambient Temp" value={`${environment.ambient_temperature_c}°C`} />
+            <DetailRow
+              label="Ambient Temp"
+              value={<TemperatureDisplay celsius={environment.ambient_temperature_c} />}
+            />
           ) : null}
           {environment.track_temperature_c != null ? (
-            <DetailRow label="Track Temp" value={`${environment.track_temperature_c}°C`} />
+            <DetailRow
+              label="Track Temp"
+              value={<TemperatureDisplay celsius={environment.track_temperature_c} />}
+            />
           ) : null}
           {environment.humidity_percent != null ? (
             <DetailRow label="Humidity" value={`${environment.humidity_percent}%`} />
@@ -416,7 +428,7 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
 
       {enabledModules.tires ? (
         <SectionCard title="Tires">
-          <DetailRow label="Condition" value={session.tires.condition} />
+          <DetailRow label="Condition" value={session.tires.condition ?? ''} />
           <DetailRow label="Front Brand" value={session.tires.front.brand} />
           <DetailRow label="Front Compound" value={session.tires.front.compound} />
           <DetailRow label="Front Pressure" value={session.tires.front.pressure} />
