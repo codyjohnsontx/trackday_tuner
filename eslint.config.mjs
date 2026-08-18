@@ -16,6 +16,11 @@ const eslintConfig = [
       'node_modules/**',
       'test-results/**',
       'coverage/**',
+      // Written by `supabase start`, which the migration notes in CLAUDE.md tell
+      // you to run. It is a bundled Deno runtime entrypoint, git-ignored via
+      // supabase/.gitignore but not by eslint, so linting after starting the
+      // stack reported 154 errors in vendored minified code and none in ours.
+      'supabase/.temp/**',
       'next-env.d.ts',
       'eslint.config.mjs',
     ],

@@ -51,6 +51,15 @@ one fails a spec for a reason that has nothing to do with what is under test: th
 vehicle and session caps refuse the save outright, and at the track cap
 resolution falls back to a name-only session, so the `track_id` and track-row
 assertions fail.
+`tests/e2e/signup-creates-profile.spec.ts` stands outside both of those, because
+it signs up its own throwaway rider rather than using that account. It needs
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` as well as the service-role key, since it reads
+the new rider's `profiles` row back under their own session, and it also needs
+`BETA_INVITE_ONLY=false`. It skips without any of them. That last gate is the
+unusual one and nothing else in this file has it: with invite-only on, the form
+posts to `/api/beta/signup`, which is the `profiles` writer that always worked, so
+the spec would exercise the wrong path entirely instead of the GoTrue signup whose
+trigger it exists to guard.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 ## Install browser runtime

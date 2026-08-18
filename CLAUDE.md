@@ -101,7 +101,13 @@ the remote is the source of truth for what has been applied.
   territory still needs checking by hand
 - **Never edit a migration that has already been applied.** The remote records
   it by version, so an edit changes the file without changing the database and
-  `db push` will never re-run it. Corrections go in a new migration
+  `db push` will never re-run it. Corrections go in a new migration.
+  **This includes comments.** A comment-only edit looks obviously safe, and that
+  is the problem: the rule survives because nobody has to judge whether a given
+  edit is harmless, and it stops working the moment the first exception is
+  granted. A stale comment in an applied file is corrected *here*, in this
+  document, next to the migration notes that explain it - see the note on the
+  baseline's `profiles` comment below
 - Filenames are `<14-digit timestamp>_<name>.sql`. The timestamp is the version
   recorded remotely and is a primary key, so **two migrations must never share a
   prefix** — an earlier pair both named `20260224_` could not both be recorded
@@ -132,6 +138,50 @@ to make that true, and both are easy to undo by accident:
   `auto_expose_new_tables` in `supabase/config.toml`), so it applied every
   migration cleanly and then answered every PostgREST request with
   `permission denied for table ...`
+
+`20260816001200_add_profile_on_auth_user_created.sql` is **not** one of those two.
+It is the only thing that puts a row in `profiles` for a rider who did not arrive
+through the beta invite route, so it is a production fix for existing deployments
+just as much as it is part of a clean build - an environment that skips it keeps
+the bug on every other signup path, whatever its schema was built from.
+
+**`profiles` is written by a trigger on `auth.users`, and it has to be.** A rider
+signing up through the ordinary form once `BETA_INVITE_ONLY` is off goes from the
+browser straight to GoTrue (`components/auth/auth-form.tsx` calls
+`supabase.auth.signUp`), and an OAuth signup is GoTrue talking to the provider.
+Neither reaches a route handler before the account exists, so **there is no
+application choke point to put this in** - the nearest thing, `getRealUser()` in
+`lib/auth.ts`, is on the read path of every authenticated page and would need the
+admin client anyway, since `authenticated` deliberately holds no INSERT here.
+
+Reading a missing row degrades correctly - `resolveUserAccess(null)` is the free
+tier - which is why this stayed invisible. Paying does not:
+`app/api/stripe/checkout/route.ts` attaches the Stripe customer by updating
+`profiles` and correctly refuses to charge when the update matches nothing, so a
+rider with no row gets `Unable to link your billing account` **forever**. That was
+reproduced end to end against a local stack and is written up in the migration.
+
+`tests/unit/migrations-bootstrap.test.ts` fails if that trigger goes missing, ends
+up disabled, or stops inserting into `profiles`. Like everything else in that file
+it reads SQL as text: it cannot prove the insert *succeeds*, which depends on
+`security definer`, the owner's privileges and the pinned empty `search_path`.
+Only signing up against a real database shows that.
+`tests/e2e/signup-creates-profile.spec.ts` is that walk, and it skips unless
+`BETA_INVITE_ONLY` is `false`, because with invite-only on the form posts to the
+route that always wrote the row - see `TESTING.md` for what it needs.
+
+**The baseline says the opposite, and it is right about the day it was written.**
+`20260223000000_init_baseline_schema.sql` states that nothing creates a `profiles`
+row automatically and that the beta signup route is the one writer. That was true
+until `20260816001200`, and it is the reason the table has select and update
+policies for a user's own row but no insert policy. It is left standing rather than
+corrected in place because **an applied migration is never edited** - not even its
+comments. The rule is worth more as a bright line than as a judgement call, and the
+argument for a comment-only exception rests on what the CLI does with a changed
+file rather than on anything this repository can verify. This paragraph is the
+correction; read the two files together. The policies themselves need no change,
+because the trigger inserts as the function's owner rather than as the rider, so
+there is still no insert policy to add.
 
 **Grants are per role and per table, and that is a security boundary rather than
 tidiness.** `anon` gets no table access at all, `service_role` gets everything
@@ -206,8 +256,9 @@ them. That is fine for those two, which are `security invoker`, but a
 
 `tests/unit/migrations-bootstrap.test.ts` reads the SQL as text and fails if a
 migration alters or references a table nothing earlier creates, if those grants go
-missing, if a `security definer` function arrives without that decision, or if a
-migration re-grants execute schema-wide over a per-function `revoke`. It cannot
+missing, if a `security definer` function arrives without that decision, if a
+migration re-grants execute schema-wide over a per-function `revoke`, or if the
+migrations end with nothing writing `profiles` on signup (above). It cannot
 tell you a migration *runs* - only `supabase start` from a destroyed local stack
 proves that, and only then exercising the app against it proves PostgREST can see
 the result. It reads the decision rather than its effect, so once `public` is

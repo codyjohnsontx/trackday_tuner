@@ -296,6 +296,270 @@ function executeViolations(migrations: Migration[]): string[] {
   ];
 }
 
+// Every install and removal of an after-insert trigger on auth.users, matched by
+// one pattern so the two arms stay in the order they were written. That ordering
+// is the whole point: 20260816001200 drops the trigger and then creates it, which
+// nets to installed, while a later migration that drops it and stops there nets to
+// removed. Reading the arms with two separate scans would lose which came first.
+//
+// `[^;]*?` keeps the install arm inside the one CREATE TRIGGER statement, so a
+// trigger on some other table cannot lend its function name to this one.
+// `or replace` is matched because Postgres accepts it and re-pointing an existing
+// trigger at a different function is the shortest way to write that.
+// Postgres folds an unquoted identifier to lower case, so `On_Auth_User_Created`
+// and `on_auth_user_created` name one trigger and not two. Every name below is
+// compared folded, because a guard that can be evaded by changing the spelling of
+// an identifier is no guard. Only identity is folded: the violation messages echo
+// what the migration literally wrote, which is what you search the file for.
+//
+// Quoted identifiers are a different object and are out of scope here - `\w+`
+// never matches one, so `drop trigger "On_Auth_User_Created"` is not read as a
+// drop of the unquoted trigger, which is how Postgres reads it too.
+function foldIdentifier(identifier: string): string {
+  return identifier.toLowerCase();
+}
+
+// Named groups rather than positional ones. Four arms with seven captures between
+// them is where reading `match[4]` correctly stops being something to trust, and a
+// silent off-by-one here would not fail a test - it would quietly stop the guard
+// seeing an event, which is the failure mode this whole file exists to avoid.
+const AUTH_USERS_TRIGGER_EVENT = new RegExp(
+  [
+    String.raw`create\s+(?:or\s+replace\s+)?trigger\s+(?<created>\w+)\s+after\s+insert\s+on\s+auth\.users\b[^;]*?execute\s+(?:function|procedure)\s+(?:public\.)?(?<createdFn>\w+)`,
+    String.raw`drop\s+trigger\s+(?:if\s+exists\s+)?(?<droppedTrigger>\w+)\s+on\s+auth\.users\b`,
+    String.raw`drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?(?<droppedFunction>\w+)\s*(?:\([^)]*\))?\s+cascade\b`,
+    String.raw`alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?auth\.users\s+(?<toggle>disable|enable)\s+(?<toggleMode>replica\s+|always\s+)?trigger\s+(?<toggleTarget>\w+)`,
+  ].join('|'),
+  'gi',
+);
+
+// A function's declaration *including* its body, and the last one wins. Everything
+// else here reads the first declaration it finds, which is right for a table but
+// wrong for a function: `create or replace` in a later migration supersedes the
+// earlier body entirely, and CLAUDE.md sends every correction to a new migration,
+// so the later file is where a rewritten body would actually arrive.
+//
+// functionStatements() above deliberately drops the body, because it is reading
+// attributes and a `;` inside a body would end the statement early. Here the body
+// is the whole point: what makes the trigger the fix is the insert written inside
+// it.
+function lastFunctionDeclaration(
+  migrations: Migration[],
+  name: string,
+): { file: string; source: string } | null {
+  const declaration = new RegExp(
+    `create\\s+(?:or\\s+replace\\s+)?function\\s+(?:public\\.)?${name}\\b`,
+    'gi',
+  );
+  let latest: { file: string; source: string } | null = null;
+
+  for (const { file, sql } of migrations) {
+    for (const match of sql.matchAll(declaration)) {
+      const rest = sql.slice(match.index);
+      const open = /\$\w*\$/.exec(rest);
+      const terminator = rest.indexOf(';');
+
+      // A dollar tag only opens *this* function's body when it comes before the
+      // statement's own terminator. Searching all of `rest` for one instead would
+      // read past the declaration on a function whose body is not dollar-quoted:
+      // with no tag anywhere it kept the entire rest of the file, and with a tag
+      // belonging to some later function it sliced up to that, so the profiles
+      // insert could be found in a statement this function never runs. Every
+      // migration and fixture here uses `$$`, so that was latent rather than
+      // live - but the guard reading unrelated SQL is exactly the failure it
+      // exists to prevent in the migrations.
+      if (open === null || (terminator !== -1 && terminator < open.index)) {
+        latest = { file, source: terminator === -1 ? rest : rest.slice(0, terminator + 1) };
+        continue;
+      }
+
+      const bodyStart = open.index + open[0].length;
+      const close = rest.indexOf(open[0], bodyStart);
+      latest = { file, source: close === -1 ? rest : rest.slice(0, close) };
+    }
+  }
+
+  return latest;
+}
+
+// Every auth user must get a profiles row, and the migrations are the only place
+// that can be true of *every* signup path.
+//
+// This is the second bug of the same family as the missing tables above: not SQL
+// that fails to run, but SQL that runs and leaves the schema unable to support the
+// app. public.profiles shipped with a select policy, an update policy and no
+// insert policy, because its one writer was the beta signup route reaching past
+// RLS with the service-role key. That held only while every rider arrived through
+// an invite. A rider signing up any other way - the ordinary form once
+// BETA_INVITE_ONLY is off, or an OAuth provider - never touches a route handler
+// before the account exists, so no application code can be the choke point.
+// Reading degrades correctly (resolveUserAccess(null) is the free tier). Paying
+// does not: app/api/stripe/checkout/route.ts cannot attach a Stripe customer to a
+// row that is not there, and returns "Unable to link your billing account" for as
+// long as the account exists.
+//
+// WHAT THIS CATCHES, and it is the state the whole ordered list of migrations
+// ends in rather than the first file that mentions a trigger: no trigger on
+// auth.users at all; a later migration dropping the one that is there, either by
+// name or by `drop function ... cascade`, which takes every dependent
+// trigger with it and never writes the word trigger anywhere; a later migration
+// *silencing* it, which removes nothing at all - the row stays in pg_trigger, the
+// function keeps its insert, and `disable trigger <name> / all / user`, or the
+// `enable replica trigger` that reads like the opposite of a problem, stops it
+// firing for ordinary traffic; a trigger pointed at
+// a function no migration defines; and a function whose *last* declaration runs on
+// signup without inserting the row, whether that declaration
+// is the original or a `create or replace` in a later migration. CLAUDE.md sends
+// every correction to a new migration, so a later file is the ordinary way any of
+// those would arrive, not a hypothetical - which is why judging the first match
+// would have caught none of them.
+//
+// Disabling and re-enabling around a bulk load is ordinary practice and stays
+// legal: what is judged is the state the chain ends in, so a disable answered by
+// an `enable` (or `enable always`) later is not a finding.
+//
+// WHAT IT DOES NOT CATCH: it reads SQL as text like everything else here, so it
+// cannot see a trigger disabled by hand on the hosted project, and it does not
+// prove the insert succeeds - `security definer`, the owner's privileges and
+// search_path all
+// have to be right, and only signing up against a rebuilt database shows that.
+// `set session_replication_role = replica` is out of scope for the same reason it
+// is not schema: it silences non-`always` triggers for one session rather than
+// changing anything a migration file describes.
+// That walk is recorded in the migration's own comments. It follows triggers by
+// name, so a second trigger created under a different name and then dropped under
+// the first one's name is modelled the way Postgres models it and not the way a
+// careless reader would. It says nothing about a writer added any other way: an
+// application route or a hand-made dashboard trigger would satisfy the app and
+// still fail here, which is deliberate, because neither is in this repository.
+function profileWriterViolations(migrations: Migration[]): string[] {
+  const installed = new Map<string, { file: string; fn: string }>();
+  // Installed but not firing. Kept beside `installed` rather than removed from it
+  // because the two are undone by different statements: a silenced trigger is
+  // switched back on by `enable`, and it still exists for a later `drop` to find.
+  const silenced = new Map<string, { file: string; statement: string }>();
+  let removed: { file: string; statement: string } | null = null;
+
+  for (const { file, sql } of migrations) {
+    for (const match of sql.matchAll(AUTH_USERS_TRIGGER_EVENT)) {
+      const { created, createdFn, droppedTrigger, droppedFunction, toggle, toggleMode, toggleTarget } =
+        match.groups as Record<string, string | undefined>;
+
+      if (created !== undefined) {
+        // A freshly created trigger is enabled, whatever was done to one of the
+        // same name before it.
+        installed.set(foldIdentifier(created), { file, fn: createdFn! });
+        silenced.delete(foldIdentifier(created));
+        continue;
+      }
+
+      // Only a drop that removed something counts. 20260816001200 opens with
+      // `drop trigger if exists` against a database that may not have one, and
+      // that statement is a precaution rather than a regression.
+      if (droppedTrigger !== undefined) {
+        if (installed.delete(foldIdentifier(droppedTrigger))) {
+          removed = { file, statement: `drop trigger ${droppedTrigger} on auth.users` };
+        }
+        silenced.delete(foldIdentifier(droppedTrigger));
+        continue;
+      }
+
+      // Disabling is the removal that removes nothing. pg_trigger keeps the row,
+      // the function keeps its insert, and no statement anywhere says `drop` -
+      // tgenabled flips and the trigger stops firing, so signups quietly stop
+      // getting a profiles row. Reading only create and drop, the guard called
+      // that clean, which is the same defect it exists to catch.
+      //
+      // Every spelling that silences it is here, because catching only the named
+      // form would leave the hole half open:
+      //   disable trigger <name> / all / user   - tgenabled 'D', off outright
+      //   enable replica trigger <name>         - tgenabled 'R', fires only when
+      //     session_replication_role is 'replica', so off for all ordinary traffic
+      //     despite the statement reading `enable`
+      // `enable trigger` and `enable always trigger` are the ones that restore it.
+      if (toggle !== undefined) {
+        const target = foldIdentifier(toggleTarget!);
+        const everyTrigger = target === 'all' || target === 'user';
+        const turnsOff =
+          foldIdentifier(toggle) === 'disable' || foldIdentifier(toggleMode ?? '').trim() === 'replica';
+
+        if (!turnsOff) {
+          if (everyTrigger) silenced.clear();
+          else silenced.delete(target);
+          continue;
+        }
+
+        // Echoed as the migration wrote it, collapsed to single spaces so a
+        // statement wrapped across lines still reads as one.
+        const statement = match[0].replace(/\s+/g, ' ').trim();
+        for (const name of everyTrigger ? [...installed.keys()] : [target]) {
+          silenced.set(name, { file, statement });
+        }
+        continue;
+      }
+
+      // A `cascade` drop of the function takes the trigger with it, silently and
+      // without writing `drop trigger` anywhere, so a scan reading only trigger
+      // statements kept the trigger in `installed`, found the still-present
+      // function body from the earlier migration, and reported nothing.
+      //
+      // `cascade` is required rather than incidental. `drop function` defaults to
+      // `restrict`, and Postgres refuses a restricted drop while a trigger depends
+      // on the function - the statement errors, and the function and trigger both
+      // survive. Matching those too would report a removal that cannot happen. It
+      // costs no coverage either: a migration that really does take the trigger
+      // away has to say `drop trigger` first, which the arm above already catches.
+      for (const [trigger, entry] of installed) {
+        if (foldIdentifier(entry.fn) !== foldIdentifier(droppedFunction!)) continue;
+        installed.delete(trigger);
+        silenced.delete(trigger);
+        removed = { file, statement: `drop function public.${droppedFunction}` };
+      }
+    }
+  }
+
+  // What the database actually ends up with: installed *and* firing.
+  const firing = [...installed.entries()].filter(([name]) => !silenced.has(name));
+
+  if (firing.length === 0) {
+    if (installed.size > 0) {
+      // The trigger is still there and still correct, and still never runs. Blame
+      // the statement that turned it off rather than the one that created it.
+      const [first] = installed.keys();
+      const off = silenced.get(first)!;
+      return [`${off.file}: ${off.statement} leaves public.profiles with no writer`];
+    }
+
+    return removed === null
+      ? ['no migration installs an after-insert trigger on auth.users']
+      : [`${removed.file}: ${removed.statement} leaves public.profiles with no writer`];
+  }
+
+  const violations: string[] = [];
+
+  for (const [, { file, fn }] of firing) {
+    const declaration = lastFunctionDeclaration(migrations, fn);
+    if (declaration === null) {
+      violations.push(`${file}: trigger on auth.users calls public.${fn}, which no migration defines`);
+      continue;
+    }
+    if (!/insert\s+into\s+public\.profiles\b/i.test(declaration.source)) {
+      // Blamed on the file holding the declaration that actually runs, which is
+      // the one to change, and is the trigger's own file whenever the two agree.
+      violations.push(
+        `${declaration.file}: public.${fn} runs on every signup but never inserts into public.profiles`,
+      );
+      continue;
+    }
+
+    // One surviving trigger that creates the row is the invariant. Anything else
+    // hanging off signup is somebody else's concern.
+    return [];
+  }
+
+  return violations;
+}
+
 const migrations = loadMigrations();
 
 describe('supabase migrations bootstrap a database from nothing', () => {
@@ -329,6 +593,10 @@ describe('supabase migrations bootstrap a database from nothing', () => {
     for (const table of ['profiles', 'vehicles', 'tracks', 'sessions']) {
       expect(created).toContain(table);
     }
+  });
+
+  it('gives profiles a writer that every signup path passes through', () => {
+    expect(profileWriterViolations(migrations)).toEqual([]);
   });
 
   it('defines every trigger function before a trigger calls it', () => {
@@ -449,7 +717,11 @@ describe('supabase migrations bootstrap a database from nothing', () => {
       ),
     );
 
-    expect([...definers].sort()).toEqual(['consume_beta_rate_limit', 'create_beta_invite']);
+    expect([...definers].sort()).toEqual([
+      'consume_beta_rate_limit',
+      'create_beta_invite',
+      'handle_new_auth_user',
+    ]);
   });
 
   it('leaves execute on a function to the migration that creates it', () => {
@@ -469,6 +741,200 @@ describe('supabase migrations bootstrap a database from nothing', () => {
 // The tests above pass against a repository that got it right, and would pass just
 // as happily against a deleted check. These feed the same analysis SQL that got it
 // wrong, so what the guard catches is observed rather than assumed.
+// The statement each silencing fixture is expected to be blamed for, echoed the
+// way the fixture wrote it.
+const DISABLED_BY: Record<string, string> = {
+  'profiles_signup_trigger_disabled_later.sql':
+    'alter table auth.users disable trigger on_auth_user_created',
+  'profiles_signup_trigger_disabled_all_later.sql':
+    'alter table auth.users disable trigger all',
+  'profiles_signup_trigger_disabled_user_later.sql':
+    'alter table auth.users disable trigger user',
+  'profiles_signup_trigger_enable_replica_later.sql':
+    'alter table auth.users enable replica trigger on_auth_user_created',
+};
+
+describe('the profiles-writer check, against migrations written wrongly on purpose', () => {
+  it('catches a schema whose profiles table nothing ever writes to', () => {
+    // The repository as it stood before 20260816001200. Nothing about this SQL
+    // fails to apply, which is why the gap survived until someone tried to pay.
+    expect(profileWriterViolations(loadFixtures('profiles_without_signup_trigger.sql'))).toEqual([
+      'no migration installs an after-insert trigger on auth.users',
+    ]);
+  });
+
+  it('catches a signup trigger that does something other than create the row', () => {
+    // Checking only that a trigger exists would pass this. Analytics, audit rows
+    // and welcome emails all belong on auth.users insert and none of them is the
+    // fix, so the guard reads the function body rather than the attachment.
+    expect(
+      profileWriterViolations(loadFixtures('signup_trigger_without_profile_insert.sql')),
+    ).toEqual([
+      'signup_trigger_without_profile_insert.sql: public.handle_new_auth_user runs on every signup but never inserts into public.profiles',
+    ]);
+  });
+
+  // The four below are the regression arriving in a *later* migration, which is
+  // where CLAUDE.md sends every correction and so the only realistic place any of
+  // this would change. Each pairs the schema as 20260816001200 leaves it with one
+  // file undoing it. A guard that stopped at the first migration installing a
+  // trigger passed all four, which is what these were written to watch fail.
+  it('accepts the installed trigger it judges the later regressions against', () => {
+    // The control. Without it the four below could pass on a fixture the guard
+    // rejects for some unrelated reason, and the drop before the create in this
+    // file must not read as the trigger being taken away.
+    expect(profileWriterViolations(loadFixtures('profiles_signup_trigger_installed.sql'))).toEqual(
+      [],
+    );
+  });
+
+  it('catches a later migration that drops the signup trigger', () => {
+    expect(
+      profileWriterViolations(
+        loadFixtures(
+          'profiles_signup_trigger_installed.sql',
+          'profiles_signup_trigger_dropped_later.sql',
+        ),
+      ),
+    ).toEqual([
+      'profiles_signup_trigger_dropped_later.sql: drop trigger on_auth_user_created on auth.users leaves public.profiles with no writer',
+    ]);
+  });
+
+  it('catches a later migration that drops the signup trigger under a different case', () => {
+    // Postgres folds unquoted identifiers, so `On_Auth_User_Created` and
+    // `on_auth_user_created` are one trigger. Keying the bookkeeping on the
+    // identifier as written made the guard evadable by spelling - the same class
+    // of defect as everything else it exists to catch.
+    expect(
+      profileWriterViolations(
+        loadFixtures(
+          'profiles_signup_trigger_installed.sql',
+          'profiles_signup_trigger_dropped_case_variant_later.sql',
+        ),
+      ),
+    ).toEqual([
+      'profiles_signup_trigger_dropped_case_variant_later.sql: drop trigger On_Auth_User_Created on auth.users leaves public.profiles with no writer',
+    ]);
+  });
+
+  it('catches a later migration that drops the signup function with cascade', () => {
+    // The same removal written without the word `trigger` anywhere. Postgres
+    // refuses a plain `drop function` while a trigger depends on it, so cascade is
+    // the spelling anyone removing it actually reaches for, and cascade takes the
+    // dependent trigger silently. Reading only trigger statements kept the trigger
+    // installed, resolved the function to the still-present earlier body, found
+    // the insert in it, and reported nothing.
+    expect(
+      profileWriterViolations(
+        loadFixtures(
+          'profiles_signup_trigger_installed.sql',
+          'profiles_signup_function_dropped_cascade_later.sql',
+        ),
+      ),
+    ).toEqual([
+      'profiles_signup_function_dropped_cascade_later.sql: drop function public.handle_new_auth_user leaves public.profiles with no writer',
+    ]);
+  });
+
+  // Disabling is the removal that removes nothing: pg_trigger keeps the row, the
+  // function keeps the insert, no statement anywhere says `drop`, and the trigger
+  // stops firing. Every spelling below silences it, so catching only the named
+  // `disable trigger <name>` would leave the hole half open.
+  for (const [spelling, fixture] of [
+    ['disable trigger <name>', 'profiles_signup_trigger_disabled_later.sql'],
+    ['disable trigger all', 'profiles_signup_trigger_disabled_all_later.sql'],
+    ['disable trigger user', 'profiles_signup_trigger_disabled_user_later.sql'],
+    ['enable replica trigger', 'profiles_signup_trigger_enable_replica_later.sql'],
+  ] as const) {
+    it(`catches a later migration that silences the signup trigger with ${spelling}`, () => {
+      expect(
+        profileWriterViolations(loadFixtures('profiles_signup_trigger_installed.sql', fixture)),
+      ).toEqual([
+        `${fixture}: ${DISABLED_BY[fixture]} leaves public.profiles with no writer`,
+      ]);
+    });
+  }
+
+  it('stays quiet when a disabled signup trigger is switched back on', () => {
+    // The control that keeps the check honest. Disabling around a bulk load and
+    // re-enabling afterwards is ordinary migration practice, and the database this
+    // chain ends in has a firing trigger. A guard that rejected every `disable`
+    // would fail correct work and get deleted the first time someone needed a
+    // backfill.
+    expect(
+      profileWriterViolations(
+        loadFixtures(
+          'profiles_signup_trigger_installed.sql',
+          'profiles_signup_trigger_disabled_then_reenabled_later.sql',
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it('stays quiet about a function drop that Postgres would refuse', () => {
+    // The other side of requiring `cascade`. A restricted drop - the default -
+    // cannot remove a function a trigger depends on: the statement errors and both
+    // objects survive, so calling it a removal would report a database that cannot
+    // exist. Nothing is lost by staying quiet, because a migration that really
+    // does take the trigger away has to write `drop trigger`, which the arm above
+    // catches on its own.
+    expect(
+      profileWriterViolations(
+        loadFixtures(
+          'profiles_signup_trigger_installed.sql',
+          'profiles_signup_function_dropped_without_cascade_later.sql',
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it('reads only the declaration when a signup function body is not dollar-quoted', () => {
+    // The body is a plain string literal, the function returns without writing the
+    // row, and an unrelated `insert into public.profiles` sits further down the
+    // same file. Searching the whole remainder for a dollar tag used to carry that
+    // insert into the function's source and accept it.
+    expect(
+      profileWriterViolations(loadFixtures('profiles_signup_function_not_dollar_quoted.sql')),
+    ).toEqual([
+      'profiles_signup_function_not_dollar_quoted.sql: public.handle_new_auth_user runs on every signup but never inserts into public.profiles',
+    ]);
+  });
+
+  it('catches a later migration that re-points the signup trigger', () => {
+    // The trigger survives under the same name and still fires on every signup,
+    // so anything counting triggers rather than following the function it names
+    // sees nothing wrong here.
+    expect(
+      profileWriterViolations(
+        loadFixtures(
+          'profiles_signup_trigger_installed.sql',
+          'profiles_signup_trigger_repointed_later.sql',
+        ),
+      ),
+    ).toEqual([
+      'profiles_signup_trigger_repointed_later.sql: public.audit_new_auth_user runs on every signup but never inserts into public.profiles',
+    ]);
+  });
+
+  it('catches a later migration that replaces the signup function body', () => {
+    // Nothing about the trigger changes at all. `create or replace` supersedes
+    // the earlier body, so the insert is still there to read in the migration
+    // that installed it and no longer runs - which is why the last declaration
+    // is the one that counts, and why the later file is the one blamed.
+    expect(
+      profileWriterViolations(
+        loadFixtures(
+          'profiles_signup_trigger_installed.sql',
+          'profiles_signup_function_replaced_later.sql',
+        ),
+      ),
+    ).toEqual([
+      'profiles_signup_function_replaced_later.sql: public.handle_new_auth_user runs on every signup but never inserts into public.profiles',
+    ]);
+  });
+});
+
 describe('the execute check, against migrations written wrongly on purpose', () => {
   it('catches a security definer function whose migration never mentions execute', () => {
     expect(executeViolations(loadFixtures('definer_without_revoke.sql'))).toEqual([
