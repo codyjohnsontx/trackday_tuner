@@ -14,6 +14,14 @@ export function DemoBanner() {
             exports, and AI recommendations.
           </p>
         </div>
+        {/*
+          A plain `<a>` rather than `<Link>`: `/demo/exit` is a route handler that
+          clears the demo cookie on GET, and a production build prefetches `<Link>`
+          targets on viewport entry - so scrolling this banner into view would end
+          the rider's demo before they clicked anything. No test can catch that
+          regression: the e2e suite runs `next dev`, which does not prefetch on
+          viewport.
+        */}
         <a
           href="/demo/exit"
           className="inline-flex min-h-11 shrink-0 select-none items-center justify-center self-start rounded-full bg-surface-3 px-5 text-sm font-semibold text-ink transition hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
