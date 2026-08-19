@@ -233,14 +233,24 @@ and execution order may legitimately diverge; the reason is recorded there.
     `zinc-400` is 7.76:1, so this is a token swap. Highest of the survivable group
     because it degrades every screen for the sunlight case the product is built for.
 
-11. **Duplicate DOM ids on `/sag`** - `R7` - `Input` derives its `id` from the label
-    text, so the front and rear sag sections emit `fully_extended_(l0)`,
-    `bike_only_(l1)`, and `rider_on_bike_(l2)` twice each. Tapping a rear label
-    focuses the front input and screen readers announce the wrong field. Prefix the
-    ids or use `useId()`. `tests/e2e/auth-and-sag.spec.ts` fails on this: both
-    `Fully Extended (L0)` labels resolve to the front input, so it cannot reach the
-    rear fields. That failure is expected until this item lands, not a test defect.
-    The other sag specs stay clear of it by only driving the front section.
+11. **Duplicate DOM ids on `/sag`** - `R7` - **Fixed in the repo on 2026-08-19.**
+    `Input` derived its `id` from the label text, so the front and rear sag sections
+    emitted `fully_extended_(l0)`, `bike_only_(l1)`, and `rider_on_bike_(l2)` twice
+    each. A `for` resolves to the first match in the document, so tapping a rear
+    label focused the front input, and the three rear fields reached assistive tech
+    with no accessible name at all, announced as their `mm` placeholder.
+
+    The id now comes from `useId()`, which is unique per instance; an explicitly
+    supplied `id` still wins and no caller passes one, so no old value was
+    load-bearing. The hook makes `Input` a client component, and every consumer
+    already sat inside a client boundary. The label text also moved out of the
+    wrapper it shared with the error and helper paragraphs into its own
+    `<label htmlFor>`, so those two describe the field through `aria-describedby`
+    rather than being read as part of its name.
+    `tests/unit/input-label-association.test.ts` guards the distinct ids and the
+    label/input association, and `tests/e2e/auth-and-sag.spec.ts` now reaches the
+    rear section - a failure there is a defect again rather than the expected
+    result.
 
 12. **Nothing is statically rendered** - `F3` - the root layout awaits
     `isDemoMode()`, which reads cookies and opts the whole tree out of static

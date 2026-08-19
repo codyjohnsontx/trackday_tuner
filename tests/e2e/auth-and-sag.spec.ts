@@ -1,5 +1,18 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
+
+/**
+ * The sag fields are controlled inputs, so a value typed into the streamed HTML
+ * before React hydrates is thrown away and the box reads empty again. It is the
+ * first fill on the page that loses the race, which left every assertion after
+ * it unreached. `tests/e2e/sag-history.spec.ts` carries the same loop.
+ */
+async function fillUntilItSticks(field: Locator, value: string) {
+  await expect(async () => {
+    await field.fill(value);
+    await expect(field).toHaveValue(value);
+  }).toPass({ timeout: 10_000 });
+}
 
 const GOOGLE_ENABLED = (process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED ?? 'true') === 'true';
 const APPLE_ENABLED = (process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED ?? 'false') === 'true';
@@ -82,9 +95,9 @@ test.describe('authenticated sag smoke', () => {
     const frontSection = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Front' }) });
     const rearSection = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Rear' }) });
 
-    await frontSection.getByLabel('Fully Extended (L0)').fill('120');
-    await frontSection.getByLabel('Bike Only (L1)').fill('100');
-    await frontSection.getByLabel('Rider On Bike (L2)').fill('90');
+    await fillUntilItSticks(frontSection.getByLabel('Fully Extended (L0)'), '120');
+    await fillUntilItSticks(frontSection.getByLabel('Bike Only (L1)'), '100');
+    await fillUntilItSticks(frontSection.getByLabel('Rider On Bike (L2)'), '90');
 
     await expect(frontSection.getByText('20.0 mm')).toBeVisible();
     await expect(frontSection.getByText('30.0 mm')).toBeVisible();
@@ -93,20 +106,20 @@ test.describe('authenticated sag smoke', () => {
     // rather than showing one derived from L0, which is not travel.
     await expect(frontSection.getByText('Add total travel above to see sag as a percentage.')).toBeVisible();
 
-    await rearSection.getByLabel('Fully Extended (L0)').fill('130');
-    await rearSection.getByLabel('Bike Only (L1)').fill('110');
-    await rearSection.getByLabel('Rider On Bike (L2)').fill('100');
+    await fillUntilItSticks(rearSection.getByLabel('Fully Extended (L0)'), '130');
+    await fillUntilItSticks(rearSection.getByLabel('Bike Only (L1)'), '110');
+    await fillUntilItSticks(rearSection.getByLabel('Rider On Bike (L2)'), '100');
 
     await expect(rearSection.getByText('20.0 mm')).toBeVisible();
     await expect(rearSection.getByText('30.0 mm')).toBeVisible();
 
     // 30mm of rider sag on 120mm of travel is 25.0% - against L0 it would have
     // read 23.1%, close enough to look plausible and wrong enough to mislead.
-    await rearSection.getByLabel('Total Travel (optional)').fill('120');
+    await fillUntilItSticks(rearSection.getByLabel('Total Travel (optional)'), '120');
     await expect(rearSection.getByText('Rider Sag (% of travel)')).toBeVisible();
     await expect(rearSection.getByText('25.0%')).toBeVisible();
 
-    await frontSection.getByLabel('Bike Only (L1)').fill('140');
+    await fillUntilItSticks(frontSection.getByLabel('Bike Only (L1)'), '140');
     await expect(frontSection.getByText('Check measurements: L0 should be the largest number.')).toBeVisible();
   });
 });
