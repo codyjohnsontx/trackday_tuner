@@ -419,6 +419,13 @@ with and without the flag and watching the cookie survive or vanish on render.
   mode, where `getDemoSessions` sorts in TypeScript with the shared comparator, so
   this class of bug needs a real account to see.
   `tests/unit/session-list-ordering.test.ts` guards it
+- **A per-vehicle fact has to come from that vehicle's own sessions.** `getVehicles`
+  orders `created_at` ascending, so `vehicles[0]` is the *oldest* vehicle. The
+  dashboard hero paired that nickname with the newest session of *any* vehicle, so a
+  rider with a second bike read their new bike's track day under their old bike's
+  name. `resolveDashboardHeroSubject` (`lib/dashboard-hero.ts`) returns the name and
+  the session together so the two cannot be picked off different lists.
+  `lib/dashboard-hero.test.ts` guards it
 
 ## What a Rider Told You
 

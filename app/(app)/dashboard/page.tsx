@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { CardGroup } from '@/components/ui/surface';
 import { SessionCard } from '@/components/sessions/session-card';
+import { resolveDashboardHeroSubject } from '@/lib/dashboard-hero';
 import { resolveUserAccess } from '@/lib/access';
 import { getBetaFeedback, hasTwoDistinctTrackDays } from '@/lib/actions/beta';
 import { BetaSurvey } from '@/components/beta/beta-survey';
@@ -32,11 +33,12 @@ export default async function DashboardPage() {
 
   const vehicleMap = new Map(vehicles.map((v) => [v.id, v.nickname]));
 
-  // getSessions returns newest first, so the head of the list is the last outing.
-  const lastSession = sessions[0];
-  const lastRun = lastSession
-    ? `Last out at ${lastSession.track_name ?? 'an unnamed track'} on ${new Date(
-        `${lastSession.date}T00:00:00`,
+  // The name and the line under it describe one vehicle, so they are resolved
+  // together rather than picked off two different lists.
+  const hero = resolveDashboardHeroSubject(vehicles, sessions);
+  const lastRun = hero.latestSession
+    ? `Last out at ${hero.latestSession.track_name ?? 'an unnamed track'} on ${new Date(
+        `${hero.latestSession.date}T00:00:00`,
       ).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`
     : hasVehicles
       ? 'No sessions logged yet.'
@@ -55,7 +57,7 @@ export default async function DashboardPage() {
         }
       />
 
-      <DashboardHero vehicleName={vehicles[0]?.nickname ?? null} lastRun={lastRun} />
+      <DashboardHero vehicleName={hero.vehicleName} lastRun={lastRun} />
 
       {hasVehicles ? (
         demoMode ? (
