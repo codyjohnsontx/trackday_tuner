@@ -19,6 +19,7 @@ const emptySide: SagSectionValues = {
   l0: '',
   l1: '',
   l2: '',
+  travel: '',
 };
 
 /**
@@ -40,7 +41,18 @@ function formStateKey(
   // "b|c", and a collision reads as no unsaved work - which is exactly the
   // silent discard this key exists to prevent.
   return JSON.stringify(
-    [front.l0, front.l1, front.l2, rear.l0, rear.l1, rear.l2, label, notes].map((value) =>
+    [
+      front.l0,
+      front.l1,
+      front.l2,
+      front.travel,
+      rear.l0,
+      rear.l1,
+      rear.l2,
+      rear.travel,
+      label,
+      notes,
+    ].map((value) =>
       value.trim(),
     ),
   );
@@ -90,8 +102,10 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
     }>(draftKey);
     if (!draft) return;
 
-    setFront(draft.front ?? emptySide);
-    setRear(draft.rear ?? emptySide);
+    // A draft saved before the travel field existed has no `travel` key, and an
+    // undefined value would flip that input from controlled to uncontrolled.
+    setFront({ ...emptySide, ...draft.front });
+    setRear({ ...emptySide, ...draft.rear });
     setLabel(draft.label ?? '');
     setNotes(draft.notes ?? '');
     setDraftMessage('Draft restored from this device.');
@@ -119,11 +133,13 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
       l0: entry.front_l0?.toString() ?? '',
       l1: entry.front_l1?.toString() ?? '',
       l2: entry.front_l2?.toString() ?? '',
+      travel: entry.front_travel_mm?.toString() ?? '',
     };
     const loadedRear = {
       l0: entry.rear_l0?.toString() ?? '',
       l1: entry.rear_l1?.toString() ?? '',
       l2: entry.rear_l2?.toString() ?? '',
+      travel: entry.rear_travel_mm?.toString() ?? '',
     };
 
     setSelectedId(entry.id);
@@ -174,6 +190,8 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
         rear_l0: parseMeasurement(rear.l0),
         rear_l1: parseMeasurement(rear.l1),
         rear_l2: parseMeasurement(rear.l2),
+        front_travel_mm: parseMeasurement(front.travel),
+        rear_travel_mm: parseMeasurement(rear.travel),
       });
 
       if (!result.ok) {

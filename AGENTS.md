@@ -483,8 +483,8 @@ interactive**. A suite can still `renderToStaticMarkup` a component and read the
 attributes back - `vitest.config.ts` sets `esbuild.jsx: 'automatic'` so an imported
 `.tsx` compiles, since tsconfig's `jsx: preserve` would otherwise fail it with
 `React is not defined`. That reaches structural facts about one render
-(`tests/unit/input-label-association.test.ts`) and nothing that needs a click, a
-state change or a layout. Logic that needs a
+(`tests/unit/input-label-association.test.ts`, `tests/unit/sag-percentage-basis.test.ts`)
+and nothing that needs a click, a state change or a layout. Logic that needs a
 regression test still belongs in `lib/`; behaviour that only exists on screen (a row
 opening unpressed, a save refusing, a confirm appearing) belongs in `tests/e2e/`.
 

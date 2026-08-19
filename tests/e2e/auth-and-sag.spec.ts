@@ -89,12 +89,22 @@ test.describe('authenticated sag smoke', () => {
     await expect(frontSection.getByText('20.0 mm')).toBeVisible();
     await expect(frontSection.getByText('30.0 mm')).toBeVisible();
 
+    // Sag in mm needs no travel figure, so the percentage rows stay hidden
+    // rather than showing one derived from L0, which is not travel.
+    await expect(frontSection.getByText('Add total travel above to see sag as a percentage.')).toBeVisible();
+
     await rearSection.getByLabel('Fully Extended (L0)').fill('130');
     await rearSection.getByLabel('Bike Only (L1)').fill('110');
     await rearSection.getByLabel('Rider On Bike (L2)').fill('100');
 
     await expect(rearSection.getByText('20.0 mm')).toBeVisible();
     await expect(rearSection.getByText('30.0 mm')).toBeVisible();
+
+    // 30mm of rider sag on 120mm of travel is 25.0% - against L0 it would have
+    // read 23.1%, close enough to look plausible and wrong enough to mislead.
+    await rearSection.getByLabel('Total Travel (optional)').fill('120');
+    await expect(rearSection.getByText('Rider Sag (% of travel)')).toBeVisible();
+    await expect(rearSection.getByText('25.0%')).toBeVisible();
 
     await frontSection.getByLabel('Bike Only (L1)').fill('140');
     await expect(frontSection.getByText('Check measurements: L0 should be the largest number.')).toBeVisible();
