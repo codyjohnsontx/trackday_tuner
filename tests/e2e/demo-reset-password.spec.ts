@@ -74,6 +74,16 @@ async function clickExitDemo(page: Page): Promise<string> {
 }
 
 test.describe('password reset from demo mode', () => {
+  // One run of the first test declares more waiting than the 30s global budget in
+  // playwright.config.ts allows: signIn's 20s URL wait, enterDemo's 25s toPass,
+  // a networkidle on Playwright's 30s default, then clickExitDemo's 20s
+  // waitForRequest. Six device projects share one dev server compiling routes on
+  // demand, so at 30s the first attempt dies inside page.goto and the retry loop
+  // enterDemo was written for never gets to spend its budget. 120s covers that
+  // sum with headroom. If a wait below grows, grow this number too - none of them
+  // may be shortened to fit a budget.
+  test.describe.configure({ timeout: 120_000 });
+
   test('a signed-in rider leaving the demo reaches the password form', async ({ page }) => {
     test.skip(!hasE2EAuth(), 'Needs E2E_EMAIL and E2E_PASSWORD to hold a real session.');
 
