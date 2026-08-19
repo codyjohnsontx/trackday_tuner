@@ -165,11 +165,19 @@ export async function getSessions(vehicleId?: string, limit?: number): Promise<S
   if (!user) return [];
 
   const supabase = await createClient();
+  // Mirrors compareSessionsDesc: date, then start_time with NULL treated as the
+  // earliest time of the day (so "nulls last" in a descending sort), then created_at.
+  // Ordering on date alone ties every session of a track day together, and the tie
+  // break is whatever the planner emits - which put a rider's morning warm-up at the
+  // top of their history and left the session they just finished off the dashboard's
+  // three-row "Recent" list entirely.
   let query = supabase
     .from('sessions')
     .select('*')
     .eq('user_id', user.id)
-    .order('date', { ascending: false });
+    .order('date', { ascending: false })
+    .order('start_time', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false });
 
   if (vehicleId) {
     query = query.eq('vehicle_id', vehicleId);
