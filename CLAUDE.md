@@ -378,6 +378,23 @@ e2e suite asserts a rendered colour.
 
 `@/*` maps to project root.
 
+## Leaving Demo Mode
+
+`/demo/exit` clears the demo cookie and redirects to `/login`, or to a sanitized
+`?next=` when the caller has somewhere specific to send the rider. Only
+`app/reset-password/page.tsx` passes one, and it has to: `/auth/callback` trades
+a recovery code for a real session before the reset form ever renders, so the
+plain exit sends an already-signed-in rider through `/login` to `/dashboard`,
+which has no route back to the form and no mention that a reset was underway.
+
+It is a route handler that changes state on GET, and Next prefetches `<Link>`
+targets - on hover in dev, on viewport entry in a production build - which runs
+the handler and drops the demo cookie before the rider has clicked anything.
+Links to it therefore carry `prefetch={false}` or use a plain `<a>`, as
+`components/demo/demo-banner.tsx` does. No spec guards that: the e2e suite runs
+`next dev`, which does not prefetch on viewport, so it was checked by building
+with and without the flag and watching the cookie survive or vanish on render.
+
 ## Supabase Notes
 
 - Use `lib/supabase/server.ts` in Server Components and Route Handlers

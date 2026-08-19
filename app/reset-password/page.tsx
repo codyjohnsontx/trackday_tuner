@@ -35,8 +35,20 @@ export default async function ResetPasswordPage() {
           <p className="text-sm text-ink-dim">
             Leave the demo to finish setting your password. Your reset link stays valid.
           </p>
+          {/*
+            `next` is what keeps this from being a dead end. `/auth/callback` has
+            already signed the rider in, so the plain `/demo/exit` lands them on
+            `/login`, which forwards a signed-in rider to `/dashboard` - no
+            password form, no way back to one.
+
+            `prefetch={false}` for the same reason the app menu sets it: this is a
+            route handler that drops the demo cookie, and a prefetch runs it
+            before the rider has clicked anything.
+          */}
           <Button asChild fullWidth>
-            <Link href="/demo/exit">Exit Demo</Link>
+            <Link href="/demo/exit?next=/reset-password" prefetch={false}>
+              Exit Demo
+            </Link>
           </Button>
         </Card>
       </div>

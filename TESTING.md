@@ -62,6 +62,15 @@ the spec would exercise the wrong path entirely instead of the GoTrue signup who
 trigger it exists to guard.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
+`next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a
+redirect out of a route handler lands on a different origin - and a different
+cookie scope - than the `127.0.0.1` the suite drives, and the browser arrives
+without the cookies that redirect just set. A spec that follows one has to
+re-enter on the base origin before it can see them again, and should assert on
+the path rather than the whole URL; `tests/e2e/demo-reset-password.spec.ts` has
+the shape. A deployed build uses the forwarded host and does not hop, so this is
+local-only.
+
 ## Install browser runtime
 ```bash
 npx playwright install
