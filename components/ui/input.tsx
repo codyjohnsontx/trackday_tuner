@@ -43,8 +43,10 @@ export function Input({ id, label, error, helperText, className, ...props }: Inp
   const finalDescId = [ariaDescribedBy, descId].filter(Boolean).join(' ') || undefined;
 
   return (
-    <label htmlFor={inputId} className="block space-y-2">
-      <span className="text-sm font-medium text-ink-dim">{label}</span>
+    <div className="space-y-2">
+      <label htmlFor={inputId} className="block text-sm font-medium text-ink-dim">
+        {label}
+      </label>
       <input
         id={inputId}
         aria-describedby={finalDescId}
@@ -62,6 +64,6 @@ export function Input({ id, label, error, helperText, className, ...props }: Inp
           {helperText}
         </p>
       )}
-    </label>
+    </div>
   );
 }

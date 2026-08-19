@@ -59,6 +59,29 @@ describe('Input label association', () => {
     expect(html).toContain('<input id="email"');
   });
 
+  it('keeps helper text out of the field\'s accessible name', () => {
+    const html = renderToStaticMarkup(
+      createElement(Input, {
+        label: 'Total Travel (optional)',
+        helperText: 'Needed to show sag as a percentage.',
+      }),
+    );
+
+    const inputId = /<input id="([^"]*)"/.exec(html)?.[1];
+    expect(/<label [^>]*>([\s\S]*?)<\/label>/.exec(html)?.[1]).toBe('Total Travel (optional)');
+    expect(html).toContain(`aria-describedby="${inputId}-helper"`);
+    expect(html).toContain('Needed to show sag as a percentage.');
+  });
+
+  it('keeps error text out of the field\'s accessible name', () => {
+    const html = renderToStaticMarkup(
+      createElement(Input, { label: 'Front Pressure', error: 'Enter a number' }),
+    );
+
+    expect(/<label [^>]*>([\s\S]*?)<\/label>/.exec(html)?.[1]).toBe('Front Pressure');
+    expect(html).toContain('Enter a number');
+  });
+
   it('keeps error and helper text wired to the field describing them', () => {
     const html = renderToStaticMarkup(
       createElement(Input, { label: 'Front Pressure', error: 'Enter a number' }),

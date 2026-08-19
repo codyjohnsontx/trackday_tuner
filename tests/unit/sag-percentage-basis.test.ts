@@ -80,6 +80,20 @@ describe('sag percentage basis', () => {
     expect(html).toContain('Add total travel above to see sag as a percentage.');
   });
 
+  it('shows no percentage and keeps the hint when travel is zero', () => {
+    const html = render({ ...measured, travel: '0' });
+
+    expect(Object.values(results(html)).filter((v) => v.endsWith('%'))).toEqual([]);
+    expect(html).toContain('Add total travel above to see sag as a percentage.');
+  });
+
+  it('shows no percentage and keeps the hint when travel is negative', () => {
+    const html = render({ ...measured, travel: '-120' });
+
+    expect(Object.values(results(html)).filter((v) => v.endsWith('%'))).toEqual([]);
+    expect(html).toContain('Add total travel above to see sag as a percentage.');
+  });
+
   it('collects total travel as its own field', () => {
     expect(render({})).toContain('Total Travel (optional)');
   });
@@ -92,5 +106,15 @@ describe('sag percentage basis', () => {
 
   it('does not warn when rider sag fits inside travel', () => {
     expect(render(measured)).not.toContain('Rider sag exceeds total travel');
+  });
+
+  it('warns when free sag exceeds total travel', () => {
+    const html = render({ l0: '610', l1: '480', l2: '600', travel: '120' });
+
+    expect(html).toContain('Free sag exceeds total travel. Recheck values.');
+  });
+
+  it('does not warn when free sag fits inside travel', () => {
+    expect(render(measured)).not.toContain('Free sag exceeds total travel');
   });
 });

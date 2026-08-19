@@ -28,6 +28,7 @@ export function SagSection({ title, values, onChange }: SagSectionProps) {
   // a number that looks like the industry-standard figure and is not one.
   const freeSagPct = calcSagPct(freeSagMm, travel);
   const riderSagPct = calcSagPct(riderSagMm, travel);
+  const hasUsableTravel = travel !== null && travel > 0;
 
   const measurementWarning =
     l0 !== null && ((l1 !== null && l0 < l1) || (l2 !== null && l0 < l2))
@@ -40,9 +41,13 @@ export function SagSection({ title, values, onChange }: SagSectionProps) {
       : null;
 
   const travelWarning =
-    travel !== null && riderSagMm !== null && riderSagMm > travel
-      ? 'Rider sag exceeds total travel. Recheck values.'
-      : null;
+    travel === null
+      ? null
+      : riderSagMm !== null && riderSagMm > travel
+        ? 'Rider sag exceeds total travel. Recheck values.'
+        : freeSagMm !== null && freeSagMm > travel
+          ? 'Free sag exceeds total travel. Recheck values.'
+          : null;
 
   return (
     <section className="space-y-3 rounded-card bg-surface p-4">
@@ -98,7 +103,7 @@ export function SagSection({ title, values, onChange }: SagSectionProps) {
         riderSagMm={riderSagMm}
         freeSagPct={freeSagPct}
         riderSagPct={riderSagPct}
-        hasTravel={travel !== null}
+        hasTravel={hasUsableTravel}
       />
     </section>
   );
