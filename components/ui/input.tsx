@@ -1,4 +1,6 @@
-import { InputHTMLAttributes } from 'react';
+'use client';
+
+import { InputHTMLAttributes, useId } from 'react';
 import { cva } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
@@ -29,7 +31,13 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export function Input({ id, label, error, helperText, className, ...props }: InputProps) {
-  const inputId = id ?? label.toLowerCase().replace(/\s+/g, '_');
+  // The id has to be unique per instance, not per label. Deriving it from the
+  // label text meant the Sag calculator's Front and Rear sections - which ask
+  // the same three questions - rendered three duplicated ids, so every `for`
+  // resolved to the Front field: tapping a Rear label focused Front, and the
+  // Rear inputs reached assistive tech with no accessible name at all.
+  const generatedId = useId();
+  const inputId = id ?? generatedId;
   const descId = error ? `${inputId}-error` : helperText ? `${inputId}-helper` : undefined;
   const { 'aria-describedby': ariaDescribedBy, ...inputProps } = props;
   const finalDescId = [ariaDescribedBy, descId].filter(Boolean).join(' ') || undefined;
