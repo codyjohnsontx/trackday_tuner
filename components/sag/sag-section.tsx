@@ -28,7 +28,6 @@ export function SagSection({ title, values, onChange }: SagSectionProps) {
   // a number that looks like the industry-standard figure and is not one.
   const freeSagPct = calcSagPct(freeSagMm, travel);
   const riderSagPct = calcSagPct(riderSagMm, travel);
-  const hasUsableTravel = travel !== null && travel > 0;
 
   const measurementWarning =
     l0 !== null && ((l1 !== null && l0 < l1) || (l2 !== null && l0 < l2))
@@ -42,8 +41,8 @@ export function SagSection({ title, values, onChange }: SagSectionProps) {
 
   // Travel is the divisor for both percentages, so zero or negative is not a
   // small travel figure - it is not a usable number at all, which is why
-  // calcSagPct rejects it and hasUsableTravel is false. Validating it here,
-  // before anything is compared against it, keeps the section from announcing
+  // calcSagPct rejects it. Validating it here, before anything is compared
+  // against it, keeps the section from announcing
   // "Rider sag exceeds total travel": true of any positive sag against zero,
   // and a problem the rider does not have instead of the one they do.
   const travelError =
@@ -113,7 +112,7 @@ export function SagSection({ title, values, onChange }: SagSectionProps) {
         riderSagMm={riderSagMm}
         freeSagPct={freeSagPct}
         riderSagPct={riderSagPct}
-        hasTravel={hasUsableTravel}
+        travelEntered={travel !== null}
       />
     </section>
   );

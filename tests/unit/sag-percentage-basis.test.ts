@@ -80,18 +80,31 @@ describe('sag percentage basis', () => {
     expect(html).toContain('Add total travel above to see sag as a percentage.');
   });
 
-  it('shows no percentage and keeps the hint when travel is zero', () => {
+  // The hint asks the rider for a figure. Once they have typed one it is the
+  // field error's job to say what is wrong with it - telling them to "add total
+  // travel above" while the number they added sits on screen asks for something
+  // they already did. Zero and negative still show no percentage.
+  it('shows no percentage and drops the hint when travel is zero', () => {
     const html = render({ ...measured, travel: '0' });
 
     expect(Object.values(results(html)).filter((v) => v.endsWith('%'))).toEqual([]);
-    expect(html).toContain('Add total travel above to see sag as a percentage.');
+    expect(html).toContain('Total travel must be greater than zero.');
+    expect(html).not.toContain('Add total travel above to see sag as a percentage.');
   });
 
-  it('shows no percentage and keeps the hint when travel is negative', () => {
+  it('shows no percentage and drops the hint when travel is negative', () => {
     const html = render({ ...measured, travel: '-120' });
 
     expect(Object.values(results(html)).filter((v) => v.endsWith('%'))).toEqual([]);
+    expect(html).toContain('Total travel must be greater than zero.');
+    expect(html).not.toContain('Add total travel above to see sag as a percentage.');
+  });
+
+  it('keeps the hint when no travel figure has been entered at all', () => {
+    const html = render({ ...measured, travel: '' });
+
     expect(html).toContain('Add total travel above to see sag as a percentage.');
+    expect(html).not.toContain('Total travel must be greater than zero.');
   });
 
   // Travel is the divisor for both percentages, so zero or negative is not a

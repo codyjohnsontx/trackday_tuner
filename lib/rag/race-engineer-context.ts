@@ -233,6 +233,7 @@ export async function loadRaceEngineerContext(
     .neq('id', session.id)
     .order('date', { ascending: false })
     .order('start_time', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
     .limit(30);
 
   const candidates = (candidateRows ?? []) as Session[];

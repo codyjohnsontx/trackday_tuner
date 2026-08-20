@@ -232,6 +232,35 @@ function collectFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+/**
+ * The `.order()` calls of one chain, in source order, with PostgREST's defaults
+ * filled in: ascending unless told otherwise, and NULLS FIRST when descending.
+ */
+function parseOrderCalls(chain: string): OrderCall[] {
+  const call = /\.order\(\s*['"]([a-z_]+)['"]\s*(?:,\s*\{([^}]*)\})?\s*\)/g;
+  const orders: OrderCall[] = [];
+  for (const [, column, options = ''] of chain.matchAll(call)) {
+    const ascending = !/ascending\s*:\s*false/.test(options);
+    const nullsFirst = /nullsFirst\s*:\s*(true|false)/.exec(options);
+    orders.push({
+      column,
+      ascending,
+      nullsFirst: nullsFirst ? nullsFirst[1] === 'true' : !ascending,
+    });
+  }
+  return orders;
+}
+
+function describeOrdering(orders: OrderCall[]): string {
+  if (orders.length === 0) return '(no .order() calls)';
+  return orders
+    .map(
+      ({ column, ascending, nullsFirst }) =>
+        `${column} ${ascending ? 'asc' : 'desc'} ${nullsFirst ? 'nulls-first' : 'nulls-last'}`,
+    )
+    .join(' -> ');
+}
+
 describe('source guard', () => {
   // Each `.from('sessions')` chain, cut at the next statement boundary. Only the
   // queries selecting whole rows are in scope: those become a list a rider reads,
@@ -248,18 +277,50 @@ describe('source guard', () => {
       .slice(1)
       .map((rest) => rest.split(/;|\.from\(/)[0])
       .filter((chain) => /\.select\(\s*['"]\*['"]\s*\)/.test(chain))
-      .map((chain) => ({ file: path.relative(repoRoot, file), chain }));
+      .map((chain) => ({
+        file: path.relative(repoRoot, file),
+        chain,
+        orders: parseOrderCalls(chain),
+      }));
   });
 
   it('finds the session row queries to check', () => {
     expect(sessionRowQueries.length).toBeGreaterThan(2);
   });
 
-  it('has no session row query ordering on date without breaking the same-day tie', () => {
+  // The SQL mirror of `compareSessionsDesc`. `nullsFirst` is only pinned on
+  // `start_time`, the one nullable column of the three, because that default is
+  // what put a session logged without a start time above the rest of its own day.
+  const requiredOrdering: { column: string; ascending: boolean; nullsFirst?: boolean }[] = [
+    { column: 'date', ascending: false },
+    { column: 'start_time', ascending: false, nullsFirst: false },
+    { column: 'created_at', ascending: false },
+  ];
+
+  /**
+   * A partial match is the failure this guard exists for: `date` alone listed a
+   * track day in insertion order, and `date` + `start_time` still does whenever
+   * the rider left the start time empty - which the session form does by default.
+   * So the whole sequence has to be there, in order, descending, or the same-day
+   * tie falls through to whatever the planner emits.
+   */
+  it('orders every session row query date, then start_time nulls last, then created_at', () => {
     const offenders = sessionRowQueries
       .filter(({ chain }) => /\.order\(\s*['"]date['"]/.test(chain))
-      .filter(({ chain }) => !/\.order\(\s*['"]start_time['"]/.test(chain))
-      .map(({ file }) => file);
+      .filter(
+        ({ orders }) =>
+          orders.length !== requiredOrdering.length ||
+          !requiredOrdering.every((want, index) => {
+            const got = orders[index];
+            return (
+              got !== undefined &&
+              got.column === want.column &&
+              got.ascending === want.ascending &&
+              (want.nullsFirst === undefined || got.nullsFirst === want.nullsFirst)
+            );
+          }),
+      )
+      .map(({ file, orders }) => `${file}: ${describeOrdering(orders)}`);
 
     expect(offenders).toEqual([]);
   });

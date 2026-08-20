@@ -5,7 +5,13 @@ interface SagResultsProps {
   riderSagMm: number | null;
   freeSagPct: number | null;
   riderSagPct: number | null;
-  hasTravel: boolean;
+  /**
+   * Whether a travel figure was typed at all, not whether it was usable. The
+   * hint below asks the rider for one, so a rider who entered 0 must not be
+   * told to add what is already on screen - the field's own error names what is
+   * wrong with it.
+   */
+  travelEntered: boolean;
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -22,7 +28,7 @@ export function SagResults({
   riderSagMm,
   freeSagPct,
   riderSagPct,
-  hasTravel,
+  travelEntered,
 }: SagResultsProps) {
   const hasSag = freeSagMm !== null || riderSagMm !== null;
 
@@ -32,7 +38,7 @@ export function SagResults({
       <Row label="Rider/Race Sag" value={`${roundForDisplay(riderSagMm)} mm`} />
       {freeSagPct !== null ? <Row label="Free Sag (% of travel)" value={`${roundForDisplay(freeSagPct)}%`} /> : null}
       {riderSagPct !== null ? <Row label="Rider Sag (% of travel)" value={`${roundForDisplay(riderSagPct)}%`} /> : null}
-      {!hasTravel && hasSag ? (
+      {!travelEntered && hasSag ? (
         <p className="pt-1 text-xs text-ink-faint">Add total travel above to see sag as a percentage.</p>
       ) : null}
     </div>
