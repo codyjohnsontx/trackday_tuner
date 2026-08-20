@@ -441,6 +441,7 @@ export async function POST(request: Request) {
       .eq('vehicle_id', vehicle.id)
       .order('date', { ascending: false })
       .order('start_time', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
       .limit(10),
     supabase
       .from('session_feedback')

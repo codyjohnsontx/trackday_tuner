@@ -409,6 +409,23 @@ with and without the flag and watching the cookie survive or vanish on render.
   (`lib/session-previous.ts`) rather than writing a fourth predicate: three call
   sites once hand-rolled the raw filter and all three went blind to same-day
   sessions logged without a start time
+- The same rule governs **list ordering**, and a track day is the case that exposes
+  it: every session shares a `date`, so `.order('date')` alone leaves the whole day
+  tied and the tie broken by whatever the planner emits. Any query selecting whole
+  session rows orders `date`, then `start_time` with `nullsFirst: false`, then
+  `created_at` - the SQL mirror of `compareSessionsDesc`. `getSessions` once ordered
+  on `date` alone, which listed a rider's day backwards and left the session they had
+  just finished off the dashboard's three-row "Recent" list. It is invisible in demo
+  mode, where `getDemoSessions` sorts in TypeScript with the shared comparator, so
+  this class of bug needs a real account to see.
+  `tests/unit/session-list-ordering.test.ts` guards it
+- **A per-vehicle fact has to come from that vehicle's own sessions.** `getVehicles`
+  orders `created_at` ascending, so `vehicles[0]` is the *oldest* vehicle. The
+  dashboard hero paired that nickname with the newest session of *any* vehicle, so a
+  rider with a second bike read their new bike's track day under their old bike's
+  name. `resolveDashboardHeroSubject` (`lib/dashboard-hero.ts`) returns the name and
+  the session together so the two cannot be picked off different lists.
+  `lib/dashboard-hero.test.ts` guards it
 
 ## What a Rider Told You
 
@@ -461,10 +478,15 @@ a localStorage preference cannot be read.
 ## What the Test Suites Cover
 
 `vitest.config.ts` collects `app/**`, `lib/**` and `tests/unit/**` only, and the
-project has no React testing library, so **no component renders in the unit
-suite**. Logic that needs a regression test belongs in `lib/`; behaviour that only
-exists on screen (a row opening unpressed, a save refusing, a confirm appearing)
-belongs in `tests/e2e/`.
+project has no React testing library and no DOM, so **nothing in the unit suite is
+interactive**. A suite can still `renderToStaticMarkup` a component and read the
+attributes back - `vitest.config.ts` sets `esbuild.jsx: 'automatic'` so an imported
+`.tsx` compiles, since tsconfig's `jsx: preserve` would otherwise fail it with
+`React is not defined`. That reaches structural facts about one render
+(`tests/unit/input-label-association.test.ts`, `tests/unit/sag-percentage-basis.test.ts`)
+and nothing that needs a click, a state change or a layout. Logic that needs a
+regression test still belongs in `lib/`; behaviour that only exists on screen (a row
+opening unpressed, a save refusing, a confirm appearing) belongs in `tests/e2e/`.
 
 `npm run test:e2e` **skips itself in CI** unless `RUN_E2E=1`, so an e2e spec is
 evidence a change works, not a gate that will catch its regression. Run the specs

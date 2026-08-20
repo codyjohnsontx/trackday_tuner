@@ -13,15 +13,18 @@ import { runResourceId } from '@/tests/e2e/helpers/run-id';
  * through the browser.
  */
 
-const FRONT = { l0: '590', l1: '560', l2: '555' };
-const UNSAVED = { l0: '600', l1: '572', l2: '566' };
+const FRONT = { l0: '590', l1: '560', l2: '555', travel: '120' };
+const UNSAVED = { l0: '600', l1: '572', l2: '566', travel: '135' };
 
-async function fillFront(page: Page, values: { l0: string; l1: string; l2: string }) {
+type FrontValues = typeof FRONT;
+
+async function fillFront(page: Page, values: FrontValues) {
   const front = page.locator('section').filter({ hasText: 'Front' }).first();
   for (const [label, value] of [
     ['Fully Extended (L0)', values.l0],
     ['Bike Only (L1)', values.l1],
     ['Rider On Bike (L2)', values.l2],
+    ['Total Travel (optional)', values.travel],
   ] as const) {
     const field = front.getByLabel(label);
     // Controlled inputs: a value typed before hydration is thrown away.
@@ -72,6 +75,15 @@ test.describe('the sag history', () => {
     await expect(row).toContainText('30.0');
     await expect(row).toContainText('35.0');
 
+    // Total travel is the one measurement no list row prints, so a regression in
+    // its write path would be invisible on screen. Read the stored column back.
+    const { data: stored } = await createTestAdminClient()
+      .from('sag_entries')
+      .select('front_travel_mm')
+      .eq('label', label);
+    expect(stored).toHaveLength(1);
+    expect(stored?.[0].front_travel_mm).toBe(Number(FRONT.travel));
+
     // Measurements typed after the save are not in any entry.
     await fillFront(page, UNSAVED);
     await row.getByRole('button', { name: label }).click();
@@ -82,11 +94,13 @@ test.describe('the sag history', () => {
     await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue(UNSAVED.l0);
     await expect(front.getByLabel('Bike Only (L1)')).toHaveValue(UNSAVED.l1);
     await expect(front.getByLabel('Rider On Bike (L2)')).toHaveValue(UNSAVED.l2);
+    await expect(front.getByLabel('Total Travel (optional)')).toHaveValue(UNSAVED.travel);
 
     // Asking again and accepting does load it.
     await row.getByRole('button', { name: label }).click();
     await page.getByRole('button', { name: 'Load anyway' }).click();
     await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue(FRONT.l0);
+    await expect(front.getByLabel('Total Travel (optional)')).toHaveValue(FRONT.travel);
 
     // Deleting is a deliberate hold, and it removes the row.
     const deleteButton = row.getByRole('button', { name: /Hold to delete/ });

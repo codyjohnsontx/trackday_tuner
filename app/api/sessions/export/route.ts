@@ -40,7 +40,8 @@ export async function GET(request: Request) {
     .select('*')
     .eq('user_id', user.id)
     .order('date', { ascending: false })
-    .order('start_time', { ascending: false, nullsFirst: false });
+    .order('start_time', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false });
 
   if (vehicleId) {
     sessionsQuery = sessionsQuery.eq('vehicle_id', vehicleId);

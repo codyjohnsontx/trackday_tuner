@@ -5,6 +5,13 @@ interface SagResultsProps {
   riderSagMm: number | null;
   freeSagPct: number | null;
   riderSagPct: number | null;
+  /**
+   * Whether a travel figure was typed at all, not whether it was usable. The
+   * hint below asks the rider for one, so a rider who entered 0 must not be
+   * told to add what is already on screen - the field's own error names what is
+   * wrong with it.
+   */
+  travelEntered: boolean;
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -16,13 +23,24 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function SagResults({ freeSagMm, riderSagMm, freeSagPct, riderSagPct }: SagResultsProps) {
+export function SagResults({
+  freeSagMm,
+  riderSagMm,
+  freeSagPct,
+  riderSagPct,
+  travelEntered,
+}: SagResultsProps) {
+  const hasSag = freeSagMm !== null || riderSagMm !== null;
+
   return (
     <div className="space-y-1 rounded-row bg-surface-3 p-3">
       <Row label="Free/Static Sag" value={`${roundForDisplay(freeSagMm)} mm`} />
       <Row label="Rider/Race Sag" value={`${roundForDisplay(riderSagMm)} mm`} />
-      {freeSagPct !== null ? <Row label="Free Sag (% of L0)" value={`${roundForDisplay(freeSagPct)}%`} /> : null}
-      {riderSagPct !== null ? <Row label="Rider Sag (% of L0)" value={`${roundForDisplay(riderSagPct)}%`} /> : null}
+      {freeSagPct !== null ? <Row label="Free Sag (% of travel)" value={`${roundForDisplay(freeSagPct)}%`} /> : null}
+      {riderSagPct !== null ? <Row label="Rider Sag (% of travel)" value={`${roundForDisplay(riderSagPct)}%`} /> : null}
+      {!travelEntered && hasSag ? (
+        <p className="pt-1 text-xs text-ink-faint">Add total travel above to see sag as a percentage.</p>
+      ) : null}
     </div>
   );
 }
