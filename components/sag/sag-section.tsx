@@ -40,8 +40,17 @@ export function SagSection({ title, values, onChange }: SagSectionProps) {
       ? 'Sag is negative. Recheck values.'
       : null;
 
+  // Travel is the divisor for both percentages, so zero or negative is not a
+  // small travel figure - it is not a usable number at all, which is why
+  // calcSagPct rejects it and hasUsableTravel is false. Validating it here,
+  // before anything is compared against it, keeps the section from announcing
+  // "Rider sag exceeds total travel": true of any positive sag against zero,
+  // and a problem the rider does not have instead of the one they do.
+  const travelError =
+    travel !== null && travel <= 0 ? 'Total travel must be greater than zero.' : null;
+
   const travelWarning =
-    travel === null
+    travel === null || travel <= 0
       ? null
       : riderSagMm !== null && riderSagMm > travel
         ? 'Rider sag exceeds total travel. Recheck values.'
@@ -90,6 +99,7 @@ export function SagSection({ title, values, onChange }: SagSectionProps) {
         step="any"
         placeholder="mm"
         helperText="From the bike's spec sheet. Needed to show sag as a percentage."
+        error={travelError ?? undefined}
         value={values.travel}
         onChange={(event) => onChange({ ...values, travel: event.target.value })}
       />

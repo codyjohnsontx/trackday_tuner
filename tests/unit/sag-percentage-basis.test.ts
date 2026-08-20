@@ -94,6 +94,40 @@ describe('sag percentage basis', () => {
     expect(html).toContain('Add total travel above to see sag as a percentage.');
   });
 
+  // Travel is the divisor for both percentages, so zero or negative is not a
+  // small travel figure - it is not a usable number at all. The section used to
+  // fall straight through to the sag comparison and announce "Rider sag exceeds
+  // total travel", which names a problem the rider does not have and hides the
+  // one they do, while calcSagPct and the percentage hint were both already
+  // treating the value as unusable.
+  it('names the travel figure as the problem when it is zero, not the sag', () => {
+    const html = render({ ...measured, travel: '0' });
+
+    expect(html).toContain('Total travel must be greater than zero.');
+    expect(html).not.toContain('exceeds total travel');
+  });
+
+  it('names the travel figure as the problem when it is negative, not the sag', () => {
+    const html = render({ ...measured, travel: '-120' });
+
+    expect(html).toContain('Total travel must be greater than zero.');
+    expect(html).not.toContain('exceeds total travel');
+  });
+
+  it('marks the travel field itself invalid rather than floating the message', () => {
+    // Field-level validation belongs on the field: aria-invalid is what tells a
+    // screen reader which of the four inputs is the one to go back to.
+    expect(render({ ...measured, travel: '0' })).toContain('aria-invalid="true"');
+    expect(render(measured)).not.toContain('aria-invalid="true"');
+  });
+
+  it('still compares sag against a usable travel figure', () => {
+    // The new guard runs before the comparison, so it must not swallow it.
+    expect(render({ ...measured, travel: '30' })).toContain(
+      'Rider sag exceeds total travel. Recheck values.',
+    );
+  });
+
   it('collects total travel as its own field', () => {
     expect(render({})).toContain('Total Travel (optional)');
   });
