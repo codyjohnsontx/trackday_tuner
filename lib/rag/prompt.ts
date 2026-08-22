@@ -687,9 +687,9 @@ function collectRaceEngineerContextRiderText(
  *
  * WHAT IS COLLECTED IS THEN GIVEN A DISPOSITION, refuse or skip, and the axis
  * is ACTIONABILITY: can the rider reach the thing the refusal would name? Not
- * who wrote it - see `RiderTextField`, where `race_engineer_memory.summary`
- * holds the rider's own words and still has to skip. The sweep was done once so
- * nobody re-derives it:
+ * who wrote it - see `RiderTextField`, where `race_engineer_memory.summary` was
+ * written by the app from a template and still refuses, because the outcome
+ * panel rewrites it. The sweep was done once so nobody re-derives it:
  *
  * REFUSE, an edit path exists and the label names something reachable:
  * - Vehicle nickname, make and model -> the garage vehicle form, which is the
@@ -704,7 +704,6 @@ function collectRaceEngineerContextRiderText(
  *   numeric object), so a phrase in one of them implies a rider PATCH.
  * - Every session string on the current, previous and similar sessions, and the
  *   day-plan request's own track name and environment.
- *
  * - `race_engineer_memory.summary` -> the outcome panel. `save_session_outcome`
  *   overwrites the summary outright, so re-saving that outcome clears it. Its
  *   LABEL is what had to change rather than its disposition: it now names the
