@@ -108,8 +108,17 @@ function formatSessionBlock(label: string, session: Session | null): string {
   lines.push(`  tires.condition: ${formatValue(session.tires.condition)}`);
   lines.push(`  tires.front: brand=${formatValue(session.tires.front.brand)} compound=${formatValue(session.tires.front.compound)} pressure=${formatValue(session.tires.front.pressure)}`);
   lines.push(`  tires.rear: brand=${formatValue(session.tires.rear.brand)} compound=${formatValue(session.tires.rear.compound)} pressure=${formatValue(session.tires.rear.pressure)}`);
-  lines.push(`  suspension.front: preload=${formatValue(session.suspension.front.preload)} compression=${formatValue(session.suspension.front.compression)} rebound=${formatValue(session.suspension.front.rebound)} direction=${session.suspension.front.direction}`);
-  lines.push(`  suspension.rear: preload=${formatValue(session.suspension.rear.preload)} compression=${formatValue(session.suspension.rear.compression)} rebound=${formatValue(session.suspension.rear.rebound)} direction=${session.suspension.rear.direction}`);
+  // Every one of these is a string leaf of the `suspension` jsonb blob, which
+  // `createSession` inserts verbatim and which no CHECK constraint shapes -
+  // `authenticated` holds insert and update on `sessions`, and RLS picks the row,
+  // not the column. `direction` is typed `'in' | 'out'`, but that is a TypeScript
+  // claim about a column the database will accept anything in, so it goes through
+  // `formatValue` exactly like its three siblings on this line. It did not, and a
+  // stored `</session_data>` closed this block early and put the rider's text in
+  // the model's instruction space on BOTH AI routes. The stored-text screen does
+  // not cover this: its patterns are phrases, so a bare closing tag passes it.
+  lines.push(`  suspension.front: preload=${formatValue(session.suspension.front.preload)} compression=${formatValue(session.suspension.front.compression)} rebound=${formatValue(session.suspension.front.rebound)} direction=${formatValue(session.suspension.front.direction)}`);
+  lines.push(`  suspension.rear: preload=${formatValue(session.suspension.rear.preload)} compression=${formatValue(session.suspension.rear.compression)} rebound=${formatValue(session.suspension.rear.rebound)} direction=${formatValue(session.suspension.rear.direction)}`);
   if (session.alignment) {
     lines.push(
       `  alignment: front_camber=${formatValue(session.alignment.front_camber)} rear_camber=${formatValue(session.alignment.rear_camber)} front_toe=${formatValue(session.alignment.front_toe)} rear_toe=${formatValue(session.alignment.rear_toe)} caster=${formatValue(session.alignment.caster)}`,
