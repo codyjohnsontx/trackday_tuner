@@ -47,48 +47,68 @@ interface AdvicePolicyInput {
  * advice - the structured field is guarded while the prose field, which is what
  * they actually read, is not.
  *
- * So an empty plan additionally has to be non-actionable. This is a deliberate
- * heuristic and deliberately conservative: a change verb and a setup quantity in
- * the same sentence is treated as an instruction and refused. The correct place
- * for a real recommendation is `recommended_changes`, where the magnitude policy
- * can see it; monitoring belongs in `prediction.watch_items`, which carries no
- * instruction. Units that describe conditions rather than adjustments (degrees,
- * percent) are excluded so an ordinary "expect track temp to climb" summary is
- * not mistaken for a setup change.
+ * So an empty plan additionally has to carry no instruction in its summary. Two
+ * things bound this check, and both were paid for in false refusals.
+ *
+ * IT READS `summary` AND NOTHING ELSE. The hole is an instruction sitting where
+ * the rider reads it as the plan; `tradeoffs`, `prediction` and
+ * `personal_evidence` are read as consequences, forecasts and history, and
+ * every false positive this heuristic produced came from scanning them. A
+ * warming-day `day_trend` is the shape the day-plan prompt explicitly asks for,
+ * so refusing the whole response over it threw away the very answer
+ * `allowEmptyRecommendations` exists to preserve.
+ *
+ * IT MATCHES A DELTA, NOT ANY QUANTITY. What separates an instruction from a
+ * report is whether a change verb governs the number: "increase front tire
+ * pressure by 6 psi" and "soften front rebound 1 click" are instructions, while
+ * "your 30 psi cold baseline" is a reading that happens to share a sentence with
+ * a verb. So the quantity has to arrive after `by`, or after the verb with only
+ * the component being adjusted in between. Units that describe conditions rather
+ * than adjustments (degrees, percent) are not setup units at all and never
+ * match.
  *
  * "set", "sets" and "setting" are deliberately not in the verb list. In a setup
  * logger those words are usually nouns and they sit next to a psi figure
  * constantly, so "start on your baseline 30 psi cold setting and check hot
- * pressures" was refused - which is the baseline-check answer
- * `allowEmptyRecommendations` exists to preserve, and the phrasing the day-plan
- * prompt steers the model toward. Every real instruction verb still trips.
+ * pressures" was refused - which is the baseline-check answer the empty-plan
+ * path exists to preserve. Every real instruction verb still trips.
+ *
+ * The heuristic cannot be complete, and widening it is not the way to make it
+ * so: a real recommendation belongs in `recommended_changes` where the
+ * magnitude policy can see it, and this only has to stop the summary being used
+ * to route around that.
  */
-const CHANGE_VERB_PATTERN =
-  /\b(?:increas(?:e|es|ing)|decreas(?:e|es|ing)|rais(?:e|es|ing)|lower(?:s|ing)?|add(?:s|ing)?|drop(?:s|ping)?|bleed(?:s|ing)?|reduc(?:e|es|ing)|soften(?:s|ing)?|stiffen(?:s|ing)?|tighten(?:s|ing)?|loosen(?:s|ing)?|back(?:ing)? off|wind(?:ing)? on|adjust(?:s|ing)?|bump(?:s|ing)?|shim(?:s|ming)?|preload(?:s|ing)?)\b/i;
+const CHANGE_VERB_SOURCE =
+  '(?:increas(?:e|es|ing)|decreas(?:e|es|ing)|rais(?:e|es|ing)|lower(?:s|ing)?|add(?:s|ing)?|drop(?:s|ping)?|bleed(?:s|ing)?|reduc(?:e|es|ing)|soften(?:s|ing)?|stiffen(?:s|ing)?|tighten(?:s|ing)?|loosen(?:s|ing)?|back(?:ing)? off|wind(?:ing)? on|adjust(?:s|ing)?|bump(?:s|ing)?|shim(?:s|ming)?|preload(?:s|ing)?)';
 
-const SETUP_QUANTITY_PATTERN =
-  /\b\d+(?:\.\d+)?\s*(?:psi|bar|kpa|clicks?|mm|cm|turns?|teeth|tooth|notch(?:es)?)\b/i;
+const SETUP_QUANTITY_SOURCE =
+  '\\d+(?:\\.\\d+)?\\s*(?:psi|bar|kpa|clicks?|mm|cm|turns?|teeth|tooth|notch(?:es)?)';
 
-function proseFields(advice: AdviceResponse): string[] {
-  return [
-    advice.summary,
-    ...advice.tradeoffs,
-    advice.prediction?.expected_effect ?? '',
-    advice.prediction?.day_trend ?? '',
-    ...(advice.prediction?.watch_items ?? []),
-    ...advice.personal_evidence.map((entry) => entry.detail),
-  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
-}
+const CHANGE_VERB_PATTERN = new RegExp(`\\b${CHANGE_VERB_SOURCE}\\b`, 'i');
+
+// The verb has to reach the number. What it may reach across is the component
+// being adjusted ("soften front rebound 1 click"), which is a short run of plain
+// words; what ends its reach is a possessive, a clause connective or any
+// punctuation, because past one of those the number belongs to a different
+// phrase - "increase through the morning, so your 30 psi cold baseline" is a
+// forecast that happens to share a sentence with a verb.
+const GOVERNMENT_BREAKERS =
+  'your|my|our|their|its|his|her|so|and|but|because|while|although|though|through|when|if|after|before|than|that|which|to|at|for|from|with';
+
+const DELTA_QUANTITY_PATTERN = new RegExp(
+  `\\bby\\s+${SETUP_QUANTITY_SOURCE}\\b` +
+    `|\\b${CHANGE_VERB_SOURCE}\\s+(?:(?!(?:${GOVERNMENT_BREAKERS})\\b)[a-z]+\\s+){0,3}${SETUP_QUANTITY_SOURCE}\\b`,
+  'i',
+);
 
 function hasActionableProse(advice: AdviceResponse): boolean {
-  return proseFields(advice).some((field) =>
-    field
-      .split(/[.!?;\n]+/)
-      .some(
-        (sentence) =>
-          CHANGE_VERB_PATTERN.test(sentence) && SETUP_QUANTITY_PATTERN.test(sentence),
-      ),
-  );
+  const summary = typeof advice.summary === 'string' ? advice.summary : '';
+  return summary
+    .split(/[.!?;\n]+/)
+    .some(
+      (sentence) =>
+        CHANGE_VERB_PATTERN.test(sentence) && DELTA_QUANTITY_PATTERN.test(sentence),
+    );
 }
 
 function changeViolations(change: RecommendedChange): AdvicePolicyViolation[] {
@@ -208,7 +228,7 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
         advice: buildRefusalAdvice({
           reason: 'no_safe_answer',
           message:
-            'That plan described a setup change in prose without proposing it as a checked recommendation, so I am not returning it. Ask for a specific change and I will keep it conservative.',
+            'That plan described a setup change in prose without proposing it as a checked recommendation, so I am not returning it. Try building the plan again, or review the conditions you entered for this day.',
           dataUsed: advice.data_used,
         }),
       };

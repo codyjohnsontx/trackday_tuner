@@ -380,12 +380,36 @@ describe('actionable prose in an empty plan', () => {
     });
   }
 
-  it('refuses a change verb and a setup quantity in the same sentence', () => {
+  it('refuses a change verb governing a delta quantity', () => {
     const result = emptyPlan({ summary: 'Increase front pressure by 6 psi before session one.' });
     expect(result.decision).toBe('force_refusal');
     expect(result.violations).toContain('actionable_prose_without_changes');
   });
 
+  // The refusal only ever reaches the Morning Plan panel, which has no question
+  // box - so it must not tell the rider to ask for something.
+  it('refuses with copy the day-plan panel can act on', () => {
+    const result = emptyPlan({ summary: 'Increase front pressure by 6 psi before session one.' });
+    expect(result.advice.refusal).toContain('Try building the plan again');
+    expect(result.advice.refusal).not.toContain('Ask for a specific change');
+  });
+
+  it('refuses a delta the verb governs directly, with no "by"', () => {
+    const result = emptyPlan({ summary: 'Soften front rebound 1 click before session one.' });
+    expect(result.decision).toBe('force_refusal');
+    expect(result.violations).toContain('actionable_prose_without_changes');
+  });
+
+  it('refuses a delta buried mid-sentence in an otherwise ordinary plan', () => {
+    const result = emptyPlan({
+      summary: 'Before session one, increase front tire pressure by 6 psi for more grip.',
+    });
+    expect(result.decision).toBe('force_refusal');
+    expect(result.violations).toContain('actionable_prose_without_changes');
+  });
+
+  // Every sentence below is one this heuristic once refused, kept so the next
+  // person can tell whether they broke the guard or fixed it.
   it('does not fire on a condition description that happens to contain a verb', () => {
     // "drop" and a temperature, but no setup unit - this is a forecast, not an instruction.
     const result = emptyPlan({
@@ -401,10 +425,9 @@ describe('actionable prose in an empty plan', () => {
     expect(result.decision).toBe('allow');
   });
 
-  // The exact sentence the heuristic once refused, kept forever. "setting" is a
-  // noun here and sits beside a psi figure, which in a setup logger is the
-  // normal case rather than the exception - and this is the baseline-check
-  // answer the empty-plan path exists to preserve.
+  // "setting" is a noun here and sits beside a psi figure, which in a setup
+  // logger is the normal case rather than the exception - and this is the
+  // baseline-check answer the empty-plan path exists to preserve.
   it('allows the baseline cold-setting phrasing the day-plan prompt steers toward', () => {
     const result = emptyPlan({
       summary: 'Start on your baseline 30 psi cold setting and check hot pressures after session one.',
@@ -413,17 +436,15 @@ describe('actionable prose in an empty plan', () => {
     expect(result.violations).toEqual([]);
   });
 
-  it('allows a "setting" reading reported in personal evidence', () => {
+  // A change verb and a psi figure in one sentence, and it is a forecast: the
+  // verb governs the weather, not the number.
+  it('allows a warming-day forecast that names a baseline pressure', () => {
     const result = emptyPlan({
-      personal_evidence: [
-        {
-          label: 'Session 3',
-          detail: 'Your baseline setting of 30 psi worked well here.',
-          source_session_id: null,
-        },
-      ],
+      summary:
+        'Ambient will increase through the morning, so your 30 psi cold baseline will read higher hot.',
     });
     expect(result.decision).toBe('allow');
+    expect(result.violations).toEqual([]);
   });
 
   it('does not fire when the verb and the quantity are in different sentences', () => {
@@ -433,20 +454,35 @@ describe('actionable prose in an empty plan', () => {
     expect(result.decision).toBe('allow');
   });
 
-  it('scans watch items and tradeoffs, not just the summary', () => {
+  // Scope is the summary alone. The other prose fields are read as forecasts,
+  // consequences and history rather than as the plan, and scanning them is
+  // where every false refusal came from.
+  it('reads the summary only, not tradeoffs, prediction or personal evidence', () => {
     expect(
       emptyPlan({
         prediction: {
           expected_effect: 'Stable.',
           day_trend: 'Warming.',
-          watch_items: ['Bleed the rear to 26 psi if it climbs'],
+          watch_items: ['Rear hot pressure if it climbs by 2 psi'],
         },
-      }).violations,
-    ).toContain('actionable_prose_without_changes');
+      }).decision,
+    ).toBe('allow');
+
+    expect(emptyPlan({ tradeoffs: ['Adding 3 clicks of rebound would firm it up.'] }).decision).toBe(
+      'allow',
+    );
 
     expect(
-      emptyPlan({ tradeoffs: ['Adding 3 clicks of rebound would firm it up.'] }).violations,
-    ).toContain('actionable_prose_without_changes');
+      emptyPlan({
+        personal_evidence: [
+          {
+            label: 'Session 3',
+            detail: 'Your baseline setting of 30 psi worked well here.',
+            source_session_id: null,
+          },
+        ],
+      }).decision,
+    ).toBe('allow');
   });
 
   it('leaves the normal path alone when changes are present', () => {

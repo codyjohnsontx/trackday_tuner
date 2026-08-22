@@ -512,8 +512,12 @@ others' count. The body read, refusal throttle, reservation, counting and limit
 responses are one function - `preflightAiRequest` (`lib/rag/ai-request-preflight.ts`) -
 because duplicated safety control flow drifts toward whichever copy nobody reads.
 `app/api/ai/tuning-advice/route.characterization.test.ts` locks that route's
-status, body, headers and audit row across 18 guard paths so a change to the
-shared pipeline cannot move it unnoticed.
+status, body, headers, recommendation id and audit row across 19 paths so a change
+to the shared pipeline cannot move it unnoticed. Eighteen of those are refusals
+and failures; the nineteenth is the ordinary 200 that delivers advice, which was
+missing because the fixture recommended `softer` and the real policy refused it -
+a lock that covers only the paths nobody takes proves the pipeline stayed still
+everywhere except where it matters.
 
 **Injection screening takes two passes, and the second is the one that gets
 forgotten.** Text the request submitted is screened early - on day-plan before the
@@ -525,6 +529,16 @@ every suspension and alignment string - and `sanitizeFreeText` in `lib/rag/promp
 neutralises only the `<user_data>` tag delimiters, not phrases.
 `classifyStoredRiderText` runs over that after the read, which is why it cannot
 replace the first pass.
+
+**The second pass covers one of the two routes, and that is a filed gap rather
+than a description of the design.** Only `/api/ai/day-plan` calls
+`classifyStoredRiderText`; `/api/ai/tuning-advice` interpolates the same stored
+fields - session notes, previous-session notes, vehicle nickname, and through
+`formatRaceEngineerContext` the rider-memory summary, similar-session notes and
+feedback notes - and screens none of them. Closing it needs a second collector
+built from that route's own prompt input and is tracked as
+tt-stored-text-screen-tuning-advice. The note lives on `classifyStoredRiderText`
+itself, because a guard on one of two twins reads as covering both.
 
 The order around that first pass is load-bearing in both directions.
 `preflightAiRequest` is deliberately splittable - `checkAiRefusalThrottle` then
@@ -567,10 +581,32 @@ showing a plan the policy would refuse advertises a product that does not exist.
 **An empty `recommended_changes` list is checked as prose.** `evaluateAdvicePolicy`
 validates component, direction and magnitude by iterating the structured field, so
 when `allowEmptyRecommendations` is on, a model that puts the instruction in
-`summary` instead would walk past every check while the rider reads it. A change
-verb beside a setup quantity in one sentence is therefore refused
-(`actionable_prose_without_changes`). Guarding the structured field while the
-rider reads the prose field is a guard-shaped object, not a guard.
+`summary` instead would walk past every check while the rider reads it. Guarding
+the structured field while the rider reads the prose field is a guard-shaped
+object, not a guard.
+
+Two things bound that check, and both were paid for in false refusals rather than
+reasoned out. It reads **`summary` and nothing else** - `tradeoffs`, `prediction`
+and `personal_evidence` are read as consequences, forecasts and history, and every
+false positive came from scanning them; a warming-day `day_trend` is the shape the
+day-plan prompt asks for, so refusing over it discarded the very answer
+`allowEmptyRecommendations` exists to preserve. And it matches a **delta**, not any
+quantity: the number has to arrive after `by` or directly after the verb, so
+"increase front tire pressure by 6 psi" is refused while "your 30 psi cold
+baseline" is not. The heuristic cannot be complete and widening it is not how to
+make it so - a real recommendation belongs in `recommended_changes` where the
+magnitude ceiling can see it, and this only has to stop `summary` being used to
+route around that. The refusal copy is day-plan wording, because
+`allowEmptyRecommendations` has exactly one caller and that panel has no question
+box to ask anything in.
+
+**The wire vocabulary is identifiers; what a rider reads is not.**
+`formatComponentLabel` (`lib/rag/component-vocabulary.ts`) is the one place a
+`component` becomes display text, and both AI panels use it. The model is told to
+emit `rear_tire_pressure` exactly, so formatting at the panel rather than
+reordering the prompt's alias list is deliberate: a rider-facing guarantee must not
+rest on the model picking the prettier synonym. Anything the table does not
+recognise passes through unchanged.
 
 `/api/ai/day-plan` shipped with none of them, and with a hand-copied UUID pattern
 that had four groups instead of five. It therefore rejected every genuine

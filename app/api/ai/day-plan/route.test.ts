@@ -929,28 +929,26 @@ describe('POST /api/ai/day-plan actionable prose in an empty plan', () => {
     expect(row?.policy_violations).toContain('actionable_prose_without_changes');
   });
 
-  it('refuses a setup instruction hidden in the prediction', async () => {
+  // The check reads the summary alone. The prediction is where the day-plan
+  // prompt asks for warming-day forecasts and things to watch, and scanning it
+  // refused ordinary plans over sentences the rider never reads as advice.
+  it('delivers a plan whose prediction and watch items mention quantities', async () => {
     planWithProse({
       prediction: {
-        expected_effect: 'Drop the rear preload 4 turns and it will settle.',
-        day_trend: 'Warming.',
-        watch_items: [],
+        expected_effect: 'Pressures settle by session two.',
+        day_trend: 'Ambient will increase through the morning, so your 30 psi cold baseline will read higher hot.',
+        watch_items: ['Rear hot pressure once it climbs past 2 psi over cold'],
       },
     });
 
     const response = await post({ vehicle_id: VEHICLE_ID });
     const body = await response.json();
-    expect(body.advice.refusal).toContain('described a setup change in prose');
+    expect(response.status).toBe(200);
+    expect(body.advice.refusal).toBeNull();
   });
 
-  it('refuses a setup instruction hidden in a watch item', async () => {
-    planWithProse({
-      prediction: {
-        expected_effect: 'Pressures settle by session two.',
-        day_trend: 'Warming.',
-        watch_items: ['Bleed the rear back to 26 psi if it climbs'],
-      },
-    });
+  it('refuses a delta the verb governs without a "by"', async () => {
+    planWithProse({ summary: 'Soften front rebound 1 click before session one.' });
 
     const response = await post({ vehicle_id: VEHICLE_ID });
     const body = await response.json();

@@ -6,6 +6,7 @@ import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { RefusalCard } from '@/components/ai/refusal-card';
 import { SafetyBanner } from '@/components/ai/safety-banner';
 import { useTemperatureInput, useTemperatureUnit } from '@/components/ui/temperature-display';
+import { formatComponentLabel } from '@/lib/rag/component-vocabulary';
 import { classifyRaceEngineerQuestion } from '@/lib/rag/domain-guard';
 import {
   displayTemperatureBound,
@@ -187,7 +188,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
           <ul className="mt-2 space-y-3">
             {advice.recommended_changes.map((change, idx) => (
               <li key={`${change.component}-${idx}`} className="rounded-row bg-surface-2 p-3">
-                <p className="text-sm font-medium text-ink">{change.component}</p>
+                <p className="text-sm font-medium text-ink">{formatComponentLabel(change.component)}</p>
                 <p className="text-sm text-ink-dim">{change.direction} · {change.magnitude}</p>
                 <p className="mt-1 text-sm text-ink-dim">{change.reason}</p>
               </li>
@@ -445,7 +446,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
                         className="rounded-row bg-surface-2 p-3"
                       >
                         <p className="text-sm font-medium text-ink">
-                          {change.component}
+                          {formatComponentLabel(change.component)}
                         </p>
                         <p className="text-sm text-ink-dim">
                           {change.direction} · {change.magnitude}

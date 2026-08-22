@@ -141,6 +141,27 @@ export function findComponentPolicy(component: string): ComponentPolicy | null {
 }
 
 /**
+ * The rider-facing rendering of a `component` string.
+ *
+ * The wire vocabulary is identifiers - the model is told to emit
+ * `rear_tire_pressure` exactly, because that is what the policy checks - and the
+ * panels used to print whatever arrived straight onto the screen, so a rider
+ * read `rear_tire_pressure` where the copy had once said "Tire pressures".
+ * Formatting here rather than reordering the prompt's alias list is deliberate:
+ * what a rider sees must not depend on the model choosing the prettier synonym.
+ *
+ * Anything this table does not recognise is returned unchanged. The policy
+ * refuses unknown components before they can reach a panel, so a string that
+ * gets this far is either canonical or something no rule here should be
+ * reshaping.
+ */
+export function formatComponentLabel(component: string): string {
+  if (!findComponentPolicy(component)) return component;
+  const spaced = component.trim().toLowerCase().replace(/_/g, ' ');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/**
  * The prompt-facing rendering of the table above. Generated, never hand-copied:
  * this is the text the model is given, and it is built from the same data the
  * policy checks against.

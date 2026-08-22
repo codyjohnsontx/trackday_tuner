@@ -174,6 +174,14 @@ describe('classifyDayPlanRequest', () => {
     ).toBe('prompt_injection');
   });
 
+  it('does not assemble a phrase across two unrelated fields', () => {
+    // "you are" and "now sunny" only look like an injection once joined, and
+    // the day-plan prompt never joins them - it prints each field on its own.
+    expect(
+      classifyDayPlanRequest({ trackName: 'you are', weatherCondition: 'now sunny' }).decision,
+    ).toBe('allow');
+  });
+
   it('does not refuse a recipe request, because no such field exists here', () => {
     // The out-of-domain vocabulary is irrelevant to a structured request: the
     // worst a rider can do with these fields is name a strange track.

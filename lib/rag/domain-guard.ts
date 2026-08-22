@@ -235,19 +235,23 @@ export function classifyRaceEngineerQuestion(
  * and would be refused as out of domain on every single request. There is also
  * nothing to refuse: the rider cannot ask this endpoint for a cookie recipe,
  * only name a track and describe the weather.
+ *
+ * Each field is screened on its own rather than as one joined string, as in the
+ * other two screeners. Joining them lets a phrase be assembled across the seam:
+ * a track named "you are" beside a weather condition of "now sunny" reads as
+ * "you are now sunny" once concatenated, and refuses a paid request over a
+ * phrase neither field contains.
  */
 export function classifyDayPlanRequest(
   input: ClassifyDayPlanRequestInput,
 ): RaceEngineerQuestionAssessment {
-  const riderText = [
+  const injectionCandidates = [
     input.trackName ?? '',
     input.weatherCondition ?? '',
     input.surfaceCondition ?? '',
-  ]
-    .join(' ')
-    .trim();
+  ];
 
-  if (riderText && hasPromptInjectionSignal(riderText)) {
+  if (injectionCandidates.some((value) => value.trim() && hasPromptInjectionSignal(value))) {
     return {
       decision: 'refuse',
       reason: 'prompt_injection',
@@ -339,6 +343,18 @@ export function normalizeAdviceResponse(
  *
  * Each value is screened on its own rather than joined, so a phrase cannot be
  * assembled across the seam between two unrelated fields.
+ *
+ * ROUTE COVERAGE IS ASYMMETRIC, AND ONLY /api/ai/day-plan CALLS THIS.
+ * /api/ai/tuning-advice does NOT screen stored rider text, even though
+ * `buildUserPrompt` interpolates the same fields into its prompt: session
+ * notes, previous-session notes, the vehicle nickname, and - through
+ * `formatRaceEngineerContext` - the rider-memory summary, similar-session notes
+ * and feedback notes. A rider who stores an injection phrase in a session note
+ * and then asks an ordinary setup question reaches the model with it intact.
+ * Closing that is filed as tt-stored-text-screen-tuning-advice; it needs a
+ * second collector built from that route's own prompt input, not a call added
+ * here. Until then this guard covers one of two live routes, and reading it as
+ * covering both is the mistake this note exists to prevent.
  */
 export function classifyStoredRiderText(
   input: ClassifyStoredRiderTextInput,
