@@ -656,65 +656,72 @@ export async function POST(request: Request) {
   const recentEnvironments = (environmentsResult.data ?? []) as SessionEnvironment[];
   const feedback = (feedbackResult.data ?? []) as SessionFeedback[];
 
-  const raceEngineerContext = buildContext({
-    userId: user.id,
-    targetDate: computedTargetDate,
-    trackName: validated.data.track_name,
-    recentSessions,
-    recentEnvironments,
-    environment: hasEnvironment ? environment : null,
-    memory,
-    feedback,
-  });
-
-  // Screen two: rider text this request did not submit but the prompt still
-  // interpolates. It has to run after the read, which is exactly why screen one
-  // cannot cover it. The fields come from `collectDayPlanRiderText`, which is
-  // built from the same input the prompt builder takes, so the screen cannot
-  // cover less than the prompt hands over.
-  const storedAssessment = classifyStoredRiderText({
-    fields: collectDayPlanRiderText({
-      vehicle,
+  // Everything from here reads the stored session JSON, which is `jsonb not
+  // null` but shape-unconstrained - `createSession` inserts the tyre and
+  // suspension blobs verbatim - so a row missing a branch throws on an ordinary
+  // field read. It all sits inside the one error boundary for that reason: a
+  // throw out here would leave the slot this request already reserved stranded
+  // at `pending`, still counting against the rider's budget for the whole
+  // window, and answer them with an unshaped 500 carrying no request id.
+  try {
+    const raceEngineerContext = buildContext({
+      userId: user.id,
       targetDate: computedTargetDate,
       trackName: validated.data.track_name,
-      environment: hasEnvironment ? environment : null,
       recentSessions,
-      raceEngineerContext,
-    }),
-  });
-
-  if (storedAssessment.decision === 'refuse') {
-    // Audited under its own status, which the refusal throttle does not count:
-    // stored text refuses deterministically, so counting it would lock the rider
-    // out of every AI route for a note they wrote weeks ago.
-    await updateRequestLog({
-      logTag: LOG_TAG,
-      requestId,
-      status: STORED_TEXT_INJECTION_REFUSAL_STATUS,
-      refusalReason: STORED_TEXT_INJECTION_REFUSAL_REASON,
-      policyResult: 'force_refusal',
-      policyViolations: [],
-      classifierStage: 'stored_rider_text',
+      recentEnvironments,
+      environment: hasEnvironment ? environment : null,
+      memory,
+      feedback,
     });
 
-    return NextResponse.json(
-      {
-        ok: true,
-        request_id: requestId,
-        advice: buildRefusalAdvice({
-          reason: 'prompt_injection',
-          message:
-            storedAssessment.message ??
-            'I could not build a plan from your saved setup data. Check your saved vehicle and session notes for wording that reads as an instruction.',
-          dataUsed: refusalDataUsed(hasEnvironment),
-        }),
-        retrieved: [],
-      },
-      { status: 200, headers: { 'x-request-id': requestId } },
-    );
-  }
+    // Screen two: rider text this request did not submit but the prompt still
+    // interpolates. It has to run after the read, which is exactly why screen
+    // one cannot cover it. The fields come from `collectDayPlanRiderText`,
+    // which is built from the same input the prompt builder takes, so the
+    // screen cannot cover less than the prompt hands over.
+    const storedAssessment = classifyStoredRiderText({
+      fields: collectDayPlanRiderText({
+        vehicle,
+        targetDate: computedTargetDate,
+        trackName: validated.data.track_name,
+        environment: hasEnvironment ? environment : null,
+        recentSessions,
+        raceEngineerContext,
+      }),
+    });
 
-  try {
+    if (storedAssessment.decision === 'refuse') {
+      // Audited under its own status, which the refusal throttle does not
+      // count: stored text refuses deterministically, so counting it would lock
+      // the rider out of every AI route for a note they wrote weeks ago.
+      await updateRequestLog({
+        logTag: LOG_TAG,
+        requestId,
+        status: STORED_TEXT_INJECTION_REFUSAL_STATUS,
+        refusalReason: STORED_TEXT_INJECTION_REFUSAL_REASON,
+        policyResult: 'force_refusal',
+        policyViolations: [],
+        classifierStage: 'stored_rider_text',
+      });
+
+      return NextResponse.json(
+        {
+          ok: true,
+          request_id: requestId,
+          advice: buildRefusalAdvice({
+            reason: 'prompt_injection',
+            message:
+              storedAssessment.message ??
+              'I could not build a plan from your saved setup data. Check your saved vehicle and session notes for wording that reads as an instruction.',
+            dataUsed: refusalDataUsed(hasEnvironment),
+          }),
+          retrieved: [],
+        },
+        { status: 200, headers: { 'x-request-id': requestId } },
+      );
+    }
+
     const result = await generateDayPlan({
       vehicle,
       targetDate: computedTargetDate,

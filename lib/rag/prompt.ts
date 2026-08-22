@@ -389,6 +389,7 @@ function collectSessionRiderText(session: Session): RiderTextField[] {
     pushRiderText(fields, `the ${name} on your ${session.date} session`, value);
 
   add('track name', session.track_name);
+  add('tyre condition', session.tires.condition);
   add('front tyre brand', session.tires.front.brand);
   add('front tyre compound', session.tires.front.compound);
   add('front tyre pressure', session.tires.front.pressure);
@@ -398,9 +399,11 @@ function collectSessionRiderText(session: Session): RiderTextField[] {
   add('front preload', session.suspension.front.preload);
   add('front compression', session.suspension.front.compression);
   add('front rebound', session.suspension.front.rebound);
+  add('front adjuster direction', session.suspension.front.direction);
   add('rear preload', session.suspension.rear.preload);
   add('rear compression', session.suspension.rear.compression);
   add('rear rebound', session.suspension.rear.rebound);
+  add('rear adjuster direction', session.suspension.rear.direction);
   if (session.alignment) {
     add('front camber', session.alignment.front_camber);
     add('rear camber', session.alignment.rear_camber);
@@ -485,10 +488,26 @@ function collectRaceEngineerContextRiderText(
  * delimiters so stored text cannot escape its block; it does nothing about an
  * instruction written in plain prose inside one.
  *
- * Values the app or the model authored are deliberately absent - the day trend,
- * a similar session's match reasons, and previous recommendations, which have
- * already been through `evaluateAdvicePolicy`. Naming those in a refusal would
- * point a rider at a field they cannot edit.
+ * A value the builder prints and this does not collect belongs in the list
+ * below, with the reason. Anything absent from both is a hole in the screen,
+ * which is how `tires.condition` and the suspension adjuster directions were
+ * once missed: they look like closed choices in the form, but the whole tyre and
+ * suspension blob is inserted verbatim by `createSession`, so the constraint
+ * lives in the UI and not on the write path.
+ *
+ * Deliberately not collected:
+ * - Numbers and dates. A date, session number, temperature, confidence or score
+ *   cannot carry a sentence.
+ * - `session.conditions` and `session_feedback.outcome`. Both are allowlisted at
+ *   their only write path - `isSessionCondition` in `lib/actions/sessions.ts`,
+ *   and both the outcome route and `save_session_outcome` itself.
+ * - The environment `source`. A day plan's environment block is built from this
+ *   request rather than read from a stored row, so it is screen one's business.
+ * - `telemetry_summary.metrics`, a numeric JSON blob.
+ * - Values the app or the model authored: the day trend, a similar session's
+ *   match reasons, and previous recommendations, which have already been
+ *   through `evaluateAdvicePolicy`. Naming those in a refusal would point a
+ *   rider at a field they cannot edit.
  */
 export function collectDayPlanRiderText(
   input: Omit<BuildDayPlanInput, 'retrieved'>,
