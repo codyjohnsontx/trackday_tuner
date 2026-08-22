@@ -369,6 +369,17 @@ describe('collectDayPlanRiderText', () => {
     expect(prompt).toContain(SENTINELS.memorySummary);
   });
 
+  // Day-plan passes an empty recommendation list on both branches of its
+  // `buildContext`, so nothing it collects is app-authored and the skip path is
+  // inert on that route. Asserted rather than assumed: the skip exists for
+  // tuning-advice, and day-plan's behaviour is not supposed to move with it.
+  it('marks every value it collects as rider-authored', () => {
+    const collected = collectDayPlanRiderText(stampedInput());
+
+    expect(collected.length).toBeGreaterThan(0);
+    expect(collected.filter((field) => field.authored !== 'rider')).toEqual([]);
+  });
+
   it('labels each value with something the rider can go and edit', () => {
     const collected = collectDayPlanRiderText(stampedInput());
     const labelFor = (sentinel: string) =>
@@ -510,6 +521,43 @@ describe('collectTuningAdviceRiderText', () => {
       expect(prompt).toContain(sentinel);
       expect(collected.some((field) => field.value.includes(sentinel))).toBe(false);
     }
+  });
+
+  // REFUSE on what the rider authored; SKIP what the app authored, which the
+  // route can only act on if the collector says which is which. The saved
+  // recommendation is the one app-authored source either collector carries, and
+  // it carries the row id so exactly that row can be dropped from the prompt.
+  it('marks each value with who authored it', () => {
+    const collected = collectTuningAdviceRiderText(stampedInput());
+    const fieldFor = (sentinel: string) =>
+      collected.find((field) => field.value.includes(sentinel));
+
+    expect(fieldFor(SENTINELS.notes)).toMatchObject({ authored: 'rider' });
+    expect(fieldFor(SENTINELS.memorySummary)).toMatchObject({ authored: 'rider' });
+    // Rider-authored despite the app writing the row: the app's own writer
+    // cannot put free prose in `telemetry_summaries`, so a phrase there implies
+    // a rider PATCH. See the exclusion block in lib/rag/prompt.ts.
+    expect(fieldFor(SENTINELS.telemetryMetrics)).toMatchObject({ authored: 'rider' });
+
+    for (const sentinel of [
+      SENTINELS.recommendationComponent,
+      SENTINELS.recommendationDirection,
+      SENTINELS.recommendationMagnitude,
+      SENTINELS.recommendationEffect,
+    ]) {
+      expect(fieldFor(sentinel)).toMatchObject({
+        authored: 'app',
+        sourceId: '66666666-6666-6666-6666-666666666666',
+      });
+    }
+
+    // Nothing else may skip: an app mark on a field the rider can edit is a
+    // silent hole, not a convenience.
+    expect(
+      new Set(
+        collected.filter((field) => field.authored === 'app').map((field) => field.label),
+      ),
+    ).toEqual(new Set(['the saved recommendation from 2026-03-20']));
   });
 
   it('labels each value with something the rider can go and find', () => {

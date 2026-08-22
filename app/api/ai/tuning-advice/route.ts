@@ -26,7 +26,7 @@ import {
   classifyStoredRiderText,
 } from '@/lib/rag/domain-guard';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
-import { collectTuningAdviceRiderText } from '@/lib/rag/prompt';
+import { collectTuningAdviceRiderText, dropScreenedSources } from '@/lib/rag/prompt';
 import { validateTuningAdviceRequest } from '@/lib/rag/validation';
 import { fetchPreviousSession } from '@/lib/session-previous';
 import { createClient } from '@/lib/supabase/server';
@@ -485,6 +485,17 @@ export async function POST(request: Request) {
       );
     }
 
+    // The other half of that screen: an app-authored match is skipped rather
+    // than refused, and skipping only means anything if the offending row leaves
+    // the prompt. Everything downstream reads the screened context - the model
+    // call, the citation ids the policy will accept, and the snapshot stored on
+    // the recommendation - so a dropped row is gone from all three rather than
+    // from the prompt alone.
+    const screenedContext = dropScreenedSources(
+      raceEngineerContext,
+      storedAssessment.droppedSourceIds,
+    );
+
     const result = await generateTuningAdvice({
       session,
       previousSession,
@@ -493,21 +504,21 @@ export async function POST(request: Request) {
       symptoms: validated.data.symptoms,
       changeIntent: validated.data.change_intent,
       temperatureC: validated.data.temperature_c,
-      raceEngineerContext,
+      raceEngineerContext: screenedContext,
     });
 
     const policyResult = evaluateAdvicePolicy({
       advice: result.advice,
       fallbackDataUsed: {
-        ...raceEngineerContext.dataUsed,
+        ...screenedContext.dataUsed,
         weather:
-          validated.data.temperature_c != null || raceEngineerContext.dataUsed.weather,
+          validated.data.temperature_c != null || screenedContext.dataUsed.weather,
       },
       validSessionIds: validRaceEngineerSessionIds({
         session,
-        similarSessionIds: raceEngineerContext.similarSessions.map((item) => item.session.id),
-        feedbackSessionIds: raceEngineerContext.recentFeedback.map((item) => item.session_id),
-        recommendationSessionIds: raceEngineerContext.recentRecommendations.flatMap((item) => [
+        similarSessionIds: screenedContext.similarSessions.map((item) => item.session.id),
+        feedbackSessionIds: screenedContext.recentFeedback.map((item) => item.session_id),
+        recommendationSessionIds: screenedContext.recentRecommendations.flatMap((item) => [
           item.session_id,
           item.outcome_session_id,
         ]),
@@ -520,7 +531,7 @@ export async function POST(request: Request) {
       requestId,
       session,
       advice,
-      contextSnapshot: createRecommendationSnapshot(raceEngineerContext),
+      contextSnapshot: createRecommendationSnapshot(screenedContext),
     });
 
     await updateRequestLog({

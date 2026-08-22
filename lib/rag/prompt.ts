@@ -59,6 +59,12 @@ export interface BuildDayPlanInput {
 // sessions than the prompt interpolates.
 const DAY_PLAN_SESSION_LIMIT = 8;
 
+// How many saved recommendations `formatRaceEngineerContext` prints. Shared
+// with the collector below and with `dropScreenedSources`, because the context
+// loader reads more rows than the prompt shows: filtering a row out of the full
+// list would promote one the collector never screened into the printed window.
+const RECENT_RECOMMENDATION_LIMIT = 3;
+
 // Neutralize any closing-tag sequence a user might slip into a free-text field
 // (notes, nickname, question, symptom chip, etc.) so they cannot escape a data
 // block and smuggle instructions into the prompt.
@@ -222,7 +228,7 @@ function formatRaceEngineerContext(context: RaceEngineerContext | null | undefin
 
   if (context.recentRecommendations.length > 0) {
     lines.push('  recent_recommendations:');
-    context.recentRecommendations.slice(0, 3).forEach((recommendation, idx) => {
+    context.recentRecommendations.slice(0, RECENT_RECOMMENDATION_LIMIT).forEach((recommendation, idx) => {
       lines.push(`    [${idx + 1}] id=${recommendation.id} status=${recommendation.status} component=${formatValue(recommendation.component)} direction=${formatValue(recommendation.direction)} magnitude=${formatValue(recommendation.magnitude)}`);
       lines.push(`        predicted_effect=${formatValue(recommendation.predicted_effect)}`);
     });
@@ -346,32 +352,55 @@ export function buildDayPlanPrompt(input: BuildDayPlanInput): string {
 }
 
 /**
- * A rider-authored free-text value one of the AI prompts interpolates, paired
- * with a name the rider would recognise on screen.
+ * A stored free-text value one of the AI prompts interpolates, paired with a
+ * name the rider would recognise on screen.
  *
  * The label is phrased to read after "the wording in ...", because a screen that
  * refuses over stored text has to say which field to edit. Without it the rider
  * is told their own saved data was rejected and given no way to find it.
+ *
+ * REFUSE on what the RIDER authored; SKIP what the APP authored. The screen
+ * exists to keep an instruction written in stored text away from the model, and
+ * both branches do that. Which one is right turns on what the rider can do
+ * about it. Their own note is something they can go and edit, so refusing is
+ * honest and the request cannot safely proceed without it. App- and
+ * model-authored context only helps the answer and the rider may be able to
+ * reach neither, so refusing over it would withhold a paid route for something
+ * they did not write and cannot undo - dropping that value from the prompt
+ * closes the same channel and still answers the question.
+ *
+ * `authored` is required and has no default, because choosing between those two
+ * is the safety decision and a field added without making it is a silent hole.
+ * `sourceId` is required on the app branch: skipping only means anything if the
+ * caller can remove exactly that row from the prompt.
  */
-export interface RiderTextField {
-  label: string;
-  value: string;
-}
+export type RiderTextField =
+  | { authored: 'rider'; label: string; value: string }
+  | { authored: 'app'; label: string; value: string; sourceId: string };
+
+type RiderTextAuthorship = { authored: 'rider' } | { authored: 'app'; sourceId: string };
+
+const RIDER_AUTHORED: RiderTextAuthorship = { authored: 'rider' };
 
 function pushRiderText(
   fields: RiderTextField[],
+  authorship: RiderTextAuthorship,
   label: string,
   value: string | null | undefined,
 ): void {
   if (typeof value !== 'string' || value.trim().length === 0) return;
-  fields.push({ label, value });
+  fields.push(
+    authorship.authored === 'app'
+      ? { authored: 'app', sourceId: authorship.sourceId, label, value }
+      : { authored: 'rider', label, value },
+  );
 }
 
 function collectVehicleRiderText(vehicle: Vehicle): RiderTextField[] {
   const fields: RiderTextField[] = [];
-  pushRiderText(fields, 'the vehicle nickname', vehicle.nickname);
-  pushRiderText(fields, 'the vehicle make', vehicle.make);
-  pushRiderText(fields, 'the vehicle model', vehicle.model);
+  pushRiderText(fields, RIDER_AUTHORED, 'the vehicle nickname', vehicle.nickname);
+  pushRiderText(fields, RIDER_AUTHORED, 'the vehicle make', vehicle.make);
+  pushRiderText(fields, RIDER_AUTHORED, 'the vehicle model', vehicle.model);
   return fields;
 }
 
@@ -381,15 +410,15 @@ function collectEnvironmentRiderText(
 ): RiderTextField[] {
   if (!environment) return [];
   const fields: RiderTextField[] = [];
-  pushRiderText(fields, `the weather condition ${suffix}`, environment.weather_condition);
-  pushRiderText(fields, `the surface condition ${suffix}`, environment.surface_condition);
+  pushRiderText(fields, RIDER_AUTHORED, `the weather condition ${suffix}`, environment.weather_condition);
+  pushRiderText(fields, RIDER_AUTHORED, `the surface condition ${suffix}`, environment.surface_condition);
   return fields;
 }
 
 function collectSessionRiderText(session: Session): RiderTextField[] {
   const fields: RiderTextField[] = [];
   const add = (name: string, value: string | null | undefined) =>
-    pushRiderText(fields, `the ${name} on your ${session.date} session`, value);
+    pushRiderText(fields, RIDER_AUTHORED, `the ${name} on your ${session.date} session`, value);
 
   add('track name', session.track_name);
   add('tyre condition', session.tires.condition);
@@ -458,6 +487,7 @@ function collectRaceEngineerContextRiderText(
   if (context.memory) {
     pushRiderText(
       fields,
+      RIDER_AUTHORED,
       'the rider memory Race Engineer has saved for this vehicle',
       context.memory.summary,
     );
@@ -468,46 +498,55 @@ function collectRaceEngineerContextRiderText(
   // so these are collected separately rather than assumed already covered.
   for (const item of context.similarSessions) {
     const suffix = `on your ${item.session.date} session`;
-    pushRiderText(fields, `the track name ${suffix}`, item.session.track_name);
-    pushRiderText(fields, `the front tyre pressure ${suffix}`, item.session.tires.front.pressure);
-    pushRiderText(fields, `the rear tyre pressure ${suffix}`, item.session.tires.rear.pressure);
-    pushRiderText(fields, `the notes ${suffix}`, item.session.notes);
+    pushRiderText(fields, RIDER_AUTHORED, `the track name ${suffix}`, item.session.track_name);
+    pushRiderText(fields, RIDER_AUTHORED, `the front tyre pressure ${suffix}`, item.session.tires.front.pressure);
+    pushRiderText(fields, RIDER_AUTHORED, `the rear tyre pressure ${suffix}`, item.session.tires.rear.pressure);
+    pushRiderText(fields, RIDER_AUTHORED, `the notes ${suffix}`, item.session.notes);
   }
 
   for (const feedback of context.recentFeedback.slice(0, 5)) {
     const suffix = `on the outcome you logged on ${feedback.created_at.slice(0, 10)}`;
-    pushRiderText(fields, `the symptoms ${suffix}`, feedback.symptoms.join(', '));
-    pushRiderText(fields, `the notes ${suffix}`, feedback.notes);
+    pushRiderText(fields, RIDER_AUTHORED, `the symptoms ${suffix}`, feedback.symptoms.join(', '));
+    pushRiderText(fields, RIDER_AUTHORED, `the notes ${suffix}`, feedback.notes);
   }
 
-  // Model-authored at insert, rider-authored after that. `authenticated` holds
+  // Model-authored at insert, rider-writable after that. `authenticated` holds
   // `update` on `ai_recommendations`, and RLS picks the row rather than the
   // column, so a rider can PATCH their own row's `component`, `direction`,
   // `magnitude` and `predicted_effect` to anything - the same shape as the
   // `profiles.tier` finding in CLAUDE.md. `evaluateAdvicePolicy` ran before the
   // insert and cannot speak for what the row says when it is read back.
   //
+  // Marked `app`, so a match drops the row from the prompt instead of refusing
+  // the request. `predicted_effect` is model prose this app wrote, and
+  // `authenticated` holds no delete grant on this table and no screen edits one
+  // (`20260719001100_grant_data_api_access.sql`), so a refusal would name
+  // something the rider cannot reach - and then repeat forever, because no new
+  // recommendation can be written to push the offending row out of this window
+  // while every request for the vehicle refuses before the model call.
+  //
+  // `sourceId` is the row id, which is what `dropScreenedSources` filters on.
   // `id` is a uuid and `status` is held to four values by
-  // `ai_recommendations_status_check`, so neither is collected. The label names
-  // the recommendation rather than the field inside it, because that is the
-  // object the rider can find and delete.
-  for (const recommendation of context.recentRecommendations.slice(0, 3)) {
+  // `ai_recommendations_status_check`, so neither is collected.
+  for (const recommendation of context.recentRecommendations.slice(0, RECENT_RECOMMENDATION_LIMIT)) {
+    const authorship = { authored: 'app', sourceId: recommendation.id } as const;
     const label = `the saved recommendation from ${recommendation.created_at.slice(0, 10)}`;
-    pushRiderText(fields, label, recommendation.component);
-    pushRiderText(fields, label, recommendation.direction);
-    pushRiderText(fields, label, recommendation.magnitude);
-    pushRiderText(fields, label, recommendation.predicted_effect);
+    pushRiderText(fields, authorship, label, recommendation.component);
+    pushRiderText(fields, authorship, label, recommendation.direction);
+    pushRiderText(fields, authorship, label, recommendation.magnitude);
+    pushRiderText(fields, authorship, label, recommendation.predicted_effect);
   }
 
   if (context.telemetrySummary) {
-    pushRiderText(fields, 'the telemetry source name', context.telemetrySummary.source);
-    pushRiderText(fields, 'the telemetry summary', context.telemetrySummary.summary);
+    pushRiderText(fields, RIDER_AUTHORED, 'the telemetry source name', context.telemetrySummary.source);
+    pushRiderText(fields, RIDER_AUTHORED, 'the telemetry summary', context.telemetrySummary.summary);
     // "A numeric blob" is a convention this schema does not enforce: `metrics`
     // is unconstrained `jsonb` and `authenticated` holds insert and update on
     // `telemetry_summaries`. The prompt prints `JSON.stringify(metrics)`, so
     // that string is what gets screened.
     pushRiderText(
       fields,
+      RIDER_AUTHORED,
       'the telemetry metrics',
       JSON.stringify(context.telemetrySummary.metrics),
     );
@@ -546,7 +585,11 @@ function collectRaceEngineerContextRiderText(
  *   `lib/actions/sessions.ts`, and both the outcome route and
  *   `save_session_outcome` itself); `session_environment.source` and
  *   `ai_recommendations.status`, each held by a check constraint in
- *   `20260422000400_add_adaptive_race_engineer.sql`.
+ *   `20260422000400_add_adaptive_race_engineer.sql`; and `vehicle.type`, held
+ *   to ('motorcycle','car') by `vehicles_type_check` in
+ *   `20260223000000_init_baseline_schema.sql`. `formatVehicleBlock` prints that
+ *   last one, so it is named here rather than left for the next audit of this
+ *   list to re-derive from the migration.
  * - Text the APP wrote, which no rider can reach: the day trend and a similar
  *   session's match reasons. Naming those in a refusal would point a rider at a
  *   field they cannot edit.
@@ -558,6 +601,36 @@ function collectRaceEngineerContextRiderText(
  * `ai_recommendations`. The same applies to `telemetry_summaries`, which
  * `authenticated` can insert and update outright. The test is who can WRITE the
  * column, not who wrote the value that is in it today.
+ *
+ * WHAT IS COLLECTED IS THEN MARKED `rider` OR `app`, which decides refuse or
+ * skip (see `RiderTextField`). Every collected value has been put to that
+ * question once, so nobody has to enumerate them again: `ai_recommendations` is
+ * the ONLY app-authored source either collector carries.
+ *
+ * - Vehicle nickname, make and model; every session string on both sessions;
+ *   the environment's weather and surface; a similar session's track name,
+ *   pressures and notes; feedback symptoms and notes - all typed by the rider
+ *   on a form they can reopen. They REFUSE.
+ * - `race_engineer_memory.summary` is an app TEMPLATE
+ *   ('Latest feedback at %s: %s with %s.%s' in
+ *   `20260422000400_add_adaptive_race_engineer.sql`) whose substitutions are the
+ *   rider's own outcome notes and track name, so the only text in it that can
+ *   carry a phrase is theirs. It REFUSES.
+ * - `telemetry_summaries` source, summary and metrics: the app's only writer
+ *   (`20260717000900_add_session_laps.sql`) writes 'manual', "<n> included
+ *   manual laps" and a numeric object, so the app's own write path cannot emit
+ *   free prose there. A phrase in one of them implies a rider PATCH, and the
+ *   rider holds delete on that table besides. They REFUSE.
+ * - `ai_recommendations` component, direction, magnitude and predicted_effect:
+ *   `persistRecommendation` stores `advice.prediction.expected_effect`, free
+ *   model prose `evaluateAdvicePolicy` never reads, into a table
+ *   `authenticated` can select and update but not delete, with no screen that
+ *   edits one. They SKIP.
+ *
+ * The discriminator is not who wrote the value that is there today - the
+ * paragraph above settles that - but whether the APP'S OWN WRITE PATH can emit
+ * free prose into the column. Telemetry cannot; `predicted_effect` is exactly
+ * rider-indistinguishable prose.
  */
 
 /**
@@ -568,7 +641,7 @@ export function collectDayPlanRiderText(
   input: Omit<BuildDayPlanInput, 'retrieved'>,
 ): RiderTextField[] {
   const requestFields: RiderTextField[] = [];
-  pushRiderText(requestFields, 'the track name you entered', input.trackName);
+  pushRiderText(requestFields, RIDER_AUTHORED, 'the track name you entered', input.trackName);
 
   return [
     ...requestFields,
@@ -609,6 +682,32 @@ export function collectTuningAdviceRiderText(
       `on your ${input.session.date} session`,
     ),
   ];
+}
+
+/**
+ * Remove the app-authored sources `classifyStoredRiderText` asked the caller to
+ * drop, so their text cannot reach a prompt builder. Skipping means nothing
+ * unless the offending row actually leaves the prompt.
+ *
+ * The cap before the filter is the load-bearing half. `loadRaceEngineerContext`
+ * reads five recommendations and both the formatter and the collector work on
+ * the first `RECENT_RECOMMENDATION_LIMIT`, so filtering the full list would
+ * slide the next unscreened row into the printed window and re-open the channel
+ * this exists to close. Everything that survives here has been through the
+ * screen.
+ */
+export function dropScreenedSources(
+  context: RaceEngineerContext,
+  droppedSourceIds: readonly string[],
+): RaceEngineerContext {
+  if (droppedSourceIds.length === 0) return context;
+  const dropped = new Set(droppedSourceIds);
+  return {
+    ...context,
+    recentRecommendations: context.recentRecommendations
+      .slice(0, RECENT_RECOMMENDATION_LIMIT)
+      .filter((recommendation) => !dropped.has(recommendation.id)),
+  };
 }
 
 export function buildMessages(input: BuildPromptInput) {

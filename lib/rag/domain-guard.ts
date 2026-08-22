@@ -41,6 +41,13 @@ export interface StoredRiderTextAssessment {
   message: string | null;
   /** Which field matched, so the refusal can name it. Never the text itself. */
   field: string | null;
+  /**
+   * `sourceId`s of the app-authored fields that matched. The caller MUST drop
+   * these from the prompt before the model call - an allow that leaves them in
+   * is worse than the refusal it replaced, because the field is then neither
+   * screened nor withheld. Empty on a refusal: nothing reaches the model.
+   */
+  droppedSourceIds: string[];
 }
 
 interface BuildRefusalAdviceInput {
@@ -348,6 +355,13 @@ export function normalizeAdviceResponse(
  * submitted nothing, so "ask a setup question instead" is advice they cannot
  * act on, and a stored phrase refuses every attempt until it is edited.
  *
+ * Which is also why a match does not always refuse. REFUSE on what the RIDER
+ * authored; SKIP what the APP authored - `RiderTextField.authored` carries that
+ * decision from the collector, where the field is known, and `RiderTextField`
+ * explains it. A rider-authored match wins over any number of app-authored ones,
+ * because skipping a field the rider could have edited would turn this guard
+ * into a silent hole, which is worse than the deadlock the skip exists to end.
+ *
  * Each value is screened on its own rather than joined, so a phrase cannot be
  * assembled across the seam between two unrelated fields.
  *
@@ -363,10 +377,16 @@ export function normalizeAdviceResponse(
 export function classifyStoredRiderText(
   input: ClassifyStoredRiderTextInput,
 ): StoredRiderTextAssessment {
+  const droppedSourceIds: string[] = [];
+
   for (const field of input.fields) {
     const value = typeof field.value === 'string' ? field.value.trim() : '';
     if (!value) continue;
     if (countMatches(value, STORED_TEXT_INJECTION_PATTERNS) === 0) continue;
+    if (field.authored === 'app') {
+      if (!droppedSourceIds.includes(field.sourceId)) droppedSourceIds.push(field.sourceId);
+      continue;
+    }
     return {
       decision: 'refuse',
       reason: 'prompt_injection',
@@ -375,8 +395,9 @@ export function classifyStoredRiderText(
       message:
         `${input.unableMessage} The wording in ${field.label} reads as an instruction to me rather than as a description of your vehicle. Edit that field and try again.`,
       field: field.label,
+      droppedSourceIds: [],
     };
   }
 
-  return { decision: 'allow', reason: null, message: null, field: null };
+  return { decision: 'allow', reason: null, message: null, field: null, droppedSourceIds };
 }
