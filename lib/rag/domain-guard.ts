@@ -329,8 +329,8 @@ export function normalizeAdviceResponse(
 /**
  * The second injection screen, over rider text this request did not submit.
  *
- * A day plan interpolates the rider's stored vehicle and recent sessions into
- * the prompt - nickname, make, model, track name, tyre brand and compound,
+ * Both AI prompts interpolate the rider's stored vehicle and sessions into the
+ * model call - nickname, make, model, track name, tyre brand and compound,
  * free-text notes. Those were typed on some earlier screen and are just as
  * rider-authored as the question box, but no classifier had ever seen them:
  * `sanitizeFreeText` in `lib/rag/prompt.ts` neutralises the `<user_data>` tag

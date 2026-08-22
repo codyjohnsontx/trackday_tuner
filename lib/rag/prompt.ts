@@ -346,8 +346,8 @@ export function buildDayPlanPrompt(input: BuildDayPlanInput): string {
 }
 
 /**
- * A rider-authored free-text value the day-plan prompt interpolates, paired with
- * a name the rider would recognise on screen.
+ * A rider-authored free-text value one of the AI prompts interpolates, paired
+ * with a name the rider would recognise on screen.
  *
  * The label is phrased to read after "the wording in ...", because a screen that
  * refuses over stored text has to say which field to edit. Without it the rider

@@ -108,6 +108,12 @@ rider sees it.
 - Screen every rider-authored field a request submits for prompt injection, not
   the question alone: `symptoms` and `change_intent` are printed into the prompt
   too (`lib/rag/domain-guard.ts`).
+- Screen the rider text the prompt interpolates from storage as well - notes,
+  nicknames, setup strings, saved recommendations - which reaches the model
+  without this request submitting anything. Both live routes run
+  `classifyStoredRiderText` (`lib/rag/domain-guard.ts`) over a per-route
+  collector in `lib/rag/prompt.ts`; those collectors own the field list and the
+  exclusions, and AGENTS.md explains why the two passes use different patterns.
 
 ## Rate Limiting + Abuse Controls
 

@@ -279,7 +279,7 @@ function base(extra: Record<string, unknown> = {}) {
  * and the pipeline was still inline in this route. The post-extraction route
  * reproduces it byte for byte, which is the proof the extraction was asked to
  * carry. Asserting it is the whole point: without this comparison the harness
- * drives all 19 paths and then agrees with whatever came back.
+ * drives every path and then agrees with whatever came back.
  *
  * Re-captured the same way when the success path was added: the pre-extraction
  * route was checked out over this one and the preflight module deleted, leaving
