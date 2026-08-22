@@ -26,6 +26,13 @@ interface ClassifyDayPlanRequestInput {
 
 interface ClassifyStoredRiderTextInput {
   fields: RiderTextField[];
+  /**
+   * The refusal's opening sentence, which is the one route-specific part of it.
+   * "I could not build a plan" is nonsense on a route the rider asked a question
+   * of. The sentence that names the field is NOT a parameter, because "name it,
+   * never echo it" is the security decision and belongs in one place.
+   */
+  unableMessage: string;
 }
 
 export interface StoredRiderTextAssessment {
@@ -344,17 +351,14 @@ export function normalizeAdviceResponse(
  * Each value is screened on its own rather than joined, so a phrase cannot be
  * assembled across the seam between two unrelated fields.
  *
- * ROUTE COVERAGE IS ASYMMETRIC, AND ONLY /api/ai/day-plan CALLS THIS.
- * /api/ai/tuning-advice does NOT screen stored rider text, even though
- * `buildUserPrompt` interpolates the same fields into its prompt: session
- * notes, previous-session notes, the vehicle nickname, and - through
- * `formatRaceEngineerContext` - the rider-memory summary, similar-session notes
- * and feedback notes. A rider who stores an injection phrase in a session note
- * and then asks an ordinary setup question reaches the model with it intact.
- * Closing that is filed as tt-stored-text-screen-tuning-advice; it needs a
- * second collector built from that route's own prompt input, not a call added
- * here. Until then this guard covers one of two live routes, and reading it as
- * covering both is the mistake this note exists to prevent.
+ * BOTH live routes call this, each with its own collector: `/api/ai/day-plan`
+ * with `collectDayPlanRiderText` and `/api/ai/tuning-advice` with
+ * `collectTuningAdviceRiderText`. The collectors are separate on purpose and a
+ * call added here would not be the fix for a third route - the whole point is
+ * that the field list is derived from the prompt builder's own input type, so
+ * a route screens exactly what its own prompt interpolates. Tuning-advice went
+ * a full release screening none of it while day-plan screened all of it,
+ * because a guard wired to one of two twins reads as covering both.
  */
 export function classifyStoredRiderText(
   input: ClassifyStoredRiderTextInput,
@@ -369,7 +373,7 @@ export function classifyStoredRiderText(
       // Names the field, never the text: echoing it back would put the phrase
       // on screen and hand an attacker a reflection of their own payload.
       message:
-        `I could not build a plan from your saved setup data. The wording in ${field.label} reads as an instruction to me rather than as a description of your vehicle. Edit that field and try again.`,
+        `${input.unableMessage} The wording in ${field.label} reads as an instruction to me rather than as a description of your vehicle. Edit that field and try again.`,
       field: field.label,
     };
   }

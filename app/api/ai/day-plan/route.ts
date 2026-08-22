@@ -681,6 +681,7 @@ export async function POST(request: Request) {
     // which is built from the same input the prompt builder takes, so the
     // screen cannot cover less than the prompt hands over.
     const storedAssessment = classifyStoredRiderText({
+      unableMessage: 'I could not build a plan from your saved setup data.',
       fields: collectDayPlanRiderText({
         vehicle,
         targetDate: computedTargetDate,

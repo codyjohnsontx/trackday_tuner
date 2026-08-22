@@ -4,13 +4,21 @@ import {
   buildMessages,
   buildUserPrompt,
   collectDayPlanRiderText,
+  collectTuningAdviceRiderText,
   DISCLAIMER_NOTE,
   ONE_CHANGE_NOTE,
   SYSTEM_PROMPT,
 } from '@/lib/rag/prompt';
 import type { RaceEngineerContext } from '@/lib/rag/race-engineer-context';
 import type { KnowledgeChunk, RetrievedChunk } from '@/lib/rag/types';
-import type { Session, SessionFeedback, Vehicle } from '@/types';
+import type {
+  AiRecommendation,
+  Session,
+  SessionEnvironment,
+  SessionFeedback,
+  TelemetrySummary,
+  Vehicle,
+} from '@/types';
 
 function vehicle(): Vehicle {
   return {
@@ -135,135 +143,171 @@ describe('buildMessages', () => {
   });
 });
 
-// The contract `collectDayPlanRiderText` exists to hold: every rider-authored
-// string `buildDayPlanPrompt` puts in front of the model is screened. Stamping a
-// distinct sentinel into each of those fields and asserting the two agree is the
-// only form of this check that keeps working when someone adds a field - the
-// alternative is a second hand-maintained list, which is the drift the collector
-// was written to end. Fields excluded on purpose are named in its doc comment.
-describe('collectDayPlanRiderText', () => {
-  const SENTINELS = {
-    nickname: 'S-nickname',
-    make: 'S-make',
-    model: 'S-model',
-    trackName: 'S-track',
-    tyreCondition: 'S-tyre-condition',
-    frontBrand: 'S-front-brand',
-    frontCompound: 'S-front-compound',
-    frontPressure: 'S-front-pressure',
-    rearBrand: 'S-rear-brand',
-    rearCompound: 'S-rear-compound',
-    rearPressure: 'S-rear-pressure',
-    frontPreload: 'S-front-preload',
-    frontCompression: 'S-front-compression',
-    frontRebound: 'S-front-rebound',
-    frontDirection: 'S-front-direction',
-    rearPreload: 'S-rear-preload',
-    rearCompression: 'S-rear-compression',
-    rearRebound: 'S-rear-rebound',
-    rearDirection: 'S-rear-direction',
-    frontCamber: 'S-front-camber',
-    rearCamber: 'S-rear-camber',
-    frontToe: 'S-front-toe',
-    rearToe: 'S-rear-toe',
-    caster: 'S-caster',
-    sagFront: 'S-sag-front',
-    sagRear: 'S-sag-rear',
-    forkHeight: 'S-fork-height',
-    rearRideHeight: 'S-rear-ride-height',
-    frontSprocket: 'S-front-sprocket',
-    rearSprocket: 'S-rear-sprocket',
-    chainLength: 'S-chain-length',
-    wingAngle: 'S-wing-angle',
-    splitter: 'S-splitter',
-    rake: 'S-rake',
-    notes: 'S-notes',
-    memorySummary: 'S-memory-summary',
-    feedbackSymptom: 'S-feedback-symptom',
-    feedbackNotes: 'S-feedback-notes',
-    weather: 'S-weather',
-    surface: 'S-surface',
+// The contract both collectors exist to hold: every rider-authored string a
+// prompt builder puts in front of the model is screened. Stamping a distinct
+// sentinel into each of those fields and asserting the two agree is the only
+// form of this check that keeps working when someone adds a field - the
+// alternative is a second hand-maintained list, which is the drift the
+// collectors were written to end. Fields excluded on purpose are named in the
+// exclusion list in lib/rag/prompt.ts, and the tuning-advice suite below
+// asserts the submitted-field exclusions rather than just omitting them.
+//
+// The two suites share one sentinel table. A sentinel a given prompt does not
+// print is skipped by that prompt's check, so telemetry, recommendations and the
+// previous session cost the day-plan suite nothing.
+const SENTINELS = {
+  nickname: 'S-nickname',
+  make: 'S-make',
+  model: 'S-model',
+  trackName: 'S-track',
+  tyreCondition: 'S-tyre-condition',
+  frontBrand: 'S-front-brand',
+  frontCompound: 'S-front-compound',
+  frontPressure: 'S-front-pressure',
+  rearBrand: 'S-rear-brand',
+  rearCompound: 'S-rear-compound',
+  rearPressure: 'S-rear-pressure',
+  frontPreload: 'S-front-preload',
+  frontCompression: 'S-front-compression',
+  frontRebound: 'S-front-rebound',
+  frontDirection: 'S-front-direction',
+  rearPreload: 'S-rear-preload',
+  rearCompression: 'S-rear-compression',
+  rearRebound: 'S-rear-rebound',
+  rearDirection: 'S-rear-direction',
+  frontCamber: 'S-front-camber',
+  rearCamber: 'S-rear-camber',
+  frontToe: 'S-front-toe',
+  rearToe: 'S-rear-toe',
+  caster: 'S-caster',
+  sagFront: 'S-sag-front',
+  sagRear: 'S-sag-rear',
+  forkHeight: 'S-fork-height',
+  rearRideHeight: 'S-rear-ride-height',
+  frontSprocket: 'S-front-sprocket',
+  rearSprocket: 'S-rear-sprocket',
+  chainLength: 'S-chain-length',
+  wingAngle: 'S-wing-angle',
+  splitter: 'S-splitter',
+  rake: 'S-rake',
+  notes: 'S-notes',
+  memorySummary: 'S-memory-summary',
+  feedbackSymptom: 'S-feedback-symptom',
+  feedbackNotes: 'S-feedback-notes',
+  weather: 'S-weather',
+  surface: 'S-surface',
+  // Printed only by buildUserPrompt.
+  previousNotes: 'S-previous-notes',
+  telemetrySource: 'S-telemetry-source',
+  telemetryText: 'S-telemetry-text',
+  telemetryMetrics: 'S-telemetry-metrics',
+  recommendationComponent: 'S-recommendation-component',
+  recommendationDirection: 'S-recommendation-direction',
+  recommendationMagnitude: 'S-recommendation-magnitude',
+  recommendationEffect: 'S-recommendation-effect',
+  // Submitted by the request rather than stored, so screen one owns them and
+  // the tuning-advice collector deliberately leaves them out. Stamped anyway so
+  // that exclusion is asserted rather than merely absent.
+  question: 'S-question',
+  symptom: 'S-symptom',
+  changeIntent: 'S-change-intent',
+};
+
+function stampedSession(partial: Partial<Session> = {}): Session {
+  return session({
+    track_name: SENTINELS.trackName,
+    tires: {
+      front: {
+        brand: SENTINELS.frontBrand,
+        compound: SENTINELS.frontCompound,
+        pressure: SENTINELS.frontPressure,
+      },
+      rear: {
+        brand: SENTINELS.rearBrand,
+        compound: SENTINELS.rearCompound,
+        pressure: SENTINELS.rearPressure,
+      },
+      condition: SENTINELS.tyreCondition as Session['tires']['condition'],
+    },
+    suspension: {
+      front: {
+        preload: SENTINELS.frontPreload,
+        compression: SENTINELS.frontCompression,
+        rebound: SENTINELS.frontRebound,
+        direction: SENTINELS.frontDirection as Session['suspension']['front']['direction'],
+      },
+      rear: {
+        preload: SENTINELS.rearPreload,
+        compression: SENTINELS.rearCompression,
+        rebound: SENTINELS.rearRebound,
+        direction: SENTINELS.rearDirection as Session['suspension']['rear']['direction'],
+      },
+    },
+    alignment: {
+      front_camber: SENTINELS.frontCamber,
+      rear_camber: SENTINELS.rearCamber,
+      front_toe: SENTINELS.frontToe,
+      rear_toe: SENTINELS.rearToe,
+      caster: SENTINELS.caster,
+    },
+    extra_modules: {
+      geometry: {
+        sag_front: SENTINELS.sagFront,
+        sag_rear: SENTINELS.sagRear,
+        fork_height: SENTINELS.forkHeight,
+        rear_ride_height: SENTINELS.rearRideHeight,
+      },
+      drivetrain: {
+        front_sprocket: SENTINELS.frontSprocket,
+        rear_sprocket: SENTINELS.rearSprocket,
+        chain_length: SENTINELS.chainLength,
+      },
+      aero: {
+        wing_angle: SENTINELS.wingAngle,
+        splitter_setting: SENTINELS.splitter,
+        rake: SENTINELS.rake,
+      },
+    },
+    notes: SENTINELS.notes,
+    ...partial,
+  });
+}
+
+function stampedFeedback(): SessionFeedback {
+  return {
+    id: '33333333-3333-3333-3333-333333333333',
+    user_id: 'user-1',
+    session_id: '22222222-2222-2222-2222-222222222222',
+    reference_session_id: null,
+    vehicle_id: '11111111-1111-1111-1111-111111111111',
+    track_id: null,
+    recommendation_id: null,
+    outcome: 'better',
+    rider_confidence: 3,
+    symptoms: [SENTINELS.feedbackSymptom],
+    notes: SENTINELS.feedbackNotes,
+    lap_time_delta_ms: null,
+    recommendation_helpfulness: null,
+    created_at: '2026-04-02T00:00:00Z',
+    updated_at: '2026-04-02T00:00:00Z',
   };
+}
 
-  function stampedSession(): Session {
-    return session({
-      track_name: SENTINELS.trackName,
-      tires: {
-        front: {
-          brand: SENTINELS.frontBrand,
-          compound: SENTINELS.frontCompound,
-          pressure: SENTINELS.frontPressure,
-        },
-        rear: {
-          brand: SENTINELS.rearBrand,
-          compound: SENTINELS.rearCompound,
-          pressure: SENTINELS.rearPressure,
-        },
-        condition: SENTINELS.tyreCondition as Session['tires']['condition'],
-      },
-      suspension: {
-        front: {
-          preload: SENTINELS.frontPreload,
-          compression: SENTINELS.frontCompression,
-          rebound: SENTINELS.frontRebound,
-          direction: SENTINELS.frontDirection as Session['suspension']['front']['direction'],
-        },
-        rear: {
-          preload: SENTINELS.rearPreload,
-          compression: SENTINELS.rearCompression,
-          rebound: SENTINELS.rearRebound,
-          direction: SENTINELS.rearDirection as Session['suspension']['rear']['direction'],
-        },
-      },
-      alignment: {
-        front_camber: SENTINELS.frontCamber,
-        rear_camber: SENTINELS.rearCamber,
-        front_toe: SENTINELS.frontToe,
-        rear_toe: SENTINELS.rearToe,
-        caster: SENTINELS.caster,
-      },
-      extra_modules: {
-        geometry: {
-          sag_front: SENTINELS.sagFront,
-          sag_rear: SENTINELS.sagRear,
-          fork_height: SENTINELS.forkHeight,
-          rear_ride_height: SENTINELS.rearRideHeight,
-        },
-        drivetrain: {
-          front_sprocket: SENTINELS.frontSprocket,
-          rear_sprocket: SENTINELS.rearSprocket,
-          chain_length: SENTINELS.chainLength,
-        },
-        aero: {
-          wing_angle: SENTINELS.wingAngle,
-          splitter_setting: SENTINELS.splitter,
-          rake: SENTINELS.rake,
-        },
-      },
-      notes: SENTINELS.notes,
-    });
-  }
+function stampedMemory() {
+  return {
+    id: '44444444-4444-4444-4444-444444444444',
+    user_id: 'user-1',
+    vehicle_id: '11111111-1111-1111-1111-111111111111',
+    track_id: null,
+    summary: SENTINELS.memorySummary,
+    patterns: null,
+    evidence_count: 2,
+    created_at: '2026-04-02T00:00:00Z',
+    updated_at: '2026-04-02T00:00:00Z',
+  };
+}
 
-  function stampedFeedback(): SessionFeedback {
-    return {
-      id: '33333333-3333-3333-3333-333333333333',
-      user_id: 'user-1',
-      session_id: '22222222-2222-2222-2222-222222222222',
-      reference_session_id: null,
-      vehicle_id: '11111111-1111-1111-1111-111111111111',
-      track_id: null,
-      recommendation_id: null,
-      outcome: 'better',
-      rider_confidence: 3,
-      symptoms: [SENTINELS.feedbackSymptom],
-      notes: SENTINELS.feedbackNotes,
-      lap_time_delta_ms: null,
-      recommendation_helpfulness: null,
-      created_at: '2026-04-02T00:00:00Z',
-      updated_at: '2026-04-02T00:00:00Z',
-    };
-  }
-
+describe('collectDayPlanRiderText', () => {
   function stampedInput() {
     const stamped = stampedSession();
     const context: RaceEngineerContext = {
@@ -271,17 +315,7 @@ describe('collectDayPlanRiderText', () => {
       sessionEnvironment: null,
       recentFeedback: [stampedFeedback()],
       recentRecommendations: [],
-      memory: {
-        id: '44444444-4444-4444-4444-444444444444',
-        user_id: 'user-1',
-        vehicle_id: '11111111-1111-1111-1111-111111111111',
-        track_id: null,
-        summary: SENTINELS.memorySummary,
-        patterns: null,
-        evidence_count: 2,
-        created_at: '2026-04-02T00:00:00Z',
-        updated_at: '2026-04-02T00:00:00Z',
-      },
+      memory: stampedMemory(),
       telemetrySummary: null,
       dayTrend: 'Warming through the morning.',
       dataUsed: {
@@ -346,5 +380,154 @@ describe('collectDayPlanRiderText', () => {
     expect(labelFor(SENTINELS.feedbackNotes)).toBe(
       'the notes on the outcome you logged on 2026-04-02',
     );
+  });
+});
+
+describe('collectTuningAdviceRiderText', () => {
+  // Submitted rather than stored. `classifyRaceEngineerQuestion` screens all
+  // three against a strict superset of the stored-text patterns before the route
+  // ever gets here, so collecting them would move a submitted-text refusal onto
+  // the audit status the throttle does not count.
+  const SUBMITTED = ['question', 'symptom', 'changeIntent'];
+
+  function stampedInput() {
+    const current = stampedSession();
+    const context: RaceEngineerContext = {
+      similarSessions: [
+        { session: current, environment: null, score: 3, reasons: ['same track'] },
+      ],
+      sessionEnvironment: {
+        id: '55555555-5555-5555-5555-555555555555',
+        user_id: 'user-1',
+        session_id: '22222222-2222-2222-2222-222222222222',
+        ambient_temperature_c: 21,
+        track_temperature_c: 33,
+        humidity_percent: 40,
+        weather_condition: SENTINELS.weather,
+        surface_condition: SENTINELS.surface,
+        source: 'manual',
+        created_at: '2026-04-01T00:00:00Z',
+        updated_at: '2026-04-01T00:00:00Z',
+      } as SessionEnvironment,
+      recentFeedback: [stampedFeedback()],
+      recentRecommendations: [
+        {
+          id: '66666666-6666-6666-6666-666666666666',
+          user_id: 'user-1',
+          session_id: '22222222-2222-2222-2222-222222222222',
+          vehicle_id: '11111111-1111-1111-1111-111111111111',
+          track_id: null,
+          request_id: 'earlier',
+          summary: 'Earlier recommendation.',
+          component: SENTINELS.recommendationComponent,
+          direction: SENTINELS.recommendationDirection,
+          magnitude: SENTINELS.recommendationMagnitude,
+          predicted_effect: SENTINELS.recommendationEffect,
+          status: 'applied',
+          advice: {},
+          context_snapshot: {},
+          outcome_session_id: null,
+          created_at: '2026-03-20T00:00:00Z',
+          updated_at: '2026-03-20T00:00:00Z',
+        } as AiRecommendation,
+      ],
+      memory: stampedMemory(),
+      telemetrySummary: {
+        id: '77777777-7777-7777-7777-777777777777',
+        user_id: 'user-1',
+        session_id: '22222222-2222-2222-2222-222222222222',
+        vehicle_id: '11111111-1111-1111-1111-111111111111',
+        source: SENTINELS.telemetrySource,
+        summary: SENTINELS.telemetryText,
+        metrics: { note: SENTINELS.telemetryMetrics },
+        created_at: '2026-04-01T00:00:00Z',
+        updated_at: '2026-04-01T00:00:00Z',
+      } as TelemetrySummary,
+      dayTrend: 'Warming through the morning.',
+      dataUsed: {
+        manual: true,
+        weather: true,
+        history: true,
+        feedback: true,
+        lap_data: false,
+        telemetry: true,
+      },
+    };
+
+    return {
+      session: current,
+      previousSession: session({
+        id: 'prev',
+        date: '2026-03-01',
+        notes: SENTINELS.previousNotes,
+      }),
+      vehicle: {
+        ...vehicle(),
+        nickname: SENTINELS.nickname,
+        make: SENTINELS.make,
+        model: SENTINELS.model,
+      },
+      question: SENTINELS.question,
+      symptoms: [SENTINELS.symptom],
+      changeIntent: SENTINELS.changeIntent,
+      temperatureC: 24,
+      raceEngineerContext: context,
+    };
+  }
+
+  it('collects every stored rider-authored string the tuning-advice prompt prints', () => {
+    const input = stampedInput();
+    const prompt = buildUserPrompt({ ...input, retrieved: [] });
+    const collected = collectTuningAdviceRiderText(input);
+
+    const missing = Object.entries(SENTINELS)
+      .filter(([name]) => !SUBMITTED.includes(name))
+      .filter(([, sentinel]) => prompt.includes(sentinel))
+      .filter(([, sentinel]) => !collected.some((field) => field.value.includes(sentinel)))
+      .map(([name]) => name);
+
+    expect(missing).toEqual([]);
+    // Guard the guard: every one of these was in the prompt and screened by
+    // nothing before this collector existed, so a check that passed because the
+    // prompt stopped printing them would be worthless.
+    expect(prompt).toContain(SENTINELS.notes);
+    expect(prompt).toContain(SENTINELS.previousNotes);
+    expect(prompt).toContain(SENTINELS.nickname);
+    expect(prompt).toContain(SENTINELS.memorySummary);
+    expect(prompt).toContain(SENTINELS.feedbackNotes);
+    expect(prompt).toContain(SENTINELS.telemetryMetrics);
+    expect(prompt).toContain(SENTINELS.recommendationEffect);
+    expect(prompt).toContain(SENTINELS.weather);
+  });
+
+  it('leaves the submitted fields to the first screen', () => {
+    const input = stampedInput();
+    const prompt = buildUserPrompt({ ...input, retrieved: [] });
+    const collected = collectTuningAdviceRiderText(input);
+
+    for (const name of SUBMITTED) {
+      const sentinel = SENTINELS[name as keyof typeof SENTINELS];
+      expect(prompt).toContain(sentinel);
+      expect(collected.some((field) => field.value.includes(sentinel))).toBe(false);
+    }
+  });
+
+  it('labels each value with something the rider can go and find', () => {
+    const collected = collectTuningAdviceRiderText(stampedInput());
+    const labelFor = (sentinel: string) =>
+      collected.find((field) => field.value.includes(sentinel))?.label;
+
+    expect(labelFor(SENTINELS.nickname)).toBe('the vehicle nickname');
+    expect(labelFor(SENTINELS.notes)).toBe('the notes on your 2026-04-01 session');
+    expect(labelFor(SENTINELS.previousNotes)).toBe('the notes on your 2026-03-01 session');
+    expect(labelFor(SENTINELS.feedbackNotes)).toBe(
+      'the notes on the outcome you logged on 2026-04-02',
+    );
+    // The stored session_environment row, not anything typed into a planner.
+    expect(labelFor(SENTINELS.weather)).toBe('the weather condition on your 2026-04-01 session');
+    expect(labelFor(SENTINELS.recommendationEffect)).toBe(
+      'the saved recommendation from 2026-03-20',
+    );
+    expect(labelFor(SENTINELS.telemetryMetrics)).toBe('the telemetry metrics');
   });
 });

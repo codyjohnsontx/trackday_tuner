@@ -435,12 +435,24 @@ function collectSessionRiderText(session: Session): RiderTextField[] {
   return fields;
 }
 
+/**
+ * `formatRaceEngineerContext` is shared by both prompts, so its rider text is
+ * collected once here and both routes' collectors call this.
+ *
+ * `environmentSuffix` is a parameter because `sessionEnvironment` does not have
+ * the same provenance on the two routes. Day-plan builds it from the numbers the
+ * rider just typed into the planner, so "you entered for today" is what they
+ * would go and edit; tuning-advice reads the stored `session_environment` row
+ * for the session being analysed, and telling that rider to check what they
+ * "entered for today" points them at a form they never opened.
+ */
 function collectRaceEngineerContextRiderText(
   context: RaceEngineerContext | null | undefined,
+  environmentSuffix: string,
 ): RiderTextField[] {
   if (!context) return [];
   const fields: RiderTextField[] = [
-    ...collectEnvironmentRiderText(context.sessionEnvironment, 'you entered for today'),
+    ...collectEnvironmentRiderText(context.sessionEnvironment, environmentSuffix),
   ];
 
   if (context.memory) {
@@ -468,21 +480,48 @@ function collectRaceEngineerContextRiderText(
     pushRiderText(fields, `the notes ${suffix}`, feedback.notes);
   }
 
+  // Model-authored at insert, rider-authored after that. `authenticated` holds
+  // `update` on `ai_recommendations`, and RLS picks the row rather than the
+  // column, so a rider can PATCH their own row's `component`, `direction`,
+  // `magnitude` and `predicted_effect` to anything - the same shape as the
+  // `profiles.tier` finding in CLAUDE.md. `evaluateAdvicePolicy` ran before the
+  // insert and cannot speak for what the row says when it is read back.
+  //
+  // `id` is a uuid and `status` is held to four values by
+  // `ai_recommendations_status_check`, so neither is collected. The label names
+  // the recommendation rather than the field inside it, because that is the
+  // object the rider can find and delete.
+  for (const recommendation of context.recentRecommendations.slice(0, 3)) {
+    const label = `the saved recommendation from ${recommendation.created_at.slice(0, 10)}`;
+    pushRiderText(fields, label, recommendation.component);
+    pushRiderText(fields, label, recommendation.direction);
+    pushRiderText(fields, label, recommendation.magnitude);
+    pushRiderText(fields, label, recommendation.predicted_effect);
+  }
+
   if (context.telemetrySummary) {
     pushRiderText(fields, 'the telemetry source name', context.telemetrySummary.source);
     pushRiderText(fields, 'the telemetry summary', context.telemetrySummary.summary);
+    // "A numeric blob" is a convention this schema does not enforce: `metrics`
+    // is unconstrained `jsonb` and `authenticated` holds insert and update on
+    // `telemetry_summaries`. The prompt prints `JSON.stringify(metrics)`, so
+    // that string is what gets screened.
+    pushRiderText(
+      fields,
+      'the telemetry metrics',
+      JSON.stringify(context.telemetrySummary.metrics),
+    );
   }
 
   return fields;
 }
 
 /**
- * Every rider-authored free-text value `buildDayPlanPrompt` puts in front of the
- * model, labelled.
+ * WHAT THE TWO COLLECTORS BELOW DELIBERATELY LEAVE OUT.
  *
- * It lives here, beside the formatters, because the day-plan route's stored-text
- * injection screen has to see exactly what the prompt interpolates. A list kept
- * anywhere else is a second copy of this file's decisions, and it drifts: the
+ * Both live here, beside the formatters, because a route's stored-text injection
+ * screen has to see exactly what its prompt interpolates. A list kept anywhere
+ * else is a second copy of this file's decisions, and it drifts: the day-plan
  * route's first version screened the vehicle and session notes while
  * `formatRaceEngineerContext` was quietly handing the model session feedback
  * notes, rider memory and every suspension and alignment string as well.
@@ -491,26 +530,39 @@ function collectRaceEngineerContextRiderText(
  * delimiters so stored text cannot escape its block; it does nothing about an
  * instruction written in plain prose inside one.
  *
- * A value the builder prints and this does not collect belongs in the list
- * below, with the reason. Anything absent from both is a hole in the screen,
+ * A value a builder prints and its collector does not collect belongs in this
+ * list, with the reason. Anything absent from both is a hole in the screen,
  * which is how `tires.condition` and the suspension adjuster directions were
  * once missed: they look like closed choices in the form, but the whole tyre and
  * suspension blob is inserted verbatim by `createSession`, so the constraint
  * lives in the UI and not on the write path.
  *
  * Deliberately not collected:
- * - Numbers and dates. A date, session number, temperature, confidence or score
- *   cannot carry a sentence.
- * - `session.conditions` and `session_feedback.outcome`. Both are allowlisted at
- *   their only write path - `isSessionCondition` in `lib/actions/sessions.ts`,
- *   and both the outcome route and `save_session_outcome` itself.
- * - The environment `source`. A day plan's environment block is built from this
- *   request rather than read from a stored row, so it is screen one's business.
- * - `telemetry_summary.metrics`, a numeric JSON blob.
- * - Values the app or the model authored: the day trend, a similar session's
- *   match reasons, and previous recommendations, which have already been
- *   through `evaluateAdvicePolicy`. Naming those in a refusal would point a
- *   rider at a field they cannot edit.
+ * - Numbers, dates and ids. A date, session number, temperature, confidence,
+ *   score or uuid cannot carry a sentence.
+ * - Values held to a fixed set by the DATABASE, so that the exclusion does not
+ *   rest on a form: `session.conditions` and `session_feedback.outcome`, both
+ *   allowlisted at their only write path (`isSessionCondition` in
+ *   `lib/actions/sessions.ts`, and both the outcome route and
+ *   `save_session_outcome` itself); `session_environment.source` and
+ *   `ai_recommendations.status`, each held by a check constraint in
+ *   `20260422000400_add_adaptive_race_engineer.sql`.
+ * - Text the APP wrote, which no rider can reach: the day trend and a similar
+ *   session's match reasons. Naming those in a refusal would point a rider at a
+ *   field they cannot edit.
+ *
+ * Model-authored text is NOT on that list, and the near-miss is worth keeping.
+ * Previous recommendations were once excluded as "already through
+ * `evaluateAdvicePolicy`" - true of the row at insert, and untrue of the row
+ * when it is read back, because `authenticated` holds `update` on
+ * `ai_recommendations`. The same applies to `telemetry_summaries`, which
+ * `authenticated` can insert and update outright. The test is who can WRITE the
+ * column, not who wrote the value that is in it today.
+ */
+
+/**
+ * Every rider-authored free-text value `buildDayPlanPrompt` puts in front of the
+ * model, labelled. See the exclusion list above.
  */
 export function collectDayPlanRiderText(
   input: Omit<BuildDayPlanInput, 'retrieved'>,
@@ -523,7 +575,39 @@ export function collectDayPlanRiderText(
     ...collectEnvironmentRiderText(input.environment, 'you entered for today'),
     ...collectVehicleRiderText(input.vehicle),
     ...input.recentSessions.slice(0, DAY_PLAN_SESSION_LIMIT).flatMap(collectSessionRiderText),
-    ...collectRaceEngineerContextRiderText(input.raceEngineerContext),
+    ...collectRaceEngineerContextRiderText(input.raceEngineerContext, 'you entered for today'),
+  ];
+}
+
+/**
+ * Every rider-authored free-text value `buildUserPrompt` puts in front of the
+ * model, labelled. See the exclusion list above.
+ *
+ * The submitted fields are the one difference from its day-plan twin, and they
+ * are left out on purpose. `formatMetaBlock` prints the question, the symptom
+ * chips and the change intent, and `classifyRaceEngineerQuestion` has already
+ * screened all three individually against `PROMPT_INJECTION_PATTERNS` - a strict
+ * superset of the patterns the stored-text screen uses - so nothing can reach
+ * the second screen through them. Collecting them anyway would be worse than
+ * redundant: text this request submitted would be refused under the stored-text
+ * audit status, which `isRefusalThrottled` does not count, and a rider looping
+ * injection probes would stop being throttled. `temperatureC` is a number.
+ */
+export function collectTuningAdviceRiderText(
+  input: Omit<BuildPromptInput, 'retrieved'>,
+): RiderTextField[] {
+  return [
+    ...collectVehicleRiderText(input.vehicle),
+    ...collectSessionRiderText(input.session),
+    ...(input.previousSession ? collectSessionRiderText(input.previousSession) : []),
+    // `formatEnvironmentBlock('Current environment', ...)` and the adaptive
+    // context block both print `raceEngineerContext.sessionEnvironment`, which
+    // on this route is the stored `session_environment` row for the session
+    // being analysed rather than anything this request typed.
+    ...collectRaceEngineerContextRiderText(
+      input.raceEngineerContext,
+      `on your ${input.session.date} session`,
+    ),
   ];
 }
 
