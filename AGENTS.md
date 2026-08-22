@@ -582,6 +582,41 @@ a similar session's match reasons) and values a DATABASE constraint pins
 merely constrained by a form. The reasoning is on the exclusion list in
 `lib/rag/prompt.ts`; both collectors point at it.
 
+**Screening a field decides that it is CHECKED. A second axis decides what a
+match DOES, and that one is ACTIONABILITY: can the rider reach the thing the
+refusal would name?** If they can, refuse - the request cannot safely proceed and
+they can go and fix it. If they cannot, the value is dropped from the prompt and
+the request is answered, because a refusal naming an unreachable field is a trap
+rather than a guard: it withholds a paid route and nothing the rider does gets
+them past it. So a stored-text match can now return 200 with advice.
+
+Authorship was the first cut of that rule and it is wrong at the boundary.
+`race_engineer_memory.summary` holds the rider's OWN words - `save_session_outcome`
+copies the outcome note in verbatim - and still has to be dropped, because nothing
+in the app writes, edits or deletes that row, a refused request writes only an
+audit row so the refusal cannot clear itself, and the summary is a one-way copy
+taken at write time rather than re-read from the note it came from.
+
+`RiderTextField.onMatch` carries the decision, is required with no default, and a
+skip must also name a `SkippableSource` - `dropScreenedSources` is what removes it,
+and **skip means removed from the prompt, never merely unscreened**; left in, the
+channel is open and the value is neither screened nor withheld. That function caps
+`recentRecommendations` at the printed limit *before* filtering, because the loader
+reads five rows and the prompt prints three, so filtering the full list would slide
+an unscreened row into the window the drop just freed. It throws when a drop
+removed nothing, and its switch over `SkippableSource` is exhaustive, so a new kind
+does not compile until it is handled.
+
+**The same column can refuse on one route and skip on the other**, because
+provenance differs: `session_environment` weather and surface are the stored row on
+tuning-advice, which only `createSession` ever writes, and on day-plan they are
+what the rider just typed into the planner. The disposition is therefore a
+parameter of `collectEnvironmentRiderText`, next to the label suffix that was
+already per-route. Getting it backwards either way is a bug - skipping on day-plan
+silently discards submitted text, refusing on tuning-advice restores the trap. The
+full sweep of which field is which, and why, is on the exclusion list in
+`lib/rag/prompt.ts`.
+
 Neither collector takes the submitted fields. `classifyRaceEngineerQuestion` and
 `classifyDayPlanRequest` screen those against a strict superset of the
 stored-text patterns first, so nothing reaches the second screen through them,

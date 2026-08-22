@@ -485,15 +485,16 @@ export async function POST(request: Request) {
       );
     }
 
-    // The other half of that screen: an app-authored match is skipped rather
-    // than refused, and skipping only means anything if the offending row leaves
-    // the prompt. Everything downstream reads the screened context - the model
-    // call, the citation ids the policy will accept, and the snapshot stored on
-    // the recommendation - so a dropped row is gone from all three rather than
+    // The other half of that screen: a match on a field the rider cannot reach
+    // is skipped rather than refused, and skipping only means anything if the
+    // offending value leaves the prompt. Everything downstream reads the
+    // screened context - the model call, the citation ids the policy will
+    // accept, the `data_used` fallback and the snapshot stored on the
+    // recommendation - so a dropped value is gone from all of them rather than
     // from the prompt alone.
     const screenedContext = dropScreenedSources(
       raceEngineerContext,
-      storedAssessment.droppedSourceIds,
+      storedAssessment.droppedSources,
     );
 
     const result = await generateTuningAdvice({

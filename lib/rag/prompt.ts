@@ -352,73 +352,112 @@ export function buildDayPlanPrompt(input: BuildDayPlanInput): string {
 }
 
 /**
+ * Something `dropScreenedSources` knows how to remove from a
+ * `RaceEngineerContext`. A skippable field names one of these rather than a bare
+ * id, so the caller can act on it without guessing which collection it came
+ * from, and so adding a kind cannot compile until that function handles it.
+ */
+export type SkippableSource =
+  | { kind: 'recommendation'; id: string }
+  | { kind: 'memory' }
+  | { kind: 'sessionEnvironment' };
+
+/**
  * A stored free-text value one of the AI prompts interpolates, paired with a
- * name the rider would recognise on screen.
+ * name the rider would recognise on screen and with what to do when it matches
+ * the injection screen.
  *
  * The label is phrased to read after "the wording in ...", because a screen that
- * refuses over stored text has to say which field to edit. Without it the rider
- * is told their own saved data was rejected and given no way to find it.
+ * refuses over stored text has to say which field to edit.
  *
- * REFUSE on what the RIDER authored; SKIP what the APP authored. The screen
- * exists to keep an instruction written in stored text away from the model, and
- * both branches do that. Which one is right turns on what the rider can do
- * about it. Their own note is something they can go and edit, so refusing is
- * honest and the request cannot safely proceed without it. App- and
- * model-authored context only helps the answer and the rider may be able to
- * reach neither, so refusing over it would withhold a paid route for something
- * they did not write and cannot undo - dropping that value from the prompt
- * closes the same channel and still answers the question.
+ * REFUSE when the rider can go and fix the thing being refused on. SKIP when
+ * they cannot, whoever originally typed it. A refusal naming a field the rider
+ * cannot reach is not a guard, it is a trap: it withholds a paid route over text
+ * the product itself copied there, and no amount of trying gets them past it.
+ * Dropping that value from the prompt closes the same channel and still answers
+ * the question.
  *
- * `authored` is required and has no default, because choosing between those two
+ * Authorship was the first cut of this rule and it is wrong at the boundary.
+ * `race_engineer_memory.summary` holds the rider's OWN words - the summary
+ * template in `20260422000400_add_adaptive_race_engineer.sql` embeds them and
+ * `save_session_outcome` copies `p_notes` in verbatim - and it still has to
+ * skip, because the copy is somewhere the rider cannot reach. Who typed it does
+ * not decide this; whether they can get at it does.
+ *
+ * `onMatch` is required and has no default, because choosing between those two
  * is the safety decision and a field added without making it is a silent hole.
- * `sourceId` is required on the app branch: skipping only means anything if the
- * caller can remove exactly that row from the prompt.
+ * `source` is required on the skip branch: skipping only means anything if the
+ * caller can remove exactly that value from the prompt.
  */
 export type RiderTextField =
-  | { authored: 'rider'; label: string; value: string }
-  | { authored: 'app'; label: string; value: string; sourceId: string };
+  | { onMatch: 'refuse'; label: string; value: string }
+  | { onMatch: 'skip'; label: string; value: string; source: SkippableSource };
 
-type RiderTextAuthorship = { authored: 'rider' } | { authored: 'app'; sourceId: string };
+type RiderTextDisposition =
+  | { onMatch: 'refuse' }
+  | { onMatch: 'skip'; source: SkippableSource };
 
-const RIDER_AUTHORED: RiderTextAuthorship = { authored: 'rider' };
+const REFUSE_ON_MATCH: RiderTextDisposition = { onMatch: 'refuse' };
+const SKIP_MEMORY: RiderTextDisposition = { onMatch: 'skip', source: { kind: 'memory' } };
+const SKIP_SESSION_ENVIRONMENT: RiderTextDisposition = {
+  onMatch: 'skip',
+  source: { kind: 'sessionEnvironment' },
+};
+
+/** Identity of a source, for de-duplicating drops reported by several fields. */
+export function skippableSourceKey(source: SkippableSource): string {
+  switch (source.kind) {
+    case 'recommendation':
+      return `recommendation:${source.id}`;
+    case 'memory':
+      return 'memory';
+    case 'sessionEnvironment':
+      return 'sessionEnvironment';
+    default: {
+      const unhandled: never = source;
+      throw new Error(`Unhandled skippable source: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
 
 function pushRiderText(
   fields: RiderTextField[],
-  authorship: RiderTextAuthorship,
+  disposition: RiderTextDisposition,
   label: string,
   value: string | null | undefined,
 ): void {
   if (typeof value !== 'string' || value.trim().length === 0) return;
   fields.push(
-    authorship.authored === 'app'
-      ? { authored: 'app', sourceId: authorship.sourceId, label, value }
-      : { authored: 'rider', label, value },
+    disposition.onMatch === 'skip'
+      ? { onMatch: 'skip', source: disposition.source, label, value }
+      : { onMatch: 'refuse', label, value },
   );
 }
 
 function collectVehicleRiderText(vehicle: Vehicle): RiderTextField[] {
   const fields: RiderTextField[] = [];
-  pushRiderText(fields, RIDER_AUTHORED, 'the vehicle nickname', vehicle.nickname);
-  pushRiderText(fields, RIDER_AUTHORED, 'the vehicle make', vehicle.make);
-  pushRiderText(fields, RIDER_AUTHORED, 'the vehicle model', vehicle.model);
+  pushRiderText(fields, REFUSE_ON_MATCH, 'the vehicle nickname', vehicle.nickname);
+  pushRiderText(fields, REFUSE_ON_MATCH, 'the vehicle make', vehicle.make);
+  pushRiderText(fields, REFUSE_ON_MATCH, 'the vehicle model', vehicle.model);
   return fields;
 }
 
 function collectEnvironmentRiderText(
   environment: SessionEnvironment | CreateSessionEnvironmentInput | null | undefined,
   suffix: string,
+  disposition: RiderTextDisposition,
 ): RiderTextField[] {
   if (!environment) return [];
   const fields: RiderTextField[] = [];
-  pushRiderText(fields, RIDER_AUTHORED, `the weather condition ${suffix}`, environment.weather_condition);
-  pushRiderText(fields, RIDER_AUTHORED, `the surface condition ${suffix}`, environment.surface_condition);
+  pushRiderText(fields, disposition, `the weather condition ${suffix}`, environment.weather_condition);
+  pushRiderText(fields, disposition, `the surface condition ${suffix}`, environment.surface_condition);
   return fields;
 }
 
 function collectSessionRiderText(session: Session): RiderTextField[] {
   const fields: RiderTextField[] = [];
   const add = (name: string, value: string | null | undefined) =>
-    pushRiderText(fields, RIDER_AUTHORED, `the ${name} on your ${session.date} session`, value);
+    pushRiderText(fields, REFUSE_ON_MATCH, `the ${name} on your ${session.date} session`, value);
 
   add('track name', session.track_name);
   add('tyre condition', session.tires.condition);
@@ -468,26 +507,48 @@ function collectSessionRiderText(session: Session): RiderTextField[] {
  * `formatRaceEngineerContext` is shared by both prompts, so its rider text is
  * collected once here and both routes' collectors call this.
  *
- * `environmentSuffix` is a parameter because `sessionEnvironment` does not have
- * the same provenance on the two routes. Day-plan builds it from the numbers the
- * rider just typed into the planner, so "you entered for today" is what they
- * would go and edit; tuning-advice reads the stored `session_environment` row
- * for the session being analysed, and telling that rider to check what they
- * "entered for today" points them at a form they never opened.
+ * `environmentSuffix` and `environmentDisposition` are parameters because
+ * `sessionEnvironment` does not have the same provenance on the two routes.
+ * Day-plan builds it from the numbers the rider just typed into the planner, so
+ * "you entered for today" is what they would go and edit and a refusal is
+ * actionable. Tuning-advice reads the stored `session_environment` row for the
+ * session being analysed: telling that rider to check what they "entered for
+ * today" points them at a form they never opened, and there is no other form
+ * either - `createSession` is the only writer of that table in this repository
+ * (an `.insert`, `lib/actions/sessions.ts`), so the row cannot be edited once
+ * the session exists. Same two columns, opposite disposition, decided by which
+ * route is asking.
  */
 function collectRaceEngineerContextRiderText(
   context: RaceEngineerContext | null | undefined,
   environmentSuffix: string,
+  environmentDisposition: RiderTextDisposition,
 ): RiderTextField[] {
   if (!context) return [];
   const fields: RiderTextField[] = [
-    ...collectEnvironmentRiderText(context.sessionEnvironment, environmentSuffix),
+    ...collectEnvironmentRiderText(
+      context.sessionEnvironment,
+      environmentSuffix,
+      environmentDisposition,
+    ),
   ];
 
+  // The rider's own words, in a place they cannot reach, which is why
+  // authorship is not the test. `save_session_outcome` copies the outcome note
+  // into this summary verbatim and overwrites on the next outcome for the same
+  // (user_id, vehicle_id, track_id); nothing under app/, components/ or
+  // lib/actions/ writes or deletes the row, and `authenticated` has no delete
+  // grant on it. Two things were checked before ruling this a skip. A refused
+  // request writes nothing but an `ai_requests` audit row, so the refusal
+  // cannot clear itself; and the summary is a ONE-WAY COPY taken at write time
+  // from the request body rather than re-read from `session_feedback.notes`, so
+  // editing the note it came from does not clear it either. The only remedy is
+  // saving another outcome that happens to map to the same memory row, and
+  // nothing tells the rider that.
   if (context.memory) {
     pushRiderText(
       fields,
-      RIDER_AUTHORED,
+      SKIP_MEMORY,
       'the rider memory Race Engineer has saved for this vehicle',
       context.memory.summary,
     );
@@ -498,16 +559,16 @@ function collectRaceEngineerContextRiderText(
   // so these are collected separately rather than assumed already covered.
   for (const item of context.similarSessions) {
     const suffix = `on your ${item.session.date} session`;
-    pushRiderText(fields, RIDER_AUTHORED, `the track name ${suffix}`, item.session.track_name);
-    pushRiderText(fields, RIDER_AUTHORED, `the front tyre pressure ${suffix}`, item.session.tires.front.pressure);
-    pushRiderText(fields, RIDER_AUTHORED, `the rear tyre pressure ${suffix}`, item.session.tires.rear.pressure);
-    pushRiderText(fields, RIDER_AUTHORED, `the notes ${suffix}`, item.session.notes);
+    pushRiderText(fields, REFUSE_ON_MATCH, `the track name ${suffix}`, item.session.track_name);
+    pushRiderText(fields, REFUSE_ON_MATCH, `the front tyre pressure ${suffix}`, item.session.tires.front.pressure);
+    pushRiderText(fields, REFUSE_ON_MATCH, `the rear tyre pressure ${suffix}`, item.session.tires.rear.pressure);
+    pushRiderText(fields, REFUSE_ON_MATCH, `the notes ${suffix}`, item.session.notes);
   }
 
   for (const feedback of context.recentFeedback.slice(0, 5)) {
     const suffix = `on the outcome you logged on ${feedback.created_at.slice(0, 10)}`;
-    pushRiderText(fields, RIDER_AUTHORED, `the symptoms ${suffix}`, feedback.symptoms.join(', '));
-    pushRiderText(fields, RIDER_AUTHORED, `the notes ${suffix}`, feedback.notes);
+    pushRiderText(fields, REFUSE_ON_MATCH, `the symptoms ${suffix}`, feedback.symptoms.join(', '));
+    pushRiderText(fields, REFUSE_ON_MATCH, `the notes ${suffix}`, feedback.notes);
   }
 
   // Model-authored at insert, rider-writable after that. `authenticated` holds
@@ -517,36 +578,37 @@ function collectRaceEngineerContextRiderText(
   // `profiles.tier` finding in CLAUDE.md. `evaluateAdvicePolicy` ran before the
   // insert and cannot speak for what the row says when it is read back.
   //
-  // Marked `app`, so a match drops the row from the prompt instead of refusing
-  // the request. `predicted_effect` is model prose this app wrote, and
-  // `authenticated` holds no delete grant on this table and no screen edits one
-  // (`20260719001100_grant_data_api_access.sql`), so a refusal would name
-  // something the rider cannot reach - and then repeat forever, because no new
-  // recommendation can be written to push the offending row out of this window
-  // while every request for the vehicle refuses before the model call.
+  // A skip, so a match drops the row from the prompt instead of refusing the
+  // request. `authenticated` holds no delete grant on this table and no screen
+  // edits one (`20260719001100_grant_data_api_access.sql`), so a refusal would
+  // name something the rider cannot reach - and then repeat forever, because no
+  // new recommendation can be written to push the offending row out of this
+  // window while every request for the vehicle refuses before the model call.
   //
-  // `sourceId` is the row id, which is what `dropScreenedSources` filters on.
   // `id` is a uuid and `status` is held to four values by
   // `ai_recommendations_status_check`, so neither is collected.
   for (const recommendation of context.recentRecommendations.slice(0, RECENT_RECOMMENDATION_LIMIT)) {
-    const authorship = { authored: 'app', sourceId: recommendation.id } as const;
+    const disposition = {
+      onMatch: 'skip',
+      source: { kind: 'recommendation', id: recommendation.id },
+    } as const;
     const label = `the saved recommendation from ${recommendation.created_at.slice(0, 10)}`;
-    pushRiderText(fields, authorship, label, recommendation.component);
-    pushRiderText(fields, authorship, label, recommendation.direction);
-    pushRiderText(fields, authorship, label, recommendation.magnitude);
-    pushRiderText(fields, authorship, label, recommendation.predicted_effect);
+    pushRiderText(fields, disposition, label, recommendation.component);
+    pushRiderText(fields, disposition, label, recommendation.direction);
+    pushRiderText(fields, disposition, label, recommendation.magnitude);
+    pushRiderText(fields, disposition, label, recommendation.predicted_effect);
   }
 
   if (context.telemetrySummary) {
-    pushRiderText(fields, RIDER_AUTHORED, 'the telemetry source name', context.telemetrySummary.source);
-    pushRiderText(fields, RIDER_AUTHORED, 'the telemetry summary', context.telemetrySummary.summary);
+    pushRiderText(fields, REFUSE_ON_MATCH, 'the telemetry source name', context.telemetrySummary.source);
+    pushRiderText(fields, REFUSE_ON_MATCH, 'the telemetry summary', context.telemetrySummary.summary);
     // "A numeric blob" is a convention this schema does not enforce: `metrics`
     // is unconstrained `jsonb` and `authenticated` holds insert and update on
     // `telemetry_summaries`. The prompt prints `JSON.stringify(metrics)`, so
     // that string is what gets screened.
     pushRiderText(
       fields,
-      RIDER_AUTHORED,
+      REFUSE_ON_MATCH,
       'the telemetry metrics',
       JSON.stringify(context.telemetrySummary.metrics),
     );
@@ -602,35 +664,41 @@ function collectRaceEngineerContextRiderText(
  * `authenticated` can insert and update outright. The test is who can WRITE the
  * column, not who wrote the value that is in it today.
  *
- * WHAT IS COLLECTED IS THEN MARKED `rider` OR `app`, which decides refuse or
- * skip (see `RiderTextField`). Every collected value has been put to that
- * question once, so nobody has to enumerate them again: `ai_recommendations` is
- * the ONLY app-authored source either collector carries.
+ * WHAT IS COLLECTED IS THEN GIVEN A DISPOSITION, refuse or skip, and the axis
+ * is ACTIONABILITY: can the rider reach the thing the refusal would name? Not
+ * who wrote it - see `RiderTextField`, where `race_engineer_memory.summary`
+ * holds the rider's own words and still has to skip. The sweep was done once so
+ * nobody re-derives it:
  *
- * - Vehicle nickname, make and model; every session string on both sessions;
- *   the environment's weather and surface; a similar session's track name,
- *   pressures and notes; feedback symptoms and notes - all typed by the rider
- *   on a form they can reopen. They REFUSE.
- * - `race_engineer_memory.summary` is an app TEMPLATE
- *   ('Latest feedback at %s: %s with %s.%s' in
- *   `20260422000400_add_adaptive_race_engineer.sql`) whose substitutions are the
- *   rider's own outcome notes and track name, so the only text in it that can
- *   carry a phrase is theirs. It REFUSES.
- * - `telemetry_summaries` source, summary and metrics: the app's only writer
- *   (`20260717000900_add_session_laps.sql`) writes 'manual', "<n> included
- *   manual laps" and a numeric object, so the app's own write path cannot emit
- *   free prose there. A phrase in one of them implies a rider PATCH, and the
- *   rider holds delete on that table besides. They REFUSE.
- * - `ai_recommendations` component, direction, magnitude and predicted_effect:
+ * REFUSE, an edit path exists and the label names something reachable:
+ * - Vehicle nickname, make and model -> the garage vehicle form, which is the
+ *   one `.update` on `vehicles` in `lib/actions/vehicles.ts`.
+ * - `session_feedback` symptoms and notes -> the outcome panel;
+ *   `save_session_outcome` upserts `on conflict (session_id) do update`
+ *   (`20260716000800_add_session_outcomes.sql`), so re-saving replaces them.
+ * - `telemetry_summaries` source, summary and metrics -> `replaceSessionLaps`
+ *   (`lib/actions/sessions.ts`) overwrites all three, so editing lap times
+ *   clears them. The app's own writer cannot emit free prose there either
+ *   (`20260717000900_add_session_laps.sql` writes 'manual', a lap count and a
+ *   numeric object), so a phrase in one of them implies a rider PATCH.
+ * - Every session string on the current, previous and similar sessions, and the
+ *   day-plan request's own track name and environment.
+ *
+ * SKIP, no path to the field, so a refusal would be a trap:
+ * - `ai_recommendations` component, direction, magnitude and predicted_effect.
  *   `persistRecommendation` stores `advice.prediction.expected_effect`, free
- *   model prose `evaluateAdvicePolicy` never reads, into a table
- *   `authenticated` can select and update but not delete, with no screen that
- *   edits one. They SKIP.
+ *   model prose `evaluateAdvicePolicy` never reads, into a table `authenticated`
+ *   can select and update but not delete, with no screen that edits one.
+ * - `race_engineer_memory.summary`, on BOTH routes. See `RiderTextField`.
+ * - `session_environment` weather and surface, on TUNING-ADVICE ONLY, where
+ *   they are the stored row. On day-plan the same two columns are what the
+ *   rider just typed into the planner, so they refuse there. Provenance decides
+ *   this, not the column, which is why the disposition is a parameter of
+ *   `collectEnvironmentRiderText`.
  *
- * The discriminator is not who wrote the value that is there today - the
- * paragraph above settles that - but whether the APP'S OWN WRITE PATH can emit
- * free prose into the column. Telemetry cannot; `predicted_effect` is exactly
- * rider-indistinguishable prose.
+ * Adding a skip means teaching `dropScreenedSources` to remove it. That is
+ * enforced rather than remembered: `SkippableSource` is a closed union and that
+ * function switches on it exhaustively.
  */
 
 /**
@@ -641,14 +709,22 @@ export function collectDayPlanRiderText(
   input: Omit<BuildDayPlanInput, 'retrieved'>,
 ): RiderTextField[] {
   const requestFields: RiderTextField[] = [];
-  pushRiderText(requestFields, RIDER_AUTHORED, 'the track name you entered', input.trackName);
+  pushRiderText(requestFields, REFUSE_ON_MATCH, 'the track name you entered', input.trackName);
 
+  // Both environments here are the one the request just submitted - `buildContext`
+  // in the day-plan route builds `sessionEnvironment` from the same values - so
+  // a refusal names a box the rider is looking at. That is the whole reason the
+  // disposition is a parameter rather than a property of the column.
   return [
     ...requestFields,
-    ...collectEnvironmentRiderText(input.environment, 'you entered for today'),
+    ...collectEnvironmentRiderText(input.environment, 'you entered for today', REFUSE_ON_MATCH),
     ...collectVehicleRiderText(input.vehicle),
     ...input.recentSessions.slice(0, DAY_PLAN_SESSION_LIMIT).flatMap(collectSessionRiderText),
-    ...collectRaceEngineerContextRiderText(input.raceEngineerContext, 'you entered for today'),
+    ...collectRaceEngineerContextRiderText(
+      input.raceEngineerContext,
+      'you entered for today',
+      REFUSE_ON_MATCH,
+    ),
   ];
 }
 
@@ -676,37 +752,91 @@ export function collectTuningAdviceRiderText(
     // `formatEnvironmentBlock('Current environment', ...)` and the adaptive
     // context block both print `raceEngineerContext.sessionEnvironment`, which
     // on this route is the stored `session_environment` row for the session
-    // being analysed rather than anything this request typed.
+    // being analysed rather than anything this request typed - and which
+    // nothing in the app can edit once the session exists, so it skips here
+    // while the same two columns refuse on day-plan.
     ...collectRaceEngineerContextRiderText(
       input.raceEngineerContext,
       `on your ${input.session.date} session`,
+      SKIP_SESSION_ENVIRONMENT,
     ),
   ];
 }
 
 /**
- * Remove the app-authored sources `classifyStoredRiderText` asked the caller to
- * drop, so their text cannot reach a prompt builder. Skipping means nothing
- * unless the offending row actually leaves the prompt.
+ * Remove the sources `classifyStoredRiderText` asked the caller to drop, so
+ * their text cannot reach a prompt builder. Skipping means nothing unless the
+ * offending value actually leaves the prompt; left in and merely unscreened, it
+ * would be worse than the refusal it replaced.
  *
- * The cap before the filter is the load-bearing half. `loadRaceEngineerContext`
+ * The cap before the recommendation filter is load-bearing. `loadRaceEngineerContext`
  * reads five recommendations and both the formatter and the collector work on
  * the first `RECENT_RECOMMENDATION_LIMIT`, so filtering the full list would
- * slide the next unscreened row into the printed window and re-open the channel
- * this exists to close. Everything that survives here has been through the
- * screen.
+ * slide the next unscreened row into the window the drop just freed and re-open
+ * the channel this exists to close. Everything that survives has been screened.
+ *
+ * The switch is exhaustive and fail-closed twice over: a new `SkippableSource`
+ * kind does not compile until it is handled here, and a drop that removed
+ * nothing throws rather than letting the value through, which the routes' own
+ * error boundary turns into a 500 instead of a silent send.
  */
 export function dropScreenedSources(
   context: RaceEngineerContext,
-  droppedSourceIds: readonly string[],
+  droppedSources: readonly SkippableSource[],
 ): RaceEngineerContext {
-  if (droppedSourceIds.length === 0) return context;
-  const dropped = new Set(droppedSourceIds);
+  if (droppedSources.length === 0) return context;
+
+  const droppedRecommendationIds = new Set<string>();
+  let dropMemory = false;
+  let dropSessionEnvironment = false;
+
+  for (const source of droppedSources) {
+    switch (source.kind) {
+      case 'recommendation':
+        droppedRecommendationIds.add(source.id);
+        break;
+      case 'memory':
+        dropMemory = true;
+        break;
+      case 'sessionEnvironment':
+        dropSessionEnvironment = true;
+        break;
+      default: {
+        const unhandled: never = source;
+        throw new Error(`Unhandled skippable source: ${JSON.stringify(unhandled)}`);
+      }
+    }
+  }
+
+  let recentRecommendations = context.recentRecommendations;
+  if (droppedRecommendationIds.size > 0) {
+    const window = context.recentRecommendations.slice(0, RECENT_RECOMMENDATION_LIMIT);
+    recentRecommendations = window.filter(
+      (recommendation) => !droppedRecommendationIds.has(recommendation.id),
+    );
+    if (recentRecommendations.length !== window.length - droppedRecommendationIds.size) {
+      throw new Error('A screened recommendation was not in the window it was collected from.');
+    }
+  }
+  if (dropMemory && !context.memory) {
+    throw new Error('A screened rider memory was not in the context it was collected from.');
+  }
+  if (dropSessionEnvironment && !context.sessionEnvironment) {
+    throw new Error('A screened session environment was not in the context it was collected from.');
+  }
+
   return {
     ...context,
-    recentRecommendations: context.recentRecommendations
-      .slice(0, RECENT_RECOMMENDATION_LIMIT)
-      .filter((recommendation) => !dropped.has(recommendation.id)),
+    recentRecommendations,
+    memory: dropMemory ? null : context.memory,
+    sessionEnvironment: dropSessionEnvironment ? null : context.sessionEnvironment,
+    // `dataUsed.weather` is `Boolean(sessionEnvironment)` where the context is
+    // built, and it reaches the rider as `data_used` through the policy's
+    // fallback. Withholding the environment while still claiming weather data
+    // would make the answer lie about what it read.
+    dataUsed: dropSessionEnvironment
+      ? { ...context.dataUsed, weather: false }
+      : context.dataUsed,
   };
 }
 

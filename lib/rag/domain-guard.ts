@@ -1,4 +1,10 @@
-import { DISCLAIMER_NOTE, ONE_CHANGE_NOTE, type RiderTextField } from '@/lib/rag/prompt';
+import {
+  DISCLAIMER_NOTE,
+  ONE_CHANGE_NOTE,
+  skippableSourceKey,
+  type RiderTextField,
+  type SkippableSource,
+} from '@/lib/rag/prompt';
 import type { AdviceDataUsed, AdviceResponse } from '@/lib/rag/schema';
 
 export type RaceEngineerRefusalReason =
@@ -42,12 +48,13 @@ export interface StoredRiderTextAssessment {
   /** Which field matched, so the refusal can name it. Never the text itself. */
   field: string | null;
   /**
-   * `sourceId`s of the app-authored fields that matched. The caller MUST drop
+   * The sources of the skip-disposed fields that matched. The caller MUST drop
    * these from the prompt before the model call - an allow that leaves them in
-   * is worse than the refusal it replaced, because the field is then neither
-   * screened nor withheld. Empty on a refusal: nothing reaches the model.
+   * is worse than the refusal it replaced, because the value is then neither
+   * screened nor withheld. `dropScreenedSources` is what acts on them. Empty on
+   * a refusal: nothing reaches the model.
    */
-  droppedSourceIds: string[];
+  droppedSources: SkippableSource[];
 }
 
 interface BuildRefusalAdviceInput {
@@ -355,12 +362,13 @@ export function normalizeAdviceResponse(
  * submitted nothing, so "ask a setup question instead" is advice they cannot
  * act on, and a stored phrase refuses every attempt until it is edited.
  *
- * Which is also why a match does not always refuse. REFUSE on what the RIDER
- * authored; SKIP what the APP authored - `RiderTextField.authored` carries that
- * decision from the collector, where the field is known, and `RiderTextField`
- * explains it. A rider-authored match wins over any number of app-authored ones,
- * because skipping a field the rider could have edited would turn this guard
- * into a silent hole, which is worse than the deadlock the skip exists to end.
+ * Which is also why a match does not always refuse. REFUSE when the rider can
+ * go and fix the field; SKIP when they cannot reach it, whoever typed it -
+ * `RiderTextField.onMatch` carries that decision from the collector, which is
+ * the only place the field's provenance is known, and `RiderTextField` explains
+ * the axis. A refuse-disposed match wins over any number of skips, because
+ * skipping a field the rider could have edited would turn this guard into a
+ * silent hole, which is worse than the trap the skip exists to end.
  *
  * Each value is screened on its own rather than joined, so a phrase cannot be
  * assembled across the seam between two unrelated fields.
@@ -377,14 +385,19 @@ export function normalizeAdviceResponse(
 export function classifyStoredRiderText(
   input: ClassifyStoredRiderTextInput,
 ): StoredRiderTextAssessment {
-  const droppedSourceIds: string[] = [];
+  const droppedSources: SkippableSource[] = [];
+  const seenSources = new Set<string>();
 
   for (const field of input.fields) {
     const value = typeof field.value === 'string' ? field.value.trim() : '';
     if (!value) continue;
     if (countMatches(value, STORED_TEXT_INJECTION_PATTERNS) === 0) continue;
-    if (field.authored === 'app') {
-      if (!droppedSourceIds.includes(field.sourceId)) droppedSourceIds.push(field.sourceId);
+    if (field.onMatch === 'skip') {
+      const key = skippableSourceKey(field.source);
+      if (!seenSources.has(key)) {
+        seenSources.add(key);
+        droppedSources.push(field.source);
+      }
       continue;
     }
     return {
@@ -395,9 +408,9 @@ export function classifyStoredRiderText(
       message:
         `${input.unableMessage} The wording in ${field.label} reads as an instruction to me rather than as a description of your vehicle. Edit that field and try again.`,
       field: field.label,
-      droppedSourceIds: [],
+      droppedSources: [],
     };
   }
 
-  return { decision: 'allow', reason: null, message: null, field: null, droppedSourceIds };
+  return { decision: 'allow', reason: null, message: null, field: null, droppedSources };
 }

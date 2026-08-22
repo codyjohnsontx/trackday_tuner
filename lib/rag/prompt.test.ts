@@ -5,6 +5,7 @@ import {
   buildUserPrompt,
   collectDayPlanRiderText,
   collectTuningAdviceRiderText,
+  dropScreenedSources,
   DISCLAIMER_NOTE,
   ONE_CHANGE_NOTE,
   SYSTEM_PROMPT,
@@ -369,15 +370,28 @@ describe('collectDayPlanRiderText', () => {
     expect(prompt).toContain(SENTINELS.memorySummary);
   });
 
-  // Day-plan passes an empty recommendation list on both branches of its
-  // `buildContext`, so nothing it collects is app-authored and the skip path is
-  // inert on that route. Asserted rather than assumed: the skip exists for
-  // tuning-advice, and day-plan's behaviour is not supposed to move with it.
-  it('marks every value it collects as rider-authored', () => {
+  // The environment on this route is what the rider just typed into the planner
+  // - `buildContext` copies the submitted values into `sessionEnvironment` - so
+  // a refusal names a box they are looking at. The same two columns skip on
+  // tuning-advice, where they are the stored row. Getting this backwards would
+  // silently drop submitted text from the plan.
+  it('refuses on the environment it was handed, which the request just submitted', () => {
+    const collected = collectDayPlanRiderText(stampedInput());
+    const weather = collected.filter((field) => field.value.includes(SENTINELS.weather));
+
+    expect(weather.length).toBeGreaterThan(0);
+    expect(weather.every((field) => field.onMatch === 'refuse')).toBe(true);
+  });
+
+  // Memory is the one thing this route drops rather than refusing on, and the
+  // only reason day-plan's observable behaviour moves at all.
+  it('skips only the rider memory, which no screen in the app can edit', () => {
     const collected = collectDayPlanRiderText(stampedInput());
 
     expect(collected.length).toBeGreaterThan(0);
-    expect(collected.filter((field) => field.authored !== 'rider')).toEqual([]);
+    expect(
+      collected.filter((field) => field.onMatch === 'skip').map((field) => field.label),
+    ).toEqual(['the rider memory Race Engineer has saved for this vehicle']);
   });
 
   it('labels each value with something the rider can go and edit', () => {
@@ -523,21 +537,38 @@ describe('collectTuningAdviceRiderText', () => {
     }
   });
 
-  // REFUSE on what the rider authored; SKIP what the app authored, which the
-  // route can only act on if the collector says which is which. The saved
-  // recommendation is the one app-authored source either collector carries, and
-  // it carries the row id so exactly that row can be dropped from the prompt.
-  it('marks each value with who authored it', () => {
+  // REFUSE what the rider can go and fix; SKIP what they cannot reach. The route
+  // can only act on that if the collector says which is which, and a skip has to
+  // name a source precise enough to remove from the prompt.
+  it('gives each value a disposition and names what a skip drops', () => {
     const collected = collectTuningAdviceRiderText(stampedInput());
     const fieldFor = (sentinel: string) =>
       collected.find((field) => field.value.includes(sentinel));
 
-    expect(fieldFor(SENTINELS.notes)).toMatchObject({ authored: 'rider' });
-    expect(fieldFor(SENTINELS.memorySummary)).toMatchObject({ authored: 'rider' });
-    // Rider-authored despite the app writing the row: the app's own writer
-    // cannot put free prose in `telemetry_summaries`, so a phrase there implies
-    // a rider PATCH. See the exclusion block in lib/rag/prompt.ts.
-    expect(fieldFor(SENTINELS.telemetryMetrics)).toMatchObject({ authored: 'rider' });
+    // Reachable: the session form, the garage form, the outcome panel, and
+    // `replaceSessionLaps` for the telemetry row.
+    expect(fieldFor(SENTINELS.notes)).toMatchObject({ onMatch: 'refuse' });
+    expect(fieldFor(SENTINELS.nickname)).toMatchObject({ onMatch: 'refuse' });
+    expect(fieldFor(SENTINELS.feedbackNotes)).toMatchObject({ onMatch: 'refuse' });
+    expect(fieldFor(SENTINELS.telemetryMetrics)).toMatchObject({ onMatch: 'refuse' });
+
+    // The rider's own words in a copy they cannot reach, which is why the axis
+    // is actionability and not authorship.
+    expect(fieldFor(SENTINELS.memorySummary)).toMatchObject({
+      onMatch: 'skip',
+      source: { kind: 'memory' },
+    });
+
+    // The stored `session_environment` row, written only by `createSession`.
+    // The same two columns refuse on day-plan, where the rider just typed them.
+    expect(fieldFor(SENTINELS.weather)).toMatchObject({
+      onMatch: 'skip',
+      source: { kind: 'sessionEnvironment' },
+    });
+    expect(fieldFor(SENTINELS.surface)).toMatchObject({
+      onMatch: 'skip',
+      source: { kind: 'sessionEnvironment' },
+    });
 
     for (const sentinel of [
       SENTINELS.recommendationComponent,
@@ -546,18 +577,25 @@ describe('collectTuningAdviceRiderText', () => {
       SENTINELS.recommendationEffect,
     ]) {
       expect(fieldFor(sentinel)).toMatchObject({
-        authored: 'app',
-        sourceId: '66666666-6666-6666-6666-666666666666',
+        onMatch: 'skip',
+        source: { kind: 'recommendation', id: '66666666-6666-6666-6666-666666666666' },
       });
     }
 
-    // Nothing else may skip: an app mark on a field the rider can edit is a
-    // silent hole, not a convenience.
+    // Nothing else may skip: a skip on a field the rider can reach is a silent
+    // hole, not a convenience.
     expect(
       new Set(
-        collected.filter((field) => field.authored === 'app').map((field) => field.label),
+        collected.filter((field) => field.onMatch === 'skip').map((field) => field.label),
       ),
-    ).toEqual(new Set(['the saved recommendation from 2026-03-20']));
+    ).toEqual(
+      new Set([
+        'the rider memory Race Engineer has saved for this vehicle',
+        'the weather condition on your 2026-04-01 session',
+        'the surface condition on your 2026-04-01 session',
+        'the saved recommendation from 2026-03-20',
+      ]),
+    );
   });
 
   it('labels each value with something the rider can go and find', () => {
@@ -577,5 +615,134 @@ describe('collectTuningAdviceRiderText', () => {
       'the saved recommendation from 2026-03-20',
     );
     expect(labelFor(SENTINELS.telemetryMetrics)).toBe('the telemetry metrics');
+  });
+});
+
+// Skipping is only worth anything if the value actually leaves the prompt, so
+// this is the half of the guard that has to be exact. The two failure modes it
+// is written against are a drop that silently removes nothing, and a drop that
+// frees a slot in the printed window for a row nothing screened.
+describe('dropScreenedSources', () => {
+  function recommendation(id: string, createdAt = '2026-03-20T00:00:00Z'): AiRecommendation {
+    return {
+      id,
+      user_id: 'user-1',
+      session_id: '22222222-2222-2222-2222-222222222222',
+      vehicle_id: '11111111-1111-1111-1111-111111111111',
+      track_id: null,
+      request_id: 'earlier',
+      summary: 'Earlier recommendation.',
+      component: 'front_rebound',
+      direction: 'soften',
+      magnitude: '1 click',
+      predicted_effect: 'less push on entry',
+      status: 'applied',
+      advice: {},
+      context_snapshot: {},
+      outcome_session_id: null,
+      created_at: createdAt,
+      updated_at: createdAt,
+    } as AiRecommendation;
+  }
+
+  function context(partial: Partial<RaceEngineerContext> = {}): RaceEngineerContext {
+    return {
+      similarSessions: [],
+      sessionEnvironment: {
+        id: '55555555-5555-5555-5555-555555555555',
+        user_id: 'user-1',
+        session_id: '22222222-2222-2222-2222-222222222222',
+        ambient_temperature_c: 21,
+        track_temperature_c: 33,
+        humidity_percent: 40,
+        weather_condition: 'overcast',
+        surface_condition: 'dry',
+        source: 'manual',
+        created_at: '2026-04-01T00:00:00Z',
+        updated_at: '2026-04-01T00:00:00Z',
+      } as SessionEnvironment,
+      recentFeedback: [],
+      recentRecommendations: [],
+      memory: stampedMemory(),
+      telemetrySummary: null,
+      dayTrend: 'Warming through the morning.',
+      dataUsed: {
+        manual: true,
+        weather: true,
+        history: false,
+        feedback: false,
+        lap_data: false,
+        telemetry: false,
+      },
+      ...partial,
+    };
+  }
+
+  it('returns the context untouched when nothing was dropped', () => {
+    const input = context();
+    expect(dropScreenedSources(input, [])).toBe(input);
+  });
+
+  it('drops the rider memory', () => {
+    const result = dropScreenedSources(context(), [{ kind: 'memory' }]);
+    expect(result.memory).toBeNull();
+    expect(result.sessionEnvironment).not.toBeNull();
+  });
+
+  // `dataUsed.weather` is `Boolean(sessionEnvironment)` where the context is
+  // built and reaches the rider as `data_used`, so withholding the environment
+  // while still claiming weather would make the answer lie about what it read.
+  it('drops the session environment and stops claiming weather data', () => {
+    const result = dropScreenedSources(context(), [{ kind: 'sessionEnvironment' }]);
+    expect(result.sessionEnvironment).toBeNull();
+    expect(result.dataUsed.weather).toBe(false);
+    expect(result.dataUsed.manual).toBe(true);
+  });
+
+  it('drops exactly the named recommendation', () => {
+    const result = dropScreenedSources(
+      context({ recentRecommendations: [recommendation('a'), recommendation('b')] }),
+      [{ kind: 'recommendation', id: 'a' }],
+    );
+    expect(result.recentRecommendations.map((row) => row.id)).toEqual(['b']);
+  });
+
+  // The context loader reads five rows and the prompt prints three, so filtering
+  // the full list would slide row four - which the collector never screened -
+  // into the window the drop just freed.
+  it('never promotes a row the collector did not screen', () => {
+    const result = dropScreenedSources(
+      context({
+        recentRecommendations: ['a', 'b', 'c', 'd', 'e'].map((id) => recommendation(id)),
+      }),
+      [{ kind: 'recommendation', id: 'a' }],
+    );
+    expect(result.recentRecommendations.map((row) => row.id)).toEqual(['b', 'c']);
+  });
+
+  // Fail closed. A drop that matched nothing means the caller screened one
+  // object and is about to prompt from another, which is the case the doc on
+  // `droppedSources` calls worse than the refusal it replaced.
+  it('throws rather than silently dropping nothing', () => {
+    expect(() => dropScreenedSources(context({ memory: null }), [{ kind: 'memory' }])).toThrow();
+    expect(() =>
+      dropScreenedSources(context({ sessionEnvironment: null }), [{ kind: 'sessionEnvironment' }]),
+    ).toThrow();
+    expect(() =>
+      dropScreenedSources(context({ recentRecommendations: [recommendation('a')] }), [
+        { kind: 'recommendation', id: 'not-in-the-window' },
+      ]),
+    ).toThrow();
+  });
+
+  // A row past the printed window was never screened, so asking to drop it means
+  // the caller is working from a different window than the collector was.
+  it('throws when asked to drop a row outside the screened window', () => {
+    expect(() =>
+      dropScreenedSources(
+        context({ recentRecommendations: ['a', 'b', 'c', 'd'].map((id) => recommendation(id)) }),
+        [{ kind: 'recommendation', id: 'd' }],
+      ),
+    ).toThrow();
   });
 });
