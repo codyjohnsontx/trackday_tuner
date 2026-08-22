@@ -10,7 +10,7 @@ import {
   ONE_CHANGE_NOTE,
   SYSTEM_PROMPT,
 } from '@/lib/rag/prompt';
-import type { RaceEngineerContext } from '@/lib/rag/race-engineer-context';
+import { buildDayTrend, type RaceEngineerContext } from '@/lib/rag/race-engineer-context';
 import type { KnowledgeChunk, RetrievedChunk } from '@/lib/rag/types';
 import type {
   AiRecommendation,
@@ -383,15 +383,14 @@ describe('collectDayPlanRiderText', () => {
     expect(weather.every((field) => field.onMatch === 'refuse')).toBe(true);
   });
 
-  // Memory is the one thing this route drops rather than refusing on, and the
-  // only reason day-plan's observable behaviour moves at all.
-  it('skips only the rider memory, which no screen in the app can edit', () => {
+  // Nothing this route collects can be skipped. Its recommendation list is
+  // always empty and its environment is submitted, so `dropScreenedSources` can
+  // never fire here - which is what keeps day-plan's behaviour where it was.
+  it('collects nothing skippable, so the drop path is inert on this route', () => {
     const collected = collectDayPlanRiderText(stampedInput());
 
     expect(collected.length).toBeGreaterThan(0);
-    expect(
-      collected.filter((field) => field.onMatch === 'skip').map((field) => field.label),
-    ).toEqual(['the rider memory Race Engineer has saved for this vehicle']);
+    expect(collected.filter((field) => field.onMatch === 'skip')).toEqual([]);
   });
 
   it('labels each value with something the rider can go and edit', () => {
@@ -552,11 +551,12 @@ describe('collectTuningAdviceRiderText', () => {
     expect(fieldFor(SENTINELS.feedbackNotes)).toMatchObject({ onMatch: 'refuse' });
     expect(fieldFor(SENTINELS.telemetryMetrics)).toMatchObject({ onMatch: 'refuse' });
 
-    // The rider's own words in a copy they cannot reach, which is why the axis
-    // is actionability and not authorship.
+    // Reachable through the outcome panel, because `save_session_outcome`
+    // overwrites this summary rather than appending to it - so it refuses, and
+    // the label has to name the outcome rather than the memory row.
     expect(fieldFor(SENTINELS.memorySummary)).toMatchObject({
-      onMatch: 'skip',
-      source: { kind: 'memory' },
+      onMatch: 'refuse',
+      label: 'the notes on the outcome you logged on 2026-04-02',
     });
 
     // The stored `session_environment` row, written only by `createSession`.
@@ -590,7 +590,6 @@ describe('collectTuningAdviceRiderText', () => {
       ),
     ).toEqual(
       new Set([
-        'the rider memory Race Engineer has saved for this vehicle',
         'the weather condition on your 2026-04-01 session',
         'the surface condition on your 2026-04-01 session',
         'the saved recommendation from 2026-03-20',
@@ -665,7 +664,10 @@ describe('dropScreenedSources', () => {
       recentRecommendations: [],
       memory: stampedMemory(),
       telemetrySummary: null,
-      dayTrend: 'Warming through the morning.',
+      // What `buildDayTrend` returns for the environment above, because the
+      // point of these cases is that the trend moves when the row is dropped.
+      dayTrend:
+        'Track temperature is logged, so use hot pressure and grip change as primary day-trend checks.',
       dataUsed: {
         manual: true,
         weather: true,
@@ -678,31 +680,48 @@ describe('dropScreenedSources', () => {
     };
   }
 
+  const CURRENT = session({ date: '2026-04-01', start_time: '09:00:00' });
+
   it('returns the context untouched when nothing was dropped', () => {
     const input = context();
-    expect(dropScreenedSources(input, [])).toBe(input);
+    expect(dropScreenedSources(input, [], CURRENT)).toBe(input);
   });
 
-  it('drops the rider memory', () => {
-    const result = dropScreenedSources(context(), [{ kind: 'memory' }]);
-    expect(result.memory).toBeNull();
-    expect(result.sessionEnvironment).not.toBeNull();
-  });
+  // Everything derived from the environment has to move with it. Left alone the
+  // prompt would say the environment is absent, that no weather data was used,
+  // and that the track temperature is logged - three statements about the same
+  // withheld row that contradict each other.
+  it('drops the session environment and everything derived from it', () => {
+    const before = context();
+    expect(before.dayTrend).toContain('Track temperature is logged');
 
-  // `dataUsed.weather` is `Boolean(sessionEnvironment)` where the context is
-  // built and reaches the rider as `data_used`, so withholding the environment
-  // while still claiming weather would make the answer lie about what it read.
-  it('drops the session environment and stops claiming weather data', () => {
-    const result = dropScreenedSources(context(), [{ kind: 'sessionEnvironment' }]);
+    const result = dropScreenedSources(before, [{ kind: 'sessionEnvironment' }], CURRENT);
+
     expect(result.sessionEnvironment).toBeNull();
     expect(result.dataUsed.weather).toBe(false);
     expect(result.dataUsed.manual).toBe(true);
+    // Recomputed through `buildDayTrend`, so it is exactly what the loader would
+    // have produced had the row never existed rather than a string written here.
+    expect(result.dayTrend).toBe(buildDayTrend(CURRENT, null, before.similarSessions));
+    expect(result.dayTrend).not.toContain('Track temperature is logged');
+  });
+
+  it('leaves the day trend alone when the environment survives', () => {
+    const before = context({
+      recentRecommendations: [recommendation('a'), recommendation('b')],
+    });
+    const result = dropScreenedSources(before, [{ kind: 'recommendation', id: 'a' }], CURRENT);
+
+    expect(result.dayTrend).toBe(before.dayTrend);
+    expect(result.sessionEnvironment).not.toBeNull();
+    expect(result.dataUsed.weather).toBe(true);
   });
 
   it('drops exactly the named recommendation', () => {
     const result = dropScreenedSources(
       context({ recentRecommendations: [recommendation('a'), recommendation('b')] }),
       [{ kind: 'recommendation', id: 'a' }],
+      CURRENT,
     );
     expect(result.recentRecommendations.map((row) => row.id)).toEqual(['b']);
   });
@@ -716,6 +735,7 @@ describe('dropScreenedSources', () => {
         recentRecommendations: ['a', 'b', 'c', 'd', 'e'].map((id) => recommendation(id)),
       }),
       [{ kind: 'recommendation', id: 'a' }],
+      CURRENT,
     );
     expect(result.recentRecommendations.map((row) => row.id)).toEqual(['b', 'c']);
   });
@@ -724,14 +744,19 @@ describe('dropScreenedSources', () => {
   // object and is about to prompt from another, which is the case the doc on
   // `droppedSources` calls worse than the refusal it replaced.
   it('throws rather than silently dropping nothing', () => {
-    expect(() => dropScreenedSources(context({ memory: null }), [{ kind: 'memory' }])).toThrow();
     expect(() =>
-      dropScreenedSources(context({ sessionEnvironment: null }), [{ kind: 'sessionEnvironment' }]),
+      dropScreenedSources(
+        context({ sessionEnvironment: null }),
+        [{ kind: 'sessionEnvironment' }],
+        CURRENT,
+      ),
     ).toThrow();
     expect(() =>
-      dropScreenedSources(context({ recentRecommendations: [recommendation('a')] }), [
-        { kind: 'recommendation', id: 'not-in-the-window' },
-      ]),
+      dropScreenedSources(
+        context({ recentRecommendations: [recommendation('a')] }),
+        [{ kind: 'recommendation', id: 'not-in-the-window' }],
+        CURRENT,
+      ),
     ).toThrow();
   });
 
@@ -742,6 +767,7 @@ describe('dropScreenedSources', () => {
       dropScreenedSources(
         context({ recentRecommendations: ['a', 'b', 'c', 'd'].map((id) => recommendation(id)) }),
         [{ kind: 'recommendation', id: 'd' }],
+        CURRENT,
       ),
     ).toThrow();
   });

@@ -1,6 +1,6 @@
 import { describeComponentVocabulary } from '@/lib/rag/component-vocabulary';
 import type { RetrievedChunk } from '@/lib/rag/types';
-import type { RaceEngineerContext } from '@/lib/rag/race-engineer-context';
+import { buildDayTrend, type RaceEngineerContext } from '@/lib/rag/race-engineer-context';
 import type { CreateSessionEnvironmentInput, Session, SessionEnvironment, Vehicle } from '@/types';
 import { truncateAtWordBoundary } from '@/lib/utils';
 
@@ -359,7 +359,6 @@ export function buildDayPlanPrompt(input: BuildDayPlanInput): string {
  */
 export type SkippableSource =
   | { kind: 'recommendation'; id: string }
-  | { kind: 'memory' }
   | { kind: 'sessionEnvironment' };
 
 /**
@@ -370,19 +369,22 @@ export type SkippableSource =
  * The label is phrased to read after "the wording in ...", because a screen that
  * refuses over stored text has to say which field to edit.
  *
- * REFUSE when the rider can go and fix the thing being refused on. SKIP when
- * they cannot, whoever originally typed it. A refusal naming a field the rider
- * cannot reach is not a guard, it is a trap: it withholds a paid route over text
- * the product itself copied there, and no amount of trying gets them past it.
- * Dropping that value from the prompt closes the same channel and still answers
- * the question.
+ * REFUSE when the rider can go and change the thing the refusal names. SKIP
+ * when they cannot, whoever originally typed it. A refusal naming something out
+ * of reach is not a guard, it is a trap: it withholds a paid route and nothing
+ * the rider does gets them past it. Dropping that value from the prompt closes
+ * the same channel and still answers the question.
  *
- * Authorship was the first cut of this rule and it is wrong at the boundary.
- * `race_engineer_memory.summary` holds the rider's OWN words - the summary
- * template in `20260422000400_add_adaptive_race_engineer.sql` embeds them and
- * `save_session_outcome` copies `p_notes` in verbatim - and it still has to
- * skip, because the copy is somewhere the rider cannot reach. Who typed it does
- * not decide this; whether they can get at it does.
+ * Authorship is NOT the axis, and `race_engineer_memory.summary` is where the
+ * two come apart. The app wrote that row from a template, but it embeds the
+ * rider's own outcome note, and saving that outcome again overwrites the whole
+ * summary (`summary = excluded.summary` in
+ * `20260716000800_add_session_outcomes.sql`) - so it refuses, and its label
+ * names the outcome notes rather than the memory row, because that is the thing
+ * the rider can open. The worked example in the other direction is
+ * `session_environment`: the same two columns refuse on day-plan, where the
+ * rider just typed them, and skip on tuning-advice, where they are a stored row
+ * with no edit path. Provenance decides it, not the column and not the author.
  *
  * `onMatch` is required and has no default, because choosing between those two
  * is the safety decision and a field added without making it is a silent hole.
@@ -398,7 +400,6 @@ type RiderTextDisposition =
   | { onMatch: 'skip'; source: SkippableSource };
 
 const REFUSE_ON_MATCH: RiderTextDisposition = { onMatch: 'refuse' };
-const SKIP_MEMORY: RiderTextDisposition = { onMatch: 'skip', source: { kind: 'memory' } };
 const SKIP_SESSION_ENVIRONMENT: RiderTextDisposition = {
   onMatch: 'skip',
   source: { kind: 'sessionEnvironment' },
@@ -409,8 +410,6 @@ export function skippableSourceKey(source: SkippableSource): string {
   switch (source.kind) {
     case 'recommendation':
       return `recommendation:${source.id}`;
-    case 'memory':
-      return 'memory';
     case 'sessionEnvironment':
       return 'sessionEnvironment';
     default: {
@@ -533,23 +532,25 @@ function collectRaceEngineerContextRiderText(
     ),
   ];
 
-  // The rider's own words, in a place they cannot reach, which is why
-  // authorship is not the test. `save_session_outcome` copies the outcome note
-  // into this summary verbatim and overwrites on the next outcome for the same
-  // (user_id, vehicle_id, track_id); nothing under app/, components/ or
-  // lib/actions/ writes or deletes the row, and `authenticated` has no delete
-  // grant on it. Two things were checked before ruling this a skip. A refused
-  // request writes nothing but an `ai_requests` audit row, so the refusal
-  // cannot clear itself; and the summary is a ONE-WAY COPY taken at write time
-  // from the request body rather than re-read from `session_feedback.notes`, so
-  // editing the note it came from does not clear it either. The only remedy is
-  // saving another outcome that happens to map to the same memory row, and
-  // nothing tells the rider that.
+  // Refuses, and the label is the whole point. `save_session_outcome` builds
+  // this summary with `' Notes: ' || p_notes`, so it carries the rider's own
+  // outcome note verbatim - skipping it would be a silent hole. It is also
+  // reachable: the same function overwrites the row outright
+  // (`summary = excluded.summary`, `20260716000800_add_session_outcomes.sql`),
+  // and the outcome panel re-saving is an ordinary action that does not depend
+  // on any AI route succeeding. So one edit in the outcome panel clears it.
+  //
+  // Naming the memory row would not have said that. Nothing on any screen is
+  // called "the rider memory", so the old label told the rider to go and edit
+  // something that does not exist for them. The label names the outcome notes
+  // instead, dated from `memory.updated_at`, which the same statement sets to
+  // `now()` when it writes the summary - so it is the outcome that put this text
+  // here, read off the row already in hand.
   if (context.memory) {
     pushRiderText(
       fields,
-      SKIP_MEMORY,
-      'the rider memory Race Engineer has saved for this vehicle',
+      REFUSE_ON_MATCH,
+      `the notes on the outcome you logged on ${context.memory.updated_at.slice(0, 10)}`,
       context.memory.summary,
     );
   }
@@ -684,17 +685,26 @@ function collectRaceEngineerContextRiderText(
  * - Every session string on the current, previous and similar sessions, and the
  *   day-plan request's own track name and environment.
  *
- * SKIP, no path to the field, so a refusal would be a trap:
+ * - `race_engineer_memory.summary` -> the outcome panel. `save_session_outcome`
+ *   overwrites the summary outright, so re-saving that outcome clears it. Its
+ *   LABEL is what had to change rather than its disposition: it now names the
+ *   outcome notes, because no screen is called "the rider memory".
+ *
+ * SKIP, no path to the value, so a refusal would be a trap:
  * - `ai_recommendations` component, direction, magnitude and predicted_effect.
  *   `persistRecommendation` stores `advice.prediction.expected_effect`, free
  *   model prose `evaluateAdvicePolicy` never reads, into a table `authenticated`
  *   can select and update but not delete, with no screen that edits one.
- * - `race_engineer_memory.summary`, on BOTH routes. See `RiderTextField`.
- * - `session_environment` weather and surface, on TUNING-ADVICE ONLY, where
- *   they are the stored row. On day-plan the same two columns are what the
- *   rider just typed into the planner, so they refuse there. Provenance decides
- *   this, not the column, which is why the disposition is a parameter of
- *   `collectEnvironmentRiderText`.
+ * - `session_environment` weather and surface, on TUNING-ADVICE ONLY. This is
+ *   the worked example for the whole axis, because the same two columns take
+ *   OPPOSITE dispositions on the two routes and that is correct rather than an
+ *   oversight. On tuning-advice they are a stored row: `createSession` inserts
+ *   it and nothing in lib/ or app/ ever updates it, so the only escape from a
+ *   refusal is deleting the session - which destroys the laps, feedback and
+ *   outcome the rider came to look at. On day-plan they arrive in the request
+ *   the rider just submitted, so retyping them is the fix. Provenance decides
+ *   it, which is why the disposition is a parameter of
+ *   `collectEnvironmentRiderText` and why both call sites say so inline.
  *
  * Adding a skip means teaching `dropScreenedSources` to remove it. That is
  * enforced rather than remembered: `SkippableSource` is a closed union and that
@@ -711,10 +721,14 @@ export function collectDayPlanRiderText(
   const requestFields: RiderTextField[] = [];
   pushRiderText(requestFields, REFUSE_ON_MATCH, 'the track name you entered', input.trackName);
 
-  // Both environments here are the one the request just submitted - `buildContext`
-  // in the day-plan route builds `sessionEnvironment` from the same values - so
-  // a refusal names a box the rider is looking at. That is the whole reason the
-  // disposition is a parameter rather than a property of the column.
+  // REFUSE on the environment here, and SKIP on it in the tuning-advice
+  // collector below. The inconsistency is the point and is deliberate: both
+  // environments on this route are what the request just submitted -
+  // `buildContext` in the day-plan route builds `sessionEnvironment` from the
+  // same values the rider typed - so a refusal names a box they are looking at
+  // and retyping it is the fix. Making the two routes agree would silently drop
+  // text the rider just entered. Read the tuning-advice call before changing
+  // this one.
   return [
     ...requestFields,
     ...collectEnvironmentRiderText(input.environment, 'you entered for today', REFUSE_ON_MATCH),
@@ -749,12 +763,17 @@ export function collectTuningAdviceRiderText(
     ...collectVehicleRiderText(input.vehicle),
     ...collectSessionRiderText(input.session),
     ...(input.previousSession ? collectSessionRiderText(input.previousSession) : []),
+    // SKIP on the environment here, and REFUSE on it in the day-plan collector
+    // above. The inconsistency is the point and is deliberate:
     // `formatEnvironmentBlock('Current environment', ...)` and the adaptive
     // context block both print `raceEngineerContext.sessionEnvironment`, which
     // on this route is the stored `session_environment` row for the session
-    // being analysed rather than anything this request typed - and which
-    // nothing in the app can edit once the session exists, so it skips here
-    // while the same two columns refuse on day-plan.
+    // being analysed rather than anything this request typed. `createSession`
+    // inserts that row and nothing in lib/ or app/ ever updates it, so a
+    // refusal's only escape is deleting the session - and with it the laps,
+    // feedback and outcome the rider came to look at. Making the two routes
+    // agree would put that trap back. Read the day-plan call before changing
+    // this one.
     ...collectRaceEngineerContextRiderText(
       input.raceEngineerContext,
       `on your ${input.session.date} session`,
@@ -779,24 +798,26 @@ export function collectTuningAdviceRiderText(
  * kind does not compile until it is handled here, and a drop that removed
  * nothing throws rather than letting the value through, which the routes' own
  * error boundary turns into a 500 instead of a silent send.
+ *
+ * `session` is here for the day trend. Everything derived from a dropped source
+ * has to move with it or the prompt contradicts itself, and the day trend is
+ * derived from the environment, so it is recomputed through the same function
+ * the loader used rather than replaced with a string written here.
  */
 export function dropScreenedSources(
   context: RaceEngineerContext,
   droppedSources: readonly SkippableSource[],
+  session: Session,
 ): RaceEngineerContext {
   if (droppedSources.length === 0) return context;
 
   const droppedRecommendationIds = new Set<string>();
-  let dropMemory = false;
   let dropSessionEnvironment = false;
 
   for (const source of droppedSources) {
     switch (source.kind) {
       case 'recommendation':
         droppedRecommendationIds.add(source.id);
-        break;
-      case 'memory':
-        dropMemory = true;
         break;
       case 'sessionEnvironment':
         dropSessionEnvironment = true;
@@ -818,25 +839,27 @@ export function dropScreenedSources(
       throw new Error('A screened recommendation was not in the window it was collected from.');
     }
   }
-  if (dropMemory && !context.memory) {
-    throw new Error('A screened rider memory was not in the context it was collected from.');
-  }
   if (dropSessionEnvironment && !context.sessionEnvironment) {
     throw new Error('A screened session environment was not in the context it was collected from.');
+  }
+
+  if (!dropSessionEnvironment) {
+    return { ...context, recentRecommendations };
   }
 
   return {
     ...context,
     recentRecommendations,
-    memory: dropMemory ? null : context.memory,
-    sessionEnvironment: dropSessionEnvironment ? null : context.sessionEnvironment,
-    // `dataUsed.weather` is `Boolean(sessionEnvironment)` where the context is
-    // built, and it reaches the rider as `data_used` through the policy's
-    // fallback. Withholding the environment while still claiming weather data
-    // would make the answer lie about what it read.
-    dataUsed: dropSessionEnvironment
-      ? { ...context.dataUsed, weather: false }
-      : context.dataUsed,
+    sessionEnvironment: null,
+    // Both of these are read off the environment where the context is built, and
+    // both reach the model: `dataUsed.weather` as `data_used` through the
+    // policy's fallback, `dayTrend` printed straight into the prompt. Left as
+    // they were, the prompt would say the environment is absent, that no weather
+    // data was used, and that the track temperature is logged, all at once.
+    // Recomputed rather than hand-written, so this cannot drift from what the
+    // loader would have produced had the row never existed.
+    dayTrend: buildDayTrend(session, null, context.similarSessions),
+    dataUsed: { ...context.dataUsed, weather: false },
   };
 }
 

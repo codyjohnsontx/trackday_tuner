@@ -24,7 +24,7 @@ import {
   classifyDayPlanRequest,
   classifyStoredRiderText,
 } from '@/lib/rag/domain-guard';
-import { collectDayPlanRiderText, dropScreenedSources } from '@/lib/rag/prompt';
+import { collectDayPlanRiderText } from '@/lib/rag/prompt';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
 import { isUuid } from '@/lib/rag/validation';
 import {
@@ -723,22 +723,13 @@ export async function POST(request: Request) {
       );
     }
 
-    // The other half of that screen. Only `race_engineer_memory.summary` can be
-    // dropped on this route: the recommendation list is always empty here, and
-    // this route's `sessionEnvironment` is what the rider just typed, so it
-    // refuses rather than skipping.
-    const screenedContext = dropScreenedSources(
-      raceEngineerContext,
-      storedAssessment.droppedSources,
-    );
-
     const result = await generateDayPlan({
       vehicle,
       targetDate: computedTargetDate,
       trackName: validated.data.track_name,
       environment: hasEnvironment ? environment : null,
       recentSessions,
-      raceEngineerContext: screenedContext,
+      raceEngineerContext,
     });
 
     // Only real, persisted sessions ground personal evidence. The planning
@@ -746,7 +737,7 @@ export async function POST(request: Request) {
     // deliberately absent here: a plan citing it would be citing itself.
     const policyResult = evaluateAdvicePolicy({
       advice: result.advice,
-      fallbackDataUsed: screenedContext.dataUsed,
+      fallbackDataUsed: raceEngineerContext.dataUsed,
       validSessionIds: [
         ...recentSessionIds,
         ...feedback.map((entry) => entry.session_id),

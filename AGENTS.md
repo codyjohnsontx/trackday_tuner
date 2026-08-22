@@ -590,12 +590,14 @@ the request is answered, because a refusal naming an unreachable field is a trap
 rather than a guard: it withholds a paid route and nothing the rider does gets
 them past it. So a stored-text match can now return 200 with advice.
 
-Authorship was the first cut of that rule and it is wrong at the boundary.
-`race_engineer_memory.summary` holds the rider's OWN words - `save_session_outcome`
-copies the outcome note in verbatim - and still has to be dropped, because nothing
-in the app writes, edits or deletes that row, a refused request writes only an
-audit row so the refusal cannot clear itself, and the summary is a one-way copy
-taken at write time rather than re-read from the note it came from.
+Authorship is NOT that axis, and `race_engineer_memory.summary` is where the two
+come apart. The app wrote that row from a template, but it embeds the rider's own
+outcome note, and `save_session_outcome` overwrites the whole summary
+(`summary = excluded.summary`) - so re-saving that outcome in the panel clears it
+and the field REFUSES. What was wrong there was the LABEL: it named "the rider
+memory", which appears on no screen, so the message told the rider to edit
+something they could not find. **A refusal has to name the thing they can open**,
+which is the outcome, dated from the `updated_at` the same statement sets.
 
 `RiderTextField.onMatch` carries the decision, is required with no default, and a
 skip must also name a `SkippableSource` - `dropScreenedSources` is what removes it,
@@ -603,18 +605,28 @@ and **skip means removed from the prompt, never merely unscreened**; left in, th
 channel is open and the value is neither screened nor withheld. That function caps
 `recentRecommendations` at the printed limit *before* filtering, because the loader
 reads five rows and the prompt prints three, so filtering the full list would slide
-an unscreened row into the window the drop just freed. It throws when a drop
-removed nothing, and its switch over `SkippableSource` is exhaustive, so a new kind
-does not compile until it is handled.
+an unscreened row into the window the drop just freed. **Anything derived from a
+dropped source moves with it** or the prompt contradicts itself: dropping the
+environment also clears `dataUsed.weather` and recomputes `dayTrend` through
+`buildDayTrend`, rather than leaving the model told the row is absent, that no
+weather data was used, and that the track temperature is logged. It throws when a
+drop removed nothing, and its switch over `SkippableSource` is exhaustive, so a new
+kind does not compile until it is handled.
 
-**The same column can refuse on one route and skip on the other**, because
-provenance differs: `session_environment` weather and surface are the stored row on
-tuning-advice, which only `createSession` ever writes, and on day-plan they are
-what the rider just typed into the planner. The disposition is therefore a
-parameter of `collectEnvironmentRiderText`, next to the label suffix that was
-already per-route. Getting it backwards either way is a bug - skipping on day-plan
-silently discards submitted text, refusing on tuning-advice restores the trap. The
-full sweep of which field is which, and why, is on the exclusion list in
+**The worked example is `session_environment`: the same two columns refuse on one
+route and skip on the other.** On tuning-advice they are the stored row -
+`createSession` inserts it and nothing in `lib/` or `app/` ever updates it, so the
+only escape from a refusal is deleting the session, and with it the laps, feedback
+and outcome the rider came to look at. On day-plan the same two values arrive in
+the request they just submitted, so retyping them is the fix. It reads like an
+inconsistency and is exactly right, so the reason is written inline at *both*
+collector call sites. The disposition is therefore a parameter of
+`collectEnvironmentRiderText`, next to the label suffix that was already
+per-route. Getting it backwards either way is a bug - skipping on day-plan
+silently discards submitted text, refusing on tuning-advice restores the trap.
+Day-plan collects nothing skippable at all (its recommendation list is always
+empty, its environment refuses), so `dropScreenedSources` has one caller. The full
+sweep of which field is which, and why, is on the exclusion list in
 `lib/rag/prompt.ts`.
 
 Neither collector takes the submitted fields. `classifyRaceEngineerQuestion` and

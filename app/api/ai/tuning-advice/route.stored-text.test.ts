@@ -42,7 +42,8 @@ vi.mock('@/lib/rag/advice', () => ({
   generateTuningAdvice,
   UpstreamTimeoutError: class UpstreamTimeoutError extends Error {},
 }));
-vi.mock('@/lib/rag/race-engineer-context', () => ({
+vi.mock('@/lib/rag/race-engineer-context', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/rag/race-engineer-context')>()),
   loadRaceEngineerContext,
   createRecommendationSnapshot: vi.fn(() => ({})),
 }));
@@ -447,23 +448,21 @@ describe('POST /api/ai/tuning-advice stored rider text screening', () => {
     expectStoredTextRefusal(result, 'the notes on your 2026-03-01 session');
   });
 
-  // This asserted a refusal until the actionability sweep. The summary holds the
-  // rider's OWN words - `save_session_outcome` copies the outcome note into it
-  // verbatim - so authorship said refuse, and authorship was the wrong axis.
-  // Nothing under app/, components/ or lib/actions/ writes or deletes the row,
-  // `authenticated` has no delete grant on it, a refused request writes only an
-  // audit row so the refusal cannot clear itself, and the summary is a one-way
-  // copy taken at write time rather than re-read from the note it came from, so
-  // editing that note does not clear it either. The refusal named a field the
-  // rider could not reach: a trap, not a guard.
-  it('drops the saved rider memory from the prompt and still answers', async () => {
+  // Refuses, because the rider can clear it: `save_session_outcome` rebuilds the
+  // summary from the outcome note and overwrites the row
+  // (`summary = excluded.summary`), so re-saving that outcome in the panel is an
+  // ordinary action that does not depend on any AI route succeeding. Skipping it
+  // would be a silent hole - the summary carries the rider's note verbatim.
+  //
+  // What was wrong was the LABEL. It used to name "the rider memory Race
+  // Engineer has saved for this vehicle", which appears on no screen, so the
+  // rider was told to edit something they could not find. It names the outcome
+  // instead, dated from the `updated_at` the same statement sets.
+  it('refuses on the saved rider memory and names the outcome the rider can reopen', async () => {
     const result = await drive({ context: context({ memory: memory(PAYLOAD) }) });
 
-    expect(result.status).toBe(200);
-    expect(result.body.advice.refusal).toBeNull();
-    expect(generateTuningAdvice).toHaveBeenCalledTimes(1);
-    expect(promptedContext()?.memory).toBeNull();
-    expectPayloadWithheld();
+    expectStoredTextRefusal(result, 'the notes on the outcome you logged on 2026-04-20');
+    expect(result.body.advice.refusal).not.toContain('the rider memory');
   });
 
   it('refuses on a similar session note', async () => {
@@ -515,9 +514,13 @@ describe('POST /api/ai/tuning-advice stored rider text screening', () => {
     expect(result.body.advice.refusal).toBeNull();
     expect(generateTuningAdvice).toHaveBeenCalledTimes(1);
     expect(promptedContext()?.sessionEnvironment).toBeNull();
-    // Withholding the environment while still reporting weather data would make
-    // the answer lie about what it read.
+    // All three together, because the bug this locks is that they disagreed:
+    // the prompt said the environment was absent, that no weather data was used,
+    // and that the track temperature was logged, all at once.
     expect(promptedContext()?.dataUsed.weather).toBe(false);
+    expect(promptedContext()?.dayTrend).toBe(
+      'No environment snapshot is logged for this session; use hot pressures and rider feel as the main signal.',
+    );
     expectPayloadWithheld();
   });
 
@@ -628,13 +631,12 @@ describe('POST /api/ai/tuning-advice stored rider text screening', () => {
     expect(row?.status).not.toBe('completed_refusal_prompt_injection');
   });
 
-  // Every unreachable field poisoned at once still loses to one the rider can
-  // go and fix. If this ever flips, the skip has become a silent hole.
+  // Every skippable field poisoned at once still loses to one the rider can go
+  // and fix. If this ever flips, the skip has become a silent hole.
   it('still refuses on a reachable field with every skippable one poisoned', async () => {
     const result = await drive({
       session: session({ notes: PAYLOAD }),
       context: context({
-        memory: memory(PAYLOAD),
         sessionEnvironment: environment({ weather_condition: PAYLOAD }),
         recentRecommendations: [recommendation({ id: REC_A, predicted_effect: PAYLOAD })],
       }),

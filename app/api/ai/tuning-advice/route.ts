@@ -495,6 +495,7 @@ export async function POST(request: Request) {
     const screenedContext = dropScreenedSources(
       raceEngineerContext,
       storedAssessment.droppedSources,
+      session,
     );
 
     const result = await generateTuningAdvice({
