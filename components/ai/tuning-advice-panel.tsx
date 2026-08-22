@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { RefusalCard } from '@/components/ai/refusal-card';
 import { SafetyBanner } from '@/components/ai/safety-banner';
+import { WatchItems } from '@/components/ai/watch-items';
 import { useTemperatureInput, useTemperatureUnit } from '@/components/ui/temperature-display';
 import { formatComponentLabel, formatDirectionLabel } from '@/lib/rag/component-vocabulary';
 import { classifyRaceEngineerQuestion } from '@/lib/rag/domain-guard';
@@ -485,13 +486,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
                   <div className="mt-2 space-y-2 rounded-row bg-surface-2 p-3 text-sm text-ink-dim">
                     <p>{advice.prediction.expected_effect}</p>
                     <p className="text-ink-dim">{advice.prediction.day_trend}</p>
-                    {advice.prediction.watch_items.length > 0 ? (
-                      <ul className="list-disc space-y-1 pl-5">
-                        {advice.prediction.watch_items.map((item, idx) => (
-                          <li key={idx}>{item}</li>
-                        ))}
-                      </ul>
-                    ) : null}
+                    <WatchItems items={advice.prediction.watch_items} />
                   </div>
                 </div>
               ) : null}

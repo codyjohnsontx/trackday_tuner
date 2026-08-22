@@ -325,7 +325,22 @@ describe('classifyStoredRiderText', () => {
 describe('classifyRaceEngineerQuestion supporting fields', () => {
   // The product only ever sends these, so they are the realistic phrasing that
   // must never start refusing. Taken verbatim from SYMPTOM_OPTIONS and
-  // INTENT_OPTIONS in components/ai/tuning-advice-panel.tsx.
+  // INTENT_OPTIONS in components/ai/tuning-advice-panel.tsx. Both halves of the
+  // symptom option are pinned: the panel posts `opt.id`, so the ids are what the
+  // wire actually carries, while the labels are the human phrasing a rider would
+  // type by hand or an API client would send instead.
+  const REAL_SYMPTOM_IDS = [
+    'understeer_entry',
+    'understeer_mid',
+    'oversteer_entry',
+    'oversteer_exit',
+    'front_chatter',
+    'rear_wallow',
+    'packing_down',
+    'brake_dive',
+    'low_grip_cold',
+    'overheating_tire',
+  ];
   const REAL_SYMPTOMS = [
     'Understeer on entry',
     'Understeer mid-corner',
@@ -347,6 +362,25 @@ describe('classifyRaceEngineerQuestion supporting fields', () => {
   ];
   const ORDINARY_QUESTION =
     'Front pushes on entry after I raised pressure 1 psi. What should I try next?';
+
+  it('allows every symptom id the panel actually posts', () => {
+    for (const symptom of REAL_SYMPTOM_IDS) {
+      const result = classifyRaceEngineerQuestion({
+        question: ORDINARY_QUESTION,
+        symptoms: [symptom],
+      });
+      expect(result.decision, `symptom id: ${symptom}`).toBe('allow');
+    }
+    // The route caps `symptoms` at MAX_SYMPTOMS, so the largest set the panel can
+    // get past validation is eight of them at once.
+    expect(
+      classifyRaceEngineerQuestion({
+        question: ORDINARY_QUESTION,
+        symptoms: REAL_SYMPTOM_IDS.slice(0, 8),
+        changeIntent: 'reduce_tire_wear',
+      }).decision,
+    ).toBe('allow');
+  });
 
   it('allows every symptom the product can send', () => {
     for (const symptom of REAL_SYMPTOMS) {

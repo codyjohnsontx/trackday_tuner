@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { RefusalCard } from '@/components/ai/refusal-card';
 import { SafetyBanner } from '@/components/ai/safety-banner';
+import { WatchItems } from '@/components/ai/watch-items';
 import { formatComponentLabel, formatDirectionLabel } from '@/lib/rag/component-vocabulary';
 import type { AdviceResponse } from '@/lib/rag/schema';
 import type { Vehicle } from '@/types';
@@ -196,9 +197,10 @@ export function DayPlanAdviceResult({ advice }: { advice: AdviceResponse }) {
         </div>
       )}
       {advice.prediction ? (
-        <div className="rounded-row bg-surface-2 p-3 text-sm text-ink-dim">
+        <div className="space-y-1 rounded-row bg-surface-2 p-3 text-sm text-ink-dim">
           <p>{advice.prediction.expected_effect}</p>
-          <p className="mt-1 text-ink-dim">{advice.prediction.day_trend}</p>
+          <p className="text-ink-dim">{advice.prediction.day_trend}</p>
+          <WatchItems items={advice.prediction.watch_items} />
         </div>
       ) : null}
       <div>
