@@ -615,9 +615,9 @@ claim here ("padding one can only tighten the ceiling") talked the gap away, and
 a false justification is worse than an undocumented gap: the gap is merely
 unknown, while the justification actively stops the next reader ever opening
 `parseRangeMax`. A comment that defends a bug outlives the code. Pre-existing,
-out of scope for the equality change, tracked as
-tt-negative-magnitude-passes-ceiling; the earliest shared boundary for closing it
-is `parseRangeMax` / `magnitudeAllowed`, not a render site.
+out of scope for the equality change, tracked as tt-negative-magnitude-accepted;
+the earliest shared boundary for closing it is `parseRangeMax` /
+`magnitudeAllowed`, not a render site.
 
 **An empty `recommended_changes` list is checked as prose.** `evaluateAdvicePolicy`
 validates component, direction and magnitude by iterating the structured field, so
