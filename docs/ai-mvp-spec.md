@@ -16,6 +16,8 @@ Ship a post-session AI copilot that gives conservative, explainable setup sugges
   - Autonomous setup changes.
   - Public unauthenticated usage.
 
+`POST /api/ai/day-plan` is also live; its request contract is `validateDayPlanRequest` (`app/api/ai/day-plan/route.ts`) and its response contract is the shared `AdviceResponse` (`lib/rag/schema.ts`).
+
 ## Input Schema
 
 `POST /api/ai/tuning-advice` request body:
