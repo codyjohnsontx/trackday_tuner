@@ -516,9 +516,10 @@ status, body, headers and audit row across 18 guard paths so a change to the
 shared pipeline cannot move it unnoticed.
 
 **Injection screening takes two passes, and the second is the one that gets
-forgotten.** Text the request submitted is screened before any database work, so a
-refusal costs no reservation and no query and is still recorded (`recordRefusedRequest`)
-where the throttle can count it. But the prompt also interpolates text the rider
+forgotten.** Text the request submitted is screened early - on day-plan before the
+reservation and before the vehicle lookup, so a refusal costs no slot and no read of
+the rider's own rows - and is still recorded (`recordRefusedRequest`) where the
+throttle can count it. But the prompt also interpolates text the rider
 stored *earlier* - vehicle nickname, session notes, feedback notes, rider memory,
 every suspension and alignment string - and `sanitizeFreeText` in `lib/rag/prompt.ts`
 neutralises only the `<user_data>` tag delimiters, not phrases.
