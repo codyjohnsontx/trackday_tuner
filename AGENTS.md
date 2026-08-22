@@ -606,11 +606,17 @@ reported delta in the second and refusing a plan that instructed nothing. The
 summary splits on sentence terminators *and* on a comma followed by a connective;
 a bare "and" deliberately does not split, because "front and rear cold tire
 pressure" is one noun phrase and splitting there stops a real instruction being
-caught at all. Fixing the unit rather than the pattern is what closed that class.
+caught at all. **A decimal point is not a boundary** either - a bare `.` in the
+terminator class tore "by 0.5 psi" into "by 0" and "5 psi" and let the most common
+recommendation in this product escape, since the tire-pressure ceiling is 1 psi.
+Both fixes are to the unit of analysis rather than to the pattern, which is what
+closed that class.
 
 The guard is **best-effort by design and closed to further pattern work**. It is
-deliberately incomplete: it does not catch an instruction carrying no numeric
-delta - "front tyres want another half psi" walks past. The prompt contract
+deliberately incomplete, with two gaps accepted on the record: an instruction
+carrying no numeric delta ("front tyres want another half psi"), and every legal
+camber change, because `degrees` is kept out of the quantity pattern so a
+temperature forecast is not read as a setup change. The prompt contract
 carries that half instead, since `describeComponentVocabulary()` tells the model
 prose instructions are discarded with the whole response. Every widening of this
 pattern has cost a false refusal on a paid route, so a case that escapes is to be

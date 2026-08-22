@@ -80,10 +80,28 @@ interface AdvicePolicyInput {
  * splitting there stops "Increase the front and rear cold tire pressure by 1
  * psi" being caught at all.
  *
+ * A DECIMAL POINT IS NOT A BOUNDARY. The terminator class used to include a bare
+ * ".", which tore "by 0.5 psi" into "by 0" and "5 psi" - one piece with the verb
+ * and no unit, the other with the unit and no verb - so the instruction escaped.
+ * That was the worst possible blind spot to have: the tire-pressure ceiling is
+ * 1 psi, so a sub-integer delta is the normal recommendation here and is what
+ * both demo fixtures ship. A "." now ends a clause only when it is not sitting
+ * between two digits.
+ *
  * THE GUARD IS BEST-EFFORT BY DESIGN AND CLOSED TO FURTHER PATTERN WORK. It is
- * deliberately incomplete: it does not catch an instruction carrying no numeric
- * delta - "front tyres want another half psi" is a real instruction and walks
- * straight past. The prompt contract carries that half, because
+ * deliberately incomplete, and two shapes are KNOWN ACCEPTED GAPS rather than
+ * bugs waiting to be fixed:
+ *
+ * - An instruction carrying no numeric delta. "front tyres want another half
+ *   psi" is a real instruction and walks straight past.
+ * - Every legal camber recommendation. `SETUP_QUANTITY_SOURCE` omits "degrees"
+ *   and "positions" on purpose, so "ambient will climb to 30 degrees" is not
+ *   read as a setup change - and because camber's ceiling is 0.5 degrees, that
+ *   makes "reduce front camber by 0.5 degrees" invisible here. Adding degrees
+ *   would trade this gap for the temperature false positives the omission
+ *   exists to prevent.
+ *
+ * The prompt contract carries the other half, because
  * `describeComponentVocabulary()` tells the model in `SYSTEM_PROMPT` that a
  * setup instruction written into `summary` or `prediction` is not checked and
  * will be discarded with the whole response. Every widening of this pattern has
@@ -133,7 +151,7 @@ const DELTA_QUANTITY_PATTERN = new RegExp(
 );
 
 const CLAUSE_BOUNDARY_PATTERN =
-  /[.!?;\n]+|,\s*(?:and|but|so|then|while|whereas|although|though|yet)\b/i;
+  /(?:[!?;\n]+|(?<!\d)\.(?!\d))+|,\s*(?:and|but|so|then|while|whereas|although|though|yet)\b/i;
 
 function hasActionableProse(advice: AdviceResponse): boolean {
   const summary = typeof advice.summary === 'string' ? advice.summary : '';

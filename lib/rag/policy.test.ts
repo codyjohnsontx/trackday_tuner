@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { AdviceResponse } from '@/lib/rag/schema';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
 
+// The default summary describes rather than instructs. It used to read "Drop
+// front pressure 0.5 psi.", which is an actionable delta, and every empty-plan
+// test that did not override it was silently leaning on a splitter bug that tore
+// "0.5" in half. A shared fixture must not carry an instruction it is not
+// testing for.
 function buildAdvice(overrides: Partial<AdviceResponse> = {}): AdviceResponse {
   return {
-    summary: 'Drop front pressure 0.5 psi.',
+    summary: 'Front grip fell away mid-corner as the session went on.',
     recommended_changes: [
       {
         component: 'front_tire_pressure',
@@ -387,6 +392,18 @@ describe('actionable prose in an empty plan', () => {
   // Both walls are pinned here on purpose, because this guard has been moved in
   // both directions and each move broke the other side. Every sentence below is
   // one the guard once got wrong.
+  //
+  // THIS SET HAS A SHAPE, AND THE SHAPE IS A HAZARD. It grew case by case out of
+  // phrasings that had already caused a failure, so it varies PHRASING well -
+  // verbs, prepositions, clause order, articles, noun phrases - and it varied
+  // everything else badly. For ten rounds every single case used an INTEGER
+  // magnitude, which is exactly why a splitter that cut "0.5 psi" in half
+  // survived all of them: no case could see it. Number format was the missed
+  // dimension. The next person to extend this set will reach for whichever
+  // dimension they happen to be thinking about and will inherit the same blind
+  // spot, so before adding a case ask the harder question - WHICH DIMENSION AM I
+  // NOT VARYING? Units, magnitude size, negative numbers, ranges, unicode
+  // punctuation and sentence length are all still thin here.
 
   // WALL ONE - false negatives. A real setup instruction escaping into prose the
   // rider reads as advice, with no magnitude ceiling anywhere near it.
@@ -397,6 +414,8 @@ describe('actionable prose in an empty plan', () => {
       ['a bare quantity the verb governs with no preposition', 'Drop the rear preload 4 turns and it will settle.'],
       ['a delta reached across a bare "and" inside one noun phrase', 'Increase the front and rear cold tire pressure by 1 psi.'],
       ['an instruction in the first clause of a comma-joined sentence', 'Soften front rebound 2 clicks, and check hot pressures after.'],
+      ['a decimal delta, which a "." boundary used to tear in half', 'Before session one, drop front tire pressure by 0.5 psi.'],
+      ['a decimal delta in a non-psi unit', 'Soften front rebound 1.5 clicks before session one.'],
       ['a delta reached across a canonical multi-word component', 'Increase front and rear cold pressure by 1 psi.'],
       ['a delta the verb governs directly', 'Soften front rebound 1 click before session one.'],
     ])('refuses %s', (_label, summary) => {
@@ -415,6 +434,7 @@ describe('actionable prose in an empty plan', () => {
       ['a reading reported without any instruction', 'Your last session finished at 32 psi hot on the rear.'],
       ['a forecast verb and a reported delta in separate clauses', 'Grip will drop as the track heats, and hot pressures typically come up by 2 psi from cold.'],
       ['a forecast whose second clause predicts a rise', 'Ambient will increase through the morning, so expect rear hot pressure to come up by 2 psi over cold.'],
+      ['a decimal inside a reading rather than a delta', 'Your rear ran 26.5 psi hot last session, which is where it settled.'],
       ['a condition verb beside a non-setup unit', 'Expect grip to drop as ambient climbs past 30 degrees through the morning.'],
       ['a verb and a quantity in different sentences', 'Run the Session 3 baseline. Rear hot pressure was 26 psi that day.'],
     ])('allows %s', (_label, summary) => {
@@ -423,9 +443,29 @@ describe('actionable prose in an empty plan', () => {
     });
   });
 
-  // A comma-joined sentence carries more than one intent, so the unit of
-  // analysis is the clause. A bare "and" must NOT split, because
-  // "front and rear cold tire pressure" is a single noun phrase.
+  // ACCEPTED GAPS - allowed, and NOT because that is correct. Each is a real
+  // instruction the guard does not catch, recorded rather than chased because
+  // the guard is closed to further pattern work. A camber recommendation can
+  // never be caught here: `degrees` is left out of the quantity pattern so a
+  // temperature forecast is not read as a setup change, and camber's ceiling is
+  // 0.5 degrees, so every legal camber change is invisible. The prompt contract
+  // carries these, not this function.
+  describe('known accepted gaps', () => {
+    it.each([
+      ['an instruction carrying no numeric delta', 'Front tyres want another half psi before session one.'],
+      ['every legal camber recommendation, because degrees is not a setup unit', 'Reduce front camber by 0.5 degrees.'],
+    ])('does not catch %s', (_label, summary) => {
+      expect(decisionFor(summary)).toBe('allow');
+    });
+  });
+
+  // A decimal point is not a sentence terminator. Pinned separately from the
+  // cases above because it is a property of the splitter, not of any phrasing.
+  it('does not treat a decimal point as a clause boundary', () => {
+    expect(decisionFor('Drop front tire pressure by 0.5 psi.')).toBe('force_refusal');
+    expect(decisionFor('Drop front tire pressure by 1 psi.')).toBe('force_refusal');
+  });
+
   it('splits on comma-plus-connective but never on a bare "and"', () => {
     expect(decisionFor('Grip will drop as the track heats, and pressures come up by 2 psi.')).toBe(
       'allow',
@@ -448,13 +488,6 @@ describe('actionable prose in an empty plan', () => {
     const result = emptyPlan({ summary: 'Increase front pressure by 6 psi before session one.' });
     expect(result.advice.refusal).toContain('Try building the plan again');
     expect(result.advice.refusal).not.toContain('Ask for a specific change');
-  });
-
-  // Best-effort by design: an instruction carrying no numeric delta is not
-  // caught here, and SYSTEM_PROMPT carries that half instead. Pinned so the
-  // limit is a decision on the record rather than a surprise.
-  it('does not catch an instruction with no numeric delta', () => {
-    expect(decisionFor('Front tyres want another half psi before session one.')).toBe('allow');
   });
 
   // Scope is the summary alone. The other prose fields are read as forecasts,
