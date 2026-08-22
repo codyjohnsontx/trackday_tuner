@@ -8,26 +8,25 @@ import {
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import { assertNotDemoRoute } from '@/lib/demo/mode';
-import {
-  getAiRequestFingerprintSecret,
-  getAiRateLimitPerHour,
-  getAiRateLimitPerMinute,
-} from '@/lib/env.server';
+import { getAiRequestFingerprintSecret } from '@/lib/env.server';
 import { createClient } from '@/lib/supabase/server';
 import { generateDayPlan, UpstreamTimeoutError } from '@/lib/rag/advice';
 import {
-  countRequestsSince,
-  isRefusalThrottled,
+  recordRefusedRequest,
   releaseReservation,
-  reservePendingSlot,
   updateRequestLog,
 } from '@/lib/rag/ai-request-log';
 import {
+  preflightAiRequest,
+  readAiRequestBody,
+} from '@/lib/rag/ai-request-preflight';
+import {
   buildRefusalAdvice,
   classifyDayPlanRequest,
+  classifyStoredRiderText,
 } from '@/lib/rag/domain-guard';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
-import { AI_REQUEST_MAX_BODY_BYTES, isUuid } from '@/lib/rag/validation';
+import { isUuid } from '@/lib/rag/validation';
 import {
   buildDayTrend,
   hasManualSessionData,
@@ -442,26 +441,9 @@ export async function POST(request: Request) {
   const demoResponse = await assertNotDemoRoute();
   if (demoResponse) return demoResponse;
 
-  const contentLength = request.headers.get('content-length');
-  if (contentLength && Number(contentLength) > AI_REQUEST_MAX_BODY_BYTES) {
-    return errorResponse(413, 'Request body is too large.', requestId);
-  }
-
-  let raw: string;
-  try {
-    raw = await request.text();
-  } catch {
-    return errorResponse(400, 'Unable to read request body.', requestId);
-  }
-  if (Buffer.byteLength(raw, 'utf8') > AI_REQUEST_MAX_BODY_BYTES) {
-    return errorResponse(413, 'Request body is too large.', requestId);
-  }
-
-  let parsedJson: unknown;
-  try {
-    parsedJson = raw.length === 0 ? {} : JSON.parse(raw);
-  } catch {
-    return errorResponse(400, 'Request body must be valid JSON.', requestId);
+  const body = await readAiRequestBody(request);
+  if (!body.ok) {
+    return errorResponse(body.failure.status, body.failure.error, requestId, body.failure.headers);
   }
 
   const user = await getRealUser();
@@ -474,7 +456,7 @@ export async function POST(request: Request) {
     return errorResponse(402, 'Race Engineer is a Pro feature. Upgrade to continue.', requestId);
   }
 
-  const validated = validateDayPlanRequest(parsedJson);
+  const validated = validateDayPlanRequest(body.value);
   if (!validated.ok) {
     return errorResponse(400, validated.error, requestId);
   }
@@ -495,19 +477,9 @@ export async function POST(request: Request) {
     return typeof value === 'string' && value.trim() !== '' && value !== 'manual';
   });
 
-  if (await isRefusalThrottled(LOG_TAG, user.id)) {
-    return errorResponse(
-      429,
-      'Too many refused Race Engineer requests in a short window. Wait a few minutes before trying again.',
-      requestId,
-      { 'retry-after': '600' },
-    );
-  }
-
   // The day plan carries no free-text question, so the audited prompt subject is
   // the request itself: the day being planned plus whatever the rider typed
-  // about the track and conditions. That is also the only rider-authored text
-  // that reaches the model.
+  // about the track and conditions.
   const riderText = [
     validated.data.track_name ?? '',
     validated.data.weather_condition ?? '',
@@ -518,73 +490,65 @@ export async function POST(request: Request) {
   const promptSubject = [`day-plan ${computedTargetDate}`, riderText]
     .filter((part) => part.trim().length > 0)
     .join(' | ');
-  const promptFingerprint = buildPromptFingerprint({
-    question: promptSubject,
-    symptoms: [],
-    changeIntent: null,
-    secret: getAiRequestFingerprintSecret(),
-  });
-  const promptRedactedPreview = buildPromptRedactedPreview(promptSubject);
 
-  // Reserve the slot BEFORE counting so concurrent requests see each other's
-  // pending rows, the same TOCTOU close the tuning-advice route makes. The row
-  // is also what every later status update writes to.
-  try {
-    await reservePendingSlot({
+  // Screen one: the fields this request submitted. It needs no database state,
+  // so it runs before the reservation and before the vehicle lookup - a request
+  // carrying an injection string should not cost a slot or a query, and it must
+  // be recorded even when it also names a vehicle the rider does not own, or the
+  // 404 would hide the attempt from the refusal throttle.
+  const submittedAssessment = classifyDayPlanRequest({
+    trackName: validated.data.track_name,
+    weatherCondition: validated.data.weather_condition,
+    surfaceCondition: validated.data.surface_condition,
+  });
+
+  if (submittedAssessment.decision === 'refuse') {
+    const refusalReason = submittedAssessment.reason ?? 'out_of_domain';
+    await recordRefusedRequest({
       logTag: LOG_TAG,
       userId: user.id,
       requestId,
-      promptFingerprint,
-      promptRedactedPreview,
+      status: `completed_refusal_${refusalReason}`,
+      refusalReason,
+      classifierStage: 'preflight',
+      promptFingerprint: buildPromptFingerprint({
+        question: promptSubject,
+        symptoms: [],
+        changeIntent: null,
+        secret: getAiRequestFingerprintSecret(),
+      }),
+      promptRedactedPreview: buildPromptRedactedPreview(promptSubject),
     });
-  } catch {
-    return errorResponse(
-      503,
-      'Rate limit reservation is temporarily unavailable. Please try again shortly.',
-      requestId,
-      { 'retry-after': '30' },
+
+    return NextResponse.json(
+      {
+        ok: true,
+        request_id: requestId,
+        advice: buildRefusalAdvice({
+          reason: refusalReason,
+          message: submittedAssessment.message ?? 'This request is outside trackday setup scope.',
+          dataUsed: refusalDataUsed(hasEnvironment),
+        }),
+        retrieved: [],
+      },
+      { status: 200, headers: { 'x-request-id': requestId } },
     );
   }
 
-  const perHour = getAiRateLimitPerHour();
-  const perMinute = getAiRateLimitPerMinute();
-  let hourCount: number;
-  let minuteCount: number;
-  try {
-    [hourCount, minuteCount] = await Promise.all([
-      countRequestsSince(LOG_TAG, user.id, 60 * 60 * 1000),
-      countRequestsSince(LOG_TAG, user.id, 60 * 1000),
-    ]);
-  } catch (err) {
-    await updateRequestLog({
-      logTag: LOG_TAG,
-      requestId,
-      status: 'rate_limit_lookup_error',
-      errorMessage: err instanceof Error ? err.message : String(err),
-    });
+  const preflight = await preflightAiRequest({
+    logTag: LOG_TAG,
+    userId: user.id,
+    requestId,
+    question: promptSubject,
+    symptoms: [],
+    changeIntent: null,
+  });
+  if (!preflight.ok) {
     return errorResponse(
-      503,
-      'Rate limit check is temporarily unavailable. Please try again shortly.',
+      preflight.failure.status,
+      preflight.failure.error,
       requestId,
-      { 'retry-after': '30' },
-    );
-  }
-  if (hourCount > perHour) {
-    await updateRequestLog({ logTag: LOG_TAG, requestId, status: 'rate_limited_hour' });
-    return errorResponse(
-      429,
-      `Rate limit exceeded: max ${perHour} requests/hour.`,
-      requestId,
-      { 'retry-after': '3600' },
-    );
-  }
-  if (minuteCount > perMinute) {
-    await updateRequestLog({ logTag: LOG_TAG, requestId, status: 'rate_limited_minute' });
-    return errorResponse(
-      429,
-      `Rate limit exceeded: max ${perMinute} requests/minute.`,
-      requestId,
-      { 'retry-after': '60' },
+      preflight.failure.headers,
     );
   }
 
@@ -601,36 +565,6 @@ export async function POST(request: Request) {
     // the caller's rate-limit budget; release the slot, as tuning-advice does.
     await releaseReservation(LOG_TAG, requestId);
     return errorResponse(404, 'Vehicle not found.', requestId);
-  }
-
-  const assessment = classifyDayPlanRequest({
-    trackName: validated.data.track_name,
-    weatherCondition: validated.data.weather_condition,
-    surfaceCondition: validated.data.surface_condition,
-  });
-
-  if (assessment.decision === 'refuse') {
-    const refusalReason = assessment.reason ?? 'out_of_domain';
-    const advice = buildRefusalAdvice({
-      reason: refusalReason,
-      message: assessment.message ?? 'This request is outside trackday setup scope.',
-      dataUsed: refusalDataUsed(hasEnvironment),
-    });
-
-    await updateRequestLog({
-      logTag: LOG_TAG,
-      requestId,
-      status: `completed_refusal_${refusalReason}`,
-      refusalReason,
-      policyResult: 'force_refusal',
-      policyViolations: [],
-      classifierStage: 'preflight',
-    });
-
-    return NextResponse.json(
-      { ok: true, request_id: requestId, advice, retrieved: [] },
-      { status: 200, headers: { 'x-request-id': requestId } },
-    );
   }
 
   const vehicle = vehicleRow as Vehicle;
@@ -713,6 +647,54 @@ export async function POST(request: Request) {
   const recentEnvironments = (environmentsResult.data ?? []) as SessionEnvironment[];
   const feedback = (feedbackResult.data ?? []) as SessionFeedback[];
 
+  // Screen two: rider text this request did not submit but the prompt still
+  // interpolates - the vehicle the plan is for, and the sessions it reasons
+  // from. It has to run after the read, which is exactly why screen one cannot
+  // cover it.
+  const storedAssessment = classifyStoredRiderText({
+    values: [
+      vehicle.nickname,
+      vehicle.make,
+      vehicle.model,
+      ...recentSessions.flatMap((session) => [
+        session.track_name,
+        session.notes,
+        session.conditions,
+        session.tires?.front?.brand,
+        session.tires?.front?.compound,
+        session.tires?.rear?.brand,
+        session.tires?.rear?.compound,
+      ]),
+    ],
+  });
+
+  if (storedAssessment.decision === 'refuse') {
+    const refusalReason = storedAssessment.reason ?? 'prompt_injection';
+    await updateRequestLog({
+      logTag: LOG_TAG,
+      requestId,
+      status: `completed_refusal_${refusalReason}`,
+      refusalReason,
+      policyResult: 'force_refusal',
+      policyViolations: [],
+      classifierStage: 'stored_rider_text',
+    });
+
+    return NextResponse.json(
+      {
+        ok: true,
+        request_id: requestId,
+        advice: buildRefusalAdvice({
+          reason: refusalReason,
+          message: storedAssessment.message ?? 'This request is outside trackday setup scope.',
+          dataUsed: refusalDataUsed(hasEnvironment),
+        }),
+        retrieved: [],
+      },
+      { status: 200, headers: { 'x-request-id': requestId } },
+    );
+  }
+
   try {
     const raceEngineerContext = buildContext({
       userId: user.id,
@@ -746,7 +728,8 @@ export async function POST(request: Request) {
       ].filter((value): value is string => Boolean(value)),
       // A morning plan whose right answer is "run your baseline and check hot
       // pressures" recommends no change, and the day-plan prompt says so
-      // explicitly. Every other policy check still applies.
+      // explicitly. Every other policy check still applies, including the
+      // prose check that keeps this path from becoming a way past them.
       allowEmptyRecommendations: true,
     });
     const advice = policyResult.advice;

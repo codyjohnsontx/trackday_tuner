@@ -212,3 +212,46 @@ export async function isRefusalThrottled(logTag: string, userId: string): Promis
     return false;
   }
 }
+
+/**
+ * Writes a terminal `ai_requests` row for a request refused before it ever
+ * reserved a slot.
+ *
+ * The preflight screens that run before the reservation still have to be
+ * audited: a refusal nobody records is a refusal the throttle cannot count, so
+ * a caller probing the injection guard would never be slowed down. This inserts
+ * the finished row directly rather than reserving and immediately updating, so
+ * the refusal costs one write and no vehicle lookup.
+ */
+export async function recordRefusedRequest(params: {
+  logTag: string;
+  userId: string;
+  requestId: string;
+  status: string;
+  refusalReason: string;
+  classifierStage: string;
+  promptFingerprint: string;
+  promptRedactedPreview: string;
+}): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    const { error } = await admin.from('ai_requests').insert({
+      user_id: params.userId,
+      session_id: null,
+      request_id: params.requestId,
+      status: params.status,
+      refusal_reason: params.refusalReason,
+      policy_result: 'force_refusal',
+      policy_violations: [],
+      classifier_stage: params.classifierStage,
+      prompt_fingerprint: params.promptFingerprint,
+      prompt_redacted_preview: params.promptRedactedPreview,
+    });
+    if (error) {
+      console.error(`[${params.logTag}] recordRefusedRequest failed`, { requestId: params.requestId }, error);
+    }
+  } catch (thrown) {
+    // Never let the audit write shadow the refusal the rider is owed.
+    console.error(`[${params.logTag}] recordRefusedRequest threw`, thrown);
+  }
+}

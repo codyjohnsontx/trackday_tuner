@@ -21,7 +21,8 @@ export type AdvicePolicyViolation =
   | 'unsupported_direction'
   | 'unsafe_magnitude'
   | 'ungrounded_recommendation'
-  | 'high_confidence_without_support';
+  | 'high_confidence_without_support'
+  | 'actionable_prose_without_changes';
 
 export interface AdvicePolicyEvaluation {
   decision: AdvicePolicyDecision;
@@ -41,6 +42,51 @@ interface AdvicePolicyInput {
    * throw away a correct answer. Every other check still runs.
    */
   allowEmptyRecommendations?: boolean;
+}
+
+/**
+ * A setup instruction is only checked when it arrives in `recommended_changes`,
+ * where the component, direction and magnitude are validated individually. When
+ * the empty-plan path is open, a model that puts the instruction in the summary
+ * instead would walk straight past that check and the rider would read unvetted
+ * advice - the structured field is guarded while the prose field, which is what
+ * they actually read, is not.
+ *
+ * So an empty plan additionally has to be non-actionable. This is a deliberate
+ * heuristic and deliberately conservative: a change verb and a setup quantity in
+ * the same sentence is treated as an instruction and refused. The correct place
+ * for a real recommendation is `recommended_changes`, where the magnitude policy
+ * can see it; monitoring belongs in `prediction.watch_items`, which carries no
+ * instruction. Units that describe conditions rather than adjustments (degrees,
+ * percent) are excluded so an ordinary "expect track temp to climb" summary is
+ * not mistaken for a setup change.
+ */
+const CHANGE_VERB_PATTERN =
+  /\b(?:increas(?:e|es|ing)|decreas(?:e|es|ing)|rais(?:e|es|ing)|lower(?:s|ing)?|add(?:s|ing)?|drop(?:s|ping)?|bleed(?:s|ing)?|reduc(?:e|es|ing)|soften(?:s|ing)?|stiffen(?:s|ing)?|tighten(?:s|ing)?|loosen(?:s|ing)?|back(?:ing)? off|wind(?:ing)? on|set(?:s|ting)?|adjust(?:s|ing)?|bump(?:s|ing)?|shim(?:s|ming)?|preload(?:s|ing)?)\b/i;
+
+const SETUP_QUANTITY_PATTERN =
+  /\b\d+(?:\.\d+)?\s*(?:psi|bar|kpa|clicks?|mm|cm|turns?|teeth|tooth|notch(?:es)?)\b/i;
+
+function proseFields(advice: AdviceResponse): string[] {
+  return [
+    advice.summary,
+    ...advice.tradeoffs,
+    advice.prediction?.expected_effect ?? '',
+    advice.prediction?.day_trend ?? '',
+    ...(advice.prediction?.watch_items ?? []),
+    ...advice.personal_evidence.map((entry) => entry.detail),
+  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+}
+
+function hasActionableProse(advice: AdviceResponse): boolean {
+  return proseFields(advice).some((field) =>
+    field
+      .split(/[.!?;\n]+/)
+      .some(
+        (sentence) =>
+          CHANGE_VERB_PATTERN.test(sentence) && SETUP_QUANTITY_PATTERN.test(sentence),
+      ),
+  );
 }
 
 interface ComponentPolicy {
@@ -224,6 +270,22 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
         fallbackDataUsed: advice.data_used,
       }),
     };
+  }
+
+  if (advice.recommended_changes.length === 0 && input.allowEmptyRecommendations) {
+    // The empty-plan path is only safe while the prose carries no instruction.
+    if (hasActionableProse(advice)) {
+      return {
+        decision: 'force_refusal',
+        violations: ['actionable_prose_without_changes'],
+        advice: buildRefusalAdvice({
+          reason: 'no_safe_answer',
+          message:
+            'That plan described a setup change in prose without proposing it as a checked recommendation, so I am not returning it. Ask for a specific change and I will keep it conservative.',
+          dataUsed: advice.data_used,
+        }),
+      };
+    }
   }
 
   if (advice.recommended_changes.length === 0 && !input.allowEmptyRecommendations) {

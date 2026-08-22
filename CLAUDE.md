@@ -508,7 +508,29 @@ in `lib/rag/domain-guard.ts`, `evaluateAdvicePolicy` (`lib/rag/policy.ts`) over
 whatever the model returns, and the `ai_requests` audit row plus the rate limiting
 built on it (`lib/rag/ai-request-log.ts`). That limit counts per rider and not per
 route, so every AI entry point draws on one budget and each is visible to the
-others' count.
+others' count. The body read, refusal throttle, reservation, counting and limit
+responses are one function - `preflightAiRequest` (`lib/rag/ai-request-preflight.ts`) -
+because duplicated safety control flow drifts toward whichever copy nobody reads.
+`app/api/ai/tuning-advice/route.characterization.test.ts` locks that route's
+status, body, headers and audit row across 18 guard paths so a change to the
+shared pipeline cannot move it unnoticed.
+
+**Injection screening takes two passes, and the second is the one that gets
+forgotten.** Text the request submitted is screened before any database work, so a
+refusal costs no reservation and no query and is still recorded (`recordRefusedRequest`)
+where the throttle can count it. But the prompt also interpolates text the rider
+stored *earlier* - vehicle nickname, session notes, track name, tyre brand - and
+`sanitizeFreeText` in `lib/rag/prompt.ts` neutralises only the `<user_data>` tag
+delimiters, not phrases. `classifyStoredRiderText` runs over that after the read,
+which is why it cannot replace the first pass.
+
+**An empty `recommended_changes` list is checked as prose.** `evaluateAdvicePolicy`
+validates component, direction and magnitude by iterating the structured field, so
+when `allowEmptyRecommendations` is on, a model that puts the instruction in
+`summary` instead would walk past every check while the rider reads it. A change
+verb beside a setup quantity in one sentence is therefore refused
+(`actionable_prose_without_changes`). Guarding the structured field while the
+rider reads the prose field is a guard-shaped object, not a guard.
 
 `/api/ai/day-plan` shipped with none of them, and with a hand-copied UUID pattern
 that had four groups instead of five. It therefore rejected every genuine

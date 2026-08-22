@@ -24,6 +24,10 @@ interface ClassifyDayPlanRequestInput {
   surfaceCondition?: string | null;
 }
 
+interface ClassifyStoredRiderTextInput {
+  values: Array<string | null | undefined>;
+}
+
 interface BuildRefusalAdviceInput {
   reason: RaceEngineerRefusalReason;
   message: string;
@@ -272,4 +276,39 @@ export function normalizeAdviceResponse(
     ...input.advice,
     refusal: null,
   };
+}
+
+/**
+ * The second injection screen, over rider text this request did not submit.
+ *
+ * A day plan interpolates the rider's stored vehicle and recent sessions into
+ * the prompt - nickname, make, model, track name, tyre brand and compound,
+ * free-text notes. Those were typed on some earlier screen and are just as
+ * rider-authored as the question box, but no classifier had ever seen them:
+ * `sanitizeFreeText` in `lib/rag/prompt.ts` neutralises the `<user_data>` tag
+ * delimiters and nothing else, so a note reading "ignore all previous
+ * instructions" reaches the model intact. Injection through data stored earlier
+ * is the vector that gets forgotten, because the request that triggers it looks
+ * completely ordinary.
+ *
+ * This necessarily runs after the database read, so it cannot replace the
+ * screen on submitted fields - it is the second half of the same guard.
+ */
+export function classifyStoredRiderText(
+  input: ClassifyStoredRiderTextInput,
+): RaceEngineerQuestionAssessment {
+  const storedText = input.values
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join(' ')
+    .trim();
+
+  if (storedText && hasPromptInjectionSignal(storedText)) {
+    return {
+      decision: 'refuse',
+      reason: 'prompt_injection',
+      message: PROMPT_INJECTION_MESSAGE,
+    };
+  }
+
+  return { decision: 'allow', reason: null, message: null };
 }

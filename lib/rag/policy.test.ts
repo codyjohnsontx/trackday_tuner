@@ -371,3 +371,68 @@ describe('evaluateAdvicePolicy allowEmptyRecommendations', () => {
   });
 });
 
+describe('actionable prose in an empty plan', () => {
+  function emptyPlan(overrides: Partial<AdviceResponse> = {}) {
+    return evaluateAdvicePolicy({
+      advice: buildAdvice({ recommended_changes: [], ...overrides }),
+      fallbackDataUsed: buildAdvice().data_used,
+      allowEmptyRecommendations: true,
+    });
+  }
+
+  it('refuses a change verb and a setup quantity in the same sentence', () => {
+    const result = emptyPlan({ summary: 'Increase front pressure by 6 psi before session one.' });
+    expect(result.decision).toBe('force_refusal');
+    expect(result.violations).toContain('actionable_prose_without_changes');
+  });
+
+  it('does not fire on a condition description that happens to contain a verb', () => {
+    // "drop" and a temperature, but no setup unit - this is a forecast, not an instruction.
+    const result = emptyPlan({
+      summary: 'Expect grip to drop as ambient climbs past 30 degrees through the morning.',
+    });
+    expect(result.decision).toBe('allow');
+  });
+
+  it('does not fire on a reading reported without an instruction', () => {
+    const result = emptyPlan({
+      summary: 'Your last session finished at 32 psi hot on the rear.',
+    });
+    expect(result.decision).toBe('allow');
+  });
+
+  it('does not fire when the verb and the quantity are in different sentences', () => {
+    const result = emptyPlan({
+      summary: 'Run the Session 3 baseline. Rear hot pressure was 26 psi that day.',
+    });
+    expect(result.decision).toBe('allow');
+  });
+
+  it('scans watch items and tradeoffs, not just the summary', () => {
+    expect(
+      emptyPlan({
+        prediction: {
+          expected_effect: 'Stable.',
+          day_trend: 'Warming.',
+          watch_items: ['Bleed the rear to 26 psi if it climbs'],
+        },
+      }).violations,
+    ).toContain('actionable_prose_without_changes');
+
+    expect(
+      emptyPlan({ tradeoffs: ['Adding 3 clicks of rebound would firm it up.'] }).violations,
+    ).toContain('actionable_prose_without_changes');
+  });
+
+  it('leaves the normal path alone when changes are present', () => {
+    // The prose check only guards the empty-plan path; a populated plan is
+    // already validated change by change.
+    const result = evaluateAdvicePolicy({
+      advice: buildAdvice({ summary: 'Drop front pressure by 0.5 psi.' }),
+      fallbackDataUsed: buildAdvice().data_used,
+      allowEmptyRecommendations: true,
+    });
+    expect(result.decision).toBe('allow');
+  });
+});
+

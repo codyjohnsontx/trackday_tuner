@@ -1,26 +1,18 @@
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getRealUser } from '@/lib/auth';
-import {
-  buildPromptFingerprint,
-  buildPromptRedactedPreview,
-} from '@/lib/ai-observability';
 import { assertNotDemoRoute } from '@/lib/demo/mode';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import {
-  getAiRequestFingerprintSecret,
-  getAiRateLimitPerHour,
-  getAiRateLimitPerMinute,
-} from '@/lib/env.server';
-import {
-  countRequestsSince,
-  isRefusalThrottled,
   releaseReservation,
-  reservePendingSlot,
   updateRequestLog,
 } from '@/lib/rag/ai-request-log';
+import {
+  preflightAiRequest,
+  readAiRequestBody,
+} from '@/lib/rag/ai-request-preflight';
 import { generateTuningAdvice, UpstreamTimeoutError } from '@/lib/rag/advice';
 import {
   createRecommendationSnapshot,
@@ -31,10 +23,7 @@ import {
   classifyRaceEngineerQuestion,
 } from '@/lib/rag/domain-guard';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
-import {
-  TUNING_ADVICE_LIMITS,
-  validateTuningAdviceRequest,
-} from '@/lib/rag/validation';
+import { validateTuningAdviceRequest } from '@/lib/rag/validation';
 import { fetchPreviousSession } from '@/lib/session-previous';
 import { createClient } from '@/lib/supabase/server';
 import type { Json, Session, Vehicle } from '@/types';
@@ -220,29 +209,12 @@ export async function POST(request: Request) {
   const demoResponse = await assertNotDemoRoute();
   if (demoResponse) return demoResponse;
 
-  const contentLength = request.headers.get('content-length');
-  if (contentLength && Number(contentLength) > TUNING_ADVICE_LIMITS.MAX_BODY_BYTES) {
-    return errorResponse(413, 'Request body is too large.', requestId);
+  const body = await readAiRequestBody(request);
+  if (!body.ok) {
+    return errorResponse(body.failure.status, body.failure.error, requestId, body.failure.headers);
   }
 
-  let raw: string;
-  try {
-    raw = await request.text();
-  } catch {
-    return errorResponse(400, 'Unable to read request body.', requestId);
-  }
-  if (Buffer.byteLength(raw, 'utf8') > TUNING_ADVICE_LIMITS.MAX_BODY_BYTES) {
-    return errorResponse(413, 'Request body is too large.', requestId);
-  }
-
-  let parsedJson: unknown;
-  try {
-    parsedJson = raw.length === 0 ? {} : JSON.parse(raw);
-  } catch {
-    return errorResponse(400, 'Request body must be valid JSON.', requestId);
-  }
-
-  const validated = validateTuningAdviceRequest(parsedJson);
+  const validated = validateTuningAdviceRequest(body.value);
   if (!validated.ok) {
     return errorResponse(400, validated.error, requestId);
   }
@@ -261,84 +233,23 @@ export async function POST(request: Request) {
     );
   }
 
-  const perHour = getAiRateLimitPerHour();
-  const perMinute = getAiRateLimitPerMinute();
-  const promptFingerprint = buildPromptFingerprint({
+  const preflight = await preflightAiRequest({
+    logTag: LOG_TAG,
+    userId: user.id,
+    requestId,
     question: validated.data.question,
     symptoms: validated.data.symptoms,
-    changeIntent: validated.data.change_intent,
-    secret: getAiRequestFingerprintSecret(),
+    changeIntent: validated.data.change_intent ?? null,
   });
-  const promptRedactedPreview = buildPromptRedactedPreview(validated.data.question);
-
-  if (await isRefusalThrottled(LOG_TAG, user.id)) {
+  if (!preflight.ok) {
     return errorResponse(
-      429,
-      'Too many refused Race Engineer requests in a short window. Wait a few minutes before trying again.',
+      preflight.failure.status,
+      preflight.failure.error,
       requestId,
-      { 'retry-after': '600' },
+      preflight.failure.headers,
     );
   }
-
-  // Atomically reserve a slot BEFORE counting. Every concurrent request will
-  // see every other request's pending row, which closes the TOCTOU gap between
-  // a bare count and the subsequent insert.
-  try {
-    await reservePendingSlot({
-      logTag: LOG_TAG,
-      userId: user.id,
-      requestId,
-      promptFingerprint,
-      promptRedactedPreview,
-    });
-  } catch {
-    return errorResponse(
-      503,
-      'Rate limit reservation is temporarily unavailable. Please try again shortly.',
-      requestId,
-      { 'retry-after': '30' },
-    );
-  }
-
-  let hourCount: number;
-  let minuteCount: number;
-  try {
-    [hourCount, minuteCount] = await Promise.all([
-      countRequestsSince(LOG_TAG, user.id, 60 * 60 * 1000),
-      countRequestsSince(LOG_TAG, user.id, 60 * 1000),
-    ]);
-  } catch (err) {
-    await updateRequestLog({
-      logTag: LOG_TAG,
-      requestId,
-      status: 'rate_limit_lookup_error',
-      errorMessage: err instanceof Error ? err.message : String(err),
-    });
-    return errorResponse(
-      503,
-      'Rate limit check is temporarily unavailable. Please try again shortly.',
-      requestId,
-      { 'retry-after': '30' },
-    );
-  }
-  if (hourCount > perHour) {
-    await updateRequestLog({ logTag: LOG_TAG, requestId, status: 'rate_limited_hour' });
-    return errorResponse(
-      429,
-      `Rate limit exceeded: max ${perHour} requests/hour.`,
-      requestId,
-      { 'retry-after': '3600' },
-    );
-  }
-  if (minuteCount > perMinute) {
-    await updateRequestLog({ logTag: LOG_TAG, requestId, status: 'rate_limited_minute' });
-    return errorResponse(
-      429,
-      `Rate limit exceeded: max ${perMinute} requests/minute.`,
-      requestId,
-      { 'retry-after': '60' },
-    );
-  }
+  const promptFingerprint = preflight.promptFingerprint;
 
   const supabase = await createClient();
   const [sessionResult, vehicleResult] = await Promise.all([
