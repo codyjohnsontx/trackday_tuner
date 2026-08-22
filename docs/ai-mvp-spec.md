@@ -96,9 +96,15 @@ Response shape:
 
 ## Rate Limiting + Abuse Controls
 
-- Per-user limit: 20 requests/hour (initial).
-- Burst limit: 3 requests/minute.
-- Reject oversized payloads (>20 KB).
+These limits are a shared per-rider budget spanning `POST /api/ai/tuning-advice`
+and `POST /api/ai/day-plan`. The request limits are counted per rider rather than
+per route from `lib/rag/ai-request-log.ts`, so a rider's day plans and tuning
+questions draw on the same allowance and each is visible to the other's count;
+both routes check the same body-size ceiling. The numbers live in code, not here:
+
+- Per-rider hourly limit: `getAiRateLimitPerHour` (`lib/env.server.ts`).
+- Per-rider burst limit: `getAiRateLimitPerMinute` (`lib/env.server.ts`).
+- Reject oversized payloads: `AI_REQUEST_MAX_BODY_BYTES` (`lib/rag/validation.ts`).
 - Add request tracing id for observability and abuse investigation.
 
 ## MVP Quality Rubric
