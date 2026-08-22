@@ -216,6 +216,141 @@ function base(extra: Record<string, unknown> = {}) {
   return { vehicle_id: VEHICLE_ID, session_id: SESSION_ID, question: QUESTION, ...extra };
 }
 
+/**
+ * The locked behaviour, captured by running this file's harness against the
+ * route as it stood at d357394 - before lib/rag/ai-request-preflight.ts existed
+ * and the pipeline was still inline in this route. The post-extraction route
+ * reproduces it byte for byte, which is the proof the extraction was asked to
+ * carry. Asserting it is the whole point: without this comparison the harness
+ * drives all 18 paths and then agrees with whatever came back.
+ */
+const LOCKED_BEHAVIOUR = `content-length over cap:
+  status=413
+  retry-after=-
+  x-request-id=set
+  error=Request body is too large.
+  refusal=-
+  rows=(none)
+body bytes over cap:
+  status=413
+  retry-after=-
+  x-request-id=set
+  error=Request body is too large.
+  refusal=-
+  rows=(none)
+invalid json:
+  status=400
+  retry-after=-
+  x-request-id=set
+  error=Request body must be valid JSON.
+  refusal=-
+  rows=(none)
+validation failure:
+  status=400
+  retry-after=-
+  x-request-id=set
+  error=vehicle_id must be a UUID.
+  refusal=-
+  rows=(none)
+unauthenticated:
+  status=401
+  retry-after=-
+  x-request-id=set
+  error=Not authenticated.
+  refusal=-
+  rows=(none)
+free tier:
+  status=402
+  retry-after=-
+  x-request-id=set
+  error=Race Engineer is a Pro feature. Upgrade to continue.
+  refusal=-
+  rows=(none)
+refusal throttle:
+  status=429
+  retry-after=600
+  x-request-id=set
+  error=Too many refused Race Engineer requests in a short window. Wait a few minutes before trying again.
+  refusal=-
+  rows=completed_refusal_prompt_injection/-/-/-/-/null | completed_refusal_prompt_injection/-/-/-/-/null | completed_refusal_prompt_injection/-/-/-/-/null
+reservation failure:
+  status=503
+  retry-after=30
+  x-request-id=set
+  error=Rate limit reservation is temporarily unavailable. Please try again shortly.
+  refusal=-
+  rows=(none)
+count failure:
+  status=503
+  retry-after=30
+  x-request-id=set
+  error=Rate limit check is temporarily unavailable. Please try again shortly.
+  refusal=-
+  rows=rate_limit_lookup_error/-/-/-/-/null
+minute limit:
+  status=429
+  retry-after=60
+  x-request-id=set
+  error=Rate limit exceeded: max 3 requests/minute.
+  refusal=-
+  rows=ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | rate_limited_minute/-/-/-/-/null
+hour limit:
+  status=429
+  retry-after=3600
+  x-request-id=set
+  error=Rate limit exceeded: max 20 requests/hour.
+  refusal=-
+  rows=ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | ok/-/-/-/-/null | rate_limited_hour/-/-/-/-/null
+session not found:
+  status=404
+  retry-after=-
+  x-request-id=set
+  error=Session or vehicle not found.
+  refusal=-
+  rows=(none)
+cross-referenced vehicle:
+  status=400
+  retry-after=-
+  x-request-id=set
+  error=Session does not belong to the provided vehicle.
+  refusal=-
+  rows=(none)
+prompt injection:
+  status=200
+  retry-after=-
+  x-request-id=set
+  error=-
+  refusal=I can only help with track setup questions grounded in this session. Ask what the vehicle did on track and what small setup change to try next.
+  rows=completed_refusal_prompt_injection/prompt_injection/force_refusal/-/preflight/33333333-3333-3333-3333-333333333333
+out of domain:
+  status=200
+  retry-after=-
+  x-request-id=set
+  error=-
+  refusal=That request is outside track setup scope. Ask about vehicle behavior, tire pressures, chassis balance, or what setup change to try for this session.
+  rows=completed_refusal_out_of_domain/out_of_domain/force_refusal/-/preflight/33333333-3333-3333-3333-333333333333
+successful advice:
+  status=200
+  retry-after=-
+  x-request-id=set
+  error=-
+  refusal=I could not verify a safe, supported setup change from that response. Ask about one on-track symptom and I will keep the recommendation conservative.
+  rows=completed_refusal_unsupported_direction/unsupported_direction/force_refusal/unsupported_direction/post_policy/33333333-3333-3333-3333-333333333333
+upstream timeout:
+  status=504
+  retry-after=5
+  x-request-id=set
+  error=The tuning advice service timed out. Please retry.
+  refusal=-
+  rows=upstream_timeout/-/-/-/-/33333333-3333-3333-3333-333333333333
+generation error:
+  status=500
+  retry-after=-
+  x-request-id=set
+  error=Unable to generate tuning advice right now. Please try again later.
+  refusal=-
+  rows=error/-/-/-/-/33333333-3333-3333-3333-333333333333`;
+
 describe('tuning-advice observable behaviour (locked)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -277,7 +412,7 @@ describe('tuning-advice observable behaviour (locked)', () => {
       return drive(base());
     })());
 
-    console.log('\n===TUNING-ADVICE-SNAPSHOT-START===\n' + snapshot.join('\n') + '\n===TUNING-ADVICE-SNAPSHOT-END===');
     expect(snapshot.length).toBe(18);
+    expect(snapshot.join('\n')).toBe(LOCKED_BEHAVIOUR);
   });
 });
