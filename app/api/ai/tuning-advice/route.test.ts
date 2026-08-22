@@ -45,7 +45,8 @@ vi.mock('@/lib/rag/advice', () => ({
   UpstreamTimeoutError: class UpstreamTimeoutError extends Error {},
 }));
 
-vi.mock('@/lib/rag/race-engineer-context', () => ({
+vi.mock('@/lib/rag/race-engineer-context', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/rag/race-engineer-context')>()),
   loadRaceEngineerContext,
   createRecommendationSnapshot: vi.fn(() => ({})),
 }));

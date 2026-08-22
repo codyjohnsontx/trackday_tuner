@@ -8,6 +8,8 @@ import { resolveUserAccess } from '@/lib/access';
 import {
   releaseReservation,
   updateRequestLog,
+  STORED_TEXT_INJECTION_REFUSAL_REASON,
+  STORED_TEXT_INJECTION_REFUSAL_STATUS,
 } from '@/lib/rag/ai-request-log';
 import {
   preflightAiRequest,
@@ -21,8 +23,10 @@ import {
 import {
   buildRefusalAdvice,
   classifyRaceEngineerQuestion,
+  classifyStoredRiderText,
 } from '@/lib/rag/domain-guard';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
+import { collectTuningAdviceRiderText, dropScreenedSources } from '@/lib/rag/prompt';
 import { validateTuningAdviceRequest } from '@/lib/rag/validation';
 import { fetchPreviousSession } from '@/lib/session-previous';
 import { createClient } from '@/lib/supabase/server';
@@ -40,6 +44,18 @@ interface ApiErrorBody {
 }
 
 const DEDUPE_WINDOW_MS = 5 * 60 * 1000;
+/**
+ * Statuses that count as "this exact prompt was already answered", so a repeat
+ * within the window is refused as a duplicate instead of paying for the model
+ * again.
+ *
+ * `STORED_TEXT_INJECTION_REFUSAL_STATUS` is deliberately NOT one of them, and
+ * adding it while tidying this list would be a bug. The fingerprint covers the
+ * question, the symptoms and the change intent only, so a rider who fixes the
+ * offending saved field and re-asks arrives with an identical fingerprint - and
+ * would be told their request was "handled recently" for as long as the window
+ * lasts, over a problem they had just fixed.
+ */
 const HANDLED_AI_REQUEST_STATUSES = [
   'ok',
   'ok_confidence_downgraded',
@@ -406,6 +422,82 @@ export async function POST(request: Request) {
       session,
     });
 
+    // Screen two: rider text this request did not submit but the prompt still
+    // interpolates. It has to run after the reads, which is exactly why
+    // `classifyRaceEngineerQuestion` above cannot cover it. The fields come from
+    // `collectTuningAdviceRiderText`, built from the same input
+    // `generateTuningAdvice` hands the prompt builder, so the screen cannot
+    // cover less than the prompt hands over.
+    const storedAssessment = classifyStoredRiderText({
+      unableMessage: 'I could not answer that from your saved setup data.',
+      fields: collectTuningAdviceRiderText({
+        session,
+        previousSession,
+        vehicle,
+        question: validated.data.question,
+        symptoms: validated.data.symptoms,
+        changeIntent: validated.data.change_intent,
+        temperatureC: validated.data.temperature_c,
+        raceEngineerContext,
+      }),
+    });
+
+    if (storedAssessment.decision === 'refuse') {
+      // Audited under its own status, which the refusal throttle does not
+      // count: stored text refuses deterministically, so counting it would lock
+      // the rider out of every AI route for a note they wrote weeks ago.
+      //
+      // It is also deliberately absent from HANDLED_AI_REQUEST_STATUSES above.
+      // The fingerprint covers the question, the symptoms and the intent only,
+      // so a rider who fixes the offending field and asks the same question
+      // again arrives with an identical fingerprint - counting this row as
+      // handled would answer that retry with "handled recently" and leave them
+      // unable to get past a problem they just fixed.
+      await updateRequestLog({
+        logTag: LOG_TAG,
+        requestId,
+        sessionId: session.id,
+        status: STORED_TEXT_INJECTION_REFUSAL_STATUS,
+        refusalReason: STORED_TEXT_INJECTION_REFUSAL_REASON,
+        policyResult: 'force_refusal',
+        policyViolations: [],
+        classifierStage: 'stored_rider_text',
+      });
+
+      return NextResponse.json(
+        {
+          ok: true,
+          request_id: requestId,
+          recommendation_id: null,
+          advice: buildRefusalAdvice({
+            reason: 'prompt_injection',
+            message:
+              storedAssessment.message ??
+              'I could not answer that from your saved setup data. Check your saved vehicle and session notes for wording that reads as an instruction.',
+            dataUsed: buildFallbackDataUsed({
+              session,
+              temperatureC: validated.data.temperature_c,
+            }),
+          }),
+          retrieved: [],
+        },
+        { status: 200, headers: { 'x-request-id': requestId } },
+      );
+    }
+
+    // The other half of that screen: a match on a field the rider cannot reach
+    // is skipped rather than refused, and skipping only means anything if the
+    // offending value leaves the prompt. Everything downstream reads the
+    // screened context - the model call, the citation ids the policy will
+    // accept, the `data_used` fallback and the snapshot stored on the
+    // recommendation - so a dropped value is gone from all of them rather than
+    // from the prompt alone.
+    const screenedContext = dropScreenedSources(
+      raceEngineerContext,
+      storedAssessment.droppedSources,
+      session,
+    );
+
     const result = await generateTuningAdvice({
       session,
       previousSession,
@@ -414,21 +506,21 @@ export async function POST(request: Request) {
       symptoms: validated.data.symptoms,
       changeIntent: validated.data.change_intent,
       temperatureC: validated.data.temperature_c,
-      raceEngineerContext,
+      raceEngineerContext: screenedContext,
     });
 
     const policyResult = evaluateAdvicePolicy({
       advice: result.advice,
       fallbackDataUsed: {
-        ...raceEngineerContext.dataUsed,
+        ...screenedContext.dataUsed,
         weather:
-          validated.data.temperature_c != null || raceEngineerContext.dataUsed.weather,
+          validated.data.temperature_c != null || screenedContext.dataUsed.weather,
       },
       validSessionIds: validRaceEngineerSessionIds({
         session,
-        similarSessionIds: raceEngineerContext.similarSessions.map((item) => item.session.id),
-        feedbackSessionIds: raceEngineerContext.recentFeedback.map((item) => item.session_id),
-        recommendationSessionIds: raceEngineerContext.recentRecommendations.flatMap((item) => [
+        similarSessionIds: screenedContext.similarSessions.map((item) => item.session.id),
+        feedbackSessionIds: screenedContext.recentFeedback.map((item) => item.session_id),
+        recommendationSessionIds: screenedContext.recentRecommendations.flatMap((item) => [
           item.session_id,
           item.outcome_session_id,
         ]),
@@ -441,7 +533,7 @@ export async function POST(request: Request) {
       requestId,
       session,
       advice,
-      contextSnapshot: createRecommendationSnapshot(raceEngineerContext),
+      contextSnapshot: createRecommendationSnapshot(screenedContext),
     });
 
     await updateRequestLog({

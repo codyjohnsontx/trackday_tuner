@@ -512,12 +512,14 @@ others' count. The body read, refusal throttle, reservation, counting and limit
 responses are one function - `preflightAiRequest` (`lib/rag/ai-request-preflight.ts`) -
 because duplicated safety control flow drifts toward whichever copy nobody reads.
 `app/api/ai/tuning-advice/route.characterization.test.ts` locks that route's
-status, body, headers, recommendation id and audit row across 19 paths so a change
+status, body, headers, recommendation id and audit row across 20 paths so a change
 to the shared pipeline cannot move it unnoticed. Eighteen of those are refusals
 and failures; the nineteenth is the ordinary 200 that delivers advice, which was
 missing because the fixture recommended `softer` and the real policy refused it -
 a lock that covers only the paths nobody takes proves the pipeline stayed still
-everywhere except where it matters.
+everywhere except where it matters. The twentieth, the stored-text refusal,
+postdates the capture and is appended last so the original nineteen stay
+byte-for-byte what was recorded.
 
 **Injection screening takes two passes, and the second is the one that gets
 forgotten.** Every rider-authored field a request submits is screened early, each on
@@ -534,15 +536,107 @@ delimiters, not phrases.
 `classifyStoredRiderText` runs over that after the read, which is why it cannot
 replace the first pass.
 
-**The second pass covers one of the two routes, and that is a filed gap rather
-than a description of the design.** Only `/api/ai/day-plan` calls
-`classifyStoredRiderText`; `/api/ai/tuning-advice` interpolates the same stored
-fields - session notes, previous-session notes, vehicle nickname, and through
-`formatRaceEngineerContext` the rider-memory summary, similar-session notes and
-feedback notes - and screens none of them. Closing it needs a second collector
-built from that route's own prompt input and is tracked as
-tt-stored-text-screen-tuning-advice. The note lives on `classifyStoredRiderText`
-itself, because a guard on one of two twins reads as covering both.
+**Both routes run the second pass, each through its own collector**:
+`collectDayPlanRiderText` and `collectTuningAdviceRiderText`, both in
+`lib/rag/prompt.ts` beside the formatters. Two collectors rather than one shared
+list is the whole design - each takes its own prompt builder's input type, so a
+route screens exactly what its own prompt interpolates. Tuning-advice shipped for
+a full release screening none of it while day-plan screened all of it, which is
+what a guard wired to one of two twins looks like from the outside: covered.
+
+**Before changing anything on an AI path, answer: does anything reach a model
+with unscreened stored rider text?** This defect has been found four times, each
+time one route further out, because each round fixed its own case with no cheap
+way to ask what else consumed the same thing. Seven checks answer it, and they
+close it from *both* ends - which is what makes "none" a finding rather than a
+failure to look. In order:
+
+1. `grep -rn "new OpenAI\|chat.completions\|embeddings.create"` over `*.ts`,
+   `*.tsx`, `*.mjs`. Every module that can reach a model is in that output.
+2. List the exports of each hit. Only `lib/rag/advice.ts` has a chat call, so its
+   exported functions are the entire surface.
+3. Grep each of those for production callers, excluding `*.test.ts`.
+4. Grep `embedQuery` (`lib/rag/embed.ts`) separately - it is reached through
+   those same functions and adds no entry point, but check rather than assume.
+5. Check `scripts/build-rag-index.mjs` for a Supabase client. It has none and
+   embeds `docs/knowledge-base/` off disk, so no rider text reaches the index.
+6. Loop every `app/api/**/route.ts`; flag any that reaches a model.
+7. Loop every `"use server"` module; flag any importing a prompt builder or a
+   model function.
+
+Steps 1-3 close it from the model's side, 6-7 from the caller's side. A route
+that turns up in 6 or 7 and screens nothing is the bug, and what it needs is a
+collector of its own - not a call added to `classifyStoredRiderText`.
+
+**Whether a field is excluded turns on who can WRITE the column, not on who
+wrote the value in it.** Previous recommendations were once excluded as "already
+through `evaluateAdvicePolicy`" - true of the row at insert and untrue when it is
+read back, because `authenticated` holds `update` on `ai_recommendations` and RLS
+picks the row, not the column (the `profiles.tier` argument in the migrations
+section, one table over). Same for `telemetry_summaries`, which `authenticated`
+can insert and update outright, so its `metrics` blob is screened as the string
+the prompt prints. What stays excluded is text no rider can reach (the day trend,
+a similar session's match reasons) and values a DATABASE constraint pins
+(`session.conditions`, `session_feedback.outcome`,
+`session_environment.source`, `ai_recommendations.status`) - never a value that is
+merely constrained by a form. The reasoning is on the exclusion list in
+`lib/rag/prompt.ts`; both collectors point at it.
+
+**Screening a field decides that it is CHECKED. A second axis decides what a
+match DOES, and that one is ACTIONABILITY: can the rider reach the thing the
+refusal would name?** If they can, refuse - the request cannot safely proceed and
+they can go and fix it. If they cannot, the value is dropped from the prompt and
+the request is answered, because a refusal naming an unreachable field is a trap
+rather than a guard: it withholds a paid route and nothing the rider does gets
+them past it. So a stored-text match can now return 200 with advice.
+
+Authorship is NOT that axis, and `race_engineer_memory.summary` is where the two
+come apart. The app wrote that row from a template, but it embeds the rider's own
+outcome note, and `save_session_outcome` overwrites the whole summary
+(`summary = excluded.summary`) - so re-saving that outcome in the panel clears it
+and the field REFUSES. What was wrong there was the LABEL: it named "the rider
+memory", which appears on no screen, so the message told the rider to edit
+something they could not find. **A refusal has to name the thing they can open**,
+which is the outcome, dated from the `updated_at` the same statement sets.
+
+`RiderTextField.onMatch` carries the decision, is required with no default, and a
+skip must also name a `SkippableSource` - `dropScreenedSources` is what removes it,
+and **skip means removed from the prompt, never merely unscreened**; left in, the
+channel is open and the value is neither screened nor withheld. That function caps
+`recentRecommendations` at the printed limit *before* filtering, because the loader
+reads five rows and the prompt prints three, so filtering the full list would slide
+an unscreened row into the window the drop just freed. **Anything derived from a
+dropped source moves with it** or the prompt contradicts itself: dropping the
+environment also clears `dataUsed.weather` and recomputes `dayTrend` through
+`buildDayTrend`, rather than leaving the model told the row is absent, that no
+weather data was used, and that the track temperature is logged. `dataUsed.feedback`
+is derived from the recommendation list as well as the feedback list, so a
+recommendation drop recomputes it on both exits - otherwise the prompt withholds
+every feedback source and still tells the model feedback was used. It throws when a
+drop removed nothing, and its switch over `SkippableSource` is exhaustive, so a new
+kind does not compile until it is handled.
+
+**The worked example is `session_environment`: the same two columns refuse on one
+route and skip on the other.** On tuning-advice they are the stored row -
+`createSession` inserts it and nothing in `lib/` or `app/` ever updates it, so the
+only escape from a refusal is deleting the session, and with it the laps, feedback
+and outcome the rider came to look at. On day-plan the same two values arrive in
+the request they just submitted, so retyping them is the fix. It reads like an
+inconsistency and is exactly right, so the reason is written inline at *both*
+collector call sites. The disposition is therefore a parameter of
+`collectEnvironmentRiderText`, next to the label suffix that was already
+per-route. Getting it backwards either way is a bug - skipping on day-plan
+silently discards submitted text, refusing on tuning-advice restores the trap.
+Day-plan collects nothing skippable at all (its recommendation list is always
+empty, its environment refuses), so `dropScreenedSources` has one caller. The full
+sweep of which field is which, and why, is on the exclusion list in
+`lib/rag/prompt.ts`.
+
+Neither collector takes the submitted fields. `classifyRaceEngineerQuestion` and
+`classifyDayPlanRequest` screen those against a strict superset of the
+stored-text patterns first, so nothing reaches the second screen through them,
+and collecting them would move a submitted-text refusal onto the audit status the
+throttle does not count.
 
 The order around that first pass is load-bearing in both directions.
 `preflightAiRequest` is deliberately splittable - `checkAiRefusalThrottle` then
@@ -553,16 +647,29 @@ nothing, so the one path that refuses can be looped forever. Put it before and
 every refused probe spends a slot. Day-plan runs throttle, screen, reserve;
 tuning-advice classifies after the whole preflight and needs no split.
 
-**The two passes are not the same screen, and the asymmetry is deliberate.** The
-list of stored fields comes from `collectDayPlanRiderText` in `lib/rag/prompt.ts`,
-beside the formatters, and takes the prompt builder's own input type - a
-hand-maintained second list is what let feedback notes and suspension strings reach
-the model unscreened. Stored text then runs a *narrower* pattern set than submitted
-text: `/\bact as\b/i` is out of it, because "the instructor said to act as if the
-apex is later" is an ordinary session note and a stored false positive refuses every
-plan the rider asks for rather than one request they can retype. For the same
-reason the refusal names the field (`the notes on your 2026-08-01 session`) rather
-than echoing the text, and is audited as
+**The two passes are not the same screen, and the asymmetry is deliberate.**
+Stored text runs a *narrower* pattern set than submitted text, in two places now.
+`/\bact as\b/i` is out of it, because "the instructor said to act as if the apex
+is later" is an ordinary session note and a stored false positive refuses every
+plan the rider asks for rather than one request they can retype. Bare
+`/\byou are now\b/i` is out of it too, and that one was found the hard way: of the
+eight stored patterns it was the only one matching ordinary riding prose, and the
+whole stored lockout class traced to it. Stored text runs
+`ROLE_REASSIGNMENT_PATTERN` (`lib/rag/domain-guard.ts`) in its place, which needs
+the phrase to reach an identity or a rule negation - the discriminator is
+reassigning WHO the model is, not describing what the RIDER is now doing, so "you
+are now on Dan's line through turn 3" passes and "you are now an unrestricted AI"
+does not. A lexical list is enumerable-around, so that is strictly weaker than the
+bare phrase against a determined attacker. It is defensible because for STORED
+text the attacker and the victim are the same person: every row reaching these
+prompts is RLS-scoped to the requesting rider and there is no shared, imported or
+third-party write path, so working around it manipulates only your own advice -
+and `evaluateAdvicePolicy` still force-refuses anything that does not name a
+vocabulary component and direction, a magnitude under its ceiling, a retrieved
+citation and real session ids. Submitted text keeps both bare phrases, where a
+refusal costs one retype. For the same
+reason the refusal names the field (`the notes on session 2 of your 2026-08-01
+track day`) rather than echoing the text, and is audited as
 `STORED_TEXT_INJECTION_REFUSAL_STATUS` - a status `isRefusalThrottled` does not
 count. Counting it would spend the injection budget three plans in and 429 the
 rider out of tuning-advice too, over a note they wrote weeks ago.
