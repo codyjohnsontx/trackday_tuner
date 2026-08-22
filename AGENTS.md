@@ -520,13 +520,17 @@ a lock that covers only the paths nobody takes proves the pipeline stayed still
 everywhere except where it matters.
 
 **Injection screening takes two passes, and the second is the one that gets
-forgotten.** Text the request submitted is screened early - on day-plan before the
-reservation and before the vehicle lookup, so a refusal costs no slot and no read of
-the rider's own rows - and is still recorded (`recordRefusedRequest`) where the
-throttle can count it. But the prompt also interpolates text the rider
-stored *earlier* - vehicle nickname, session notes, feedback notes, rider memory,
-every suspension and alignment string - and `sanitizeFreeText` in `lib/rag/prompt.ts`
-neutralises only the `<user_data>` tag delimiters, not phrases.
+forgotten.** Every rider-authored field a request submits is screened early, each on
+its own rather than joined, so two innocent fields cannot be concatenated into a
+phrase neither contains. On tuning-advice that is the question, the symptom tags and
+the change intent, because `formatMetaBlock` prints all three into the prompt; on
+day-plan the screen runs before the reservation and before the vehicle lookup, so a
+refusal costs no slot and no read of the rider's own rows, and is still recorded
+(`recordRefusedRequest`) where the throttle can count it. But the prompt also
+interpolates text the rider stored *earlier* - vehicle nickname, session notes,
+feedback notes, rider memory, every suspension and alignment string - and
+`sanitizeFreeText` in `lib/rag/prompt.ts` neutralises only the `<user_data>` tag
+delimiters, not phrases.
 `classifyStoredRiderText` runs over that after the read, which is why it cannot
 replace the first pass.
 
@@ -655,14 +659,14 @@ and **a route with no test is not known to run at all**. Both AI POST handlers n
 have one (`app/api/ai/*/route.test.ts`); they mock Supabase and the model but leave
 the guards themselves real, so the refusal they assert is the refusal a rider gets.
 
-The two classifiers are not interchangeable. `classifyRaceEngineerQuestion` reads a
-free-text question and also refuses out-of-domain requests; `classifyDayPlanRequest`
-screens only for injection, because a day plan has no question - just a track name
-and two condition strings, which carry no motorsport vocabulary and would be refused
-on every single request. `evaluateAdvicePolicy` takes `allowEmptyRecommendations`
-for the same reason: the day-plan prompt tells the model that recommending no change
-is a valid morning plan, so the default "no recommendation is a non-answer" refusal
-would throw away a correct one.
+The two classifiers are not interchangeable. `classifyRaceEngineerQuestion` also
+refuses out-of-domain requests, an arm that reads the free-text question alone;
+`classifyDayPlanRequest` screens only for injection, because a day plan has no
+question - just a track name and two condition strings, which carry no motorsport
+vocabulary and would be refused on every single request. `evaluateAdvicePolicy`
+takes `allowEmptyRecommendations` for the same reason: the day-plan prompt tells
+the model that recommending no change is a valid morning plan, so the default
+"no recommendation is a non-answer" refusal would throw away a correct one.
 
 ## Maintaining this file
 

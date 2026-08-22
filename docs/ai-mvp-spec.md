@@ -88,6 +88,16 @@ Response shape:
 }
 ```
 
+The JSON above is an abbreviated example, not the contract. `AdviceResponse` in
+`lib/rag/schema.ts` owns the shape - it also carries `prediction`,
+`personal_evidence` and `data_used` - and `lib/rag/component-vocabulary.ts` owns
+the vocabulary: which `component` and `direction` strings are legal, and the
+magnitude ceiling for each. `describeComponentVocabulary()` renders that same
+table into the system prompt, so what the model is told and what
+`evaluateAdvicePolicy` enforces cannot disagree. Read the list there rather than
+copying it here; a recommendation that does not match it is discarded before the
+rider sees it.
+
 ## Safety + Policy Requirements
 
 - Always include informational-use disclaimer.
@@ -95,6 +105,9 @@ Response shape:
 - Keep adjustments small and incremental.
 - Suggest one primary change first, then optional secondary checks.
 - Refuse when context is insufficient or question is out-of-domain.
+- Screen every rider-authored field a request submits for prompt injection, not
+  the question alone: `symptoms` and `change_intent` are printed into the prompt
+  too (`lib/rag/domain-guard.ts`).
 
 ## Rate Limiting + Abuse Controls
 
