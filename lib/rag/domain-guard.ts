@@ -18,6 +18,12 @@ interface ClassifyRaceEngineerQuestionInput {
   changeIntent?: string | null;
 }
 
+interface ClassifyDayPlanRequestInput {
+  trackName?: string | null;
+  weatherCondition?: string | null;
+  surfaceCondition?: string | null;
+}
+
 interface BuildRefusalAdviceInput {
   reason: RaceEngineerRefusalReason;
   message: string;
@@ -104,8 +110,19 @@ const MOTORSPORT_PATTERNS = [
   /\bchassis\b/i,
 ];
 
+const PROMPT_INJECTION_MESSAGE =
+  'I can only help with track setup questions grounded in this session. Ask what the vehicle did on track and what small setup change to try next.';
+
 function countMatches(source: string, patterns: RegExp[]): number {
   return patterns.reduce((count, pattern) => count + (pattern.test(source) ? 1 : 0), 0);
+}
+
+/**
+ * The single prompt-injection screen. Both AI entry points read rider-authored
+ * text straight into the model prompt, so both run this over that text.
+ */
+export function hasPromptInjectionSignal(text: string): boolean {
+  return countMatches(text, PROMPT_INJECTION_PATTERNS) > 0;
 }
 
 export function classifyRaceEngineerQuestion(
@@ -119,12 +136,11 @@ export function classifyRaceEngineerQuestion(
     .join(' ')
     .trim();
 
-  if (countMatches(questionText, PROMPT_INJECTION_PATTERNS) > 0) {
+  if (hasPromptInjectionSignal(questionText)) {
     return {
       decision: 'refuse',
       reason: 'prompt_injection',
-      message:
-        'I can only help with track setup questions grounded in this session. Ask what the vehicle did on track and what small setup change to try next.',
+      message: PROMPT_INJECTION_MESSAGE,
     };
   }
 
@@ -154,6 +170,47 @@ export function classifyRaceEngineerQuestion(
       reason: 'out_of_domain',
       message:
         'That request is outside track setup scope. Ask about vehicle behavior, tire pressures, chassis balance, or what setup change to try for this session.',
+    };
+  }
+
+  return {
+    decision: 'allow',
+    reason: null,
+    message: null,
+  };
+}
+
+/**
+ * The day-plan counterpart of `classifyRaceEngineerQuestion`.
+ *
+ * It runs the same prompt-injection screen over the only rider-authored text a
+ * day-plan request carries - the track name and the two condition strings -
+ * because those are interpolated straight into the day-plan prompt.
+ *
+ * It deliberately does NOT run the out-of-domain arm. That arm reads a
+ * free-form question and refuses when nothing in it is about motorsport; a
+ * day-plan request has no question, only three short structured fields, so a
+ * perfectly ordinary "Laguna Seca / sunny / dry" carries no motorsport token
+ * and would be refused as out of domain on every single request. There is also
+ * nothing to refuse: the rider cannot ask this endpoint for a cookie recipe,
+ * only name a track and describe the weather.
+ */
+export function classifyDayPlanRequest(
+  input: ClassifyDayPlanRequestInput,
+): RaceEngineerQuestionAssessment {
+  const riderText = [
+    input.trackName ?? '',
+    input.weatherCondition ?? '',
+    input.surfaceCondition ?? '',
+  ]
+    .join(' ')
+    .trim();
+
+  if (riderText && hasPromptInjectionSignal(riderText)) {
+    return {
+      decision: 'refuse',
+      reason: 'prompt_injection',
+      message: PROMPT_INJECTION_MESSAGE,
     };
   }
 

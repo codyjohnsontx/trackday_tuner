@@ -33,6 +33,14 @@ interface AdvicePolicyInput {
   advice: AdviceResponse;
   fallbackDataUsed: AdviceResponse['data_used'];
   validSessionIds?: string[];
+  /**
+   * Post-session advice that recommends nothing is a non-answer, so the default
+   * is to force a refusal. A morning day plan is different: the day-plan prompt
+   * explicitly tells the model that `recommended_changes` may be empty when the
+   * right plan is to establish baseline checks first, and refusing that would
+   * throw away a correct answer. Every other check still runs.
+   */
+  allowEmptyRecommendations?: boolean;
 }
 
 interface ComponentPolicy {
@@ -218,7 +226,7 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
     };
   }
 
-  if (advice.recommended_changes.length === 0) {
+  if (advice.recommended_changes.length === 0 && !input.allowEmptyRecommendations) {
     return {
       decision: 'force_refusal',
       violations: ['no_recommendation'],

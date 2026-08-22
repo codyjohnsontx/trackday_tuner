@@ -499,6 +499,33 @@ AI routes are active for tuning advice, recommendation feedback, and day plannin
 `lib/rag/` contains retrieval, prompt, policy, validation, and schema helpers.
 Knowledge-base markdown lives in `docs/knowledge-base/` and can be indexed with `npm run rag:index`.
 
+**Every route that puts rider text in front of the model runs the same four
+guards, from shared modules rather than per-route copies**: `isUuid` and
+`AI_REQUEST_MAX_BODY_BYTES` (`lib/rag/validation.ts`), the prompt-injection screen
+in `lib/rag/domain-guard.ts`, `evaluateAdvicePolicy` (`lib/rag/policy.ts`) over
+whatever the model returns, and the `ai_requests` audit row plus the rate limiting
+built on it (`lib/rag/ai-request-log.ts`). That limit counts per rider and not per
+route, so every AI entry point draws on one budget and each is visible to the
+others' count.
+
+`/api/ai/day-plan` shipped with none of them, and with a hand-copied UUID pattern
+that had four groups instead of five. It therefore rejected every genuine
+`vehicle_id` and was inert in production for its whole life - the broken regex is
+the only reason an unguarded AI route was never actually exercised. Two rules come
+out of that: **a new AI route composes those modules rather than restating them**,
+and **a route with no test is not known to run at all**. Both AI POST handlers now
+have one (`app/api/ai/*/route.test.ts`); they mock Supabase and the model but leave
+the guards themselves real, so the refusal they assert is the refusal a rider gets.
+
+The two classifiers are not interchangeable. `classifyRaceEngineerQuestion` reads a
+free-text question and also refuses out-of-domain requests; `classifyDayPlanRequest`
+screens only for injection, because a day plan has no question - just a track name
+and two condition strings, which carry no motorsport vocabulary and would be refused
+on every single request. `evaluateAdvicePolicy` takes `allowEmptyRecommendations`
+for the same reason: the day-plan prompt tells the model that recommending no change
+is a valid morning plan, so the default "no recommendation is a non-answer" refusal
+would throw away a correct one.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

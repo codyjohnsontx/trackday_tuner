@@ -302,3 +302,72 @@ describe('evaluateAdvicePolicy', () => {
     expect(result.advice.refusal).toBe('This is outside scope.');
   });
 });
+
+describe('evaluateAdvicePolicy allowEmptyRecommendations', () => {
+  it('still refuses an empty recommendation list by default', () => {
+    const advice = buildAdvice({ recommended_changes: [] });
+    const result = evaluateAdvicePolicy({ advice, fallbackDataUsed: advice.data_used });
+    expect(result.decision).toBe('force_refusal');
+    expect(result.violations).toContain('no_recommendation');
+  });
+
+  it('allows an empty, grounded plan when the caller opts in', () => {
+    // A morning day plan whose right answer is "run your baseline first".
+    const advice = buildAdvice({ recommended_changes: [] });
+    const result = evaluateAdvicePolicy({
+      advice,
+      fallbackDataUsed: advice.data_used,
+      allowEmptyRecommendations: true,
+    });
+    expect(result.decision).toBe('allow');
+    expect(result.violations).toEqual([]);
+    expect(result.advice.refusal).toBeNull();
+  });
+
+  it('still requires grounding when recommendations are allowed to be empty', () => {
+    const advice = buildAdvice({ recommended_changes: [], citations: [] });
+    const result = evaluateAdvicePolicy({
+      advice,
+      fallbackDataUsed: advice.data_used,
+      allowEmptyRecommendations: true,
+    });
+    expect(result.decision).toBe('force_refusal');
+    expect(result.violations).toContain('ungrounded_recommendation');
+  });
+
+  it('still honours an explicit model refusal when recommendations may be empty', () => {
+    const advice = buildAdvice({
+      recommended_changes: [],
+      refusal: 'I cannot plan this day safely.',
+    });
+    const result = evaluateAdvicePolicy({
+      advice,
+      fallbackDataUsed: advice.data_used,
+      allowEmptyRecommendations: true,
+    });
+    expect(result.decision).toBe('force_refusal');
+    expect(result.advice.refusal).toBe('I cannot plan this day safely.');
+  });
+
+  it('still rejects unverifiable personal evidence when recommendations may be empty', () => {
+    const advice = buildAdvice({
+      recommended_changes: [],
+      personal_evidence: [
+        {
+          label: 'Prior session',
+          detail: 'You were quicker here last month.',
+          source_session_id: 'not-a-session',
+        },
+      ],
+    });
+    const result = evaluateAdvicePolicy({
+      advice,
+      fallbackDataUsed: advice.data_used,
+      allowEmptyRecommendations: true,
+      validSessionIds: ['55555555-5555-5555-5555-555555555555'],
+    });
+    expect(result.decision).toBe('force_refusal');
+    expect(result.violations).toContain('invalid_personal_evidence');
+  });
+});
+

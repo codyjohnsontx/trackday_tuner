@@ -1,17 +1,40 @@
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getRealUser } from '@/lib/auth';
+import {
+  buildPromptFingerprint,
+  buildPromptRedactedPreview,
+} from '@/lib/ai-observability';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import { assertNotDemoRoute } from '@/lib/demo/mode';
+import {
+  getAiRequestFingerprintSecret,
+  getAiRateLimitPerHour,
+  getAiRateLimitPerMinute,
+} from '@/lib/env.server';
 import { createClient } from '@/lib/supabase/server';
 import { generateDayPlan, UpstreamTimeoutError } from '@/lib/rag/advice';
+import {
+  countRequestsSince,
+  isRefusalThrottled,
+  releaseReservation,
+  reservePendingSlot,
+  updateRequestLog,
+} from '@/lib/rag/ai-request-log';
+import {
+  buildRefusalAdvice,
+  classifyDayPlanRequest,
+} from '@/lib/rag/domain-guard';
+import { evaluateAdvicePolicy } from '@/lib/rag/policy';
+import { AI_REQUEST_MAX_BODY_BYTES, isUuid } from '@/lib/rag/validation';
 import {
   buildDayTrend,
   hasManualSessionData,
   selectSimilarSessions,
   type RaceEngineerContext,
 } from '@/lib/rag/race-engineer-context';
+import type { AdviceDataUsed } from '@/lib/rag/schema';
 import type {
   CreateSessionEnvironmentInput,
   RaceEngineerMemory,
@@ -23,7 +46,7 @@ import type {
 
 export const runtime = 'nodejs';
 
-const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const LOG_TAG = 'ai/day-plan';
 
 interface DayPlanRequest {
   vehicle_id: string;
@@ -45,10 +68,15 @@ type NumberValidationResult =
   | { ok: true; value: number }
   | { ok: false; error: string };
 
-function errorResponse(status: number, error: string, requestId: string) {
+function errorResponse(
+  status: number,
+  error: string,
+  requestId: string,
+  extraHeaders: Record<string, string> = {},
+) {
   return NextResponse.json(
     { ok: false, error, request_id: requestId },
-    { status, headers: { 'x-request-id': requestId } },
+    { status, headers: { 'x-request-id': requestId, ...extraHeaders } },
   );
 }
 
@@ -89,7 +117,7 @@ function validateDayPlanRequest(input: unknown): ValidationResult {
     if (!allowed.has(key)) return { ok: false, error: `Unknown field: ${key}.` };
   }
 
-  if (typeof record.vehicle_id !== 'string' || !UUID_PATTERN.test(record.vehicle_id)) {
+  if (!isUuid(record.vehicle_id)) {
     return { ok: false, error: 'vehicle_id must be a UUID.' };
   }
 
@@ -392,15 +420,46 @@ async function loadPreferredMemory(params: {
   return (data?.[0] ?? null) as RaceEngineerMemory | null;
 }
 
+/**
+ * What the model was actually given, for a request that never got as far as
+ * generating anything. A day plan reports no manual session data because there
+ * is no logged session behind it - only the conditions the rider typed in.
+ */
+function refusalDataUsed(hasEnvironment: boolean): AdviceDataUsed {
+  return {
+    manual: false,
+    weather: hasEnvironment,
+    history: false,
+    feedback: false,
+    lap_data: false,
+    telemetry: false,
+  };
+}
+
 export async function POST(request: Request) {
   const requestId = randomUUID();
 
   const demoResponse = await assertNotDemoRoute();
   if (demoResponse) return demoResponse;
 
+  const contentLength = request.headers.get('content-length');
+  if (contentLength && Number(contentLength) > AI_REQUEST_MAX_BODY_BYTES) {
+    return errorResponse(413, 'Request body is too large.', requestId);
+  }
+
+  let raw: string;
+  try {
+    raw = await request.text();
+  } catch {
+    return errorResponse(400, 'Unable to read request body.', requestId);
+  }
+  if (Buffer.byteLength(raw, 'utf8') > AI_REQUEST_MAX_BODY_BYTES) {
+    return errorResponse(413, 'Request body is too large.', requestId);
+  }
+
   let parsedJson: unknown;
   try {
-    parsedJson = await request.json();
+    parsedJson = raw.length === 0 ? {} : JSON.parse(raw);
   } catch {
     return errorResponse(400, 'Request body must be valid JSON.', requestId);
   }
@@ -420,6 +479,115 @@ export async function POST(request: Request) {
     return errorResponse(400, validated.error, requestId);
   }
 
+  const computedTargetDate = validated.data.target_date ?? todayIso(validated.data.time_zone);
+  const environment: CreateSessionEnvironmentInput = {
+    ambient_temperature_c: validated.data.ambient_temperature_c ?? null,
+    track_temperature_c: validated.data.track_temperature_c ?? null,
+    humidity_percent: validated.data.humidity_percent ?? null,
+    weather_condition: validated.data.weather_condition ?? null,
+    surface_condition: validated.data.surface_condition ?? null,
+    source: 'manual',
+  };
+  // hasEnvironment intentionally ignores the default source value 'manual' so the
+  // environment object only counts as present when it contains meaningful runtime input.
+  const hasEnvironment = Object.values(environment).some((value) => {
+    if (typeof value === 'number') return Number.isFinite(value);
+    return typeof value === 'string' && value.trim() !== '' && value !== 'manual';
+  });
+
+  if (await isRefusalThrottled(LOG_TAG, user.id)) {
+    return errorResponse(
+      429,
+      'Too many refused Race Engineer requests in a short window. Wait a few minutes before trying again.',
+      requestId,
+      { 'retry-after': '600' },
+    );
+  }
+
+  // The day plan carries no free-text question, so the audited prompt subject is
+  // the request itself: the day being planned plus whatever the rider typed
+  // about the track and conditions. That is also the only rider-authored text
+  // that reaches the model.
+  const riderText = [
+    validated.data.track_name ?? '',
+    validated.data.weather_condition ?? '',
+    validated.data.surface_condition ?? '',
+  ]
+    .filter((part) => part.trim().length > 0)
+    .join(' | ');
+  const promptSubject = [`day-plan ${computedTargetDate}`, riderText]
+    .filter((part) => part.trim().length > 0)
+    .join(' | ');
+  const promptFingerprint = buildPromptFingerprint({
+    question: promptSubject,
+    symptoms: [],
+    changeIntent: null,
+    secret: getAiRequestFingerprintSecret(),
+  });
+  const promptRedactedPreview = buildPromptRedactedPreview(promptSubject);
+
+  // Reserve the slot BEFORE counting so concurrent requests see each other's
+  // pending rows, the same TOCTOU close the tuning-advice route makes. The row
+  // is also what every later status update writes to.
+  try {
+    await reservePendingSlot({
+      logTag: LOG_TAG,
+      userId: user.id,
+      requestId,
+      promptFingerprint,
+      promptRedactedPreview,
+    });
+  } catch {
+    return errorResponse(
+      503,
+      'Rate limit reservation is temporarily unavailable. Please try again shortly.',
+      requestId,
+      { 'retry-after': '30' },
+    );
+  }
+
+  const perHour = getAiRateLimitPerHour();
+  const perMinute = getAiRateLimitPerMinute();
+  let hourCount: number;
+  let minuteCount: number;
+  try {
+    [hourCount, minuteCount] = await Promise.all([
+      countRequestsSince(LOG_TAG, user.id, 60 * 60 * 1000),
+      countRequestsSince(LOG_TAG, user.id, 60 * 1000),
+    ]);
+  } catch (err) {
+    await updateRequestLog({
+      logTag: LOG_TAG,
+      requestId,
+      status: 'rate_limit_lookup_error',
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
+    return errorResponse(
+      503,
+      'Rate limit check is temporarily unavailable. Please try again shortly.',
+      requestId,
+      { 'retry-after': '30' },
+    );
+  }
+  if (hourCount > perHour) {
+    await updateRequestLog({ logTag: LOG_TAG, requestId, status: 'rate_limited_hour' });
+    return errorResponse(
+      429,
+      `Rate limit exceeded: max ${perHour} requests/hour.`,
+      requestId,
+      { 'retry-after': '3600' },
+    );
+  }
+  if (minuteCount > perMinute) {
+    await updateRequestLog({ logTag: LOG_TAG, requestId, status: 'rate_limited_minute' });
+    return errorResponse(
+      429,
+      `Rate limit exceeded: max ${perMinute} requests/minute.`,
+      requestId,
+      { 'retry-after': '60' },
+    );
+  }
+
   const supabase = await createClient();
   const { data: vehicleRow, error: vehicleError } = await supabase
     .from('vehicles')
@@ -429,7 +597,40 @@ export async function POST(request: Request) {
     .single();
 
   if (vehicleError || !vehicleRow) {
+    // A request naming someone else's vehicle is cheap and should not consume
+    // the caller's rate-limit budget; release the slot, as tuning-advice does.
+    await releaseReservation(LOG_TAG, requestId);
     return errorResponse(404, 'Vehicle not found.', requestId);
+  }
+
+  const assessment = classifyDayPlanRequest({
+    trackName: validated.data.track_name,
+    weatherCondition: validated.data.weather_condition,
+    surfaceCondition: validated.data.surface_condition,
+  });
+
+  if (assessment.decision === 'refuse') {
+    const refusalReason = assessment.reason ?? 'out_of_domain';
+    const advice = buildRefusalAdvice({
+      reason: refusalReason,
+      message: assessment.message ?? 'This request is outside trackday setup scope.',
+      dataUsed: refusalDataUsed(hasEnvironment),
+    });
+
+    await updateRequestLog({
+      logTag: LOG_TAG,
+      requestId,
+      status: `completed_refusal_${refusalReason}`,
+      refusalReason,
+      policyResult: 'force_refusal',
+      policyViolations: [],
+      classifierStage: 'preflight',
+    });
+
+    return NextResponse.json(
+      { ok: true, request_id: requestId, advice, retrieved: [] },
+      { status: 200, headers: { 'x-request-id': requestId } },
+    );
   }
 
   const vehicle = vehicleRow as Vehicle;
@@ -497,50 +698,82 @@ export async function POST(request: Request) {
     });
   }
   if (sessionsResult.error || feedbackResult.error || environmentsResult.error) {
+    await updateRequestLog({
+      logTag: LOG_TAG,
+      requestId,
+      status: 'context_lookup_error',
+      errorMessage:
+        sessionsResult.error?.message ??
+        feedbackResult.error?.message ??
+        environmentsResult.error?.message ??
+        'Planning history lookup failed.',
+    });
     return errorResponse(500, 'Unable to load planning history right now.', requestId);
   }
   const recentEnvironments = (environmentsResult.data ?? []) as SessionEnvironment[];
   const feedback = (feedbackResult.data ?? []) as SessionFeedback[];
-  const environment: CreateSessionEnvironmentInput = {
-    ambient_temperature_c: validated.data.ambient_temperature_c ?? null,
-    track_temperature_c: validated.data.track_temperature_c ?? null,
-    humidity_percent: validated.data.humidity_percent ?? null,
-    weather_condition: validated.data.weather_condition ?? null,
-    surface_condition: validated.data.surface_condition ?? null,
-    source: 'manual',
-  };
-  // hasEnvironment intentionally ignores the default source value 'manual' so the
-  // environment object only counts as present when it contains meaningful runtime input.
-  const hasEnvironment = Object.values(environment).some((value) => {
-    if (typeof value === 'number') return Number.isFinite(value);
-    return typeof value === 'string' && value.trim() !== '' && value !== 'manual';
-  });
-  const computedTargetDate = validated.data.target_date ?? todayIso(validated.data.time_zone);
 
   try {
+    const raceEngineerContext = buildContext({
+      userId: user.id,
+      targetDate: computedTargetDate,
+      trackName: validated.data.track_name,
+      recentSessions,
+      recentEnvironments,
+      environment: hasEnvironment ? environment : null,
+      memory,
+      feedback,
+    });
+
     const result = await generateDayPlan({
       vehicle,
       targetDate: computedTargetDate,
       trackName: validated.data.track_name,
       environment: hasEnvironment ? environment : null,
       recentSessions,
-      raceEngineerContext: buildContext({
-        userId: user.id,
-        targetDate: computedTargetDate,
-        trackName: validated.data.track_name,
-        recentSessions,
-        recentEnvironments,
-        environment: hasEnvironment ? environment : null,
-        memory,
-        feedback,
-      }),
+      raceEngineerContext,
+    });
+
+    // Only real, persisted sessions ground personal evidence. The planning
+    // session buildContext synthesises is not one of them, so its id is
+    // deliberately absent here: a plan citing it would be citing itself.
+    const policyResult = evaluateAdvicePolicy({
+      advice: result.advice,
+      fallbackDataUsed: raceEngineerContext.dataUsed,
+      validSessionIds: [
+        ...recentSessionIds,
+        ...feedback.map((entry) => entry.session_id),
+      ].filter((value): value is string => Boolean(value)),
+      // A morning plan whose right answer is "run your baseline and check hot
+      // pressures" recommends no change, and the day-plan prompt says so
+      // explicitly. Every other policy check still applies.
+      allowEmptyRecommendations: true,
+    });
+    const advice = policyResult.advice;
+
+    await updateRequestLog({
+      logTag: LOG_TAG,
+      requestId,
+      status: advice.refusal
+        ? `completed_refusal_${policyResult.violations[0] ?? 'no_safe_answer'}`
+        : policyResult.decision === 'downgrade_confidence'
+          ? 'ok_confidence_downgraded'
+          : 'ok',
+      model: result.model,
+      promptTokens: result.usage.prompt_tokens,
+      completionTokens: result.usage.completion_tokens,
+      latencyMs: result.latencyMs,
+      refusalReason: advice.refusal ? (policyResult.violations[0] ?? 'no_safe_answer') : null,
+      policyResult: policyResult.decision,
+      policyViolations: policyResult.violations,
+      classifierStage: 'post_policy',
     });
 
     return NextResponse.json(
       {
         ok: true,
         request_id: requestId,
-        advice: result.advice,
+        advice,
         retrieved: result.retrieved.map(({ chunk, score }) => ({
           source: chunk.source,
           heading: chunk.heading,
@@ -550,8 +783,21 @@ export async function POST(request: Request) {
       { status: 200, headers: { 'x-request-id': requestId } },
     );
   } catch (err) {
-    if (err instanceof UpstreamTimeoutError) {
-      return errorResponse(504, 'The day-plan service timed out. Please retry.', requestId);
+    const message = err instanceof Error ? err.message : 'Unknown error.';
+    const isRetriable = err instanceof UpstreamTimeoutError;
+    await updateRequestLog({
+      logTag: LOG_TAG,
+      requestId,
+      status: isRetriable ? 'upstream_timeout' : 'error',
+      errorMessage: message,
+    });
+    if (isRetriable) {
+      return errorResponse(
+        504,
+        'The day-plan service timed out. Please retry.',
+        requestId,
+        { 'retry-after': '5' },
+      );
     }
     console.error('[ai/day-plan]', err);
     return errorResponse(500, 'Unable to generate a day plan right now.', requestId);

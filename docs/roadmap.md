@@ -313,7 +313,7 @@ and execution order may legitimately diverge; the reason is recorded there.
 6. Founding beta access and acquisition - Built; pending live validation
 7. Beta measurement and validation - Built; pending live validation
 8. **Evidence-based next roadmap decision** - Active after the beta gate
-9. AI day-plan guardrails
+9. AI day-plan guardrails - Built; pending live validation
 10. Vehicle- and track-specific memory improvements
 11. CSV and lap-timer import
 12. Tire lifecycle tracking
