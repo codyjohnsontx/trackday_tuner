@@ -221,11 +221,18 @@ describe('directionAllowed', () => {
   // a future vocabulary addition cannot break them quietly.
   describe('normalizer properties', () => {
     it('never collapses two directions of one component onto one key', () => {
-      // Two directions that normalize alike would silently merge two meanings,
-      // and the guard would accept one while the rider was shown the other.
+      // Two directions that normalize alike would silently merge two meanings.
+      // DIRECTION_LABELS is a Map keyed by that same normalizer, so the later
+      // spelling overwrites the earlier and the rider is shown the wrong word
+      // for one of them.
+      //
+      // Probed through formatDirectionLabel because that runs the REAL
+      // normalizer. This assertion first re-implemented directionKey inline,
+      // which guarded a COPY of the rule rather than the rule: it would have
+      // kept passing through exactly the loosening it exists to catch.
       for (const [key, policy] of POLICY_ENTRIES) {
-        const keys = policy.directions.map((d) => d.trim().toLowerCase().replace(/[_\s-]+/g, ' '));
-        expect(new Set(keys).size, key).toBe(keys.length);
+        const labels = policy.directions.map((d) => formatDirectionLabel(d).toLowerCase());
+        expect(new Set(labels).size, `${key}: ${labels.join(', ')}`).toBe(labels.length);
       }
     });
 
