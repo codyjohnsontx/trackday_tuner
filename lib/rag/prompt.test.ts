@@ -10,7 +10,12 @@ import {
   ONE_CHANGE_NOTE,
   SYSTEM_PROMPT,
 } from '@/lib/rag/prompt';
-import { buildDayTrend, type RaceEngineerContext } from '@/lib/rag/race-engineer-context';
+import {
+  buildDayTrend,
+  hasDegradedContextPrefix,
+  withDegradedContextPrefix,
+  type RaceEngineerContext,
+} from '@/lib/rag/race-engineer-context';
 import type { KnowledgeChunk, RetrievedChunk } from '@/lib/rag/types';
 import type {
   AiRecommendation,
@@ -704,6 +709,35 @@ describe('dropScreenedSources', () => {
     // have produced had the row never existed rather than a string written here.
     expect(result.dayTrend).toBe(buildDayTrend(CURRENT, null, before.similarSessions));
     expect(result.dayTrend).not.toContain('Track temperature is logged');
+  });
+
+  // The degraded flag is not derived from the environment, so rebuilding the
+  // trend must not take it with it. A model told its history is partial reasons
+  // differently from one that believes it is complete, and this is the one
+  // combination that used to lose the warning: a failed sub-query and a poisoned
+  // stored environment on the same request.
+  it('keeps the degraded-history warning across the rebuild', () => {
+    const degraded = context({
+      dayTrend: withDegradedContextPrefix(
+        'Track temperature is logged, so use hot pressure and grip change as primary day-trend checks.',
+        true,
+      ),
+    });
+    expect(hasDegradedContextPrefix(degraded.dayTrend)).toBe(true);
+
+    const result = dropScreenedSources(degraded, [{ kind: 'sessionEnvironment' }], CURRENT);
+
+    // Both at once: still flagged as partial, and now reflecting the absent row.
+    expect(hasDegradedContextPrefix(result.dayTrend)).toBe(true);
+    expect(result.dayTrend).toBe(
+      withDegradedContextPrefix(buildDayTrend(CURRENT, null, degraded.similarSessions), true),
+    );
+    expect(result.dayTrend).not.toContain('Track temperature is logged');
+  });
+
+  it('does not invent the warning when the history loaded cleanly', () => {
+    const result = dropScreenedSources(context(), [{ kind: 'sessionEnvironment' }], CURRENT);
+    expect(hasDegradedContextPrefix(result.dayTrend)).toBe(false);
   });
 
   it('leaves the day trend alone when the environment survives', () => {

@@ -1,6 +1,11 @@
 import { describeComponentVocabulary } from '@/lib/rag/component-vocabulary';
 import type { RetrievedChunk } from '@/lib/rag/types';
-import { buildDayTrend, type RaceEngineerContext } from '@/lib/rag/race-engineer-context';
+import {
+  buildDayTrend,
+  hasDegradedContextPrefix,
+  withDegradedContextPrefix,
+  type RaceEngineerContext,
+} from '@/lib/rag/race-engineer-context';
 import type { CreateSessionEnvironmentInput, Session, SessionEnvironment, Vehicle } from '@/types';
 import { truncateAtWordBoundary } from '@/lib/utils';
 
@@ -546,6 +551,17 @@ function collectRaceEngineerContextRiderText(
   // instead, dated from `memory.updated_at`, which the same statement sets to
   // `now()` when it writes the summary - so it is the outcome that put this text
   // here, read off the row already in hand.
+  //
+  // That date is the UTC date of a `timestamptz`, so for a rider west of
+  // Greenwich it can be a day ahead of the one they saw: an outcome logged at
+  // 8pm local reads as the next day. The cost is real - a rider who logged
+  // outcomes on consecutive days can be pointed at the wrong one. It is kept
+  // rather than fixed because the feedback label below has exactly the same
+  // skew and predates this branch; the two are deliberately identical, and the
+  // skew is filed as ONE task covering BOTH labels. Fixing whichever one a
+  // reviewer happened to look at is the half-measure this subsystem keeps
+  // paying for. Converting is not available here anyway - the rider's timezone
+  // is only knowable in the browser (see `todayLocalDate` in CLAUDE.md).
   if (context.memory) {
     pushRiderText(
       fields,
@@ -566,6 +582,10 @@ function collectRaceEngineerContextRiderText(
     pushRiderText(fields, REFUSE_ON_MATCH, `the notes ${suffix}`, item.session.notes);
   }
 
+  // Same UTC-date skew as the memory label above, and deliberately worded the
+  // same way: both are the UTC date of a `timestamptz` and can be a day off for
+  // a rider west of Greenwich, pointing them at the wrong outcome if they
+  // logged on consecutive days. One task covers both; do not fix one alone.
   for (const feedback of context.recentFeedback.slice(0, 5)) {
     const suffix = `on the outcome you logged on ${feedback.created_at.slice(0, 10)}`;
     pushRiderText(fields, REFUSE_ON_MATCH, `the symptoms ${suffix}`, feedback.symptoms.join(', '));
@@ -858,7 +878,15 @@ export function dropScreenedSources(
     // data was used, and that the track temperature is logged, all at once.
     // Recomputed rather than hand-written, so this cannot drift from what the
     // loader would have produced had the row never existed.
-    dayTrend: buildDayTrend(session, null, context.similarSessions),
+    //
+    // The degraded flag is NOT derived from the environment, so it survives the
+    // rebuild rather than being dropped with it. Both sides go through the same
+    // pair in `race-engineer-context`, so the prefix cannot drift between the
+    // loader that applies it and this rebuild that restores it.
+    dayTrend: withDegradedContextPrefix(
+      buildDayTrend(session, null, context.similarSessions),
+      hasDegradedContextPrefix(context.dayTrend),
+    ),
     dataUsed: { ...context.dataUsed, weather: false },
   };
 }

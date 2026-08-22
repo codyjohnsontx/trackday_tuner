@@ -162,6 +162,25 @@ export function hasManualSessionData(session: Session): boolean {
   );
 }
 
+/**
+ * The day trend carries one thing that is not derived from the environment:
+ * whether the history behind it loaded at all. It is applied through this pair
+ * rather than written inline, because `dropScreenedSources` rebuilds the trend
+ * when it withholds the environment and has to put the flag back exactly as it
+ * was. A model told its history is partial reasons differently from one that
+ * believes it is complete, so losing it silently is worse than it looks.
+ */
+const DEGRADED_CONTEXT_PREFIX =
+  'Adaptive context is partially unavailable because one or more history queries failed. ';
+
+export function withDegradedContextPrefix(dayTrend: string, degraded: boolean): string {
+  return degraded ? `${DEGRADED_CONTEXT_PREFIX}${dayTrend}` : dayTrend;
+}
+
+export function hasDegradedContextPrefix(dayTrend: string): boolean {
+  return dayTrend.startsWith(DEGRADED_CONTEXT_PREFIX);
+}
+
 export function buildDayTrend(
   current: Session,
   currentEnv: SessionEnvironment | null,
@@ -358,10 +377,10 @@ export async function loadRaceEngineerContext(
   const memory = ((memoryResult.data ?? [])[0] ?? null) as RaceEngineerMemory | null;
   const telemetrySummary = ((telemetryResult.data ?? [])[0] ?? null) as TelemetrySummary | null;
 
-  const dayTrendBase = buildDayTrend(session, sessionEnvironment, similarSessions);
-  const dayTrend = degradedContext
-    ? `Adaptive context is partially unavailable because one or more history queries failed. ${dayTrendBase}`
-    : dayTrendBase;
+  const dayTrend = withDegradedContextPrefix(
+    buildDayTrend(session, sessionEnvironment, similarSessions),
+    degradedContext,
+  );
 
   return {
     similarSessions,

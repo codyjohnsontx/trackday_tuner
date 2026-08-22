@@ -723,6 +723,22 @@ export async function POST(request: Request) {
       );
     }
 
+    // Fail closed rather than fail open. Nothing this route collects is
+    // skippable today, so this cannot fire: `buildContext` above hardcodes an
+    // empty recommendation list on both branches, and this route's environment
+    // is disposed `refuse` because the rider just typed it. But both of those
+    // are facts about other code, and the skip disposition reaches here through
+    // the shared collector - give day-plan real recommendations later and a
+    // value would be neither screened nor withheld, with nothing failing. This
+    // route has no `Session` to hand `dropScreenedSources`, so it refuses to
+    // proceed instead; the catch below turns it into the shaped 500 and closes
+    // the reserved slot.
+    if (storedAssessment.droppedSources.length > 0) {
+      throw new Error(
+        'Day-plan collected a skippable field but has no way to drop it from the prompt.',
+      );
+    }
+
     const result = await generateDayPlan({
       vehicle,
       targetDate: computedTargetDate,
