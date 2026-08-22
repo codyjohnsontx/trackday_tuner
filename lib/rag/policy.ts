@@ -1,15 +1,10 @@
+import {
+  directionAllowed,
+  findComponentPolicy,
+  magnitudeAllowed,
+} from '@/lib/rag/component-vocabulary';
 import type { AdviceConfidence, AdviceResponse, RecommendedChange } from '@/lib/rag/schema';
 import { buildRefusalAdvice, normalizeAdviceResponse } from '@/lib/rag/domain-guard';
-
-type ComponentKey =
-  | 'tire_pressure'
-  | 'toe'
-  | 'rebound'
-  | 'compression'
-  | 'camber'
-  | 'sprocket'
-  | 'wing_angle'
-  | 'geometry';
 
 type AdvicePolicyDecision = 'allow' | 'force_refusal' | 'downgrade_confidence';
 
@@ -96,90 +91,15 @@ function hasActionableProse(advice: AdviceResponse): boolean {
   );
 }
 
-interface ComponentPolicy {
-  aliases: string[];
-  directionPatterns: RegExp[];
-  validateMagnitude: (value: string) => boolean;
-}
-
-function parseRangeMax(value: string): number | null {
-  const matches = [...value.matchAll(/[-+]?\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
-  if (matches.length === 0 || matches.some((entry) => !Number.isFinite(entry))) return null;
-  return Math.max(...matches.map((entry) => Math.abs(entry)));
-}
-
-const COMPONENT_POLICIES: Record<ComponentKey, ComponentPolicy> = {
-  tire_pressure: {
-    aliases: [
-      'front_tire_pressure',
-      'rear_tire_pressure',
-      'front_and_rear_cold_pressure',
-      'front tire pressure',
-      'rear tire pressure',
-      'front and rear cold pressure',
-    ],
-    directionPatterns: [/\bincrease\b/i, /\bdecrease\b/i, /\braise\b/i, /\blower\b/i],
-    validateMagnitude: (value) => /\bpsi\b/i.test(value) && (parseRangeMax(value) ?? Infinity) <= 1,
-  },
-  toe: {
-    aliases: ['front_toe', 'rear_toe', 'front toe', 'rear toe'],
-    directionPatterns: [/\btoe-in\b/i, /\btoe-out\b/i, /\bincrease\b/i, /\bdecrease\b/i],
-    validateMagnitude: (value) => /\bmm\b/i.test(value) && (parseRangeMax(value) ?? Infinity) <= 3,
-  },
-  rebound: {
-    aliases: ['front_rebound', 'rear_rebound', 'front rebound', 'rear rebound'],
-    directionPatterns: [/\bstiffen\b/i, /\bsoften\b/i, /\bincrease\b/i, /\bdecrease\b/i],
-    validateMagnitude: (value) => /\bclicks?\b/i.test(value) && (parseRangeMax(value) ?? Infinity) <= 2,
-  },
-  compression: {
-    aliases: ['front_compression', 'rear_compression', 'front compression', 'rear compression'],
-    directionPatterns: [/\bstiffen\b/i, /\bsoften\b/i, /\bincrease\b/i, /\bdecrease\b/i],
-    validateMagnitude: (value) => /\bclicks?\b/i.test(value) && (parseRangeMax(value) ?? Infinity) <= 2,
-  },
-  camber: {
-    aliases: ['front_camber', 'rear_camber', 'front camber', 'rear camber'],
-    directionPatterns: [
-      /\bincrease\b/i,
-      /\bdecrease\b/i,
-      /\breduce negative camber\b/i,
-      /\bincrease negative camber\b/i,
-    ],
-    validateMagnitude: (value) => /\bdegrees?\b/i.test(value) && (parseRangeMax(value) ?? Infinity) <= 0.5,
-  },
-  sprocket: {
-    aliases: ['rear_sprocket', 'front_sprocket', 'rear sprocket', 'front sprocket'],
-    directionPatterns: [/\bshorter gearing\b/i, /\btaller gearing\b/i, /\bincrease\b/i, /\bdecrease\b/i],
-    validateMagnitude: (value) => /\b(?:tooth|teeth)\b/i.test(value) && (parseRangeMax(value) ?? Infinity) <= 2,
-  },
-  wing_angle: {
-    aliases: ['rear_wing_angle', 'front_wing_angle', 'rear wing angle', 'front wing angle'],
-    directionPatterns: [/\bincrease\b/i, /\bdecrease\b/i],
-    validateMagnitude: (value) => /\bpositions?\b/i.test(value) && (parseRangeMax(value) ?? Infinity) <= 2,
-  },
-  geometry: {
-    aliases: ['fork_height', 'rear_ride_height', 'fork height', 'rear ride height'],
-    directionPatterns: [/\bincrease\b/i, /\bdecrease\b/i, /\braise\b/i, /\blower\b/i],
-    validateMagnitude: (value) => /\bmm\b/i.test(value) && (parseRangeMax(value) ?? Infinity) <= 3,
-  },
-};
-
-function findComponentPolicy(component: string): ComponentPolicy | null {
-  const normalized = component.trim().toLowerCase();
-  for (const [key, policy] of Object.entries(COMPONENT_POLICIES) as [ComponentKey, ComponentPolicy][]) {
-    if (key === normalized || policy.aliases.includes(normalized)) return policy;
-  }
-  return null;
-}
-
 function changeViolations(change: RecommendedChange): AdvicePolicyViolation[] {
   const policy = findComponentPolicy(change.component);
   if (!policy) return ['unknown_component'];
 
   const violations: AdvicePolicyViolation[] = [];
-  if (!policy.directionPatterns.some((pattern) => pattern.test(change.direction))) {
+  if (!directionAllowed(policy, change.direction)) {
     violations.push('unsupported_direction');
   }
-  if (!policy.validateMagnitude(change.magnitude)) {
+  if (!magnitudeAllowed(policy, change.magnitude)) {
     violations.push('unsafe_magnitude');
   }
   return violations;

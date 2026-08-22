@@ -975,3 +975,117 @@ describe('POST /api/ai/day-plan actionable prose in an empty plan', () => {
     expect(aiRequests.find((entry) => entry.request_id === body.request_id)?.status).toBe('ok');
   });
 });
+
+describe('POST /api/ai/day-plan enforced vocabulary matches what the model is told', () => {
+  function planWith(changes: unknown[], extra: Record<string, unknown> = {}) {
+    generateDayPlan.mockResolvedValue({
+      advice: validAdvice({ recommended_changes: changes, ...extra }),
+      retrieved: [],
+      usage: { prompt_tokens: 10, completion_tokens: 5 },
+      latencyMs: 42,
+      model: 'test-model',
+    });
+  }
+
+  it('accepts the plan shape the demo panel advertises', async () => {
+    // demoDayPlanAdvice in components/ai/day-plan-panel.tsx. A demo that shows a
+    // rider something the policy would refuse is advertising a product we do not
+    // ship, so this asserts the two agree.
+    planWith([
+      {
+        component: 'rear_tire_pressure',
+        direction: 'decrease',
+        magnitude: '0.5 psi',
+        reason: 'Rear pressure and track temperature rose together.',
+      },
+    ]);
+
+    const response = await post({ vehicle_id: VEHICLE_ID });
+    const body = await response.json();
+
+    expect(body.advice.refusal).toBeNull();
+    expect(body.advice.recommended_changes).toHaveLength(1);
+    expect(aiRequests.find((e) => e.request_id === body.request_id)?.status).toBe('ok');
+  });
+
+  it('accepts a realistic warming-day hot-pressure plan', async () => {
+    planWith(
+      [
+        {
+          component: 'front_and_rear_cold_pressure',
+          direction: 'lower',
+          magnitude: '0.5 psi',
+          reason: 'Track temperature climbs through the morning.',
+        },
+      ],
+      {
+        summary: 'Start on the Session 3 baseline and check hot pressures after the first run.',
+        prediction: {
+          expected_effect: 'Hot pressures land closer to target by session two.',
+          day_trend: 'Warming.',
+          watch_items: ['Rear hot pressure after lap four'],
+        },
+      },
+    );
+
+    const response = await post({ vehicle_id: VEHICLE_ID });
+    expect((await response.json()).advice.refusal).toBeNull();
+  });
+
+  it('accepts every canonical component the prompt now names', async () => {
+    const canonical = [
+      { component: 'front_tire_pressure', direction: 'increase', magnitude: '0.5 psi' },
+      { component: 'front_toe', direction: 'toe-in', magnitude: '2 mm' },
+      { component: 'front_rebound', direction: 'soften', magnitude: '1 click' },
+      { component: 'rear_compression', direction: 'stiffen', magnitude: '2 clicks' },
+      { component: 'front_camber', direction: 'decrease', magnitude: '0.5 degrees' },
+      { component: 'rear_sprocket', direction: 'shorter gearing', magnitude: '2 teeth' },
+      { component: 'rear_wing_angle', direction: 'increase', magnitude: '1 position' },
+      { component: 'fork_height', direction: 'raise', magnitude: '3 mm' },
+    ];
+
+    for (const change of canonical) {
+      vi.clearAllMocks();
+      aiRequests.length = 0;
+      getRealUser.mockResolvedValue({ id: USER_ID });
+      getUserProfile.mockResolvedValue({ id: USER_ID, tier: 'pro' });
+      createClient.mockResolvedValue(createServerClient());
+      createAdminClient.mockReturnValue(createAdminClientMock(aiRequests));
+      planWith([{ ...change, reason: 'test' }]);
+
+      const response = await post({ vehicle_id: VEHICLE_ID });
+      const body = await response.json();
+      expect(body.advice.refusal, `${change.component} / ${change.direction}`).toBeNull();
+    }
+  });
+
+  it('still refuses a genuinely unsafe magnitude', async () => {
+    planWith([
+      {
+        component: 'front_tire_pressure',
+        direction: 'increase',
+        magnitude: '25 psi',
+        reason: 'more grip',
+      },
+    ]);
+
+    const response = await post({ vehicle_id: VEHICLE_ID });
+    const body = await response.json();
+
+    expect(body.advice.refusal).toContain('could not verify a safe, supported setup change');
+    expect(
+      aiRequests.find((e) => e.request_id === body.request_id)?.policy_violations,
+    ).toContain('unsafe_magnitude');
+  });
+
+  it('still refuses a component outside the vocabulary', async () => {
+    planWith([
+      { component: 'Tire pressures', direction: 'Monitor rear hot pressure', magnitude: '26 psi hot', reason: 'r' },
+    ]);
+
+    const response = await post({ vehicle_id: VEHICLE_ID });
+    const body = await response.json();
+    expect(body.advice.refusal).toContain('could not verify a safe, supported setup change');
+  });
+});
+

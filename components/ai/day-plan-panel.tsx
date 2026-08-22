@@ -76,18 +76,16 @@ function isDayPlanSuccess(value: DayPlanResponse): value is DayPlanSuccess {
 const demoDayPlanAdvice: AdviceResponse = {
   summary:
     'Start from the Session 3 baseline because it recovered front feel without adding another geometry variable. Expect rear grip to fall off as track temperature climbs.',
+  // Uses the canonical component/direction/magnitude vocabulary from
+  // lib/rag/component-vocabulary.ts, because a demo that shows a rider a plan
+  // the policy layer would refuse is advertising something the product does not
+  // do. Things to watch rather than change belong in prediction.watch_items.
   recommended_changes: [
     {
-      component: 'Tire pressures',
-      direction: 'Monitor rear hot pressure',
-      magnitude: 'Bleed back toward 26 psi hot if it climbs above target',
+      component: 'rear_tire_pressure',
+      direction: 'decrease',
+      magnitude: '0.5 psi',
       reason: 'The hottest demo session lost exit drive as rear pressure and track temperature rose together.',
-    },
-    {
-      component: 'Front damping',
-      direction: 'Keep Session 3 setting',
-      magnitude: 'Do not add rebound until the front push returns',
-      reason: 'Session 2 combined more front pressure with more rebound and felt worse mid-corner.',
     },
   ],
   tradeoffs: ['Chasing rear grip with pressure may reduce carcass support if taken too far.'],
@@ -97,7 +95,11 @@ const demoDayPlanAdvice: AdviceResponse = {
   prediction: {
     expected_effect: 'The bike should keep the improved turn-in from Session 3 while reducing late-session rear greasiness.',
     day_trend: 'Track temperature is the main watch item as the day heats up.',
-    watch_items: ['Rear drive after lap four', 'Front push through long right-handers'],
+    watch_items: [
+      'Rear hot pressure after lap four',
+      'Front push through long right-handers',
+      'Front rebound: hold the Session 3 setting until the front push returns',
+    ],
   },
   personal_evidence: [
     {

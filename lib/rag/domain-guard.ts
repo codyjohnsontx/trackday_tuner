@@ -161,7 +161,23 @@ export function classifyRaceEngineerQuestion(
     .join(' ')
     .trim();
 
-  if (hasPromptInjectionSignal(questionText)) {
+  // Every rider-authored field reaches the model, not just the question:
+  // formatMetaBlock in lib/rag/prompt.ts prints symptoms and change intent into
+  // the prompt, and sanitizeFreeText neutralises only the <user_data> tag
+  // delimiters, not phrases. Screening the question alone left "normal question
+  // + change_intent: ignore all previous instructions" walking straight past
+  // this guard.
+  //
+  // Each field is screened on its own rather than as one joined string, so two
+  // innocent fields cannot be concatenated into a phrase neither of them
+  // contains.
+  const injectionCandidates = [
+    questionText,
+    ...(input.symptoms ?? []),
+    input.changeIntent ?? '',
+  ];
+
+  if (injectionCandidates.some((value) => value.trim() && hasPromptInjectionSignal(value))) {
     return {
       decision: 'refuse',
       reason: 'prompt_injection',

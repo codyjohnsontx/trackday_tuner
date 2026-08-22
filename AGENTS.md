@@ -549,6 +549,21 @@ than echoing the text, and is audited as
 count. Counting it would spend the injection budget three plans in and 429 the
 rider out of tuning-advice too, over a note they wrote weeks ago.
 
+**The vocabulary the policy enforces is also the vocabulary the model is told**,
+generated rather than hand-copied. `lib/rag/component-vocabulary.ts` holds the
+components, directions, units and magnitude ceilings; `evaluateAdvicePolicy`
+checks against it and `describeComponentVocabulary()` renders it into
+`SYSTEM_PROMPT`. It had lived only in the policy - `SYSTEM_PROMPT` named no
+component, `component` and `direction` are bare strings in the schema, and the
+canonical spelling survived as an example in a spec document - so the model was
+asked for words it had never been shown and then refused for guessing them. The
+repository's own fixture recommends `front_rebound` / `softer` / `1 click`, which
+the policy rejects because it accepts `soften` and not `softer`: one letter
+between a real recommendation and a withheld one. Add a component or a direction
+in that one file and both sides learn it together. `demoDayPlanAdvice` in
+`components/ai/day-plan-panel.tsx` uses the same vocabulary, because a demo
+showing a plan the policy would refuse advertises a product that does not exist.
+
 **An empty `recommended_changes` list is checked as prose.** `evaluateAdvicePolicy`
 validates component, direction and magnitude by iterating the structured field, so
 when `allowEmptyRecommendations` is on, a model that puts the instruction in

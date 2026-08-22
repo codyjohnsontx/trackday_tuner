@@ -1,3 +1,4 @@
+import { describeComponentVocabulary } from '@/lib/rag/component-vocabulary';
 import type { RetrievedChunk } from '@/lib/rag/types';
 import type { RaceEngineerContext } from '@/lib/rag/race-engineer-context';
 import type { CreateSessionEnvironmentInput, Session, SessionEnvironment, Vehicle } from '@/types';
@@ -22,7 +23,9 @@ Rules you must always follow:
 Confidence levels:
 - "low": limited session data or conflicting symptoms; user should treat as a hypothesis.
 - "medium": session data is consistent with the reported symptom and at least one knowledge source supports the suggestion.
-- "high": session data strongly matches a well-documented pattern in the retrieved knowledge.`;
+- "high": session data strongly matches a well-documented pattern in the retrieved knowledge.
+
+${describeComponentVocabulary()}`;
 
 export const DISCLAIMER_NOTE =
   'This is informational only. You are responsible for vehicle safety and on-track conduct.';
