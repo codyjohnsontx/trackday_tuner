@@ -609,7 +609,10 @@ an unscreened row into the window the drop just freed. **Anything derived from a
 dropped source moves with it** or the prompt contradicts itself: dropping the
 environment also clears `dataUsed.weather` and recomputes `dayTrend` through
 `buildDayTrend`, rather than leaving the model told the row is absent, that no
-weather data was used, and that the track temperature is logged. It throws when a
+weather data was used, and that the track temperature is logged. `dataUsed.feedback`
+is derived from the recommendation list as well as the feedback list, so a
+recommendation drop recomputes it on both exits - otherwise the prompt withholds
+every feedback source and still tells the model feedback was used. It throws when a
 drop removed nothing, and its switch over `SkippableSource` is exhaustive, so a new
 kind does not compile until it is handled.
 

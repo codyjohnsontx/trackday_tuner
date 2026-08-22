@@ -755,11 +755,11 @@ function collectRaceEngineerContextRiderText(
  * - `session_feedback` symptoms and notes -> the outcome panel;
  *   `save_session_outcome` upserts `on conflict (session_id) do update`
  *   (`20260716000800_add_session_outcomes.sql`), so re-saving replaces them.
- * - `telemetry_summaries` source, summary and metrics -> `replaceSessionLaps`
- *   (`lib/actions/sessions.ts`) overwrites all three, so editing lap times
- *   clears them. The app's own writer cannot emit free prose there either
- *   (`20260717000900_add_session_laps.sql` writes 'manual', a lap count and a
- *   numeric object), so a phrase in one of them implies a rider PATCH.
+ * - `telemetry_summaries` source, summary and metrics. The reachability
+ *   argument here is NOT "the lap editor rewrites the row" - that version is
+ *   wrong, because `replaceSessionLaps` only clears a row whose stored source
+ *   is still `manual`. It is written out in full at the collection site above;
+ *   read it there rather than restating it here.
  * - Every session string on the current, previous and similar sessions, and the
  *   day-plan request's own track name and environment.
  * - `race_engineer_memory.summary` -> the outcome panel. `save_session_outcome`

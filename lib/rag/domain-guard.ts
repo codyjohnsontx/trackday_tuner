@@ -69,17 +69,6 @@ interface NormalizeAdviceResponseInput {
 }
 
 /**
- * The unambiguous half of the screen: phrases that address the assistant and
- * have no ordinary reading in a rider's description of their own vehicle.
- *
- * Stored text is screened against this set alone. `/\bact as\b/i` is not in it
- * because "the instructor said to act as if the apex is later" is an ordinary
- * session note, and the cost of a false positive is asymmetric: text the rider
- * just typed can be edited in the same breath, while stored text refuses every
- * request deterministically until the rider works out which of their saved
- * fields is to blame.
- */
-/**
  * "you are now", narrowed to a ROLE REASSIGNMENT.
  *
  * The bare `/\byou are now\b/i` is ordinary English and it was the entire
@@ -102,7 +91,8 @@ interface NormalizeAdviceResponseInput {
  * - `limits?` likewise  - "you are now smoother without limits on entry speed".
  * - `model`, `system`   - "you are now on the new model bike", "you are now
  *                         trusting the system more". `system prompt` and
- *                         `developer message` keep their own patterns above.
+ *                         `developer message` keep their own patterns in the
+ *                         set below.
  *
  * WHY A WEAKER PATTERN IS DEFENSIBLE HERE, which is the part that stops this
  * reading as somebody loosening a security check. A lexical list is
@@ -123,6 +113,17 @@ interface NormalizeAdviceResponseInput {
 const ROLE_REASSIGNMENT_PATTERN =
   /\byou are now\b[^.!?]{0,40}?(?:\b(?:assistant|chatbot|language model|llm|ai|persona|jailbroken|unrestricted|unfiltered|uncensored|roleplaying)\b|\b(?:no longer|not) bound\b|\bwithout (?:restrictions?|filters?)\b|\bdo anything now\b|\bacting as\b|\bfree to ignore\b)/i;
 
+/**
+ * The unambiguous half of the screen: phrases that address the assistant and
+ * have no ordinary reading in a rider's description of their own vehicle.
+ *
+ * Stored text is screened against this set alone. `/\bact as\b/i` is not in it
+ * because "the instructor said to act as if the apex is later" is an ordinary
+ * session note, and the cost of a false positive is asymmetric: text the rider
+ * just typed can be edited in the same breath, while stored text refuses every
+ * request deterministically until the rider works out which of their saved
+ * fields is to blame.
+ */
 const STORED_TEXT_INJECTION_PATTERNS = [
   /\bignore (?:all |any |the )?(?:previous|prior|earlier) instructions\b/i,
   /\breveal (?:your|the) (?:system prompt|prompt|developer message)\b/i,
