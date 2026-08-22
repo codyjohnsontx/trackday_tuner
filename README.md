@@ -343,7 +343,7 @@ Free → Pro conversion rate (after hitting limits / wanting compare/export/AI)
 - Session history and compare-with-previous workflow.
 - Stripe checkout + customer portal + webhook sync for entitlements.
 - Trackside tools: sag calculator and unit converter.
-- AI tuning advice, recommendation feedback, day planning, curated RAG helpers, and RAG evaluation/index scripts.
+- AI tuning advice, day planning, recommendation feedback recorded through the session outcome flow, curated RAG helpers, and RAG evaluation/index scripts.
 
 ### Planned
 

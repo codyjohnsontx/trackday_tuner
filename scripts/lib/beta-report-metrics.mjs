@@ -103,6 +103,10 @@ export function summarizeComparisonUsage(events, riderIds) {
  * successful ai_requests row are "guided"; compare outcomes recorded per rider
  * across the guided and unguided groups. Riders with zero outcomes stay in the
  * denominators so the averages reflect the whole cohort.
+ *
+ * "Guided" spans every AI entry point, not just the Race Engineer.
+ * `/api/ai/day-plan` writes ai_requests rows too, and the table carries no
+ * route column, so a rider who only ever ran a morning plan counts as guided.
  */
 export function summarizeAiGuidance({ aiRequests, outcomes, riderIds }) {
   const include = (userId) => !riderIds || riderIds.has(userId);

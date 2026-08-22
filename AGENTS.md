@@ -495,9 +495,178 @@ and watch each new one fail before it passes.
 
 ## Current AI Status
 
-AI routes are active for tuning advice, recommendation feedback, and day planning.
+Two AI routes reach the model: `/api/ai/tuning-advice` and `/api/ai/day-plan`.
+`/api/ai/recommendation-feedback` is a 410 tombstone; that feedback is
+recorded through the session outcome flow instead.
 `lib/rag/` contains retrieval, prompt, policy, validation, and schema helpers.
 Knowledge-base markdown lives in `docs/knowledge-base/` and can be indexed with `npm run rag:index`.
+
+**Every route that puts rider text in front of the model runs the same four
+guards, from shared modules rather than per-route copies**: `isUuid` and
+`AI_REQUEST_MAX_BODY_BYTES` (`lib/rag/validation.ts`), the prompt-injection screen
+in `lib/rag/domain-guard.ts`, `evaluateAdvicePolicy` (`lib/rag/policy.ts`) over
+whatever the model returns, and the `ai_requests` audit row plus the rate limiting
+built on it (`lib/rag/ai-request-log.ts`). That limit counts per rider and not per
+route, so every AI entry point draws on one budget and each is visible to the
+others' count. The body read, refusal throttle, reservation, counting and limit
+responses are one function - `preflightAiRequest` (`lib/rag/ai-request-preflight.ts`) -
+because duplicated safety control flow drifts toward whichever copy nobody reads.
+`app/api/ai/tuning-advice/route.characterization.test.ts` locks that route's
+status, body, headers, recommendation id and audit row across 19 paths so a change
+to the shared pipeline cannot move it unnoticed. Eighteen of those are refusals
+and failures; the nineteenth is the ordinary 200 that delivers advice, which was
+missing because the fixture recommended `softer` and the real policy refused it -
+a lock that covers only the paths nobody takes proves the pipeline stayed still
+everywhere except where it matters.
+
+**Injection screening takes two passes, and the second is the one that gets
+forgotten.** Every rider-authored field a request submits is screened early, each on
+its own rather than joined, so two innocent fields cannot be concatenated into a
+phrase neither contains. On tuning-advice that is the question, the symptom tags and
+the change intent, because `formatMetaBlock` prints all three into the prompt; on
+day-plan the screen runs before the reservation and before the vehicle lookup, so a
+refusal costs no slot and no read of the rider's own rows, and is still recorded
+(`recordRefusedRequest`) where the throttle can count it. But the prompt also
+interpolates text the rider stored *earlier* - vehicle nickname, session notes,
+feedback notes, rider memory, every suspension and alignment string - and
+`sanitizeFreeText` in `lib/rag/prompt.ts` neutralises only the `<user_data>` tag
+delimiters, not phrases.
+`classifyStoredRiderText` runs over that after the read, which is why it cannot
+replace the first pass.
+
+**The second pass covers one of the two routes, and that is a filed gap rather
+than a description of the design.** Only `/api/ai/day-plan` calls
+`classifyStoredRiderText`; `/api/ai/tuning-advice` interpolates the same stored
+fields - session notes, previous-session notes, vehicle nickname, and through
+`formatRaceEngineerContext` the rider-memory summary, similar-session notes and
+feedback notes - and screens none of them. Closing it needs a second collector
+built from that route's own prompt input and is tracked as
+tt-stored-text-screen-tuning-advice. The note lives on `classifyStoredRiderText`
+itself, because a guard on one of two twins reads as covering both.
+
+The order around that first pass is load-bearing in both directions.
+`preflightAiRequest` is deliberately splittable - `checkAiRefusalThrottle` then
+`reserveAiRequestSlot` - because a route that screens before touching the database
+needs the throttle on one side of the screen and the reservation on the other. Put
+the whole preflight after the screen and a probe costs nothing but also *counts*
+nothing, so the one path that refuses can be looped forever. Put it before and
+every refused probe spends a slot. Day-plan runs throttle, screen, reserve;
+tuning-advice classifies after the whole preflight and needs no split.
+
+**The two passes are not the same screen, and the asymmetry is deliberate.** The
+list of stored fields comes from `collectDayPlanRiderText` in `lib/rag/prompt.ts`,
+beside the formatters, and takes the prompt builder's own input type - a
+hand-maintained second list is what let feedback notes and suspension strings reach
+the model unscreened. Stored text then runs a *narrower* pattern set than submitted
+text: `/\bact as\b/i` is out of it, because "the instructor said to act as if the
+apex is later" is an ordinary session note and a stored false positive refuses every
+plan the rider asks for rather than one request they can retype. For the same
+reason the refusal names the field (`the notes on your 2026-08-01 session`) rather
+than echoing the text, and is audited as
+`STORED_TEXT_INJECTION_REFUSAL_STATUS` - a status `isRefusalThrottled` does not
+count. Counting it would spend the injection budget three plans in and 429 the
+rider out of tuning-advice too, over a note they wrote weeks ago.
+
+**The vocabulary the policy enforces is also the vocabulary the model is told**,
+generated rather than hand-copied. `lib/rag/component-vocabulary.ts` holds the
+components, directions, units and magnitude ceilings; `evaluateAdvicePolicy`
+checks against it and `describeComponentVocabulary()` renders it into
+`SYSTEM_PROMPT`. It had lived only in the policy - `SYSTEM_PROMPT` named no
+component, `component` and `direction` are bare strings in the schema, and the
+canonical spelling survived as an example in a spec document - so the model was
+asked for words it had never been shown and then refused for guessing them. The
+repository's own fixture recommends `front_rebound` / `softer` / `1 click`, which
+the policy rejects because it accepts `soften` and not `softer`: one letter
+between a real recommendation and a withheld one. Add a component or a direction
+in that one file and both sides learn it together. `demoDayPlanAdvice` in
+`components/ai/day-plan-panel.tsx` uses the same vocabulary, because a demo
+showing a plan the policy would refuse advertises a product that does not exist.
+
+**An empty `recommended_changes` list is checked as prose.** `evaluateAdvicePolicy`
+validates component, direction and magnitude by iterating the structured field, so
+when `allowEmptyRecommendations` is on, a model that puts the instruction in
+`summary` instead would walk past every check while the rider reads it. Guarding
+the structured field while the rider reads the prose field is a guard-shaped
+object, not a guard.
+
+Two things bound that check, and both were paid for in false refusals rather than
+reasoned out. It reads **`summary` and nothing else** - `tradeoffs`, `prediction`
+and `personal_evidence` are read as consequences, forecasts and history, and every
+false positive came from scanning them; a warming-day `day_trend` is the shape the
+day-plan prompt asks for, so refusing over it discarded the very answer
+`allowEmptyRecommendations` exists to preserve. And it matches a **delta**, not any
+quantity, and government is the whole test - a change VERB has to reach the
+number, and ORDER is what carries that. It reaches two ways: across anything that
+is not another change verb when the delta preposition names the number
+("increase THE front tire pressure by 1 psi"), or across at most three plain
+words when nothing does ("soften front rebound 1 click"). So "increase front tire
+pressure by 6 psi" is refused, while "your 30 psi cold baseline" is not, and
+neither is "rear hot pressure came up by 2 psi over cold, and ambient will
+increase again today" - there the number comes first, which makes it a report.
+
+**The unit it reads is a clause, not a sentence.** A comma-joined sentence carries
+more than one intent, so a forecast verb in the first clause was governing a
+reported delta in the second and refusing a plan that instructed nothing. The
+summary splits on sentence terminators *and* on a comma followed by a connective;
+a bare "and" deliberately does not split, because "front and rear cold tire
+pressure" is one noun phrase and splitting there stops a real instruction being
+caught at all. **A decimal point is not a boundary** either - a bare `.` in the
+terminator class tore "by 0.5 psi" into "by 0" and "5 psi" and let the most common
+recommendation in this product escape, since the tire-pressure ceiling is 1 psi.
+Both fixes are to the unit of analysis rather than to the pattern, which is what
+closed that class.
+
+The guard is **best-effort by design and closed to further pattern work**. It is
+deliberately incomplete, with two gaps accepted on the record: an instruction
+carrying no numeric delta ("front tyres want another half psi"), and every legal
+camber change, because `degrees` is kept out of the quantity pattern so a
+temperature forecast is not read as a setup change. The prompt contract
+carries that half instead, since `describeComponentVocabulary()` tells the model
+prose instructions are discarded with the whole response. Every widening of this
+pattern has cost a false refusal on a paid route, so a case that escapes is to be
+**recorded rather than chased** with another pattern change; a real recommendation
+belongs in `recommended_changes` where the magnitude ceiling can see it. The refusal copy is day-plan wording, because
+`allowEmptyRecommendations` has exactly one caller and that panel has no question
+box to ask anything in.
+
+**The wire vocabulary is identifiers; what a rider reads is not.** The class is
+any model-supplied identifier reaching a rider-facing render, not one field:
+`formatComponentLabel` and `formatDirectionLabel`
+(`lib/rag/component-vocabulary.ts`) are the one place a `component` and a
+`direction` become display text, so a recommendation reads "Front rebound ·
+Soften" rather than "front_rebound · soften". The model is told to emit `rear_tire_pressure`
+exactly, so formatting at the panel rather than reordering the prompt's alias list
+is deliberate: a rider-facing guarantee must not rest on the model picking the
+prettier synonym. Anything the table does not recognise passes through unchanged,
+which is what keeps pre-vocabulary rows like "Front setup" readable.
+
+Which sites format and which stay raw is the display/wire split, and the helpers'
+own doc comments carry the list, the sweep that produced it, and why `magnitude`,
+`summary`, `reason` and `confidence` are deliberately left raw. It is worth
+reading before adding a render: the helper was added for the two AI panels and the
+outcome picker in `components/sessions/session-outcome-panel.tsx` was found
+separately, afterwards, once `SYSTEM_PROMPT` started making every stored
+`ai_recommendations` row an identifier rather than prose. Both demo fixtures are
+held to the same bar - `tests/unit/demo-advice-vocabulary.test.ts` runs the real
+`evaluateAdvicePolicy` over the objects the panels render.
+
+`/api/ai/day-plan` shipped with none of them, and with a hand-copied UUID pattern
+that had four groups instead of five. It therefore rejected every genuine
+`vehicle_id` and was inert in production for its whole life - the broken regex is
+the only reason an unguarded AI route was never actually exercised. Two rules come
+out of that: **a new AI route composes those modules rather than restating them**,
+and **a route with no test is not known to run at all**. Both AI POST handlers now
+have one (`app/api/ai/*/route.test.ts`); they mock Supabase and the model but leave
+the guards themselves real, so the refusal they assert is the refusal a rider gets.
+
+The two classifiers are not interchangeable. `classifyRaceEngineerQuestion` also
+refuses out-of-domain requests, an arm that reads the free-text question alone;
+`classifyDayPlanRequest` screens only for injection, because a day plan has no
+question - just a track name and two condition strings, which carry no motorsport
+vocabulary and would be refused on every single request. `evaluateAdvicePolicy`
+takes `allowEmptyRecommendations` for the same reason: the day-plan prompt tells
+the model that recommending no change is a valid morning plan, so the default
+"no recommendation is a non-answer" refusal would throw away a correct one.
 
 ## Maintaining this file
 

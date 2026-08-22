@@ -3,7 +3,11 @@
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
+import { RefusalCard } from '@/components/ai/refusal-card';
+import { SafetyBanner } from '@/components/ai/safety-banner';
+import { WatchItems } from '@/components/ai/watch-items';
 import { useTemperatureInput, useTemperatureUnit } from '@/components/ui/temperature-display';
+import { formatComponentLabel, formatDirectionLabel } from '@/lib/rag/component-vocabulary';
 import { classifyRaceEngineerQuestion } from '@/lib/rag/domain-guard';
 import {
   displayTemperatureBound,
@@ -69,32 +73,11 @@ interface ApiSuccessBody {
 
 type ApiResponseBody = ApiErrorBody | ApiSuccessBody;
 
-function SafetyBanner() {
-  return (
-    <div className="rounded-row border border-signal/30 bg-signal/12 px-3 py-2 text-xs text-signal">
-      Informational only. You are responsible for vehicle safety and on-track conduct. Make one change at a time.
-    </div>
-  );
-}
-
-function RefusalCard({ message }: { message: string }) {
-  return (
-    <div className="space-y-3 rounded-row bg-surface-2 p-4">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Couldn&apos;t answer that request</p>
-        <p className="mt-1 text-sm text-ink">{message}</p>
-      </div>
-      <div className="rounded-row bg-surface-3 p-3 text-sm text-ink-dim">
-        <p className="font-medium text-ink">Race Engineer can help with questions like:</p>
-        <ul className="mt-2 list-disc space-y-1 pl-5">
-          <li>Front pushed on entry after I raised pressure 1 psi. What should I try next?</li>
-          <li>Rear overheated after four laps. What is the first thing I should check?</li>
-          <li>I changed rebound and the bike started wallowing. Should I undo that or try another small step?</li>
-        </ul>
-      </div>
-    </div>
-  );
-}
+const REFUSAL_EXAMPLES = [
+  'Front pushed on entry after I raised pressure 1 psi. What should I try next?',
+  'Rear overheated after four laps. What is the first thing I should check?',
+  'I changed rebound and the bike started wallowing. Should I undo that or try another small step?',
+];
 
 function ProUpgradeCard() {
   return (
@@ -111,14 +94,20 @@ function ProUpgradeCard() {
   );
 }
 
-const demoTuningAdvice: AdviceResponse = {
+// Uses the canonical component/direction/magnitude vocabulary from
+// lib/rag/component-vocabulary.ts, because a demo that shows a rider a
+// recommendation the policy layer would refuse is advertising something the
+// product does not do. The rebound half of the original fixture is a thing to
+// watch rather than a second change, so it belongs in prediction.watch_items -
+// the demo's own safety note says to make one change at a time.
+export const demoTuningAdvice: AdviceResponse = {
   summary:
-    'Return front pressure toward the baseline and undo the added rebound before making another geometry change. The worse session changed two front-end variables at once, and the better session recovered feel by moving back toward baseline.',
+    'Return front pressure toward the baseline before undoing the added rebound or making another geometry change. The worse session changed two front-end variables at once, and the better session recovered feel by moving back toward baseline.',
   recommended_changes: [
     {
-      component: 'Front setup',
-      direction: 'Return toward baseline',
-      magnitude: '33 psi hot front and 10-11 clicks rebound out',
+      component: 'front_tire_pressure',
+      direction: 'lower',
+      magnitude: '0.5 psi',
       reason: 'The demo history shows front push after raising pressure and adding rebound, then better turn-in after lowering pressure and softening compression.',
     },
   ],
@@ -137,7 +126,11 @@ const demoTuningAdvice: AdviceResponse = {
   prediction: {
     expected_effect: 'The bike should finish corners more easily and need less bar pressure mid-corner.',
     day_trend: 'If track temperature keeps climbing, watch rear grip separately instead of masking it with front-end changes.',
-    watch_items: ['Front push mid-corner', 'Rear drive after several hot laps'],
+    watch_items: [
+      'Front push mid-corner',
+      'Rear drive after several hot laps',
+      'Front rebound: hold the added clicks until the pressure change has had a session',
+    ],
   },
   personal_evidence: [
     {
@@ -206,8 +199,8 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
           <ul className="mt-2 space-y-3">
             {advice.recommended_changes.map((change, idx) => (
               <li key={`${change.component}-${idx}`} className="rounded-row bg-surface-2 p-3">
-                <p className="text-sm font-medium text-ink">{change.component}</p>
-                <p className="text-sm text-ink-dim">{change.direction} · {change.magnitude}</p>
+                <p className="text-sm font-medium text-ink">{formatComponentLabel(change.component)}</p>
+                <p className="text-sm text-ink-dim">{formatDirectionLabel(change.direction)} · {change.magnitude}</p>
                 <p className="mt-1 text-sm text-ink-dim">{change.reason}</p>
               </li>
             ))}
@@ -435,7 +428,14 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
         <div className="space-y-4">
           <SafetyBanner />
 
-          {isRefusal ? <RefusalCard message={refusal!} /> : null}
+          {isRefusal ? (
+            <RefusalCard
+              title="Couldn't answer that request"
+              message={refusal!}
+              helpTitle="Race Engineer can help with questions like:"
+              examples={REFUSAL_EXAMPLES}
+            />
+          ) : null}
 
           {!isRefusal ? (
             <>
@@ -457,10 +457,10 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
                         className="rounded-row bg-surface-2 p-3"
                       >
                         <p className="text-sm font-medium text-ink">
-                          {change.component}
+                          {formatComponentLabel(change.component)}
                         </p>
                         <p className="text-sm text-ink-dim">
-                          {change.direction} · {change.magnitude}
+                          {formatDirectionLabel(change.direction)} · {change.magnitude}
                         </p>
                         <p className="mt-1 text-sm text-ink-dim">{change.reason}</p>
                       </li>
@@ -486,13 +486,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
                   <div className="mt-2 space-y-2 rounded-row bg-surface-2 p-3 text-sm text-ink-dim">
                     <p>{advice.prediction.expected_effect}</p>
                     <p className="text-ink-dim">{advice.prediction.day_trend}</p>
-                    {advice.prediction.watch_items.length > 0 ? (
-                      <ul className="list-disc space-y-1 pl-5">
-                        {advice.prediction.watch_items.map((item, idx) => (
-                          <li key={idx}>{item}</li>
-                        ))}
-                      </ul>
-                    ) : null}
+                    <WatchItems items={advice.prediction.watch_items} />
                   </div>
                 </div>
               ) : null}

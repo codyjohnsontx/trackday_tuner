@@ -1,19 +1,18 @@
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getRealUser } from '@/lib/auth';
-import {
-  buildPromptFingerprint,
-  buildPromptRedactedPreview,
-} from '@/lib/ai-observability';
 import { assertNotDemoRoute } from '@/lib/demo/mode';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import {
-  getAiRequestFingerprintSecret,
-  getAiRateLimitPerHour,
-  getAiRateLimitPerMinute,
-} from '@/lib/env.server';
+  releaseReservation,
+  updateRequestLog,
+} from '@/lib/rag/ai-request-log';
+import {
+  preflightAiRequest,
+  readAiRequestBody,
+} from '@/lib/rag/ai-request-preflight';
 import { generateTuningAdvice, UpstreamTimeoutError } from '@/lib/rag/advice';
 import {
   createRecommendationSnapshot,
@@ -24,16 +23,15 @@ import {
   classifyRaceEngineerQuestion,
 } from '@/lib/rag/domain-guard';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
-import {
-  TUNING_ADVICE_LIMITS,
-  validateTuningAdviceRequest,
-} from '@/lib/rag/validation';
+import { validateTuningAdviceRequest } from '@/lib/rag/validation';
 import { fetchPreviousSession } from '@/lib/session-previous';
 import { createClient } from '@/lib/supabase/server';
 import type { Json, Session, Vehicle } from '@/types';
 import type { AdviceDataUsed, AdviceResponse } from '@/lib/rag/schema';
 
 export const runtime = 'nodejs';
+
+const LOG_TAG = 'ai/tuning-advice';
 
 interface ApiErrorBody {
   ok: false;
@@ -102,123 +100,6 @@ function validRaceEngineerSessionIds(params: {
   ].filter((value): value is string => Boolean(value)))];
 }
 
-class RateLimitLookupError extends Error {
-  constructor(cause: unknown) {
-    super('Rate limit lookup failed.');
-    this.name = 'RateLimitLookupError';
-    this.cause = cause;
-  }
-}
-
-class ReservationError extends Error {
-  constructor(cause: unknown) {
-    super('Rate limit reservation failed.');
-    this.name = 'ReservationError';
-    this.cause = cause;
-  }
-}
-
-async function reservePendingSlot(params: {
-  userId: string;
-  requestId: string;
-  promptFingerprint: string;
-  promptRedactedPreview: string;
-}): Promise<void> {
-  const admin = createAdminClient();
-  // session_id starts null: the caller has not yet confirmed the referenced
-  // session exists, and ai_requests.session_id has a FK to sessions(id) that
-  // would otherwise reject a bogus reference with 503 instead of 404. The
-  // real session_id is stamped on after the context lookup succeeds.
-  const { error } = await admin.from('ai_requests').insert({
-    user_id: params.userId,
-    session_id: null,
-    request_id: params.requestId,
-    status: 'pending',
-    prompt_fingerprint: params.promptFingerprint,
-    prompt_redacted_preview: params.promptRedactedPreview,
-  });
-  if (error) {
-    console.error('[ai/tuning-advice] reservation insert failed', error);
-    throw new ReservationError(error);
-  }
-}
-
-interface UpdateRequestLogParams {
-  requestId: string;
-  status: string;
-  sessionId?: string | null;
-  model?: string | null;
-  promptTokens?: number | null;
-  completionTokens?: number | null;
-  latencyMs?: number | null;
-  errorMessage?: string | null;
-  refusalReason?: string | null;
-  policyResult?: string | null;
-  policyViolations?: string[];
-  classifierStage?: string | null;
-}
-
-async function updateRequestLog(params: UpdateRequestLogParams): Promise<void> {
-  const patch: Record<string, unknown> = {
-    status: params.status,
-    model: params.model ?? null,
-    prompt_tokens: params.promptTokens ?? null,
-    completion_tokens: params.completionTokens ?? null,
-    latency_ms: params.latencyMs ?? null,
-    error_message: params.errorMessage ?? null,
-  };
-  if (params.refusalReason !== undefined) {
-    patch.refusal_reason = params.refusalReason;
-  }
-  if (params.policyResult !== undefined) {
-    patch.policy_result = params.policyResult;
-  }
-  if (params.policyViolations !== undefined) {
-    patch.policy_violations = params.policyViolations;
-  }
-  if (params.classifierStage !== undefined) {
-    patch.classifier_stage = params.classifierStage;
-  }
-  if (params.sessionId !== undefined) {
-    patch.session_id = params.sessionId;
-  }
-  try {
-    const admin = createAdminClient();
-    const { error } = await admin
-      .from('ai_requests')
-      .update(patch)
-      .eq('request_id', params.requestId);
-    if (error) {
-      console.error(
-        '[ai/tuning-advice] updateRequestLog failed',
-        { requestId: params.requestId, status: params.status },
-        error,
-      );
-    }
-  } catch (thrown) {
-    // Guard against transport-layer exceptions (e.g., fetch timeouts) so
-    // logging never shadows the user-facing response.
-    console.error('[ai/tuning-advice] updateRequestLog threw', thrown);
-  }
-}
-
-async function releaseReservation(requestId: string): Promise<void> {
-  try {
-    const admin = createAdminClient();
-    const { error } = await admin
-      .from('ai_requests')
-      .delete()
-      .eq('request_id', requestId);
-    if (error) {
-      console.error('[ai/tuning-advice] releaseReservation failed', { requestId }, error);
-    }
-  } catch (thrown) {
-    // Best effort: the row will age out of the rate-limit window even if
-    // this fails, but we still want to observe the failure.
-    console.error('[ai/tuning-advice] releaseReservation threw', thrown);
-  }
-}
-
 async function persistRecommendation(params: {
   userId: string;
   requestId: string;
@@ -271,44 +152,6 @@ async function persistRecommendation(params: {
     });
     return null;
   }
-}
-
-async function countRequestsSince(
-  userId: string,
-  sinceMs: number,
-): Promise<number> {
-  const admin = createAdminClient();
-  const sinceIso = new Date(Date.now() - sinceMs).toISOString();
-  const { count, error } = await admin
-    .from('ai_requests')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .gte('created_at', sinceIso);
-  if (error) {
-    console.error('[ai/tuning-advice] rate limit count failed', error);
-    throw new RateLimitLookupError(error);
-  }
-  return count ?? 0;
-}
-
-async function countRequestsByStatusesSince(
-  userId: string,
-  statuses: string[],
-  sinceMs: number,
-): Promise<number> {
-  const admin = createAdminClient();
-  const sinceIso = new Date(Date.now() - sinceMs).toISOString();
-  const { count, error } = await admin
-    .from('ai_requests')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .in('status', statuses)
-    .gte('created_at', sinceIso);
-  if (error) {
-    console.error('[ai/tuning-advice] refusal throttle count failed', error);
-    throw new RateLimitLookupError(error);
-  }
-  return count ?? 0;
 }
 
 async function findRecentDuplicateRequest(params: {
@@ -366,29 +209,12 @@ export async function POST(request: Request) {
   const demoResponse = await assertNotDemoRoute();
   if (demoResponse) return demoResponse;
 
-  const contentLength = request.headers.get('content-length');
-  if (contentLength && Number(contentLength) > TUNING_ADVICE_LIMITS.MAX_BODY_BYTES) {
-    return errorResponse(413, 'Request body is too large.', requestId);
+  const body = await readAiRequestBody(request);
+  if (!body.ok) {
+    return errorResponse(body.failure.status, body.failure.error, requestId, body.failure.headers);
   }
 
-  let raw: string;
-  try {
-    raw = await request.text();
-  } catch {
-    return errorResponse(400, 'Unable to read request body.', requestId);
-  }
-  if (Buffer.byteLength(raw, 'utf8') > TUNING_ADVICE_LIMITS.MAX_BODY_BYTES) {
-    return errorResponse(413, 'Request body is too large.', requestId);
-  }
-
-  let parsedJson: unknown;
-  try {
-    parsedJson = raw.length === 0 ? {} : JSON.parse(raw);
-  } catch {
-    return errorResponse(400, 'Request body must be valid JSON.', requestId);
-  }
-
-  const validated = validateTuningAdviceRequest(parsedJson);
+  const validated = validateTuningAdviceRequest(body.value);
   if (!validated.ok) {
     return errorResponse(400, validated.error, requestId);
   }
@@ -407,97 +233,23 @@ export async function POST(request: Request) {
     );
   }
 
-  const perHour = getAiRateLimitPerHour();
-  const perMinute = getAiRateLimitPerMinute();
-  const promptFingerprint = buildPromptFingerprint({
+  const preflight = await preflightAiRequest({
+    logTag: LOG_TAG,
+    userId: user.id,
+    requestId,
     question: validated.data.question,
     symptoms: validated.data.symptoms,
-    changeIntent: validated.data.change_intent,
-    secret: getAiRequestFingerprintSecret(),
+    changeIntent: validated.data.change_intent ?? null,
   });
-  const promptRedactedPreview = buildPromptRedactedPreview(validated.data.question);
-
-  try {
-    const [recentPromptInjectionRefusals, recentScopeRefusals] = await Promise.all([
-      countRequestsByStatusesSince(user.id, ['completed_refusal_prompt_injection'], 10 * 60 * 1000),
-      countRequestsByStatusesSince(
-        user.id,
-        ['completed_refusal_out_of_domain', 'completed_refusal_prompt_injection'],
-        10 * 60 * 1000,
-      ),
-    ]);
-
-    if (recentPromptInjectionRefusals >= 3 || recentScopeRefusals >= 8) {
-      return errorResponse(
-        429,
-        'Too many refused Race Engineer requests in a short window. Wait a few minutes before trying again.',
-        requestId,
-        { 'retry-after': '600' },
-      );
-    }
-  } catch {
-    // Refusal-rate throttling is a secondary safeguard. If it cannot be
-    // evaluated, continue with the primary request path rather than failing
-    // closed on an observability-only dependency.
-  }
-
-  // Atomically reserve a slot BEFORE counting. Every concurrent request will
-  // see every other request's pending row, which closes the TOCTOU gap between
-  // a bare count and the subsequent insert.
-  try {
-    await reservePendingSlot({
-      userId: user.id,
-      requestId,
-      promptFingerprint,
-      promptRedactedPreview,
-    });
-  } catch {
+  if (!preflight.ok) {
     return errorResponse(
-      503,
-      'Rate limit reservation is temporarily unavailable. Please try again shortly.',
+      preflight.failure.status,
+      preflight.failure.error,
       requestId,
-      { 'retry-after': '30' },
+      preflight.failure.headers,
     );
   }
-
-  let hourCount: number;
-  let minuteCount: number;
-  try {
-    [hourCount, minuteCount] = await Promise.all([
-      countRequestsSince(user.id, 60 * 60 * 1000),
-      countRequestsSince(user.id, 60 * 1000),
-    ]);
-  } catch (err) {
-    await updateRequestLog({
-      requestId,
-      status: 'rate_limit_lookup_error',
-      errorMessage: err instanceof Error ? err.message : String(err),
-    });
-    return errorResponse(
-      503,
-      'Rate limit check is temporarily unavailable. Please try again shortly.',
-      requestId,
-      { 'retry-after': '30' },
-    );
-  }
-  if (hourCount > perHour) {
-    await updateRequestLog({ requestId, status: 'rate_limited_hour' });
-    return errorResponse(
-      429,
-      `Rate limit exceeded: max ${perHour} requests/hour.`,
-      requestId,
-      { 'retry-after': '3600' },
-    );
-  }
-  if (minuteCount > perMinute) {
-    await updateRequestLog({ requestId, status: 'rate_limited_minute' });
-    return errorResponse(
-      429,
-      `Rate limit exceeded: max ${perMinute} requests/minute.`,
-      requestId,
-      { 'retry-after': '60' },
-    );
-  }
+  const promptFingerprint = preflight.promptFingerprint;
 
   const supabase = await createClient();
   const [sessionResult, vehicleResult] = await Promise.all([
@@ -530,6 +282,7 @@ export async function POST(request: Request) {
         ? sessionError.message
         : vehicleError?.message ?? 'Context lookup failed.';
     await updateRequestLog({
+      logTag: LOG_TAG,
       requestId,
       status: 'context_lookup_error',
       errorMessage: message,
@@ -548,14 +301,14 @@ export async function POST(request: Request) {
   if (!session || !vehicle) {
     // A malformed request that references someone else's rows is cheap and
     // should not consume the caller's rate-limit budget; release the slot.
-    await releaseReservation(requestId);
+    await releaseReservation(LOG_TAG, requestId);
     return errorResponse(404, 'Session or vehicle not found.', requestId);
   }
 
   if (session.vehicle_id !== vehicle.id) {
     // A bad cross-reference from the client: free the reservation so it
     // doesn't burn the caller's rate-limit budget, mirroring the 404 path.
-    await releaseReservation(requestId);
+    await releaseReservation(LOG_TAG, requestId);
     return errorResponse(
       400,
       'Session does not belong to the provided vehicle.',
@@ -583,6 +336,7 @@ export async function POST(request: Request) {
     });
 
     await updateRequestLog({
+      logTag: LOG_TAG,
       requestId,
       sessionId: session.id,
       status: 'duplicate_recent_request',
@@ -624,6 +378,7 @@ export async function POST(request: Request) {
     });
 
     await updateRequestLog({
+      logTag: LOG_TAG,
       requestId,
       sessionId: session.id,
       status: `completed_refusal_${refusalReason}`,
@@ -690,6 +445,7 @@ export async function POST(request: Request) {
     });
 
     await updateRequestLog({
+      logTag: LOG_TAG,
       requestId,
       sessionId: session.id,
       status: advice.refusal
@@ -725,6 +481,7 @@ export async function POST(request: Request) {
     const message = err instanceof Error ? err.message : 'Unknown error.';
     const isRetriable = err instanceof UpstreamTimeoutError;
     await updateRequestLog({
+      logTag: LOG_TAG,
       requestId,
       sessionId: session.id,
       status: isRetriable ? 'upstream_timeout' : 'error',

@@ -22,7 +22,15 @@ const MAX_SYMPTOMS = 8;
 const MAX_SYMPTOM_LENGTH = 64;
 const MAX_CHANGE_INTENT_LENGTH = 128;
 
-const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+// The one definition of "looks like a UUID" for every AI route. It was copied
+// by hand into app/api/ai/day-plan/route.ts once and came back a group short
+// (8-4-4-12), which rejected every genuine vehicle id the picker could send.
+const UUID_PATTERN =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+export function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID_PATTERN.test(value);
+}
 
 export type ValidationResult =
   | { ok: true; data: TuningAdviceRequest }
@@ -42,10 +50,10 @@ export function validateTuningAdviceRequest(input: unknown): ValidationResult {
 
   const { vehicle_id, session_id, question } = record;
 
-  if (typeof vehicle_id !== 'string' || !UUID_PATTERN.test(vehicle_id)) {
+  if (!isUuid(vehicle_id)) {
     return { ok: false, error: 'vehicle_id must be a UUID.' };
   }
-  if (typeof session_id !== 'string' || !UUID_PATTERN.test(session_id)) {
+  if (!isUuid(session_id)) {
     return { ok: false, error: 'session_id must be a UUID.' };
   }
   if (typeof question !== 'string') {
@@ -130,11 +138,15 @@ export function validateTuningAdviceRequest(input: unknown): ValidationResult {
   };
 }
 
+// Shared by every AI route so one number caps what a rider can post at the
+// model, whichever entry point they use.
+export const AI_REQUEST_MAX_BODY_BYTES = 20 * 1024;
+
 export const TUNING_ADVICE_LIMITS = {
   MAX_QUESTION_LENGTH,
   MIN_QUESTION_LENGTH,
   MAX_SYMPTOMS,
   MAX_SYMPTOM_LENGTH,
   MAX_CHANGE_INTENT_LENGTH,
-  MAX_BODY_BYTES: 20 * 1024,
+  MAX_BODY_BYTES: AI_REQUEST_MAX_BODY_BYTES,
 } as const;

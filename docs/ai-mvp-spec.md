@@ -16,6 +16,8 @@ Ship a post-session AI copilot that gives conservative, explainable setup sugges
   - Autonomous setup changes.
   - Public unauthenticated usage.
 
+`POST /api/ai/day-plan` is also live; its request contract is `validateDayPlanRequest` (`app/api/ai/day-plan/route.ts`) and its response contract is the shared `AdviceResponse` (`lib/rag/schema.ts`).
+
 ## Input Schema
 
 `POST /api/ai/tuning-advice` request body:
@@ -86,6 +88,16 @@ Response shape:
 }
 ```
 
+The JSON above is an abbreviated example, not the contract. `AdviceResponse` in
+`lib/rag/schema.ts` owns the shape - it also carries `prediction`,
+`personal_evidence` and `data_used` - and `lib/rag/component-vocabulary.ts` owns
+the vocabulary: which `component` and `direction` strings are legal, and the
+magnitude ceiling for each. `describeComponentVocabulary()` renders that same
+table into the system prompt, so what the model is told and what
+`evaluateAdvicePolicy` enforces cannot disagree. Read the list there rather than
+copying it here; a recommendation that does not match it is discarded before the
+rider sees it.
+
 ## Safety + Policy Requirements
 
 - Always include informational-use disclaimer.
@@ -93,12 +105,21 @@ Response shape:
 - Keep adjustments small and incremental.
 - Suggest one primary change first, then optional secondary checks.
 - Refuse when context is insufficient or question is out-of-domain.
+- Screen every rider-authored field a request submits for prompt injection, not
+  the question alone: `symptoms` and `change_intent` are printed into the prompt
+  too (`lib/rag/domain-guard.ts`).
 
 ## Rate Limiting + Abuse Controls
 
-- Per-user limit: 20 requests/hour (initial).
-- Burst limit: 3 requests/minute.
-- Reject oversized payloads (>20 KB).
+These limits are a shared per-rider budget spanning `POST /api/ai/tuning-advice`
+and `POST /api/ai/day-plan`. The request limits are counted per rider rather than
+per route from `lib/rag/ai-request-log.ts`, so a rider's day plans and tuning
+questions draw on the same allowance and each is visible to the other's count;
+both routes check the same body-size ceiling. The numbers live in code, not here:
+
+- Per-rider hourly limit: `getAiRateLimitPerHour` (`lib/env.server.ts`).
+- Per-rider burst limit: `getAiRateLimitPerMinute` (`lib/env.server.ts`).
+- Reject oversized payloads: `AI_REQUEST_MAX_BODY_BYTES` (`lib/rag/validation.ts`).
 - Add request tracing id for observability and abuse investigation.
 
 ## MVP Quality Rubric

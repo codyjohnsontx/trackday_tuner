@@ -7,11 +7,33 @@ import { assertNotDemoRoute } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
 import { generateDayPlan, UpstreamTimeoutError } from '@/lib/rag/advice';
 import {
+  recordRefusedRequest,
+  releaseReservation,
+  updateRequestLog,
+  STORED_TEXT_INJECTION_REFUSAL_REASON,
+  STORED_TEXT_INJECTION_REFUSAL_STATUS,
+} from '@/lib/rag/ai-request-log';
+import {
+  buildAiPromptIdentity,
+  checkAiRefusalThrottle,
+  readAiRequestBody,
+  reserveAiRequestSlot,
+} from '@/lib/rag/ai-request-preflight';
+import {
+  buildRefusalAdvice,
+  classifyDayPlanRequest,
+  classifyStoredRiderText,
+} from '@/lib/rag/domain-guard';
+import { collectDayPlanRiderText } from '@/lib/rag/prompt';
+import { evaluateAdvicePolicy } from '@/lib/rag/policy';
+import { isUuid } from '@/lib/rag/validation';
+import {
   buildDayTrend,
   hasManualSessionData,
   selectSimilarSessions,
   type RaceEngineerContext,
 } from '@/lib/rag/race-engineer-context';
+import type { AdviceDataUsed } from '@/lib/rag/schema';
 import type {
   CreateSessionEnvironmentInput,
   RaceEngineerMemory,
@@ -23,7 +45,7 @@ import type {
 
 export const runtime = 'nodejs';
 
-const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const LOG_TAG = 'ai/day-plan';
 
 interface DayPlanRequest {
   vehicle_id: string;
@@ -45,10 +67,15 @@ type NumberValidationResult =
   | { ok: true; value: number }
   | { ok: false; error: string };
 
-function errorResponse(status: number, error: string, requestId: string) {
+function errorResponse(
+  status: number,
+  error: string,
+  requestId: string,
+  extraHeaders: Record<string, string> = {},
+) {
   return NextResponse.json(
     { ok: false, error, request_id: requestId },
-    { status, headers: { 'x-request-id': requestId } },
+    { status, headers: { 'x-request-id': requestId, ...extraHeaders } },
   );
 }
 
@@ -89,7 +116,7 @@ function validateDayPlanRequest(input: unknown): ValidationResult {
     if (!allowed.has(key)) return { ok: false, error: `Unknown field: ${key}.` };
   }
 
-  if (typeof record.vehicle_id !== 'string' || !UUID_PATTERN.test(record.vehicle_id)) {
+  if (!isUuid(record.vehicle_id)) {
     return { ok: false, error: 'vehicle_id must be a UUID.' };
   }
 
@@ -392,17 +419,31 @@ async function loadPreferredMemory(params: {
   return (data?.[0] ?? null) as RaceEngineerMemory | null;
 }
 
+/**
+ * What the model was actually given, for a request that never got as far as
+ * generating anything. A day plan reports no manual session data because there
+ * is no logged session behind it - only the conditions the rider typed in.
+ */
+function refusalDataUsed(hasEnvironment: boolean): AdviceDataUsed {
+  return {
+    manual: false,
+    weather: hasEnvironment,
+    history: false,
+    feedback: false,
+    lap_data: false,
+    telemetry: false,
+  };
+}
+
 export async function POST(request: Request) {
   const requestId = randomUUID();
 
   const demoResponse = await assertNotDemoRoute();
   if (demoResponse) return demoResponse;
 
-  let parsedJson: unknown;
-  try {
-    parsedJson = await request.json();
-  } catch {
-    return errorResponse(400, 'Request body must be valid JSON.', requestId);
+  const body = await readAiRequestBody(request);
+  if (!body.ok) {
+    return errorResponse(body.failure.status, body.failure.error, requestId, body.failure.headers);
   }
 
   const user = await getRealUser();
@@ -415,9 +456,109 @@ export async function POST(request: Request) {
     return errorResponse(402, 'Race Engineer is a Pro feature. Upgrade to continue.', requestId);
   }
 
-  const validated = validateDayPlanRequest(parsedJson);
+  const validated = validateDayPlanRequest(body.value);
   if (!validated.ok) {
     return errorResponse(400, validated.error, requestId);
+  }
+
+  const computedTargetDate = validated.data.target_date ?? todayIso(validated.data.time_zone);
+  const environment: CreateSessionEnvironmentInput = {
+    ambient_temperature_c: validated.data.ambient_temperature_c ?? null,
+    track_temperature_c: validated.data.track_temperature_c ?? null,
+    humidity_percent: validated.data.humidity_percent ?? null,
+    weather_condition: validated.data.weather_condition ?? null,
+    surface_condition: validated.data.surface_condition ?? null,
+    source: 'manual',
+  };
+  // hasEnvironment intentionally ignores the default source value 'manual' so the
+  // environment object only counts as present when it contains meaningful runtime input.
+  const hasEnvironment = Object.values(environment).some((value) => {
+    if (typeof value === 'number') return Number.isFinite(value);
+    return typeof value === 'string' && value.trim() !== '' && value !== 'manual';
+  });
+
+  // The day plan carries no free-text question, so the audited prompt subject is
+  // the request itself: the day being planned plus whatever the rider typed
+  // about the track and conditions.
+  const riderText = [
+    validated.data.track_name ?? '',
+    validated.data.weather_condition ?? '',
+    validated.data.surface_condition ?? '',
+  ]
+    .filter((part) => part.trim().length > 0)
+    .join(' | ');
+  const promptSubject = [`day-plan ${computedTargetDate}`, riderText]
+    .filter((part) => part.trim().length > 0)
+    .join(' | ');
+
+  // The refusal throttle runs before the screen below, not after it. Screening
+  // first means a refusal returns before the reservation, which is what keeps a
+  // probe cheap - but it also meant nothing counted the probe itself, so a rider
+  // could loop injection variants at this route forever while their refusals
+  // only ever throttled tuning-advice. Throttle, then screen, then reserve.
+  const throttle = await checkAiRefusalThrottle({ logTag: LOG_TAG, userId: user.id });
+  if (!throttle.ok) {
+    return errorResponse(
+      throttle.failure.status,
+      throttle.failure.error,
+      requestId,
+      throttle.failure.headers,
+    );
+  }
+
+  // Screen one: the fields this request submitted. It needs no database state,
+  // so it runs before the reservation and before the vehicle lookup - a request
+  // carrying an injection string should not cost a slot or a query, and it must
+  // be recorded even when it also names a vehicle the rider does not own, or the
+  // 404 would hide the attempt from the refusal throttle.
+  const submittedAssessment = classifyDayPlanRequest({
+    trackName: validated.data.track_name,
+    weatherCondition: validated.data.weather_condition,
+    surfaceCondition: validated.data.surface_condition,
+  });
+
+  if (submittedAssessment.decision === 'refuse') {
+    const refusalReason = submittedAssessment.reason ?? 'out_of_domain';
+    await recordRefusedRequest({
+      logTag: LOG_TAG,
+      userId: user.id,
+      requestId,
+      status: `completed_refusal_${refusalReason}`,
+      refusalReason,
+      classifierStage: 'preflight',
+      ...buildAiPromptIdentity({ question: promptSubject }),
+    });
+
+    return NextResponse.json(
+      {
+        ok: true,
+        request_id: requestId,
+        advice: buildRefusalAdvice({
+          reason: refusalReason,
+          message: submittedAssessment.message ?? 'This request is outside trackday setup scope.',
+          dataUsed: refusalDataUsed(hasEnvironment),
+        }),
+        retrieved: [],
+      },
+      { status: 200, headers: { 'x-request-id': requestId } },
+    );
+  }
+
+  const preflight = await reserveAiRequestSlot({
+    logTag: LOG_TAG,
+    userId: user.id,
+    requestId,
+    question: promptSubject,
+    symptoms: [],
+    changeIntent: null,
+  });
+  if (!preflight.ok) {
+    return errorResponse(
+      preflight.failure.status,
+      preflight.failure.error,
+      requestId,
+      preflight.failure.headers,
+    );
   }
 
   const supabase = await createClient();
@@ -429,6 +570,9 @@ export async function POST(request: Request) {
     .single();
 
   if (vehicleError || !vehicleRow) {
+    // A request naming someone else's vehicle is cheap and should not consume
+    // the caller's rate-limit budget; release the slot, as tuning-advice does.
+    await releaseReservation(LOG_TAG, requestId);
     return errorResponse(404, 'Vehicle not found.', requestId);
   }
 
@@ -497,50 +641,137 @@ export async function POST(request: Request) {
     });
   }
   if (sessionsResult.error || feedbackResult.error || environmentsResult.error) {
+    await updateRequestLog({
+      logTag: LOG_TAG,
+      requestId,
+      status: 'context_lookup_error',
+      errorMessage:
+        sessionsResult.error?.message ??
+        feedbackResult.error?.message ??
+        environmentsResult.error?.message ??
+        'Planning history lookup failed.',
+    });
     return errorResponse(500, 'Unable to load planning history right now.', requestId);
   }
   const recentEnvironments = (environmentsResult.data ?? []) as SessionEnvironment[];
   const feedback = (feedbackResult.data ?? []) as SessionFeedback[];
-  const environment: CreateSessionEnvironmentInput = {
-    ambient_temperature_c: validated.data.ambient_temperature_c ?? null,
-    track_temperature_c: validated.data.track_temperature_c ?? null,
-    humidity_percent: validated.data.humidity_percent ?? null,
-    weather_condition: validated.data.weather_condition ?? null,
-    surface_condition: validated.data.surface_condition ?? null,
-    source: 'manual',
-  };
-  // hasEnvironment intentionally ignores the default source value 'manual' so the
-  // environment object only counts as present when it contains meaningful runtime input.
-  const hasEnvironment = Object.values(environment).some((value) => {
-    if (typeof value === 'number') return Number.isFinite(value);
-    return typeof value === 'string' && value.trim() !== '' && value !== 'manual';
-  });
-  const computedTargetDate = validated.data.target_date ?? todayIso(validated.data.time_zone);
 
+  // Everything from here reads the stored session JSON, which is `jsonb not
+  // null` but shape-unconstrained - `createSession` inserts the tyre and
+  // suspension blobs verbatim - so a row missing a branch throws on an ordinary
+  // field read. It all sits inside the one error boundary for that reason: a
+  // throw out here would leave the slot this request already reserved stranded
+  // at `pending`, still counting against the rider's budget for the whole
+  // window, and answer them with an unshaped 500 carrying no request id.
   try {
+    const raceEngineerContext = buildContext({
+      userId: user.id,
+      targetDate: computedTargetDate,
+      trackName: validated.data.track_name,
+      recentSessions,
+      recentEnvironments,
+      environment: hasEnvironment ? environment : null,
+      memory,
+      feedback,
+    });
+
+    // Screen two: rider text this request did not submit but the prompt still
+    // interpolates. It has to run after the read, which is exactly why screen
+    // one cannot cover it. The fields come from `collectDayPlanRiderText`,
+    // which is built from the same input the prompt builder takes, so the
+    // screen cannot cover less than the prompt hands over.
+    const storedAssessment = classifyStoredRiderText({
+      fields: collectDayPlanRiderText({
+        vehicle,
+        targetDate: computedTargetDate,
+        trackName: validated.data.track_name,
+        environment: hasEnvironment ? environment : null,
+        recentSessions,
+        raceEngineerContext,
+      }),
+    });
+
+    if (storedAssessment.decision === 'refuse') {
+      // Audited under its own status, which the refusal throttle does not
+      // count: stored text refuses deterministically, so counting it would lock
+      // the rider out of every AI route for a note they wrote weeks ago.
+      await updateRequestLog({
+        logTag: LOG_TAG,
+        requestId,
+        status: STORED_TEXT_INJECTION_REFUSAL_STATUS,
+        refusalReason: STORED_TEXT_INJECTION_REFUSAL_REASON,
+        policyResult: 'force_refusal',
+        policyViolations: [],
+        classifierStage: 'stored_rider_text',
+      });
+
+      return NextResponse.json(
+        {
+          ok: true,
+          request_id: requestId,
+          advice: buildRefusalAdvice({
+            reason: 'prompt_injection',
+            message:
+              storedAssessment.message ??
+              'I could not build a plan from your saved setup data. Check your saved vehicle and session notes for wording that reads as an instruction.',
+            dataUsed: refusalDataUsed(hasEnvironment),
+          }),
+          retrieved: [],
+        },
+        { status: 200, headers: { 'x-request-id': requestId } },
+      );
+    }
+
     const result = await generateDayPlan({
       vehicle,
       targetDate: computedTargetDate,
       trackName: validated.data.track_name,
       environment: hasEnvironment ? environment : null,
       recentSessions,
-      raceEngineerContext: buildContext({
-        userId: user.id,
-        targetDate: computedTargetDate,
-        trackName: validated.data.track_name,
-        recentSessions,
-        recentEnvironments,
-        environment: hasEnvironment ? environment : null,
-        memory,
-        feedback,
-      }),
+      raceEngineerContext,
+    });
+
+    // Only real, persisted sessions ground personal evidence. The planning
+    // session buildContext synthesises is not one of them, so its id is
+    // deliberately absent here: a plan citing it would be citing itself.
+    const policyResult = evaluateAdvicePolicy({
+      advice: result.advice,
+      fallbackDataUsed: raceEngineerContext.dataUsed,
+      validSessionIds: [
+        ...recentSessionIds,
+        ...feedback.map((entry) => entry.session_id),
+      ].filter((value): value is string => Boolean(value)),
+      // A morning plan whose right answer is "run your baseline and check hot
+      // pressures" recommends no change, and the day-plan prompt says so
+      // explicitly. Every other policy check still applies, including the
+      // prose check that keeps this path from becoming a way past them.
+      allowEmptyRecommendations: true,
+    });
+    const advice = policyResult.advice;
+
+    await updateRequestLog({
+      logTag: LOG_TAG,
+      requestId,
+      status: advice.refusal
+        ? `completed_refusal_${policyResult.violations[0] ?? 'no_safe_answer'}`
+        : policyResult.decision === 'downgrade_confidence'
+          ? 'ok_confidence_downgraded'
+          : 'ok',
+      model: result.model,
+      promptTokens: result.usage.prompt_tokens,
+      completionTokens: result.usage.completion_tokens,
+      latencyMs: result.latencyMs,
+      refusalReason: advice.refusal ? (policyResult.violations[0] ?? 'no_safe_answer') : null,
+      policyResult: policyResult.decision,
+      policyViolations: policyResult.violations,
+      classifierStage: 'post_policy',
     });
 
     return NextResponse.json(
       {
         ok: true,
         request_id: requestId,
-        advice: result.advice,
+        advice,
         retrieved: result.retrieved.map(({ chunk, score }) => ({
           source: chunk.source,
           heading: chunk.heading,
@@ -550,8 +781,21 @@ export async function POST(request: Request) {
       { status: 200, headers: { 'x-request-id': requestId } },
     );
   } catch (err) {
-    if (err instanceof UpstreamTimeoutError) {
-      return errorResponse(504, 'The day-plan service timed out. Please retry.', requestId);
+    const message = err instanceof Error ? err.message : 'Unknown error.';
+    const isRetriable = err instanceof UpstreamTimeoutError;
+    await updateRequestLog({
+      logTag: LOG_TAG,
+      requestId,
+      status: isRetriable ? 'upstream_timeout' : 'error',
+      errorMessage: message,
+    });
+    if (isRetriable) {
+      return errorResponse(
+        504,
+        'The day-plan service timed out. Please retry.',
+        requestId,
+        { 'retry-after': '5' },
+      );
     }
     console.error('[ai/day-plan]', err);
     return errorResponse(500, 'Unable to generate a day plan right now.', requestId);
