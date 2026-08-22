@@ -601,8 +601,23 @@ The accepted cost is a refusal on that paraphrase, which is the fail-safe
 direction. Nothing stored is re-checked, so no existing `ai_recommendations` row
 changes how it reads. The remaining containment matcher in that file is
 `magnitudeAllowed`, and it is a different class: a magnitude is inherently a
-phrase, and `parseRangeMax` takes the largest absolute number present, so padding
-one can only tighten the ceiling.
+phrase, so there is no closed set to compare against.
+
+**Containment holds there for padding and not for sign, and that is a known
+accepted gap.** `parseRangeMax` takes the largest number present, so extra prose
+can only raise the figure checked against the ceiling and can only tighten it -
+but it takes that number through `Math.abs`, so a negative magnitude clears the
+ceiling today. `{component: front_rebound, direction: soften, magnitude: '-1
+click'}` passes both guards, is persisted, and reaches the rider rendered raw as
+`Soften · -1 click`, because the display/wire split deliberately leaves
+`magnitude` unformatted. It is recorded rather than fixed because the earlier
+claim here ("padding one can only tighten the ceiling") talked the gap away, and
+a false justification is worse than an undocumented gap: the gap is merely
+unknown, while the justification actively stops the next reader ever opening
+`parseRangeMax`. A comment that defends a bug outlives the code. Pre-existing,
+out of scope for the equality change, tracked as
+tt-negative-magnitude-passes-ceiling; the earliest shared boundary for closing it
+is `parseRangeMax` / `magnitudeAllowed`, not a render site.
 
 **An empty `recommended_changes` list is checked as prose.** `evaluateAdvicePolicy`
 validates component, direction and magnitude by iterating the structured field, so

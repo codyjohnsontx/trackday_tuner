@@ -176,9 +176,29 @@ function directionKey(value: string): string {
  *
  * `magnitudeAllowed` below still matches its unit by containment, and that is
  * NOT the same class: a magnitude is inherently a phrase (`0.5 psi`), so there
- * is no closed set to compare against, and `parseRangeMax` takes the LARGEST
- * absolute number in the string, so padding one with prose can only make the
- * ceiling stricter. `findComponentPolicy` was already exact.
+ * is no closed set to compare against. Containment holds there for PADDING and
+ * NOT for SIGN, and the difference is a KNOWN ACCEPTED GAP rather than a
+ * property of the matcher. `parseRangeMax` takes the LARGEST number in the
+ * string, so extra prose can only raise the figure the ceiling is checked
+ * against and can only make it stricter. But it takes that number through
+ * `Math.abs`, so a NEGATIVE magnitude clears the ceiling today:
+ * `{component: 'front_rebound', direction: 'soften', magnitude: '-1 click'}`
+ * passes both guards, is persisted, and reaches the rider rendered raw beside
+ * the now-guaranteed-canonical direction as `Soften · -1 click`, because the
+ * display/wire split deliberately leaves `magnitude` unformatted. That is the
+ * same shape this guard just closed on the sibling field - a checked
+ * recommendation whose rendered text no longer means what the vocabulary
+ * verified.
+ *
+ * The correction is recorded here rather than fixed here because that earlier
+ * sentence claimed the gap away, and a false justification is worse than an
+ * undocumented gap: the gap is merely unknown, while the justification actively
+ * talks the next reader out of ever opening `parseRangeMax`. A comment that
+ * defends a bug outlives the code. The gap is pre-existing and out of scope for
+ * this change, and is tracked as tt-negative-magnitude-passes-ceiling; the
+ * earliest shared boundary for closing it is `parseRangeMax` /
+ * `magnitudeAllowed`, not a render site. `findComponentPolicy` was already
+ * exact.
  *
  * Nothing already stored is re-checked here - `ai_recommendations` rows are read
  * back through `formatDirectionLabel`, which passes an unrecognised value
