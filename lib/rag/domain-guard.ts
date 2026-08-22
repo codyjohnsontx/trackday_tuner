@@ -1,4 +1,4 @@
-import { DISCLAIMER_NOTE, ONE_CHANGE_NOTE } from '@/lib/rag/prompt';
+import { DISCLAIMER_NOTE, ONE_CHANGE_NOTE, type RiderTextField } from '@/lib/rag/prompt';
 import type { AdviceDataUsed, AdviceResponse } from '@/lib/rag/schema';
 
 export type RaceEngineerRefusalReason =
@@ -25,7 +25,15 @@ interface ClassifyDayPlanRequestInput {
 }
 
 interface ClassifyStoredRiderTextInput {
-  values: Array<string | null | undefined>;
+  fields: RiderTextField[];
+}
+
+export interface StoredRiderTextAssessment {
+  decision: 'allow' | 'refuse';
+  reason: 'prompt_injection' | null;
+  message: string | null;
+  /** Which field matched, so the refusal can name it. Never the text itself. */
+  field: string | null;
 }
 
 interface BuildRefusalAdviceInput {
@@ -39,17 +47,30 @@ interface NormalizeAdviceResponseInput {
   fallbackDataUsed: AdviceDataUsed;
 }
 
-const PROMPT_INJECTION_PATTERNS = [
+/**
+ * The unambiguous half of the screen: phrases that address the assistant and
+ * have no ordinary reading in a rider's description of their own vehicle.
+ *
+ * Stored text is screened against this set alone. `/\bact as\b/i` is not in it
+ * because "the instructor said to act as if the apex is later" is an ordinary
+ * session note, and the cost of a false positive is asymmetric: text the rider
+ * just typed can be edited in the same breath, while stored text refuses every
+ * request deterministically until the rider works out which of their saved
+ * fields is to blame.
+ */
+const STORED_TEXT_INJECTION_PATTERNS = [
   /\bignore (?:all |any |the )?(?:previous|prior|earlier) instructions\b/i,
   /\breveal (?:your|the) (?:system prompt|prompt|developer message)\b/i,
   /\bshow (?:your|the) (?:system prompt|prompt|hidden instructions)\b/i,
   /\byou are now\b/i,
-  /\bact as\b/i,
   /\broleplay as\b/i,
   /\bjailbreak\b/i,
   /\bdeveloper message\b/i,
   /\bsystem prompt\b/i,
 ];
+
+// Text the request just submitted gets the full set, loose patterns included.
+const PROMPT_INJECTION_PATTERNS = [...STORED_TEXT_INJECTION_PATTERNS, /\bact as\b/i];
 
 const NON_DOMAIN_PATTERNS = [
   /\brecipe\b/i,
@@ -293,22 +314,33 @@ export function normalizeAdviceResponse(
  *
  * This necessarily runs after the database read, so it cannot replace the
  * screen on submitted fields - it is the second half of the same guard.
+ *
+ * It differs from that first screen twice over, and both differences are about
+ * the rider rather than the attacker. It uses the narrower pattern set above,
+ * and it reports which field matched so the refusal can name it: the rider
+ * submitted nothing, so "ask a setup question instead" is advice they cannot
+ * act on, and a stored phrase refuses every attempt until it is edited.
+ *
+ * Each value is screened on its own rather than joined, so a phrase cannot be
+ * assembled across the seam between two unrelated fields.
  */
 export function classifyStoredRiderText(
   input: ClassifyStoredRiderTextInput,
-): RaceEngineerQuestionAssessment {
-  const storedText = input.values
-    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    .join(' ')
-    .trim();
-
-  if (storedText && hasPromptInjectionSignal(storedText)) {
+): StoredRiderTextAssessment {
+  for (const field of input.fields) {
+    const value = typeof field.value === 'string' ? field.value.trim() : '';
+    if (!value) continue;
+    if (countMatches(value, STORED_TEXT_INJECTION_PATTERNS) === 0) continue;
     return {
       decision: 'refuse',
       reason: 'prompt_injection',
-      message: PROMPT_INJECTION_MESSAGE,
+      // Names the field, never the text: echoing it back would put the phrase
+      // on screen and hand an attacker a reflection of their own payload.
+      message:
+        `I could not build a plan from your saved setup data. The wording in ${field.label} reads as an instruction to me rather than as a description of your vehicle. Edit that field and try again.`,
+      field: field.label,
     };
   }
 
-  return { decision: 'allow', reason: null, message: null };
+  return { decision: 'allow', reason: null, message: null, field: null };
 }

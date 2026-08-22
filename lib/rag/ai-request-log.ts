@@ -182,6 +182,26 @@ const MAX_RECENT_INJECTION_REFUSALS = 3;
 const MAX_RECENT_SCOPE_REFUSALS = 8;
 
 /**
+ * The status a route writes when the refusal was caused by text the rider stored
+ * on an earlier screen rather than by anything this request submitted.
+ *
+ * It is deliberately absent from both counted lists below. The rider submitted
+ * nothing and is not probing, and because the offending text is stored the
+ * refusal repeats on every attempt - counting it would spend the injection
+ * budget three plans in and 429 them out of every AI route, over a note they
+ * wrote weeks ago and were never told about. That is a self-inflicted denial of
+ * service on a paid feature, so the throttle does not see this status at all.
+ */
+export const STORED_TEXT_INJECTION_REFUSAL_STATUS = 'completed_refusal_stored_text_injection';
+export const STORED_TEXT_INJECTION_REFUSAL_REASON = 'stored_text_injection';
+
+const THROTTLED_INJECTION_STATUSES = ['completed_refusal_prompt_injection'];
+const THROTTLED_SCOPE_STATUSES = [
+  'completed_refusal_out_of_domain',
+  'completed_refusal_prompt_injection',
+];
+
+/**
  * A rider probing the guard rails burns refusals rather than completions, so
  * the ordinary per-hour limit barely moves. This counts the refusals
  * themselves and is a secondary safeguard: if it cannot be evaluated it fails
@@ -193,13 +213,13 @@ export async function isRefusalThrottled(logTag: string, userId: string): Promis
       countRequestsByStatusesSince(
         logTag,
         userId,
-        ['completed_refusal_prompt_injection'],
+        THROTTLED_INJECTION_STATUSES,
         REFUSAL_THROTTLE_WINDOW_MS,
       ),
       countRequestsByStatusesSince(
         logTag,
         userId,
-        ['completed_refusal_out_of_domain', 'completed_refusal_prompt_injection'],
+        THROTTLED_SCOPE_STATUSES,
         REFUSAL_THROTTLE_WINDOW_MS,
       ),
     ]);

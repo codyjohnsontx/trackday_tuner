@@ -401,6 +401,31 @@ describe('actionable prose in an empty plan', () => {
     expect(result.decision).toBe('allow');
   });
 
+  // The exact sentence the heuristic once refused, kept forever. "setting" is a
+  // noun here and sits beside a psi figure, which in a setup logger is the
+  // normal case rather than the exception - and this is the baseline-check
+  // answer the empty-plan path exists to preserve.
+  it('allows the baseline cold-setting phrasing the day-plan prompt steers toward', () => {
+    const result = emptyPlan({
+      summary: 'Start on your baseline 30 psi cold setting and check hot pressures after session one.',
+    });
+    expect(result.decision).toBe('allow');
+    expect(result.violations).toEqual([]);
+  });
+
+  it('allows a "setting" reading reported in personal evidence', () => {
+    const result = emptyPlan({
+      personal_evidence: [
+        {
+          label: 'Session 3',
+          detail: 'Your baseline setting of 30 psi worked well here.',
+          source_session_id: null,
+        },
+      ],
+    });
+    expect(result.decision).toBe('allow');
+  });
+
   it('does not fire when the verb and the quantity are in different sentences', () => {
     const result = emptyPlan({
       summary: 'Run the Session 3 baseline. Rear hot pressure was 26 psi that day.',

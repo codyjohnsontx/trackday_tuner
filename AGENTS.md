@@ -519,10 +519,34 @@ shared pipeline cannot move it unnoticed.
 forgotten.** Text the request submitted is screened before any database work, so a
 refusal costs no reservation and no query and is still recorded (`recordRefusedRequest`)
 where the throttle can count it. But the prompt also interpolates text the rider
-stored *earlier* - vehicle nickname, session notes, track name, tyre brand - and
-`sanitizeFreeText` in `lib/rag/prompt.ts` neutralises only the `<user_data>` tag
-delimiters, not phrases. `classifyStoredRiderText` runs over that after the read,
-which is why it cannot replace the first pass.
+stored *earlier* - vehicle nickname, session notes, feedback notes, rider memory,
+every suspension and alignment string - and `sanitizeFreeText` in `lib/rag/prompt.ts`
+neutralises only the `<user_data>` tag delimiters, not phrases.
+`classifyStoredRiderText` runs over that after the read, which is why it cannot
+replace the first pass.
+
+The order around that first pass is load-bearing in both directions.
+`preflightAiRequest` is deliberately splittable - `checkAiRefusalThrottle` then
+`reserveAiRequestSlot` - because a route that screens before touching the database
+needs the throttle on one side of the screen and the reservation on the other. Put
+the whole preflight after the screen and a probe costs nothing but also *counts*
+nothing, so the one path that refuses can be looped forever. Put it before and
+every refused probe spends a slot. Day-plan runs throttle, screen, reserve;
+tuning-advice classifies after the whole preflight and needs no split.
+
+**The two passes are not the same screen, and the asymmetry is deliberate.** The
+list of stored fields comes from `collectDayPlanRiderText` in `lib/rag/prompt.ts`,
+beside the formatters, and takes the prompt builder's own input type - a
+hand-maintained second list is what let feedback notes and suspension strings reach
+the model unscreened. Stored text then runs a *narrower* pattern set than submitted
+text: `/\bact as\b/i` is out of it, because "the instructor said to act as if the
+apex is later" is an ordinary session note and a stored false positive refuses every
+plan the rider asks for rather than one request they can retype. For the same
+reason the refusal names the field (`the notes on your 2026-08-01 session`) rather
+than echoing the text, and is audited as
+`STORED_TEXT_INJECTION_REFUSAL_STATUS` - a status `isRefusalThrottled` does not
+count. Counting it would spend the injection budget three plans in and 429 the
+rider out of tuning-advice too, over a note they wrote weeks ago.
 
 **An empty `recommended_changes` list is checked as prose.** `evaluateAdvicePolicy`
 validates component, direction and magnitude by iterating the structured field, so

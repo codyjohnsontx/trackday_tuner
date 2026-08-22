@@ -1,30 +1,30 @@
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getRealUser } from '@/lib/auth';
-import {
-  buildPromptFingerprint,
-  buildPromptRedactedPreview,
-} from '@/lib/ai-observability';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import { assertNotDemoRoute } from '@/lib/demo/mode';
-import { getAiRequestFingerprintSecret } from '@/lib/env.server';
 import { createClient } from '@/lib/supabase/server';
 import { generateDayPlan, UpstreamTimeoutError } from '@/lib/rag/advice';
 import {
   recordRefusedRequest,
   releaseReservation,
   updateRequestLog,
+  STORED_TEXT_INJECTION_REFUSAL_REASON,
+  STORED_TEXT_INJECTION_REFUSAL_STATUS,
 } from '@/lib/rag/ai-request-log';
 import {
-  preflightAiRequest,
+  buildAiPromptIdentity,
+  checkAiRefusalThrottle,
   readAiRequestBody,
+  reserveAiRequestSlot,
 } from '@/lib/rag/ai-request-preflight';
 import {
   buildRefusalAdvice,
   classifyDayPlanRequest,
   classifyStoredRiderText,
 } from '@/lib/rag/domain-guard';
+import { collectDayPlanRiderText } from '@/lib/rag/prompt';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
 import { isUuid } from '@/lib/rag/validation';
 import {
@@ -491,6 +491,21 @@ export async function POST(request: Request) {
     .filter((part) => part.trim().length > 0)
     .join(' | ');
 
+  // The refusal throttle runs before the screen below, not after it. Screening
+  // first means a refusal returns before the reservation, which is what keeps a
+  // probe cheap - but it also meant nothing counted the probe itself, so a rider
+  // could loop injection variants at this route forever while their refusals
+  // only ever throttled tuning-advice. Throttle, then screen, then reserve.
+  const throttle = await checkAiRefusalThrottle({ logTag: LOG_TAG, userId: user.id });
+  if (!throttle.ok) {
+    return errorResponse(
+      throttle.failure.status,
+      throttle.failure.error,
+      requestId,
+      throttle.failure.headers,
+    );
+  }
+
   // Screen one: the fields this request submitted. It needs no database state,
   // so it runs before the reservation and before the vehicle lookup - a request
   // carrying an injection string should not cost a slot or a query, and it must
@@ -511,13 +526,7 @@ export async function POST(request: Request) {
       status: `completed_refusal_${refusalReason}`,
       refusalReason,
       classifierStage: 'preflight',
-      promptFingerprint: buildPromptFingerprint({
-        question: promptSubject,
-        symptoms: [],
-        changeIntent: null,
-        secret: getAiRequestFingerprintSecret(),
-      }),
-      promptRedactedPreview: buildPromptRedactedPreview(promptSubject),
+      ...buildAiPromptIdentity({ question: promptSubject }),
     });
 
     return NextResponse.json(
@@ -535,7 +544,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const preflight = await preflightAiRequest({
+  const preflight = await reserveAiRequestSlot({
     logTag: LOG_TAG,
     userId: user.id,
     requestId,
@@ -647,34 +656,42 @@ export async function POST(request: Request) {
   const recentEnvironments = (environmentsResult.data ?? []) as SessionEnvironment[];
   const feedback = (feedbackResult.data ?? []) as SessionFeedback[];
 
+  const raceEngineerContext = buildContext({
+    userId: user.id,
+    targetDate: computedTargetDate,
+    trackName: validated.data.track_name,
+    recentSessions,
+    recentEnvironments,
+    environment: hasEnvironment ? environment : null,
+    memory,
+    feedback,
+  });
+
   // Screen two: rider text this request did not submit but the prompt still
-  // interpolates - the vehicle the plan is for, and the sessions it reasons
-  // from. It has to run after the read, which is exactly why screen one cannot
-  // cover it.
+  // interpolates. It has to run after the read, which is exactly why screen one
+  // cannot cover it. The fields come from `collectDayPlanRiderText`, which is
+  // built from the same input the prompt builder takes, so the screen cannot
+  // cover less than the prompt hands over.
   const storedAssessment = classifyStoredRiderText({
-    values: [
-      vehicle.nickname,
-      vehicle.make,
-      vehicle.model,
-      ...recentSessions.flatMap((session) => [
-        session.track_name,
-        session.notes,
-        session.conditions,
-        session.tires?.front?.brand,
-        session.tires?.front?.compound,
-        session.tires?.rear?.brand,
-        session.tires?.rear?.compound,
-      ]),
-    ],
+    fields: collectDayPlanRiderText({
+      vehicle,
+      targetDate: computedTargetDate,
+      trackName: validated.data.track_name,
+      environment: hasEnvironment ? environment : null,
+      recentSessions,
+      raceEngineerContext,
+    }),
   });
 
   if (storedAssessment.decision === 'refuse') {
-    const refusalReason = storedAssessment.reason ?? 'prompt_injection';
+    // Audited under its own status, which the refusal throttle does not count:
+    // stored text refuses deterministically, so counting it would lock the rider
+    // out of every AI route for a note they wrote weeks ago.
     await updateRequestLog({
       logTag: LOG_TAG,
       requestId,
-      status: `completed_refusal_${refusalReason}`,
-      refusalReason,
+      status: STORED_TEXT_INJECTION_REFUSAL_STATUS,
+      refusalReason: STORED_TEXT_INJECTION_REFUSAL_REASON,
       policyResult: 'force_refusal',
       policyViolations: [],
       classifierStage: 'stored_rider_text',
@@ -685,8 +702,10 @@ export async function POST(request: Request) {
         ok: true,
         request_id: requestId,
         advice: buildRefusalAdvice({
-          reason: refusalReason,
-          message: storedAssessment.message ?? 'This request is outside trackday setup scope.',
+          reason: 'prompt_injection',
+          message:
+            storedAssessment.message ??
+            'I could not build a plan from your saved setup data. Check your saved vehicle and session notes for wording that reads as an instruction.',
           dataUsed: refusalDataUsed(hasEnvironment),
         }),
         retrieved: [],
@@ -696,17 +715,6 @@ export async function POST(request: Request) {
   }
 
   try {
-    const raceEngineerContext = buildContext({
-      userId: user.id,
-      targetDate: computedTargetDate,
-      trackName: validated.data.track_name,
-      recentSessions,
-      recentEnvironments,
-      environment: hasEnvironment ? environment : null,
-      memory,
-      feedback,
-    });
-
     const result = await generateDayPlan({
       vehicle,
       targetDate: computedTargetDate,

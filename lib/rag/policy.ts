@@ -60,9 +60,16 @@ interface AdvicePolicyInput {
  * instruction. Units that describe conditions rather than adjustments (degrees,
  * percent) are excluded so an ordinary "expect track temp to climb" summary is
  * not mistaken for a setup change.
+ *
+ * "set", "sets" and "setting" are deliberately not in the verb list. In a setup
+ * logger those words are usually nouns and they sit next to a psi figure
+ * constantly, so "start on your baseline 30 psi cold setting and check hot
+ * pressures" was refused - which is the baseline-check answer
+ * `allowEmptyRecommendations` exists to preserve, and the phrasing the day-plan
+ * prompt steers the model toward. Every real instruction verb still trips.
  */
 const CHANGE_VERB_PATTERN =
-  /\b(?:increas(?:e|es|ing)|decreas(?:e|es|ing)|rais(?:e|es|ing)|lower(?:s|ing)?|add(?:s|ing)?|drop(?:s|ping)?|bleed(?:s|ing)?|reduc(?:e|es|ing)|soften(?:s|ing)?|stiffen(?:s|ing)?|tighten(?:s|ing)?|loosen(?:s|ing)?|back(?:ing)? off|wind(?:ing)? on|set(?:s|ting)?|adjust(?:s|ing)?|bump(?:s|ing)?|shim(?:s|ming)?|preload(?:s|ing)?)\b/i;
+  /\b(?:increas(?:e|es|ing)|decreas(?:e|es|ing)|rais(?:e|es|ing)|lower(?:s|ing)?|add(?:s|ing)?|drop(?:s|ping)?|bleed(?:s|ing)?|reduc(?:e|es|ing)|soften(?:s|ing)?|stiffen(?:s|ing)?|tighten(?:s|ing)?|loosen(?:s|ing)?|back(?:ing)? off|wind(?:ing)? on|adjust(?:s|ing)?|bump(?:s|ing)?|shim(?:s|ming)?|preload(?:s|ing)?)\b/i;
 
 const SETUP_QUANTITY_PATTERN =
   /\b\d+(?:\.\d+)?\s*(?:psi|bar|kpa|clicks?|mm|cm|turns?|teeth|tooth|notch(?:es)?)\b/i;

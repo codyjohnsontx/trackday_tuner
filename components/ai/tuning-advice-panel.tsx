@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { RefusalCard } from '@/components/ai/refusal-card';
+import { SafetyBanner } from '@/components/ai/safety-banner';
 import { useTemperatureInput, useTemperatureUnit } from '@/components/ui/temperature-display';
 import { classifyRaceEngineerQuestion } from '@/lib/rag/domain-guard';
 import {
@@ -69,14 +70,6 @@ interface ApiSuccessBody {
 }
 
 type ApiResponseBody = ApiErrorBody | ApiSuccessBody;
-
-function SafetyBanner() {
-  return (
-    <div className="rounded-row border border-signal/30 bg-signal/12 px-3 py-2 text-xs text-signal">
-      Informational only. You are responsible for vehicle safety and on-track conduct. Make one change at a time.
-    </div>
-  );
-}
 
 const REFUSAL_EXAMPLES = [
   'Front pushed on entry after I raised pressure 1 psi. What should I try next?',

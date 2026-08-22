@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { RefusalCard } from '@/components/ai/refusal-card';
+import { SafetyBanner } from '@/components/ai/safety-banner';
 import type { AdviceResponse } from '@/lib/rag/schema';
 import type { Vehicle } from '@/types';
 import { cn } from '@/lib/utils';
@@ -122,11 +123,31 @@ const REFUSAL_EXAMPLES = [
   'Ambient and track temperatures you measured in the paddock.',
 ];
 
+function SafetyNotes({ notes }: { notes: string[] }) {
+  if (notes.length === 0) return null;
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-ink">Safety notes</h3>
+      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-dim">
+        {notes.map((note, idx) => (
+          <li key={`${note}-${idx}`}>{note}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /**
  * A refused plan and a plan that recommends no change both arrive with an empty
  * `recommended_changes`, so `advice.refusal` is what tells them apart. A refusal
  * replaces the result rather than sitting beside it: a rider shown "nothing to
  * recommend yet" would never learn that the answer was withheld, or why.
+ *
+ * The safety copy sits on both branches, as it does on the Race Engineer panel.
+ * It used to sit only on the refusal branch, which is backwards: the model is
+ * told to return the disclaimer and the one-change note in every response, and
+ * the rider needs them most on the branch that hands them a magnitude to go and
+ * turn into their suspension.
  */
 export function DayPlanAdviceResult({ advice }: { advice: AdviceResponse }) {
   const refusal = advice.refusal?.trim();
@@ -134,25 +155,21 @@ export function DayPlanAdviceResult({ advice }: { advice: AdviceResponse }) {
   if (refusal) {
     return (
       <div className="space-y-3 border-t border-white/5 pt-4">
+        <SafetyBanner />
         <RefusalCard
           title="Couldn't build that plan"
           message={refusal}
           helpTitle="Morning Plan works from details like:"
           examples={REFUSAL_EXAMPLES}
         />
-        {advice.safety_notes.length > 0 ? (
-          <ul className="list-disc space-y-1 pl-5 text-sm text-ink-dim">
-            {advice.safety_notes.map((note, idx) => (
-              <li key={`${note}-${idx}`}>{note}</li>
-            ))}
-          </ul>
-        ) : null}
+        <SafetyNotes notes={advice.safety_notes} />
       </div>
     );
   }
 
   return (
     <div className="space-y-3 border-t border-white/5 pt-4">
+      <SafetyBanner />
       <div>
         <h3 className="text-sm font-semibold text-ink">Plan</h3>
         <p className="mt-1 text-sm text-ink-dim">{advice.summary}</p>
@@ -199,6 +216,7 @@ export function DayPlanAdviceResult({ advice }: { advice: AdviceResponse }) {
           ))}
         </div>
       </div>
+      <SafetyNotes notes={advice.safety_notes} />
       {advice.citations.length > 0 ? (
         <div>
           <h3 className="text-sm font-semibold text-ink">Citations</h3>

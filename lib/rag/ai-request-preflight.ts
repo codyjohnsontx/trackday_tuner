@@ -43,6 +43,19 @@ export type AiPreflightResult =
   | { ok: true; promptFingerprint: string }
   | { ok: false; failure: AiRequestFailure };
 
+export type AiThrottleResult = { ok: true } | { ok: false; failure: AiRequestFailure };
+
+export interface AiPromptIdentity {
+  promptFingerprint: string;
+  promptRedactedPreview: string;
+}
+
+export interface AiPromptSubject {
+  question: string;
+  symptoms?: string[];
+  changeIntent?: string | null;
+}
+
 function failure(status: number, error: string, headers: Record<string, string> = {}): AiRequestFailure {
   return { status, error, headers };
 }
@@ -75,14 +88,40 @@ export async function readAiRequestBody(request: Request): Promise<AiBodyResult>
   }
 }
 
-export async function preflightAiRequest(params: {
+/**
+ * What an `ai_requests` row records about the prompt behind it.
+ *
+ * One function decides this so a refused row and a completed row are built the
+ * same way. A route that rebuilds either half inline is a second definition of
+ * what a fingerprint is made of, and the two stop matching the moment one of
+ * them is changed.
+ */
+export function buildAiPromptIdentity(params: AiPromptSubject): AiPromptIdentity {
+  return {
+    promptFingerprint: buildPromptFingerprint({
+      question: params.question,
+      symptoms: params.symptoms ?? [],
+      changeIntent: params.changeIntent ?? null,
+      secret: getAiRequestFingerprintSecret(),
+    }),
+    promptRedactedPreview: buildPromptRedactedPreview(params.question),
+  };
+}
+
+/**
+ * The refusal throttle, on its own.
+ *
+ * It is separable from the reservation because a route that screens submitted
+ * text before touching the database needs the two halves on either side of that
+ * screen: throttle first, so a rider looping injection variants is still slowed
+ * down, then the screen, then the reservation, so a refused probe still costs no
+ * slot and no query. Calling this and `reserveAiRequestSlot` in that order is
+ * exactly `preflightAiRequest` with the screen spliced in.
+ */
+export async function checkAiRefusalThrottle(params: {
   logTag: string;
   userId: string;
-  requestId: string;
-  question: string;
-  symptoms?: string[];
-  changeIntent?: string | null;
-}): Promise<AiPreflightResult> {
+}): Promise<AiThrottleResult> {
   if (await isRefusalThrottled(params.logTag, params.userId)) {
     return {
       ok: false,
@@ -93,14 +132,15 @@ export async function preflightAiRequest(params: {
       ),
     };
   }
+  return { ok: true };
+}
 
-  const promptFingerprint = buildPromptFingerprint({
-    question: params.question,
-    symptoms: params.symptoms ?? [],
-    changeIntent: params.changeIntent ?? null,
-    secret: getAiRequestFingerprintSecret(),
-  });
-  const promptRedactedPreview = buildPromptRedactedPreview(params.question);
+export async function reserveAiRequestSlot(params: AiPromptSubject & {
+  logTag: string;
+  userId: string;
+  requestId: string;
+}): Promise<AiPreflightResult> {
+  const { promptFingerprint, promptRedactedPreview } = buildAiPromptIdentity(params);
 
   // Atomically reserve a slot BEFORE counting. Every concurrent request will
   // see every other request's pending row, which closes the TOCTOU gap between
@@ -166,4 +206,17 @@ export async function preflightAiRequest(params: {
   }
 
   return { ok: true, promptFingerprint };
+}
+
+export async function preflightAiRequest(params: AiPromptSubject & {
+  logTag: string;
+  userId: string;
+  requestId: string;
+}): Promise<AiPreflightResult> {
+  const throttle = await checkAiRefusalThrottle({
+    logTag: params.logTag,
+    userId: params.userId,
+  });
+  if (!throttle.ok) return { ok: false, failure: throttle.failure };
+  return reserveAiRequestSlot(params);
 }
