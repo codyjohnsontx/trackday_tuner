@@ -79,19 +79,71 @@ interface NormalizeAdviceResponseInput {
  * request deterministically until the rider works out which of their saved
  * fields is to blame.
  */
+/**
+ * "you are now", narrowed to a ROLE REASSIGNMENT.
+ *
+ * The bare `/\byou are now\b/i` is ordinary English and it was the entire
+ * stored-text lockout class: "you are now getting on the gas earlier" is a
+ * completely normal track note, and once written into a saved session it refused
+ * every subsequent request that read it. The semantic difference this encodes is
+ * that an INJECTION REASSIGNS AN IDENTITY while a RIDING NOTE DESCRIBES A
+ * BEHAVIOUR, so the phrase only fires when a role-identity token or a
+ * rule-negation phrase follows it within a short window.
+ *
+ * TOKENS DELIBERATELY LEFT OUT, each one measured against real riding prose
+ * before removal, and each removal re-checked against the injection corpus so it
+ * cost no detection. Do not re-add them without repeating that:
+ * - bare `dan`          - riders are called Dan ("you are now on Dan's line
+ *                         through turn 3"). The DAN payload still lands via
+ *                         `do anything now`.
+ * - `character`         - "you are now a character on the podium".
+ * - `rules?` in the without-branch - "you are now comfortable without rules
+ *                         about tyre warmers".
+ * - `limits?` likewise  - "you are now smoother without limits on entry speed".
+ * - `model`, `system`   - "you are now on the new model bike", "you are now
+ *                         trusting the system more". `system prompt` and
+ *                         `developer message` keep their own patterns above.
+ *
+ * WHY A WEAKER PATTERN IS DEFENSIBLE HERE, which is the part that stops this
+ * reading as somebody loosening a security check. A lexical list is
+ * enumerable-around and the corpus behind it is not exhaustive, so this IS
+ * strictly weaker than the bare phrase against a determined attacker. It is
+ * acceptable because for STORED text the attacker and the victim are the same
+ * person: every row reaching these prompts is RLS-scoped to the requesting
+ * rider, and there is no shared, imported or third-party write path, so working
+ * around this manipulates only your own advice. `evaluateAdvicePolicy` then
+ * still force-refuses unless the result names a vocabulary component and
+ * direction, a magnitude under its ceiling, a retrieved citation and real
+ * session ids. Submitted text keeps the bare phrase below, where a refusal is
+ * always actionable and costs the rider nothing but a retype.
+ *
+ * `tests/../domain-guard.test.ts` carries the whole corpus as permanent
+ * regression cases, labelled by which direction each one defends.
+ */
+const ROLE_REASSIGNMENT_PATTERN =
+  /\byou are now\b[^.!?]{0,40}?(?:\b(?:assistant|chatbot|language model|llm|ai|persona|jailbroken|unrestricted|unfiltered|uncensored|roleplaying)\b|\b(?:no longer|not) bound\b|\bwithout (?:restrictions?|filters?)\b|\bdo anything now\b|\bacting as\b|\bfree to ignore\b)/i;
+
 const STORED_TEXT_INJECTION_PATTERNS = [
   /\bignore (?:all |any |the )?(?:previous|prior|earlier) instructions\b/i,
   /\breveal (?:your|the) (?:system prompt|prompt|developer message)\b/i,
   /\bshow (?:your|the) (?:system prompt|prompt|hidden instructions)\b/i,
-  /\byou are now\b/i,
+  ROLE_REASSIGNMENT_PATTERN,
   /\broleplay as\b/i,
   /\bjailbreak\b/i,
   /\bdeveloper message\b/i,
   /\bsystem prompt\b/i,
 ];
 
-// Text the request just submitted gets the full set, loose patterns included.
-const PROMPT_INJECTION_PATTERNS = [...STORED_TEXT_INJECTION_PATTERNS, /\bact as\b/i];
+// Text the request just submitted gets the full set, loose patterns included -
+// including the BARE "you are now" that stored text no longer uses. The lockout
+// argument that justified narrowing does not apply on this side: a rider can
+// edit what they just typed, so a false positive costs one retype rather than
+// refusing the same request forever.
+const PROMPT_INJECTION_PATTERNS = [
+  ...STORED_TEXT_INJECTION_PATTERNS,
+  /\bact as\b/i,
+  /\byou are now\b/i,
+];
 
 const NON_DOMAIN_PATTERNS = [
   /\brecipe\b/i,
