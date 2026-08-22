@@ -54,17 +54,17 @@ export async function reservePendingSlot(params: {
   requestId: string;
   promptFingerprint: string;
   promptRedactedPreview: string;
-  sessionId?: string | null;
 }): Promise<void> {
   const admin = createAdminClient();
-  // session_id starts null: the caller has not yet confirmed the referenced
-  // session exists, and ai_requests.session_id has a FK to sessions(id) that
-  // would otherwise reject a bogus reference with 503 instead of 404. The
-  // real session_id is stamped on after the context lookup succeeds. A day
-  // plan has no session at all and leaves it null for good.
+  // session_id is always null here, and takes no parameter for that reason: the
+  // caller has not yet confirmed the referenced session exists, and
+  // ai_requests.session_id has a FK to sessions(id) that would otherwise reject
+  // a bogus reference with 503 instead of 404. The real session_id is stamped
+  // on by updateRequestLog after the context lookup succeeds. A day plan has no
+  // session at all and leaves it null for good.
   const { error } = await admin.from('ai_requests').insert({
     user_id: params.userId,
-    session_id: params.sessionId ?? null,
+    session_id: null,
     request_id: params.requestId,
     status: 'pending',
     prompt_fingerprint: params.promptFingerprint,
@@ -156,7 +156,7 @@ export async function countRequestsSince(
   return count ?? 0;
 }
 
-export async function countRequestsByStatusesSince(
+async function countRequestsByStatusesSince(
   logTag: string,
   userId: string,
   statuses: string[],

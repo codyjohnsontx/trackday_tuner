@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
+import { RefusalCard } from '@/components/ai/refusal-card';
 import { useTemperatureInput, useTemperatureUnit } from '@/components/ui/temperature-display';
 import { classifyRaceEngineerQuestion } from '@/lib/rag/domain-guard';
 import {
@@ -77,24 +78,11 @@ function SafetyBanner() {
   );
 }
 
-function RefusalCard({ message }: { message: string }) {
-  return (
-    <div className="space-y-3 rounded-row bg-surface-2 p-4">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Couldn&apos;t answer that request</p>
-        <p className="mt-1 text-sm text-ink">{message}</p>
-      </div>
-      <div className="rounded-row bg-surface-3 p-3 text-sm text-ink-dim">
-        <p className="font-medium text-ink">Race Engineer can help with questions like:</p>
-        <ul className="mt-2 list-disc space-y-1 pl-5">
-          <li>Front pushed on entry after I raised pressure 1 psi. What should I try next?</li>
-          <li>Rear overheated after four laps. What is the first thing I should check?</li>
-          <li>I changed rebound and the bike started wallowing. Should I undo that or try another small step?</li>
-        </ul>
-      </div>
-    </div>
-  );
-}
+const REFUSAL_EXAMPLES = [
+  'Front pushed on entry after I raised pressure 1 psi. What should I try next?',
+  'Rear overheated after four laps. What is the first thing I should check?',
+  'I changed rebound and the bike started wallowing. Should I undo that or try another small step?',
+];
 
 function ProUpgradeCard() {
   return (
@@ -435,7 +423,14 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
         <div className="space-y-4">
           <SafetyBanner />
 
-          {isRefusal ? <RefusalCard message={refusal!} /> : null}
+          {isRefusal ? (
+            <RefusalCard
+              title="Couldn't answer that request"
+              message={refusal!}
+              helpTitle="Race Engineer can help with questions like:"
+              examples={REFUSAL_EXAMPLES}
+            />
+          ) : null}
 
           {!isRefusal ? (
             <>

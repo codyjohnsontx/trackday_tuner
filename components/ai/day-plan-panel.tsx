@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
+import { RefusalCard } from '@/components/ai/refusal-card';
 import type { AdviceResponse } from '@/lib/rag/schema';
 import type { Vehicle } from '@/types';
 import { cn } from '@/lib/utils';
@@ -114,6 +115,106 @@ const demoDayPlanAdvice: AdviceResponse = {
   },
   refusal: null,
 };
+
+const REFUSAL_EXAMPLES = [
+  'A track from your schedule, like Road America or Barber Motorsports Park.',
+  'A weather trend for the day, like "cool morning, warming after lunch".',
+  'Ambient and track temperatures you measured in the paddock.',
+];
+
+/**
+ * A refused plan and a plan that recommends no change both arrive with an empty
+ * `recommended_changes`, so `advice.refusal` is what tells them apart. A refusal
+ * replaces the result rather than sitting beside it: a rider shown "nothing to
+ * recommend yet" would never learn that the answer was withheld, or why.
+ */
+export function DayPlanAdviceResult({ advice }: { advice: AdviceResponse }) {
+  const refusal = advice.refusal?.trim();
+
+  if (refusal) {
+    return (
+      <div className="space-y-3 border-t border-white/5 pt-4">
+        <RefusalCard
+          title="Couldn't build that plan"
+          message={refusal}
+          helpTitle="Morning Plan works from details like:"
+          examples={REFUSAL_EXAMPLES}
+        />
+        {advice.safety_notes.length > 0 ? (
+          <ul className="list-disc space-y-1 pl-5 text-sm text-ink-dim">
+            {advice.safety_notes.map((note, idx) => (
+              <li key={`${note}-${idx}`}>{note}</li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 border-t border-white/5 pt-4">
+      <div>
+        <h3 className="text-sm font-semibold text-ink">Plan</h3>
+        <p className="mt-1 text-sm text-ink-dim">{advice.summary}</p>
+        <p className="mt-1 text-xs uppercase tracking-wide text-ink-faint">
+          Confidence: <span className="text-ink-dim">{advice.confidence}</span>
+        </p>
+      </div>
+      {advice.recommended_changes.length > 0 ? (
+        <ul className="space-y-2">
+          {advice.recommended_changes.map((change, idx) => (
+            <li key={`${change.component}-${idx}`} className="rounded-row bg-surface-2 p-3">
+              <p className="text-sm font-medium text-ink">{change.component}</p>
+              <p className="text-sm text-ink-dim">{change.direction} · {change.magnitude}</p>
+              <p className="mt-1 text-sm text-ink-dim">{change.reason}</p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="rounded-row border border-dashed border-white/5 bg-surface-2 p-3 text-sm text-ink-faint">
+          No specific setup change recommended yet. Establish a baseline and log feedback after the next session.
+        </div>
+      )}
+      {advice.prediction ? (
+        <div className="rounded-row bg-surface-2 p-3 text-sm text-ink-dim">
+          <p>{advice.prediction.expected_effect}</p>
+          <p className="mt-1 text-ink-dim">{advice.prediction.day_trend}</p>
+        </div>
+      ) : null}
+      <div>
+        <h3 className="text-sm font-semibold text-ink">Data used</h3>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {Object.entries(advice.data_used).map(([key, used]) => (
+            <span
+              key={key}
+              className={cn(
+                'rounded-plate px-2 py-1 text-xs font-medium',
+                used
+                  ? 'bg-surface-3 text-ink'
+                  : 'bg-surface-2 text-ink-faint',
+              )}
+            >
+              {DATA_USED_LABELS[key] ?? key}
+            </span>
+          ))}
+        </div>
+      </div>
+      {advice.citations.length > 0 ? (
+        <div>
+          <h3 className="text-sm font-semibold text-ink">Citations</h3>
+          <ul className="mt-2 space-y-2">
+            {advice.citations.map((citation, idx) => (
+              <li key={`${citation.source}-${idx}`} className="rounded-row bg-surface-2 p-2">
+                <p className="font-mono text-xs text-ink-dim">{citation.source}</p>
+                <p className="mt-1 text-sm text-ink-dim">{citation.snippet}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelProps) {
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id ?? '');
@@ -356,69 +457,7 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
         </div>
       ) : null}
 
-      {advice ? (
-        <div className="space-y-3 border-t border-white/5 pt-4">
-          <div>
-            <h3 className="text-sm font-semibold text-ink">Plan</h3>
-            <p className="mt-1 text-sm text-ink-dim">{advice.summary}</p>
-            <p className="mt-1 text-xs uppercase tracking-wide text-ink-faint">
-              Confidence: <span className="text-ink-dim">{advice.confidence}</span>
-            </p>
-          </div>
-          {advice.recommended_changes.length > 0 ? (
-            <ul className="space-y-2">
-              {advice.recommended_changes.map((change, idx) => (
-                <li key={`${change.component}-${idx}`} className="rounded-row bg-surface-2 p-3">
-                  <p className="text-sm font-medium text-ink">{change.component}</p>
-                  <p className="text-sm text-ink-dim">{change.direction} · {change.magnitude}</p>
-                  <p className="mt-1 text-sm text-ink-dim">{change.reason}</p>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="rounded-row border border-dashed border-white/5 bg-surface-2 p-3 text-sm text-ink-faint">
-              No specific setup change recommended yet. Establish a baseline and log feedback after the next session.
-            </div>
-          )}
-          {advice.prediction ? (
-            <div className="rounded-row bg-surface-2 p-3 text-sm text-ink-dim">
-              <p>{advice.prediction.expected_effect}</p>
-              <p className="mt-1 text-ink-dim">{advice.prediction.day_trend}</p>
-            </div>
-          ) : null}
-          <div>
-            <h3 className="text-sm font-semibold text-ink">Data used</h3>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {Object.entries(advice.data_used).map(([key, used]) => (
-                <span
-                  key={key}
-                  className={cn(
-                    'rounded-plate px-2 py-1 text-xs font-medium',
-                    used
-                      ? 'bg-surface-3 text-ink'
-                      : 'bg-surface-2 text-ink-faint',
-                  )}
-                >
-                  {DATA_USED_LABELS[key] ?? key}
-                </span>
-              ))}
-            </div>
-          </div>
-          {advice.citations.length > 0 ? (
-            <div>
-              <h3 className="text-sm font-semibold text-ink">Citations</h3>
-              <ul className="mt-2 space-y-2">
-                {advice.citations.map((citation, idx) => (
-                  <li key={`${citation.source}-${idx}`} className="rounded-row bg-surface-2 p-2">
-                    <p className="font-mono text-xs text-ink-dim">{citation.source}</p>
-                    <p className="mt-1 text-sm text-ink-dim">{citation.snippet}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      {advice ? <DayPlanAdviceResult advice={advice} /> : null}
     </section>
   );
 }
