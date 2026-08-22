@@ -93,14 +93,20 @@ function ProUpgradeCard() {
   );
 }
 
-const demoTuningAdvice: AdviceResponse = {
+// Uses the canonical component/direction/magnitude vocabulary from
+// lib/rag/component-vocabulary.ts, because a demo that shows a rider a
+// recommendation the policy layer would refuse is advertising something the
+// product does not do. The rebound half of the original fixture is a thing to
+// watch rather than a second change, so it belongs in prediction.watch_items -
+// the demo's own safety note says to make one change at a time.
+export const demoTuningAdvice: AdviceResponse = {
   summary:
-    'Return front pressure toward the baseline and undo the added rebound before making another geometry change. The worse session changed two front-end variables at once, and the better session recovered feel by moving back toward baseline.',
+    'Return front pressure toward the baseline before undoing the added rebound or making another geometry change. The worse session changed two front-end variables at once, and the better session recovered feel by moving back toward baseline.',
   recommended_changes: [
     {
-      component: 'Front setup',
-      direction: 'Return toward baseline',
-      magnitude: '33 psi hot front and 10-11 clicks rebound out',
+      component: 'front_tire_pressure',
+      direction: 'lower',
+      magnitude: '0.5 psi',
       reason: 'The demo history shows front push after raising pressure and adding rebound, then better turn-in after lowering pressure and softening compression.',
     },
   ],
@@ -119,7 +125,11 @@ const demoTuningAdvice: AdviceResponse = {
   prediction: {
     expected_effect: 'The bike should finish corners more easily and need less bar pressure mid-corner.',
     day_trend: 'If track temperature keeps climbing, watch rear grip separately instead of masking it with front-end changes.',
-    watch_items: ['Front push mid-corner', 'Rear drive after several hot laps'],
+    watch_items: [
+      'Front push mid-corner',
+      'Rear drive after several hot laps',
+      'Front rebound: hold the added clicks until the pressure change has had a session',
+    ],
   },
   personal_evidence: [
     {

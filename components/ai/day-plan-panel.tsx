@@ -74,7 +74,7 @@ function isDayPlanSuccess(value: DayPlanResponse): value is DayPlanSuccess {
   );
 }
 
-const demoDayPlanAdvice: AdviceResponse = {
+export const demoDayPlanAdvice: AdviceResponse = {
   summary:
     'Start from the Session 3 baseline because it recovered front feel without adding another geometry variable. Expect rear grip to fall off as track temperature climbs.',
   // Uses the canonical component/direction/magnitude vocabulary from

@@ -447,6 +447,17 @@ describe('actionable prose in an empty plan', () => {
     expect(result.violations).toEqual([]);
   });
 
+  // A reported delta and an unrelated forecast verb in one sentence. The verb
+  // never reaches the number, so nothing here is an instruction.
+  it('allows an observed delta reported beside a separate forecast verb', () => {
+    const result = emptyPlan({
+      summary:
+        'Rear hot pressure came up by 2 psi over cold last time here, and ambient will increase again today.',
+    });
+    expect(result.decision).toBe('allow');
+    expect(result.violations).toEqual([]);
+  });
+
   it('does not fire when the verb and the quantity are in different sentences', () => {
     const result = emptyPlan({
       summary: 'Run the Session 3 baseline. Rear hot pressure was 26 psi that day.',

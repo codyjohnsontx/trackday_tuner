@@ -62,10 +62,12 @@ interface AdvicePolicyInput {
  * report is whether a change verb governs the number: "increase front tire
  * pressure by 6 psi" and "soften front rebound 1 click" are instructions, while
  * "your 30 psi cold baseline" is a reading that happens to share a sentence with
- * a verb. So the quantity has to arrive after `by`, or after the verb with only
- * the component being adjusted in between. Units that describe conditions rather
- * than adjustments (degrees, percent) are not setup units at all and never
- * match.
+ * a verb. Government is the whole test, and it is the verb that has to reach the
+ * number - a bare "by 2 psi" anywhere in the sentence is not enough, because
+ * "rear hot pressure came up by 2 psi over cold, and ambient will increase
+ * again today" reports one delta and forecasts a separate rise without
+ * instructing anything. Units that describe conditions rather than adjustments
+ * (degrees, percent) are not setup units at all and never match.
  *
  * "set", "sets" and "setting" are deliberately not in the verb list. In a setup
  * logger those words are usually nouns and they sit next to a psi figure
@@ -88,16 +90,16 @@ const CHANGE_VERB_PATTERN = new RegExp(`\\b${CHANGE_VERB_SOURCE}\\b`, 'i');
 
 // The verb has to reach the number. What it may reach across is the component
 // being adjusted ("soften front rebound 1 click"), which is a short run of plain
-// words; what ends its reach is a possessive, a clause connective or any
-// punctuation, because past one of those the number belongs to a different
-// phrase - "increase through the morning, so your 30 psi cold baseline" is a
-// forecast that happens to share a sentence with a verb.
+// words, optionally closed by the delta preposition ("increase front tire
+// pressure by 6 psi"); what ends its reach is a possessive, a clause connective
+// or any punctuation, because past one of those the number belongs to a
+// different phrase - "increase through the morning, so your 30 psi cold
+// baseline" is a forecast that happens to share a sentence with a verb.
 const GOVERNMENT_BREAKERS =
   'your|my|our|their|its|his|her|so|and|but|because|while|although|though|through|when|if|after|before|than|that|which|to|at|for|from|with';
 
 const DELTA_QUANTITY_PATTERN = new RegExp(
-  `\\bby\\s+${SETUP_QUANTITY_SOURCE}\\b` +
-    `|\\b${CHANGE_VERB_SOURCE}\\s+(?:(?!(?:${GOVERNMENT_BREAKERS})\\b)[a-z]+\\s+){0,3}${SETUP_QUANTITY_SOURCE}\\b`,
+  `\\b${CHANGE_VERB_SOURCE}\\s+(?:(?!(?:${GOVERNMENT_BREAKERS})\\b)[a-z]+\\s+){0,3}(?:by\\s+)?${SETUP_QUANTITY_SOURCE}\\b`,
   'i',
 );
 

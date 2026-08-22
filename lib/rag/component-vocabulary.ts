@@ -150,10 +150,29 @@ export function findComponentPolicy(component: string): ComponentPolicy | null {
  * Formatting here rather than reordering the prompt's alias list is deliberate:
  * what a rider sees must not depend on the model choosing the prettier synonym.
  *
- * Anything this table does not recognise is returned unchanged. The policy
- * refuses unknown components before they can reach a panel, so a string that
- * gets this far is either canonical or something no rule here should be
- * reshaping.
+ * Anything this table does not recognise is returned unchanged, and that is
+ * load-bearing rather than defensive: `ai_recommendations` rows written before
+ * the vocabulary existed hold prose like "Front setup", and they still have to
+ * read correctly in the outcome picker years later.
+ *
+ * WHERE IT BELONGS, AND WHERE IT MUST NOT GO. Four sites render a component to a
+ * rider and all four call this: the two AI panels
+ * (`components/ai/day-plan-panel.tsx`, `components/ai/tuning-advice-panel.tsx`,
+ * twice) and the "AI recommendation tested" select in
+ * `components/sessions/session-outcome-panel.tsx`, whose rows come from
+ * `getOutcomeReferences` in `lib/actions/outcomes.ts`. Three sites read a
+ * component and must stay RAW: `app/api/ai/tuning-advice/route.ts` writes the
+ * wire value to storage, `lib/rag/prompt.ts` renders it back into the model
+ * prompt where the canonical identifier is the point, and `evaluateAdvicePolicy`
+ * matches it against the table. The split is display versus wire, not
+ * convenience.
+ *
+ * That list was assembled by grepping `\.component` across `app`, `components`,
+ * `lib` and `scripts`, then tracing every consumer of `ai_recommendations`; the
+ * CSV export carries no component field and `scripts/eval-rag.mjs` only checks
+ * the shape, so neither is rider-facing. Repeat that sweep rather than adding a
+ * fifth site by accident - this helper was added for three of the four and the
+ * outcome picker was found separately, afterwards.
  */
 export function formatComponentLabel(component: string): string {
   if (!findComponentPolicy(component)) return component;

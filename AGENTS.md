@@ -591,9 +591,12 @@ and `personal_evidence` are read as consequences, forecasts and history, and eve
 false positive came from scanning them; a warming-day `day_trend` is the shape the
 day-plan prompt asks for, so refusing over it discarded the very answer
 `allowEmptyRecommendations` exists to preserve. And it matches a **delta**, not any
-quantity: the number has to arrive after `by` or directly after the verb, so
-"increase front tire pressure by 6 psi" is refused while "your 30 psi cold
-baseline" is not. The heuristic cannot be complete and widening it is not how to
+quantity, and government is the whole test - the change VERB has to reach the
+number, across the component being adjusted and at most the delta preposition.
+So "increase front tire pressure by 6 psi" is refused, while "your 30 psi cold
+baseline" is not, and neither is "rear hot pressure came up by 2 psi over cold,
+and ambient will increase again today" - a bare `by 2 psi` somewhere in the same
+sentence as an unrelated verb reports a delta rather than instructing one. The heuristic cannot be complete and widening it is not how to
 make it so - a real recommendation belongs in `recommended_changes` where the
 magnitude ceiling can see it, and this only has to stop `summary` being used to
 route around that. The refusal copy is day-plan wording, because
@@ -602,11 +605,20 @@ box to ask anything in.
 
 **The wire vocabulary is identifiers; what a rider reads is not.**
 `formatComponentLabel` (`lib/rag/component-vocabulary.ts`) is the one place a
-`component` becomes display text, and both AI panels use it. The model is told to
-emit `rear_tire_pressure` exactly, so formatting at the panel rather than
-reordering the prompt's alias list is deliberate: a rider-facing guarantee must not
-rest on the model picking the prettier synonym. Anything the table does not
-recognise passes through unchanged.
+`component` becomes display text. The model is told to emit `rear_tire_pressure`
+exactly, so formatting at the panel rather than reordering the prompt's alias list
+is deliberate: a rider-facing guarantee must not rest on the model picking the
+prettier synonym. Anything the table does not recognise passes through unchanged,
+which is what keeps pre-vocabulary rows like "Front setup" readable.
+
+Which sites format and which stay raw is the display/wire split, and the helper's
+own doc comment carries the list and the sweep that produced it. It is worth
+reading before adding a render: the helper was added for the two AI panels and the
+outcome picker in `components/sessions/session-outcome-panel.tsx` was found
+separately, afterwards, once `SYSTEM_PROMPT` started making every stored
+`ai_recommendations` row an identifier rather than prose. Both demo fixtures are
+held to the same bar - `tests/unit/demo-advice-vocabulary.test.ts` runs the real
+`evaluateAdvicePolicy` over the objects the panels render.
 
 `/api/ai/day-plan` shipped with none of them, and with a hand-copied UUID pattern
 that had four groups instead of five. It therefore rejected every genuine
