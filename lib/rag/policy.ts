@@ -62,12 +62,22 @@ interface AdvicePolicyInput {
  * report is whether a change verb governs the number: "increase front tire
  * pressure by 6 psi" and "soften front rebound 1 click" are instructions, while
  * "your 30 psi cold baseline" is a reading that happens to share a sentence with
- * a verb. Government is the whole test, and it is the verb that has to reach the
- * number - a bare "by 2 psi" anywhere in the sentence is not enough, because
- * "rear hot pressure came up by 2 psi over cold, and ambient will increase
- * again today" reports one delta and forecasts a separate rise without
- * instructing anything. Units that describe conditions rather than adjustments
- * (degrees, percent) are not setup units at all and never match.
+ * a verb. Government is the whole test, and ORDER is what carries it: the verb
+ * has to come first and the number second. A bare "by 2 psi" anywhere in the
+ * sentence is not enough, because "rear hot pressure came up by 2 psi over cold,
+ * and ambient will increase again today" reports one delta and forecasts a
+ * separate rise without instructing anything - there the number precedes the
+ * verb. Units that describe conditions rather than adjustments (degrees,
+ * percent) are not setup units at all and never match.
+ *
+ * THE GUARD IS BEST-EFFORT BY DESIGN, and that limit is accepted rather than
+ * chased. It does not catch an instruction carrying no numeric delta - "front
+ * tyres want another half psi" is a real instruction and walks straight past.
+ * The prompt contract carries that half now: `describeComponentVocabulary()`
+ * tells the model in `SYSTEM_PROMPT` that a setup instruction written into
+ * `summary` or `prediction` is not checked and will be discarded with the whole
+ * response. Do not extend this with further pattern-chasing after a determined
+ * model; every widening so far has cost a false refusal on a paid route.
  *
  * "set", "sets" and "setting" are deliberately not in the verb list. In a setup
  * logger those words are usually nouns and they sit next to a psi figure
@@ -88,18 +98,26 @@ const SETUP_QUANTITY_SOURCE =
 
 const CHANGE_VERB_PATTERN = new RegExp(`\\b${CHANGE_VERB_SOURCE}\\b`, 'i');
 
-// The verb has to reach the number. What it may reach across is the component
-// being adjusted ("soften front rebound 1 click"), which is a short run of plain
-// words, optionally closed by the delta preposition ("increase front tire
-// pressure by 6 psi"); what ends its reach is a possessive, a clause connective
-// or any punctuation, because past one of those the number belongs to a
-// different phrase - "increase through the morning, so your 30 psi cold
-// baseline" is a forecast that happens to share a sentence with a verb.
+// The verb reaches the number two ways, and each covers what the other cannot.
+//
+// (a) THE DELTA PREPOSITION. A verb, then anything that is not another change
+// verb, then "by <quantity>". `by` names the number as a change, so the span in
+// between can be any length - which is what "increase THE front tire pressure by
+// 1 psi" needs and what a three-word window could never reach. The ordering is
+// the government: a number written before the verb is a reading, so "came up by
+// 2 psi ... will increase again today" does not match.
+//
+// (b) THE BARE QUANTITY. A verb within three plain words of a number, for the
+// instruction that names no preposition at all ("soften front rebound 1 click").
+// Here the reach must be short, because without `by` nothing marks the number as
+// a change; a possessive, a clause connective or any punctuation ends it, since
+// past one of those the number belongs to a different phrase.
 const GOVERNMENT_BREAKERS =
   'your|my|our|their|its|his|her|so|and|but|because|while|although|though|through|when|if|after|before|than|that|which|to|at|for|from|with';
 
 const DELTA_QUANTITY_PATTERN = new RegExp(
-  `\\b${CHANGE_VERB_SOURCE}\\s+(?:(?!(?:${GOVERNMENT_BREAKERS})\\b)[a-z]+\\s+){0,3}(?:by\\s+)?${SETUP_QUANTITY_SOURCE}\\b`,
+  `\\b${CHANGE_VERB_SOURCE}\\b(?:(?!\\b${CHANGE_VERB_SOURCE}\\b)[\\s\\S])*?\\bby\\s+${SETUP_QUANTITY_SOURCE}\\b` +
+    `|\\b${CHANGE_VERB_SOURCE}\\s+(?:(?!(?:${GOVERNMENT_BREAKERS})\\b)[a-z]+\\s+){0,3}${SETUP_QUANTITY_SOURCE}\\b`,
   'i',
 );
 

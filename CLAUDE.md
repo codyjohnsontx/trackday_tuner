@@ -591,28 +591,40 @@ and `personal_evidence` are read as consequences, forecasts and history, and eve
 false positive came from scanning them; a warming-day `day_trend` is the shape the
 day-plan prompt asks for, so refusing over it discarded the very answer
 `allowEmptyRecommendations` exists to preserve. And it matches a **delta**, not any
-quantity, and government is the whole test - the change VERB has to reach the
-number, across the component being adjusted and at most the delta preposition.
-So "increase front tire pressure by 6 psi" is refused, while "your 30 psi cold
-baseline" is not, and neither is "rear hot pressure came up by 2 psi over cold,
-and ambient will increase again today" - a bare `by 2 psi` somewhere in the same
-sentence as an unrelated verb reports a delta rather than instructing one. The heuristic cannot be complete and widening it is not how to
-make it so - a real recommendation belongs in `recommended_changes` where the
-magnitude ceiling can see it, and this only has to stop `summary` being used to
-route around that. The refusal copy is day-plan wording, because
+quantity, and government is the whole test - a change VERB has to reach the
+number, and ORDER is what carries that. It reaches two ways: across anything that
+is not another change verb when the delta preposition names the number
+("increase THE front tire pressure by 1 psi"), or across at most three plain
+words when nothing does ("soften front rebound 1 click"). So "increase front tire
+pressure by 6 psi" is refused, while "your 30 psi cold baseline" is not, and
+neither is "rear hot pressure came up by 2 psi over cold, and ambient will
+increase again today" - there the number comes first, which makes it a report.
+
+The guard is **best-effort by design and that limit is accepted, not chased**. It
+does not catch an instruction carrying no numeric delta - "front tyres want
+another half psi" walks past. The prompt contract carries that half instead:
+`describeComponentVocabulary()` tells the model prose instructions are discarded
+with the whole response. Do not extend the pattern after a determined model; each
+widening so far has cost a false refusal on a paid route, and a real
+recommendation belongs in `recommended_changes` where the magnitude ceiling can
+see it. The refusal copy is day-plan wording, because
 `allowEmptyRecommendations` has exactly one caller and that panel has no question
 box to ask anything in.
 
-**The wire vocabulary is identifiers; what a rider reads is not.**
-`formatComponentLabel` (`lib/rag/component-vocabulary.ts`) is the one place a
-`component` becomes display text. The model is told to emit `rear_tire_pressure`
+**The wire vocabulary is identifiers; what a rider reads is not.** The class is
+any model-supplied identifier reaching a rider-facing render, not one field:
+`formatComponentLabel` and `formatDirectionLabel`
+(`lib/rag/component-vocabulary.ts`) are the one place a `component` and a
+`direction` become display text, so a recommendation reads "Front rebound ·
+Soften" rather than "front_rebound · soften". The model is told to emit `rear_tire_pressure`
 exactly, so formatting at the panel rather than reordering the prompt's alias list
 is deliberate: a rider-facing guarantee must not rest on the model picking the
 prettier synonym. Anything the table does not recognise passes through unchanged,
 which is what keeps pre-vocabulary rows like "Front setup" readable.
 
-Which sites format and which stay raw is the display/wire split, and the helper's
-own doc comment carries the list and the sweep that produced it. It is worth
+Which sites format and which stay raw is the display/wire split, and the helpers'
+own doc comments carry the list, the sweep that produced it, and why `magnitude`,
+`summary`, `reason` and `confidence` are deliberately left raw. It is worth
 reading before adding a render: the helper was added for the two AI panels and the
 outcome picker in `components/sessions/session-outcome-panel.tsx` was found
 separately, afterwards, once `SYSTEM_PROMPT` started making every stored

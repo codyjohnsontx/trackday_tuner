@@ -380,10 +380,50 @@ describe('actionable prose in an empty plan', () => {
     });
   }
 
-  it('refuses a change verb governing a delta quantity', () => {
-    const result = emptyPlan({ summary: 'Increase front pressure by 6 psi before session one.' });
-    expect(result.decision).toBe('force_refusal');
-    expect(result.violations).toContain('actionable_prose_without_changes');
+  function decisionFor(summary: string) {
+    return emptyPlan({ summary }).decision;
+  }
+
+  // Both walls are pinned here on purpose, because this guard has been moved in
+  // both directions and each move broke the other side. Every sentence below is
+  // one the guard once got wrong.
+
+  // WALL ONE - false negatives. A real setup instruction escaping into prose the
+  // rider reads, with no magnitude ceiling anywhere near it.
+  describe('must refuse', () => {
+    it.each([
+      ['a delta the verb reaches across the component', 'Before session one, increase front tire pressure by 6 psi for more grip.'],
+      ['a delta an article pushes out of a short window', 'Increase the front tire pressure by 1 psi before session one.'],
+      ['a bare quantity the verb governs with no preposition', 'Drop the rear preload 4 turns and it will settle.'],
+      ['a delta reached across a canonical multi-word component', 'Increase front and rear cold pressure by 1 psi.'],
+      ['a delta the verb governs directly', 'Soften front rebound 1 click before session one.'],
+    ])('refuses %s', (_label, summary) => {
+      expect(decisionFor(summary)).toBe('force_refusal');
+      expect(emptyPlan({ summary }).violations).toContain('actionable_prose_without_changes');
+    });
+  });
+
+  // WALL TWO - false refusals. A correct answer discarded whole, which is the
+  // cost every widening of this pattern has charged.
+  describe('must allow', () => {
+    it.each([
+      ['a baseline reading beside a noun "setting"', 'Start on your baseline 30 psi cold setting and check hot pressures after session one.'],
+      ['a warming-day forecast naming a baseline pressure', 'Ambient will increase through the morning, so your 30 psi cold baseline will read higher hot.'],
+      ['an observed delta reported before an unrelated forecast verb', 'Rear hot pressure came up by 2 psi over cold last time here, and ambient will increase again today.'],
+      ['a reading reported without any instruction', 'Your last session finished at 32 psi hot on the rear.'],
+      ['a condition verb beside a non-setup unit', 'Expect grip to drop as ambient climbs past 30 degrees through the morning.'],
+      ['a verb and a quantity in different sentences', 'Run the Session 3 baseline. Rear hot pressure was 26 psi that day.'],
+    ])('allows %s', (_label, summary) => {
+      expect(decisionFor(summary)).toBe('allow');
+      expect(emptyPlan({ summary }).violations).toEqual([]);
+    });
+  });
+
+  // Order is what separates the two "by" sentences above: the refused one puts
+  // the verb before the number, the allowed one reports the number first.
+  it('reads the delta preposition as an instruction only after a change verb', () => {
+    expect(decisionFor('Increase front tire pressure by 1 psi.')).toBe('force_refusal');
+    expect(decisionFor('Front tire pressure rose by 1 psi.')).toBe('allow');
   });
 
   // The refusal only ever reaches the Morning Plan panel, which has no question
@@ -394,75 +434,11 @@ describe('actionable prose in an empty plan', () => {
     expect(result.advice.refusal).not.toContain('Ask for a specific change');
   });
 
-  it('refuses a delta the verb governs directly, with no "by"', () => {
-    const result = emptyPlan({ summary: 'Soften front rebound 1 click before session one.' });
-    expect(result.decision).toBe('force_refusal');
-    expect(result.violations).toContain('actionable_prose_without_changes');
-  });
-
-  it('refuses a delta buried mid-sentence in an otherwise ordinary plan', () => {
-    const result = emptyPlan({
-      summary: 'Before session one, increase front tire pressure by 6 psi for more grip.',
-    });
-    expect(result.decision).toBe('force_refusal');
-    expect(result.violations).toContain('actionable_prose_without_changes');
-  });
-
-  // Every sentence below is one this heuristic once refused, kept so the next
-  // person can tell whether they broke the guard or fixed it.
-  it('does not fire on a condition description that happens to contain a verb', () => {
-    // "drop" and a temperature, but no setup unit - this is a forecast, not an instruction.
-    const result = emptyPlan({
-      summary: 'Expect grip to drop as ambient climbs past 30 degrees through the morning.',
-    });
-    expect(result.decision).toBe('allow');
-  });
-
-  it('does not fire on a reading reported without an instruction', () => {
-    const result = emptyPlan({
-      summary: 'Your last session finished at 32 psi hot on the rear.',
-    });
-    expect(result.decision).toBe('allow');
-  });
-
-  // "setting" is a noun here and sits beside a psi figure, which in a setup
-  // logger is the normal case rather than the exception - and this is the
-  // baseline-check answer the empty-plan path exists to preserve.
-  it('allows the baseline cold-setting phrasing the day-plan prompt steers toward', () => {
-    const result = emptyPlan({
-      summary: 'Start on your baseline 30 psi cold setting and check hot pressures after session one.',
-    });
-    expect(result.decision).toBe('allow');
-    expect(result.violations).toEqual([]);
-  });
-
-  // A change verb and a psi figure in one sentence, and it is a forecast: the
-  // verb governs the weather, not the number.
-  it('allows a warming-day forecast that names a baseline pressure', () => {
-    const result = emptyPlan({
-      summary:
-        'Ambient will increase through the morning, so your 30 psi cold baseline will read higher hot.',
-    });
-    expect(result.decision).toBe('allow');
-    expect(result.violations).toEqual([]);
-  });
-
-  // A reported delta and an unrelated forecast verb in one sentence. The verb
-  // never reaches the number, so nothing here is an instruction.
-  it('allows an observed delta reported beside a separate forecast verb', () => {
-    const result = emptyPlan({
-      summary:
-        'Rear hot pressure came up by 2 psi over cold last time here, and ambient will increase again today.',
-    });
-    expect(result.decision).toBe('allow');
-    expect(result.violations).toEqual([]);
-  });
-
-  it('does not fire when the verb and the quantity are in different sentences', () => {
-    const result = emptyPlan({
-      summary: 'Run the Session 3 baseline. Rear hot pressure was 26 psi that day.',
-    });
-    expect(result.decision).toBe('allow');
+  // Best-effort by design: an instruction carrying no numeric delta is not
+  // caught here, and SYSTEM_PROMPT carries that half instead. Pinned so the
+  // limit is a decision on the record rather than a surprise.
+  it('does not catch an instruction with no numeric delta', () => {
+    expect(decisionFor('Front tyres want another half psi before session one.')).toBe('allow');
   });
 
   // Scope is the summary alone. The other prose fields are read as forecasts,

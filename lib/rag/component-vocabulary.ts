@@ -180,6 +180,54 @@ export function formatComponentLabel(component: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+function directionKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[_\s-]+/g, ' ');
+}
+
+const DIRECTION_LABELS = new Map<string, string>(
+  Object.values(COMPONENT_POLICIES).flatMap((policy) =>
+    policy.directions.map(
+      (direction): [string, string] => [
+        directionKey(direction),
+        direction.charAt(0).toUpperCase() + direction.slice(1),
+      ],
+    ),
+  ),
+);
+
+/**
+ * The same job for `direction`, which is the other half of the wire vocabulary.
+ *
+ * The class this belongs to is ANY MODEL-SUPPLIED IDENTIFIER REACHING A
+ * RIDER-FACING RENDER, not the component field specifically - the component was
+ * simply the first member found. `SYSTEM_PROMPT` now pins `direction` to exact
+ * strings too (`soften`, `toe-in`, `shorter gearing`, `reduce negative
+ * camber`...), so a recommendation reads `front_rebound · soften` on screen
+ * unless both halves are formatted. The lookup answers with the canonical
+ * spelling whatever separator arrived, so `toe_in` and `toe-in` both render
+ * `Toe-in`, and an unrecognised value passes through unchanged the way a
+ * pre-vocabulary row like "Return toward baseline" must.
+ *
+ * WHAT THE SWEEP COVERED AND WHAT IT DELIBERATELY LEAVES RAW. Method: grep
+ * `\.direction|\.magnitude|\.summary|\.reason` across `components` and `app`,
+ * then trace each hit to whether the value is model-supplied or rider-entered.
+ *
+ * - `direction` is formatted, at the same four sites as the component.
+ * - `magnitude` stays raw: "0.5 psi", "1 click" - a quantity with its unit, and
+ *   already rider-readable.
+ * - `summary` and `reason` stay raw: free model prose, not identifiers.
+ * - `confidence` stays raw: a lowercase enum that reads as English in
+ *   "Confidence: medium", not identifier-shaped.
+ * - `data_used` keys already resolve through each panel's own `DATA_USED_LABELS`
+ *   map, so they never reach a rider raw.
+ * - `session.suspension.front.direction` in `app/(app)/sessions/[id]/page.tsx`
+ *   is a FALSE MATCH and must stay untouched: same field name, but it is the
+ *   rider's own "in"/"out" entry, not a model-supplied recommendation.
+ */
+export function formatDirectionLabel(direction: string): string {
+  return DIRECTION_LABELS.get(directionKey(direction)) ?? direction;
+}
+
 /**
  * The prompt-facing rendering of the table above. Generated, never hand-copied:
  * this is the text the model is given, and it is built from the same data the

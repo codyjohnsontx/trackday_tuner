@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { RefusalCard } from '@/components/ai/refusal-card';
 import { SafetyBanner } from '@/components/ai/safety-banner';
-import { formatComponentLabel } from '@/lib/rag/component-vocabulary';
+import { formatComponentLabel, formatDirectionLabel } from '@/lib/rag/component-vocabulary';
 import type { AdviceResponse } from '@/lib/rag/schema';
 import type { Vehicle } from '@/types';
 import { cn } from '@/lib/utils';
@@ -185,7 +185,7 @@ export function DayPlanAdviceResult({ advice }: { advice: AdviceResponse }) {
           {advice.recommended_changes.map((change, idx) => (
             <li key={`${change.component}-${idx}`} className="rounded-row bg-surface-2 p-3">
               <p className="text-sm font-medium text-ink">{formatComponentLabel(change.component)}</p>
-              <p className="text-sm text-ink-dim">{change.direction} · {change.magnitude}</p>
+              <p className="text-sm text-ink-dim">{formatDirectionLabel(change.direction)} · {change.magnitude}</p>
               <p className="mt-1 text-sm text-ink-dim">{change.reason}</p>
             </li>
           ))}
