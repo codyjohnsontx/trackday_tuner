@@ -421,7 +421,7 @@ describe('POST /api/ai/tuning-advice stored rider text screening', () => {
 
   it('refuses on the current session notes', async () => {
     const result = await drive({ session: session({ notes: PAYLOAD }) });
-    expectStoredTextRefusal(result, 'the notes on your 2026-04-25 session');
+    expectStoredTextRefusal(result, 'the notes on session 1 of your 2026-04-25 track day');
   });
 
   it('refuses on a current-session setup string that is not the notes field', async () => {
@@ -433,7 +433,7 @@ describe('POST /api/ai/tuning-advice stored rider text screening', () => {
         },
       }),
     });
-    expectStoredTextRefusal(result, 'the front rebound on your 2026-04-25 session');
+    expectStoredTextRefusal(result, 'the front rebound on session 1 of your 2026-04-25 track day');
   });
 
   it('refuses on the vehicle nickname', async () => {
@@ -445,7 +445,7 @@ describe('POST /api/ai/tuning-advice stored rider text screening', () => {
     const result = await drive({
       previous: [session({ id: PREVIOUS_SESSION_ID, date: '2026-03-01', notes: PAYLOAD })],
     });
-    expectStoredTextRefusal(result, 'the notes on your 2026-03-01 session');
+    expectStoredTextRefusal(result, 'the notes on session 1 of your 2026-03-01 track day');
   });
 
   // Refuses, because the rider can clear it: `save_session_outcome` rebuilds the
@@ -478,7 +478,7 @@ describe('POST /api/ai/tuning-advice stored rider text screening', () => {
         ],
       }),
     });
-    expectStoredTextRefusal(result, 'the notes on your 2026-02-14 session');
+    expectStoredTextRefusal(result, 'the notes on session 1 of your 2026-02-14 track day');
   });
 
   it('refuses on a logged outcome note', async () => {
@@ -613,7 +613,7 @@ describe('POST /api/ai/tuning-advice stored rider text screening', () => {
         recentRecommendations: [recommendation({ id: REC_A, predicted_effect: PAYLOAD })],
       }),
     });
-    expectStoredTextRefusal(result, 'the notes on your 2026-04-25 session');
+    expectStoredTextRefusal(result, 'the notes on session 1 of your 2026-04-25 track day');
   });
 
   it('audits the refusal under the status the throttle does not count', async () => {
@@ -641,7 +641,7 @@ describe('POST /api/ai/tuning-advice stored rider text screening', () => {
         recentRecommendations: [recommendation({ id: REC_A, predicted_effect: PAYLOAD })],
       }),
     });
-    expectStoredTextRefusal(result, 'the notes on your 2026-04-25 session');
+    expectStoredTextRefusal(result, 'the notes on session 1 of your 2026-04-25 track day');
   });
 
   it('leaves an ordinary request with stored text alone', async () => {

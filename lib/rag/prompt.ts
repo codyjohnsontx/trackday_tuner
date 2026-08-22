@@ -70,6 +70,14 @@ const DAY_PLAN_SESSION_LIMIT = 8;
 // list would promote one the collector never screened into the printed window.
 const RECENT_RECOMMENDATION_LIMIT = 3;
 
+// How many saved outcomes `formatRaceEngineerContext` prints. Shared with the
+// collector below so the screen cannot cover fewer rows than the prompt prints.
+// The context loader reads eight (`limit(8)` on `session_feedback`,
+// `lib/rag/race-engineer-context.ts`), so with the window written out at each
+// site the two agreed only by coincidence: raising the formatter's alone would
+// have printed symptoms and notes nothing had screened.
+const RECENT_FEEDBACK_LIMIT = 5;
+
 // Neutralize any closing-tag sequence a user might slip into a free-text field
 // (notes, nickname, question, symptom chip, etc.) so they cannot escape a data
 // block and smuggle instructions into the prompt.
@@ -221,7 +229,7 @@ function formatRaceEngineerContext(context: RaceEngineerContext | null | undefin
 
   if (context.recentFeedback.length > 0) {
     lines.push('  recent_feedback:');
-    context.recentFeedback.slice(0, 5).forEach((feedback, idx) => {
+    context.recentFeedback.slice(0, RECENT_FEEDBACK_LIMIT).forEach((feedback, idx) => {
       lines.push(`    [${idx + 1}] session_id=${feedback.session_id} outcome=${feedback.outcome} confidence=${feedback.rider_confidence ?? '—'} symptoms=${sanitizeFreeText(feedback.symptoms.join(', ') || '—')}`);
       if (feedback.notes) {
         lines.push(`        notes=${sanitizeFreeText(truncateAtWordBoundary(feedback.notes.trim(), 220))}`);
@@ -458,10 +466,40 @@ function collectEnvironmentRiderText(
   return fields;
 }
 
+/**
+ * How a refusal names the session a field is on. Shared by every session-shaped
+ * label so there is one way of pointing at a session, not three.
+ *
+ * The date alone is ambiguous exactly where it is most often used. Sessions on
+ * one track day all carry the same `date` (see the list-ordering note in
+ * CLAUDE.md), `fetchPreviousSession` usually returns an earlier one from that
+ * same day, and the similar-session search draws from it too - so a rider told
+ * to edit "the notes on your 2026-04-01 session" can have three of them open
+ * and no way to tell which. A stored-text refusal repeats until the offending
+ * field is fixed, so the label is their only way out of a locked paid route.
+ *
+ * `session_number` is what disambiguates, and it is what the session card, the
+ * history list, the comparison picker and the session detail page already label
+ * a session with, so the refusal names something they can read off the screen.
+ *
+ * It is nullable, and every one of those screens hides the badge when it is
+ * missing, so a session without one falls back to the date-only wording rather
+ * than naming a number the rider will not find. Several same-day sessions that
+ * ALL lack a number therefore stay ambiguous. That is an accepted residual: the
+ * row carries nothing else a rider could recognise a session by, and inventing
+ * an ordinal here would name a position no screen shows.
+ */
+function sessionLabelSuffix(session: Session): string {
+  return session.session_number
+    ? `on session ${session.session_number} of your ${session.date} track day`
+    : `on your ${session.date} session`;
+}
+
 function collectSessionRiderText(session: Session): RiderTextField[] {
   const fields: RiderTextField[] = [];
+  const suffix = sessionLabelSuffix(session);
   const add = (name: string, value: string | null | undefined) =>
-    pushRiderText(fields, REFUSE_ON_MATCH, `the ${name} on your ${session.date} session`, value);
+    pushRiderText(fields, REFUSE_ON_MATCH, `the ${name} ${suffix}`, value);
 
   add('track name', session.track_name);
   add('tyre condition', session.tires.condition);
@@ -575,7 +613,7 @@ function collectRaceEngineerContextRiderText(
   // than the recent-sessions block does, and draws from a wider candidate list,
   // so these are collected separately rather than assumed already covered.
   for (const item of context.similarSessions) {
-    const suffix = `on your ${item.session.date} session`;
+    const suffix = sessionLabelSuffix(item.session);
     pushRiderText(fields, REFUSE_ON_MATCH, `the track name ${suffix}`, item.session.track_name);
     pushRiderText(fields, REFUSE_ON_MATCH, `the front tyre pressure ${suffix}`, item.session.tires.front.pressure);
     pushRiderText(fields, REFUSE_ON_MATCH, `the rear tyre pressure ${suffix}`, item.session.tires.rear.pressure);
@@ -586,7 +624,7 @@ function collectRaceEngineerContextRiderText(
   // same way: both are the UTC date of a `timestamptz` and can be a day off for
   // a rider west of Greenwich, pointing them at the wrong outcome if they
   // logged on consecutive days. One task covers both; do not fix one alone.
-  for (const feedback of context.recentFeedback.slice(0, 5)) {
+  for (const feedback of context.recentFeedback.slice(0, RECENT_FEEDBACK_LIMIT)) {
     const suffix = `on the outcome you logged on ${feedback.created_at.slice(0, 10)}`;
     pushRiderText(fields, REFUSE_ON_MATCH, `the symptoms ${suffix}`, feedback.symptoms.join(', '));
     pushRiderText(fields, REFUSE_ON_MATCH, `the notes ${suffix}`, feedback.notes);
@@ -815,7 +853,7 @@ export function collectTuningAdviceRiderText(
     // this one.
     ...collectRaceEngineerContextRiderText(
       input.raceEngineerContext,
-      `on your ${input.session.date} session`,
+      sessionLabelSuffix(input.session),
       SKIP_SESSION_ENVIRONMENT,
     ),
   ];

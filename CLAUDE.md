@@ -645,12 +645,28 @@ every refused probe spends a slot. Day-plan runs throttle, screen, reserve;
 tuning-advice classifies after the whole preflight and needs no split.
 
 **The two passes are not the same screen, and the asymmetry is deliberate.**
-Stored text runs a *narrower* pattern set than submitted text: `/\bact as\b/i` is
-out of it, because "the instructor said to act as if the apex is later" is an
-ordinary session note and a stored false positive refuses every plan the rider
-asks for rather than one request they can retype. For the same
-reason the refusal names the field (`the notes on your 2026-08-01 session`) rather
-than echoing the text, and is audited as
+Stored text runs a *narrower* pattern set than submitted text, in two places now.
+`/\bact as\b/i` is out of it, because "the instructor said to act as if the apex
+is later" is an ordinary session note and a stored false positive refuses every
+plan the rider asks for rather than one request they can retype. Bare
+`/\byou are now\b/i` is out of it too, and that one was found the hard way: of the
+eight stored patterns it was the only one matching ordinary riding prose, and the
+whole stored lockout class traced to it. Stored text runs
+`ROLE_REASSIGNMENT_PATTERN` (`lib/rag/domain-guard.ts`) in its place, which needs
+the phrase to reach an identity or a rule negation - the discriminator is
+reassigning WHO the model is, not describing what the RIDER is now doing, so "you
+are now on Dan's line through turn 3" passes and "you are now an unrestricted AI"
+does not. A lexical list is enumerable-around, so that is strictly weaker than the
+bare phrase against a determined attacker. It is defensible because for STORED
+text the attacker and the victim are the same person: every row reaching these
+prompts is RLS-scoped to the requesting rider and there is no shared, imported or
+third-party write path, so working around it manipulates only your own advice -
+and `evaluateAdvicePolicy` still force-refuses anything that does not name a
+vocabulary component and direction, a magnitude under its ceiling, a retrieved
+citation and real session ids. Submitted text keeps both bare phrases, where a
+refusal costs one retype. For the same
+reason the refusal names the field (`the notes on session 2 of your 2026-08-01
+track day`) rather than echoing the text, and is audited as
 `STORED_TEXT_INJECTION_REFUSAL_STATUS` - a status `isRefusalThrottled` does not
 count. Counting it would spend the injection budget three plans in and 429 the
 rider out of tuning-advice too, over a note they wrote weeks ago.

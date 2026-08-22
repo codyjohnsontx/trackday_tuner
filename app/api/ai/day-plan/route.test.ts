@@ -753,7 +753,7 @@ describe('POST /api/ai/day-plan stored rider text', () => {
     const response = await post({ vehicle_id: VEHICLE_ID });
     const body = await response.json();
 
-    expect(body.advice.refusal).toContain('the notes on your 2026-08-01 session');
+    expect(body.advice.refusal).toContain('the notes on session 1 of your 2026-08-01 track day');
     expect(generateDayPlan).not.toHaveBeenCalled();
   });
 
@@ -792,7 +792,7 @@ describe('POST /api/ai/day-plan stored rider text', () => {
     const response = await post({ vehicle_id: VEHICLE_ID });
     const body = await response.json();
 
-    expect(body.advice.refusal).toContain('the tyre condition on your 2026-08-01 session');
+    expect(body.advice.refusal).toContain('the tyre condition on session 1 of your 2026-08-01 track day');
     expect(generateDayPlan).not.toHaveBeenCalled();
   });
 
@@ -804,7 +804,7 @@ describe('POST /api/ai/day-plan stored rider text', () => {
     const response = await post({ vehicle_id: VEHICLE_ID });
     const body = await response.json();
 
-    expect(body.advice.refusal).toContain('the front rebound on your 2026-08-01 session');
+    expect(body.advice.refusal).toContain('the front rebound on session 1 of your 2026-08-01 track day');
     expect(generateDayPlan).not.toHaveBeenCalled();
   });
 

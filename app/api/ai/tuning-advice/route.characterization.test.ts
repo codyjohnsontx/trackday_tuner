@@ -501,7 +501,7 @@ stored text injection:
   retry-after=-
   x-request-id=set
   error=-
-  refusal=I could not answer that from your saved setup data. The wording in the notes on your 2026-04-25 session reads as an instruction to me rather than as a description of your vehicle. Edit that field and try again.
+  refusal=I could not answer that from your saved setup data. The wording in the notes on session 1 of your 2026-04-25 track day reads as an instruction to me rather than as a description of your vehicle. Edit that field and try again.
   recommendation_id=null
   summary=Race Engineer only answers setup questions about on-track behavior and safe, reversible setup changes.
   confidence=low

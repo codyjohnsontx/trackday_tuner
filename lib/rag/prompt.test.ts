@@ -404,8 +404,8 @@ describe('collectDayPlanRiderText', () => {
       collected.find((field) => field.value.includes(sentinel))?.label;
 
     expect(labelFor(SENTINELS.nickname)).toBe('the vehicle nickname');
-    expect(labelFor(SENTINELS.notes)).toBe('the notes on your 2026-04-01 session');
-    expect(labelFor(SENTINELS.tyreCondition)).toBe('the tyre condition on your 2026-04-01 session');
+    expect(labelFor(SENTINELS.notes)).toBe('the notes on session 2 of your 2026-04-01 track day');
+    expect(labelFor(SENTINELS.tyreCondition)).toBe('the tyre condition on session 2 of your 2026-04-01 track day');
     expect(labelFor(SENTINELS.feedbackNotes)).toBe(
       'the notes on the outcome you logged on 2026-04-02',
     );
@@ -595,8 +595,8 @@ describe('collectTuningAdviceRiderText', () => {
       ),
     ).toEqual(
       new Set([
-        'the weather condition on your 2026-04-01 session',
-        'the surface condition on your 2026-04-01 session',
+        'the weather condition on session 2 of your 2026-04-01 track day',
+        'the surface condition on session 2 of your 2026-04-01 track day',
         'the saved recommendation from 2026-03-20',
       ]),
     );
@@ -608,17 +608,87 @@ describe('collectTuningAdviceRiderText', () => {
       collected.find((field) => field.value.includes(sentinel))?.label;
 
     expect(labelFor(SENTINELS.nickname)).toBe('the vehicle nickname');
-    expect(labelFor(SENTINELS.notes)).toBe('the notes on your 2026-04-01 session');
-    expect(labelFor(SENTINELS.previousNotes)).toBe('the notes on your 2026-03-01 session');
+    expect(labelFor(SENTINELS.notes)).toBe('the notes on session 2 of your 2026-04-01 track day');
+    expect(labelFor(SENTINELS.previousNotes)).toBe('the notes on session 2 of your 2026-03-01 track day');
     expect(labelFor(SENTINELS.feedbackNotes)).toBe(
       'the notes on the outcome you logged on 2026-04-02',
     );
     // The stored session_environment row, not anything typed into a planner.
-    expect(labelFor(SENTINELS.weather)).toBe('the weather condition on your 2026-04-01 session');
+    expect(labelFor(SENTINELS.weather)).toBe('the weather condition on session 2 of your 2026-04-01 track day');
     expect(labelFor(SENTINELS.recommendationEffect)).toBe(
       'the saved recommendation from 2026-03-20',
     );
     expect(labelFor(SENTINELS.telemetryMetrics)).toBe('the telemetry metrics');
+  });
+
+  // The date alone cannot tell three sessions of one track day apart, and that
+  // is the common case here: `fetchPreviousSession` usually returns an earlier
+  // session from the same day. The current and previous sessions below share a
+  // date and differ only by number, so a label that dropped the number would
+  // collapse the two and point the rider at either one.
+  it('tells two sessions of the same track day apart', () => {
+    const input = stampedInput();
+    const collected = collectTuningAdviceRiderText({
+      ...input,
+      previousSession: stampedSession({
+        id: 'prev',
+        session_number: 1,
+        notes: SENTINELS.previousNotes,
+      }),
+    });
+    const labelFor = (sentinel: string) =>
+      collected.find((field) => field.value.includes(sentinel))?.label;
+
+    expect(labelFor(SENTINELS.notes)).toBe('the notes on session 2 of your 2026-04-01 track day');
+    expect(labelFor(SENTINELS.previousNotes)).toBe(
+      'the notes on session 1 of your 2026-04-01 track day',
+    );
+  });
+
+  // A session logged without a number falls back to the date-only wording
+  // rather than naming a number no screen shows - the session card, history
+  // list, comparison picker and detail page all hide the badge when it is
+  // missing. Same-day sessions that ALL lack one stay ambiguous, which is an
+  // accepted residual: the row carries nothing else a rider could pick it out by.
+  it('falls back to the date when a session carries no number', () => {
+    const input = stampedInput();
+    const collected = collectTuningAdviceRiderText({
+      ...input,
+      session: stampedSession({ session_number: null, notes: 'S-unnumbered-notes' }),
+    });
+    const labelFor = (sentinel: string) =>
+      collected.find((field) => field.value.includes(sentinel))?.label;
+
+    expect(labelFor('S-unnumbered-notes')).toBe('the notes on your 2026-04-01 session');
+  });
+
+  // The context loader returns more feedback rows than the prompt prints, so
+  // the printed window is the thing the screen has to match. Both sides read
+  // one constant, and this is what makes that hold rather than agree by
+  // coincidence: it drives more rows than the window and fails if the formatter
+  // ever prints a row the collector did not hand to the screen.
+  it('collects every feedback row the prompt actually prints', () => {
+    const input = stampedInput();
+    const recentFeedback = Array.from({ length: 8 }, (_, idx) => ({
+      ...stampedFeedback(),
+      id: `feedback-${idx}`,
+      notes: `S-feedback-notes-${idx}`,
+    }));
+    const withFeedback = {
+      ...input,
+      raceEngineerContext: { ...input.raceEngineerContext, recentFeedback },
+    };
+    const prompt = buildUserPrompt({ ...withFeedback, retrieved: [] });
+    const collected = collectTuningAdviceRiderText(withFeedback);
+
+    const printed = recentFeedback.filter((row) => prompt.includes(row.notes));
+    // Guard the guard: a window that printed everything, or nothing, would make
+    // the loop below pass without testing anything.
+    expect(printed.length).toBeGreaterThan(0);
+    expect(printed.length).toBeLessThan(recentFeedback.length);
+    for (const row of printed) {
+      expect(collected.some((field) => field.value.includes(row.notes))).toBe(true);
+    }
   });
 });
 
