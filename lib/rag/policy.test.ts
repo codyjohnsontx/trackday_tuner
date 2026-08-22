@@ -389,12 +389,14 @@ describe('actionable prose in an empty plan', () => {
   // one the guard once got wrong.
 
   // WALL ONE - false negatives. A real setup instruction escaping into prose the
-  // rider reads, with no magnitude ceiling anywhere near it.
+  // rider reads as advice, with no magnitude ceiling anywhere near it.
   describe('must refuse', () => {
     it.each([
       ['a delta the verb reaches across the component', 'Before session one, increase front tire pressure by 6 psi for more grip.'],
       ['a delta an article pushes out of a short window', 'Increase the front tire pressure by 1 psi before session one.'],
       ['a bare quantity the verb governs with no preposition', 'Drop the rear preload 4 turns and it will settle.'],
+      ['a delta reached across a bare "and" inside one noun phrase', 'Increase the front and rear cold tire pressure by 1 psi.'],
+      ['an instruction in the first clause of a comma-joined sentence', 'Soften front rebound 2 clicks, and check hot pressures after.'],
       ['a delta reached across a canonical multi-word component', 'Increase front and rear cold pressure by 1 psi.'],
       ['a delta the verb governs directly', 'Soften front rebound 1 click before session one.'],
     ])('refuses %s', (_label, summary) => {
@@ -403,20 +405,34 @@ describe('actionable prose in an empty plan', () => {
     });
   });
 
-  // WALL TWO - false refusals. A correct answer discarded whole, which is the
-  // cost every widening of this pattern has charged.
+  // WALL TWO - false refusals. A correct empty-changes day plan discarded whole,
+  // which is the cost every widening of this pattern has charged.
   describe('must allow', () => {
     it.each([
       ['a baseline reading beside a noun "setting"', 'Start on your baseline 30 psi cold setting and check hot pressures after session one.'],
       ['a warming-day forecast naming a baseline pressure', 'Ambient will increase through the morning, so your 30 psi cold baseline will read higher hot.'],
       ['an observed delta reported before an unrelated forecast verb', 'Rear hot pressure came up by 2 psi over cold last time here, and ambient will increase again today.'],
       ['a reading reported without any instruction', 'Your last session finished at 32 psi hot on the rear.'],
+      ['a forecast verb and a reported delta in separate clauses', 'Grip will drop as the track heats, and hot pressures typically come up by 2 psi from cold.'],
+      ['a forecast whose second clause predicts a rise', 'Ambient will increase through the morning, so expect rear hot pressure to come up by 2 psi over cold.'],
       ['a condition verb beside a non-setup unit', 'Expect grip to drop as ambient climbs past 30 degrees through the morning.'],
       ['a verb and a quantity in different sentences', 'Run the Session 3 baseline. Rear hot pressure was 26 psi that day.'],
     ])('allows %s', (_label, summary) => {
       expect(decisionFor(summary)).toBe('allow');
       expect(emptyPlan({ summary }).violations).toEqual([]);
     });
+  });
+
+  // A comma-joined sentence carries more than one intent, so the unit of
+  // analysis is the clause. A bare "and" must NOT split, because
+  // "front and rear cold tire pressure" is a single noun phrase.
+  it('splits on comma-plus-connective but never on a bare "and"', () => {
+    expect(decisionFor('Grip will drop as the track heats, and pressures come up by 2 psi.')).toBe(
+      'allow',
+    );
+    expect(decisionFor('Increase the front and rear cold tire pressure by 1 psi.')).toBe(
+      'force_refusal',
+    );
   });
 
   // Order is what separates the two "by" sentences above: the refused one puts

@@ -600,14 +600,22 @@ pressure by 6 psi" is refused, while "your 30 psi cold baseline" is not, and
 neither is "rear hot pressure came up by 2 psi over cold, and ambient will
 increase again today" - there the number comes first, which makes it a report.
 
-The guard is **best-effort by design and that limit is accepted, not chased**. It
-does not catch an instruction carrying no numeric delta - "front tyres want
-another half psi" walks past. The prompt contract carries that half instead:
-`describeComponentVocabulary()` tells the model prose instructions are discarded
-with the whole response. Do not extend the pattern after a determined model; each
-widening so far has cost a false refusal on a paid route, and a real
-recommendation belongs in `recommended_changes` where the magnitude ceiling can
-see it. The refusal copy is day-plan wording, because
+**The unit it reads is a clause, not a sentence.** A comma-joined sentence carries
+more than one intent, so a forecast verb in the first clause was governing a
+reported delta in the second and refusing a plan that instructed nothing. The
+summary splits on sentence terminators *and* on a comma followed by a connective;
+a bare "and" deliberately does not split, because "front and rear cold tire
+pressure" is one noun phrase and splitting there stops a real instruction being
+caught at all. Fixing the unit rather than the pattern is what closed that class.
+
+The guard is **best-effort by design and closed to further pattern work**. It is
+deliberately incomplete: it does not catch an instruction carrying no numeric
+delta - "front tyres want another half psi" walks past. The prompt contract
+carries that half instead, since `describeComponentVocabulary()` tells the model
+prose instructions are discarded with the whole response. Every widening of this
+pattern has cost a false refusal on a paid route, so a case that escapes is to be
+**recorded rather than chased** with another pattern change; a real recommendation
+belongs in `recommended_changes` where the magnitude ceiling can see it. The refusal copy is day-plan wording, because
 `allowEmptyRecommendations` has exactly one caller and that panel has no question
 box to ask anything in.
 

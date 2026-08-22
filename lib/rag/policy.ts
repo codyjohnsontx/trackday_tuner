@@ -70,14 +70,25 @@ interface AdvicePolicyInput {
  * verb. Units that describe conditions rather than adjustments (degrees,
  * percent) are not setup units at all and never match.
  *
- * THE GUARD IS BEST-EFFORT BY DESIGN, and that limit is accepted rather than
- * chased. It does not catch an instruction carrying no numeric delta - "front
- * tyres want another half psi" is a real instruction and walks straight past.
- * The prompt contract carries that half now: `describeComponentVocabulary()`
- * tells the model in `SYSTEM_PROMPT` that a setup instruction written into
- * `summary` or `prediction` is not checked and will be discarded with the whole
- * response. Do not extend this with further pattern-chasing after a determined
- * model; every widening so far has cost a false refusal on a paid route.
+ * THE UNIT IS A CLAUSE, NOT A SENTENCE. A comma-joined sentence carries more
+ * than one intent, and reading it as one let a forecast verb in the first clause
+ * govern a reported delta in the second: "grip will drop as the track heats, and
+ * hot pressures typically come up by 2 psi from cold" instructs nothing and was
+ * refused whole. Splitting at a comma followed by a connective fixed that
+ * without touching the rule. A BARE "and" DOES NOT SPLIT, and that boundary is
+ * load-bearing: "front and rear cold tire pressure" is one noun phrase, and
+ * splitting there stops "Increase the front and rear cold tire pressure by 1
+ * psi" being caught at all.
+ *
+ * THE GUARD IS BEST-EFFORT BY DESIGN AND CLOSED TO FURTHER PATTERN WORK. It is
+ * deliberately incomplete: it does not catch an instruction carrying no numeric
+ * delta - "front tyres want another half psi" is a real instruction and walks
+ * straight past. The prompt contract carries that half, because
+ * `describeComponentVocabulary()` tells the model in `SYSTEM_PROMPT` that a
+ * setup instruction written into `summary` or `prediction` is not checked and
+ * will be discarded with the whole response. Every widening of this pattern has
+ * cost a false refusal on a paid route, so a case that escapes from here on is
+ * to be RECORDED rather than chased with another pattern change.
  *
  * "set", "sets" and "setting" are deliberately not in the verb list. In a setup
  * logger those words are usually nouns and they sit next to a psi figure
@@ -121,13 +132,15 @@ const DELTA_QUANTITY_PATTERN = new RegExp(
   'i',
 );
 
+const CLAUSE_BOUNDARY_PATTERN =
+  /[.!?;\n]+|,\s*(?:and|but|so|then|while|whereas|although|though|yet)\b/i;
+
 function hasActionableProse(advice: AdviceResponse): boolean {
   const summary = typeof advice.summary === 'string' ? advice.summary : '';
   return summary
-    .split(/[.!?;\n]+/)
+    .split(CLAUSE_BOUNDARY_PATTERN)
     .some(
-      (sentence) =>
-        CHANGE_VERB_PATTERN.test(sentence) && DELTA_QUANTITY_PATTERN.test(sentence),
+      (clause) => CHANGE_VERB_PATTERN.test(clause) && DELTA_QUANTITY_PATTERN.test(clause),
     );
 }
 
