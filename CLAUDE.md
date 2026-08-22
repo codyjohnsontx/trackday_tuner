@@ -495,7 +495,9 @@ and watch each new one fail before it passes.
 
 ## Current AI Status
 
-AI routes are active for tuning advice, recommendation feedback, and day planning.
+Two AI routes reach the model: `/api/ai/tuning-advice` and `/api/ai/day-plan`.
+`/api/ai/recommendation-feedback` is a 410 tombstone; that feedback is
+recorded through the session outcome flow instead.
 `lib/rag/` contains retrieval, prompt, policy, validation, and schema helpers.
 Knowledge-base markdown lives in `docs/knowledge-base/` and can be indexed with `npm run rag:index`.
 
