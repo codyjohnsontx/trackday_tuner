@@ -544,6 +544,30 @@ route screens exactly what its own prompt interpolates. Tuning-advice shipped fo
 a full release screening none of it while day-plan screened all of it, which is
 what a guard wired to one of two twins looks like from the outside: covered.
 
+**Before changing anything on an AI path, answer: does anything reach a model
+with unscreened stored rider text?** This defect has been found four times, each
+time one route further out, because each round fixed its own case with no cheap
+way to ask what else consumed the same thing. Seven checks answer it, and they
+close it from *both* ends - which is what makes "none" a finding rather than a
+failure to look. In order:
+
+1. `grep -rn "new OpenAI\|chat.completions\|embeddings.create"` over `*.ts`,
+   `*.tsx`, `*.mjs`. Every module that can reach a model is in that output.
+2. List the exports of each hit. Only `lib/rag/advice.ts` has a chat call, so its
+   exported functions are the entire surface.
+3. Grep each of those for production callers, excluding `*.test.ts`.
+4. Grep `embedQuery` (`lib/rag/embed.ts`) separately - it is reached through
+   those same functions and adds no entry point, but check rather than assume.
+5. Check `scripts/build-rag-index.mjs` for a Supabase client. It has none and
+   embeds `docs/knowledge-base/` off disk, so no rider text reaches the index.
+6. Loop every `app/api/**/route.ts`; flag any that reaches a model.
+7. Loop every `"use server"` module; flag any importing a prompt builder or a
+   model function.
+
+Steps 1-3 close it from the model's side, 6-7 from the caller's side. A route
+that turns up in 6 or 7 and screens nothing is the bug, and what it needs is a
+collector of its own - not a call added to `classifyStoredRiderText`.
+
 **Whether a field is excluded turns on who can WRITE the column, not on who
 wrote the value in it.** Previous recommendations were once excluded as "already
 through `evaluateAdvicePolicy`" - true of the row at insert and untrue when it is
