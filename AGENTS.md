@@ -582,6 +582,35 @@ a similar session's match reasons) and values a DATABASE constraint pins
 merely constrained by a form. The reasoning is on the exclusion list in
 `lib/rag/prompt.ts`; both collectors point at it.
 
+**Screening decides what a match DOES; it does not put the value in a data block
+in the first place. `sanitizeFreeText` does that, and a `jsonb` string leaf has
+nothing behind its TypeScript union.** `suspension.front.direction` and
+`suspension.rear.direction` are typed `'in' | 'out'` and were interpolated raw
+while `preload`, `compression` and `rebound` on the same line went through
+`formatValue`, so a stored `</session_data>` closed the untrusted block early on
+*both* AI routes and the rider's text landed in the model's instruction space.
+The type was the only thing asserting that union: `sessions.suspension` is
+shape-unconstrained `jsonb`, `createSession` inserts the blob verbatim, and
+`authenticated` holds insert and update on the table. The stored-text screen is
+not a backstop, and assuming it was is the trap - its patterns are PHRASES, so a
+payload carrying only the closing tag passes it and still escapes.
+
+The sweep that answers "is any other field interpolated raw where its siblings
+are formatted?" is repeatable: list every `${...}` in `lib/rag/prompt.ts`, drop
+the ones already inside `formatValue` or `sanitizeFreeText`, and check each
+survivor against the DATABASE rather than against the type - `pg_constraint` for
+CHECKs, `information_schema.columns` for the column type. As of this writing
+every survivor with a column behind it is pinned by a column type or a CHECK
+(`sessions.conditions`, `sessions.date`, `vehicles.type`,
+`session_environment.source`, `session_feedback.outcome`,
+`ai_recommendations.status`) or validated as a number or date by the route
+validator (`temperature_c`, `target_date`, the day-plan environment numerics);
+the survivors with no column at all are the knowledge-base chunk fields, which
+come off disk rather than from a rider (step 5 above). So those two `direction`
+fields were the only gap. The regression test locks the BLOCK STRUCTURE rather
+than spying `formatValue`, because a helper that stopped neutralising tags would
+still satisfy a spy.
+
 **Screening a field decides that it is CHECKED. A second axis decides what a
 match DOES, and that one is ACTIONABILITY: can the rider reach the thing the
 refusal would name?** If they can, refuse - the request cannot safely proceed and
