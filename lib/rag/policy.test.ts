@@ -228,6 +228,63 @@ describe('evaluateAdvicePolicy', () => {
     expect(result.violations).toEqual([]);
   });
 
+  // A negated direction is a full-pipeline concern, not just a vocabulary one:
+  // it arrives with a valid component and a legal magnitude, so every other
+  // check passes and `unsupported_direction` is the only thing standing between
+  // the rider and a checked recommendation instructing the opposite of what the
+  // model wrote. Pinned here as well as in component-vocabulary.test.ts because
+  // this is the layer that turns the verdict into a refusal the rider reads.
+  it.each([
+    ['a plain prohibition', 'do not increase'],
+    ['an absolute prohibition', 'never increase'],
+    ['a substitution', 'instead of decrease'],
+    ['a paraphrase naming the component back', 'increase front tire pressure'],
+  ])('forces a refusal on %s in the direction field', (_label, direction) => {
+    const result = evaluateAdvicePolicy({
+      advice: buildAdvice({
+        recommended_changes: [
+          {
+            component: 'front_tire_pressure',
+            direction,
+            magnitude: '0.5 psi',
+            reason: 'Recover front grip without a large setup swing.',
+          },
+        ],
+      }),
+      fallbackDataUsed: buildAdvice().data_used,
+    });
+    expect(result.decision).toBe('force_refusal');
+    expect(result.violations).toEqual(['unsupported_direction']);
+    expect(result.advice.recommended_changes).toEqual([]);
+    expect(result.advice.refusal).toContain('could not verify a safe, supported setup change');
+  });
+
+  // The other wall. A correct recommendation must not be discarded because the
+  // model chose a separator or a case the table does not spell.
+  it.each([
+    ['the canonical spelling', 'toe-in'],
+    ['an underscore separator', 'toe_in'],
+    ['a space separator', 'toe in'],
+    ['shouted casing', 'TOE-IN'],
+    ['surrounding whitespace', '  toe-in  '],
+  ])('allows %s of a canonical direction', (_label, direction) => {
+    const result = evaluateAdvicePolicy({
+      advice: buildAdvice({
+        recommended_changes: [
+          {
+            component: 'front_toe',
+            direction,
+            magnitude: '2 mm',
+            reason: 'Sharpen turn-in without upsetting stability.',
+          },
+        ],
+      }),
+      fallbackDataUsed: buildAdvice().data_used,
+    });
+    expect(result.decision).toBe('allow');
+    expect(result.violations).toEqual([]);
+  });
+
   it('accepts top-level component keys emitted by the model', () => {
     const result = evaluateAdvicePolicy({
       advice: buildAdvice({

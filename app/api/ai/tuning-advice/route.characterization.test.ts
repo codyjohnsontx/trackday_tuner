@@ -551,3 +551,72 @@ describe('tuning-advice observable behaviour (locked)', () => {
     expect(snapshot.join('\n')).toBe(LOCKED_BEHAVIOUR);
   });
 });
+
+/**
+ * A DELIBERATE DEPARTURE FROM THE LOCK ABOVE, kept in a separate describe so it
+ * cannot be mistaken for part of it. `directionAllowed` used to match by
+ * word-boundary containment, so `do not increase` and `never increase` carried a
+ * valid component and a legal magnitude straight through the policy, were
+ * written to `ai_recommendations`, and were rendered to the rider as a checked
+ * recommendation instructing the opposite of what the model wrote.
+ *
+ * The lock's 19 paths do not move: `softer` was refused before and is refused
+ * now, and every other path is untouched. What this adds is the proof that the
+ * tightening reaches the RIDER through the real route rather than only through
+ * `evaluateAdvicePolicy` - the response body carries the refusal, the
+ * recommendation is not persisted (`recommendation_id=null`, which is
+ * `persistRecommendation` declining to write), and the audit row records
+ * `unsupported_direction` at the `post_policy` stage.
+ *
+ * The expected block is the locked `policy refusal: unsupported direction`
+ * output verbatim. That equality is the assertion: a negated direction is
+ * observably indistinguishable from any other off-vocabulary one.
+ */
+describe('tuning-advice refuses a negated direction (deliberate tightening)', () => {
+  const REFUSED = [
+    'status=200',
+    'retry-after=-',
+    'x-request-id=set',
+    'error=-',
+    'refusal=I could not verify a safe, supported setup change from that response. Ask about one on-track symptom and I will keep the recommendation conservative.',
+    'recommendation_id=null',
+    'summary=I could not identify a safe, supported setup recommendation from that request.',
+    'confidence=low',
+    'changes=-',
+    `rows=completed_refusal_unsupported_direction/unsupported_direction/force_refusal/unsupported_direction/post_policy/${SESSION_ID}`,
+  ].join('\n  ');
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getRealUser.mockResolvedValue({ id: USER_ID });
+    getUserProfile.mockResolvedValue({ id: USER_ID, tier: 'pro' });
+    loadRaceEngineerContext.mockResolvedValue(CONTEXT);
+  });
+
+  it.each([
+    ['a plain prohibition', 'do not soften'],
+    ['an absolute prohibition', 'never soften'],
+    ['a contracted prohibition', "don't soften"],
+    ['a substitution', 'instead of soften'],
+    ['a paraphrase naming the component back', 'soften front rebound'],
+  ])('refuses %s and stores nothing', async (_label, direction) => {
+    generateTuningAdvice.mockResolvedValueOnce({
+      advice: { ...GOOD_ADVICE, recommended_changes: [{ ...GOOD_ADVICE.recommended_changes[0], direction }] },
+      retrieved: [], usage: { prompt_tokens: 10, completion_tokens: 5 }, latencyMs: 42, model: 'test-model',
+    });
+    expect(await drive(base())).toBe(REFUSED);
+  });
+
+  it('still delivers the canonical direction it was told to emit', async () => {
+    // WALL TWO at the route. The tightening must not turn the ordinary 200 into
+    // a refusal, which is the failure mode this change actually risks.
+    generateTuningAdvice.mockResolvedValueOnce({
+      advice: GOOD_ADVICE, retrieved: [], usage: { prompt_tokens: 10, completion_tokens: 5 },
+      latencyMs: 42, model: 'test-model',
+    });
+    const out = await drive(base());
+    expect(out).toContain('refusal=null');
+    expect(out).toContain('recommendation_id=rec');
+    expect(out).toContain('changes=front_rebound/soften/1 click');
+  });
+});

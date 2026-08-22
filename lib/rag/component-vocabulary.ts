@@ -109,14 +109,85 @@ export const COMPONENT_POLICIES: Record<ComponentKey, ComponentPolicy> = {
   },
 };
 
-function escapeForPattern(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/**
+ * The one normalization of a `direction` string, shared by the guard below and
+ * by `formatDirectionLabel` further down.
+ *
+ * Folding casing, surrounding whitespace and the separator run means the two
+ * halves cannot disagree about what a value IS - one of them deciding `toe_in`
+ * is the canonical `toe-in` while the other decides it is a stranger is exactly
+ * the drift this table exists to prevent.
+ */
+function directionKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[_\s-]+/g, ' ');
 }
 
+/**
+ * Whether the model's `direction` is one this component actually offers.
+ *
+ * THIS IS AN ALLOWLIST OF EXACT VALUES, AND IT HAS TO BE. It used to match by
+ * word-boundary CONTAINMENT - `/\bincrease\b/i.test(direction)` - which asks
+ * whether the canonical word appears somewhere in the string rather than
+ * whether the string IS that word. So `do not increase` and `never increase`
+ * both passed, arriving with a valid component and a legal magnitude, and were
+ * stored in `ai_recommendations` and rendered to the rider as a checked
+ * recommendation instructing the opposite of what the model wrote. A survey of
+ * the vocabulary against thirteen ordinary negation and hedging prefixes
+ * accepted 518 such values.
+ *
+ * That is PRE-EXISTING behaviour rather than a regression: before this table
+ * existed `evaluateAdvicePolicy` ran `policy.directionPatterns.some(p =>
+ * p.test(change.direction))` over the same `/\bincrease\b/i` patterns, and the
+ * move into this module preserved the semantics exactly. Tightening it here is
+ * a deliberate change of behaviour.
+ *
+ * DETECTING NEGATION WOULD BE THE WRONG FIX. A blocklist of "do not", "never",
+ * "avoid", "rather than" is an arms race against English, and it loses: the
+ * survey above only had to reach for "under no circumstances" to find a
+ * thirteenth prefix. An allowlist of exact accepted values ends the race,
+ * because a negation cannot be spelled without adding a word and any added word
+ * fails equality. `SYSTEM_PROMPT` is what makes equality affordable -
+ * `describeComponentVocabulary()` now prints these exact strings to the model
+ * and tells it to use them rather than a paraphrase, so the model is finally
+ * being asked for the thing it is graded on.
+ *
+ * WHAT IS FOLDED, AND WHY EACH ONE. Casing, because JSON from a model varies it
+ * freely and it carries no meaning here. Surrounding whitespace, for the same
+ * reason. The separator run - `_`, `-`, and runs of spaces collapsed to one -
+ * because `directionKey` above already folds it for the rider-facing label, and
+ * because the component axis of this same table lists `front_toe` AND
+ * `front toe` as aliases, so a model that underscores a multi-word value is a
+ * shape the table already anticipates on the other axis. Folding the separator
+ * is the one place this WIDENS rather than tightens: `toe_in`, `toe in` and
+ * `shorter_gearing` were refused by the containment matcher and are accepted
+ * here. It cannot admit a negation, because a negation adds a word rather than
+ * changing a separator.
+ *
+ * WHAT IT NOW REFUSES THAT IT USED TO ACCEPT, beyond the negations. A paraphrase
+ * that names the component back at you (`increase tire pressure`, `soften front
+ * rebound`) - the prompt asks for the bare direction, and this is the one shape
+ * a live model might still produce, so the cost of this change is a refusal
+ * there rather than bad advice. An ambiguous value carrying two intents
+ * (`increase or decrease depending on grip`). A direction curated for a
+ * DIFFERENT component: `tire_pressure` accepted `increase negative camber`
+ * because that phrase contains `increase`, and `camber` accepted the uncurated
+ * `decrease negative camber` for the same reason. Equality is per policy, so
+ * each component now only answers to the directions listed against it.
+ *
+ * `magnitudeAllowed` below still matches its unit by containment, and that is
+ * NOT the same class: a magnitude is inherently a phrase (`0.5 psi`), so there
+ * is no closed set to compare against, and `parseRangeMax` takes the LARGEST
+ * absolute number in the string, so padding one with prose can only make the
+ * ceiling stricter. `findComponentPolicy` was already exact.
+ *
+ * Nothing already stored is re-checked here - `ai_recommendations` rows are read
+ * back through `formatDirectionLabel`, which passes an unrecognised value
+ * through unchanged - so tightening this cannot retroactively refuse a row a
+ * rider has already been shown.
+ */
 export function directionAllowed(policy: ComponentPolicy, direction: string): boolean {
-  return policy.directions.some((allowed) =>
-    new RegExp(`\\b${escapeForPattern(allowed)}\\b`, 'i').test(direction),
-  );
+  const key = directionKey(direction);
+  return policy.directions.some((allowed) => directionKey(allowed) === key);
 }
 
 function parseRangeMax(value: string): number | null {
@@ -178,10 +249,6 @@ export function formatComponentLabel(component: string): string {
   if (!findComponentPolicy(component)) return component;
   const spaced = component.trim().toLowerCase().replace(/_/g, ' ');
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
-
-function directionKey(value: string): string {
-  return value.trim().toLowerCase().replace(/[_\s-]+/g, ' ');
 }
 
 const DIRECTION_LABELS = new Map<string, string>(

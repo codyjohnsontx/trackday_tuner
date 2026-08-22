@@ -582,6 +582,28 @@ in that one file and both sides learn it together. `demoDayPlanAdvice` in
 `components/ai/day-plan-panel.tsx` uses the same vocabulary, because a demo
 showing a plan the policy would refuse advertises a product that does not exist.
 
+**A closed vocabulary is matched by equality, never by containment.**
+`directionAllowed` once asked whether the canonical word appeared *somewhere* in
+the model's `direction` (`/\bincrease\b/i.test(direction)`), so `do not
+increase` and `never increase` passed with a valid component and a legal
+magnitude and were stored and rendered to the rider as checked recommendations
+instructing the opposite. Thirteen ordinary negation prefixes swept across the
+table accepted 518 such values. The fix is not a negation detector - that is an
+arms race against English - but normalized equality against the accepted set,
+which `SYSTEM_PROMPT` makes affordable because
+`describeComponentVocabulary()` now prints those exact strings to the model.
+Casing, surrounding whitespace and the separator run (`_`, `-`, repeated spaces)
+are folded through the one `directionKey` the rider-facing label already uses, so
+the guard and the label cannot disagree about what a value is; everything else is
+refused, including a paraphrase that names the component back
+(`increase tire pressure`) and a direction curated for a different component.
+The accepted cost is a refusal on that paraphrase, which is the fail-safe
+direction. Nothing stored is re-checked, so no existing `ai_recommendations` row
+changes how it reads. The remaining containment matcher in that file is
+`magnitudeAllowed`, and it is a different class: a magnitude is inherently a
+phrase, and `parseRangeMax` takes the largest absolute number present, so padding
+one can only tighten the ceiling.
+
 **An empty `recommended_changes` list is checked as prose.** `evaluateAdvicePolicy`
 validates component, direction and magnitude by iterating the structured field, so
 when `allowEmptyRecommendations` is on, a model that puts the instruction in
