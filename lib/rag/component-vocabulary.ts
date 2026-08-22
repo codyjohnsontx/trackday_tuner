@@ -109,14 +109,128 @@ export const COMPONENT_POLICIES: Record<ComponentKey, ComponentPolicy> = {
   },
 };
 
-function escapeForPattern(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/**
+ * The one normalization of a `direction` string, shared by the guard below and
+ * by `formatDirectionLabel` further down.
+ *
+ * Folding casing, surrounding whitespace and the separator run means the two
+ * halves cannot disagree about what a value IS - one of them deciding `toe_in`
+ * is the canonical `toe-in` while the other decides it is a stranger is exactly
+ * the drift this table exists to prevent.
+ */
+function directionKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[_\s-]+/g, ' ');
 }
 
+/**
+ * Whether the model's `direction` is one this component actually offers.
+ *
+ * THIS IS AN ALLOWLIST OF EXACT VALUES, AND IT HAS TO BE. It used to match by
+ * word-boundary CONTAINMENT - `/\bincrease\b/i.test(direction)` - which asks
+ * whether the canonical word appears somewhere in the string rather than
+ * whether the string IS that word. So `do not increase` and `never increase`
+ * both passed, arriving with a valid component and a legal magnitude, and were
+ * stored in `ai_recommendations` and rendered to the rider as a checked
+ * recommendation instructing the opposite of what the model wrote. A survey of
+ * the vocabulary against thirteen ordinary negation and hedging prefixes
+ * accepted 518 such values.
+ *
+ * That is PRE-EXISTING behaviour rather than a regression: before this table
+ * existed `evaluateAdvicePolicy` ran `policy.directionPatterns.some(p =>
+ * p.test(change.direction))` over the same `/\bincrease\b/i` patterns, and the
+ * move into this module preserved the semantics exactly. Tightening it here is
+ * a deliberate change of behaviour.
+ *
+ * DETECTING NEGATION WOULD BE THE WRONG FIX. A blocklist of "do not", "never",
+ * "avoid", "rather than" is an arms race against English, and it loses: the
+ * survey above only had to reach for "under no circumstances" to find a
+ * thirteenth prefix. An allowlist of exact accepted values ends the race,
+ * because a negation cannot be spelled without adding a word and any added word
+ * fails equality. `SYSTEM_PROMPT` is what makes equality affordable -
+ * `describeComponentVocabulary()` now prints these exact strings to the model
+ * and tells it to use them rather than a paraphrase, so the model is finally
+ * being asked for the thing it is graded on.
+ *
+ * WHAT IS FOLDED, AND WHY EACH ONE. Casing, because JSON from a model varies it
+ * freely and it carries no meaning here. Surrounding whitespace, for the same
+ * reason. The separator run - `_`, `-`, and runs of spaces collapsed to one -
+ * because `directionKey` above already folds it for the rider-facing label, and
+ * because the component axis of this same table lists `front_toe` AND
+ * `front toe` as aliases, so a model that underscores a multi-word value is a
+ * shape the table already anticipates on the other axis. Folding the separator
+ * is the one place this WIDENS rather than tightens: `toe_in`, `toe in` and
+ * `shorter_gearing` were refused by the containment matcher and are accepted
+ * here. It cannot admit a negation, because a negation adds a word rather than
+ * changing a separator.
+ *
+ * WHAT IT NOW REFUSES THAT IT USED TO ACCEPT, beyond the negations. A paraphrase
+ * that names the component back at you (`increase tire pressure`, `soften front
+ * rebound`) - the prompt asks for the bare direction, and this is the one shape
+ * a live model might still produce, so the cost of this change is a refusal
+ * there rather than bad advice. That cost is tracked, carrying the open question
+ * of whether a live model actually emits the canonical strings at all; the echo
+ * path below is filed against it as the next task. An ambiguous value carrying
+ * two intents (`increase or decrease depending on grip`). A direction curated
+ * for a DIFFERENT component: `tire_pressure` accepted `increase negative
+ * camber` because that phrase contains `increase`, and `camber` accepted the
+ * uncurated `decrease negative camber` for the same reason. Equality is per
+ * policy, so each component now only answers to the directions listed against
+ * it.
+ *
+ * THE PARAPHRASE COST IS NOT QUITE SELF-LIMITING. A paraphrase the old
+ * containment matcher accepted was persisted raw, and
+ * `formatRaceEngineerContext` in `lib/rag/prompt.ts` prints stored directions
+ * straight back into the prompt as `direction=<value>`, on the stated grounds
+ * that the canonical identifier is the point (the wire half of the split
+ * recorded on `formatComponentLabel` below) - WHICH IS FALSE FOR A STORED
+ * PARAPHRASE, and that sentence is where the fix goes. A refused request writes
+ * no row, because `persistRecommendation` returns before the insert, and
+ * `save_session_outcome` only updates status, so nothing displaces a
+ * `created_at`-ordered window: while refusals continue, the same paraphrase
+ * keeps being echoed back. It is STICKY RATHER THAN SEALED - the model must
+ * still choose to copy it while this same prompt tells it not to, and one
+ * canonical response writes a newer row that pushes it down. It is bounded three
+ * ways: to a single (`user_id`, `vehicle_id`); day-plan is untouched because
+ * `recentRecommendations` is always empty there, so a working AI route always
+ * remains; and `completed_refusal_unsupported_direction` is in neither
+ * throttled-status list, so repeated refusals cannot escalate into a lockout.
+ * The fix belongs in `prompt.ts` and is deliberately NOT on this branch, because
+ * `formatRaceEngineerContext` is shared prompt output on BOTH AI routes and that
+ * blast radius is out of scope here.
+ *
+ * `magnitudeAllowed` below still matches its unit by containment, and that is
+ * NOT the same class: a magnitude is inherently a phrase (`0.5 psi`), so there
+ * is no closed set to compare against. Containment holds there for PADDING and
+ * NOT for SIGN, and the difference is a KNOWN ACCEPTED GAP rather than a
+ * property of the matcher. `parseRangeMax` takes the LARGEST number in the
+ * string, so extra prose can only raise the figure the ceiling is checked
+ * against and can only make it stricter. But it takes that number through
+ * `Math.abs`, so a NEGATIVE magnitude clears the ceiling today:
+ * `{component: 'front_rebound', direction: 'soften', magnitude: '-1 click'}`
+ * passes both guards, is persisted, and reaches the rider rendered raw beside
+ * the now-guaranteed-canonical direction as `Soften · -1 click`, because the
+ * display/wire split deliberately leaves `magnitude` unformatted. That is the
+ * same shape this guard just closed on the sibling field - a checked
+ * recommendation whose rendered text no longer means what the vocabulary
+ * verified.
+ *
+ * The correction is recorded here rather than fixed here because that earlier
+ * sentence claimed the gap away, and a false justification is worse than an
+ * undocumented gap: the gap is merely unknown, while the justification actively
+ * talks the next reader out of ever opening `parseRangeMax`. A comment that
+ * defends a bug outlives the code. The gap is pre-existing and out of scope for
+ * this change, and is tracked as tt-negative-magnitude-accepted; the earliest
+ * shared boundary for closing it is `parseRangeMax` / `magnitudeAllowed`, not a
+ * render site. `findComponentPolicy` was already exact.
+ *
+ * Nothing already stored is re-checked here - `ai_recommendations` rows are read
+ * back through `formatDirectionLabel`, which passes an unrecognised value
+ * through unchanged - so tightening this cannot retroactively refuse a row a
+ * rider has already been shown.
+ */
 export function directionAllowed(policy: ComponentPolicy, direction: string): boolean {
-  return policy.directions.some((allowed) =>
-    new RegExp(`\\b${escapeForPattern(allowed)}\\b`, 'i').test(direction),
-  );
+  const key = directionKey(direction);
+  return policy.directions.some((allowed) => directionKey(allowed) === key);
 }
 
 function parseRangeMax(value: string): number | null {
@@ -178,10 +292,6 @@ export function formatComponentLabel(component: string): string {
   if (!findComponentPolicy(component)) return component;
   const spaced = component.trim().toLowerCase().replace(/_/g, ' ');
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
-
-function directionKey(value: string): string {
-  return value.trim().toLowerCase().replace(/[_\s-]+/g, ' ');
 }
 
 const DIRECTION_LABELS = new Map<string, string>(

@@ -1076,6 +1076,60 @@ describe('POST /api/ai/day-plan enforced vocabulary matches what the model is to
     ).toContain('unsafe_magnitude');
   });
 
+  // The second consumer of the same shared pipeline. `directionAllowed` used to
+  // match by word-boundary containment, so a negated direction reached the rider
+  // as a checked recommendation; day-plan is pinned alongside tuning-advice
+  // because this subsystem has repeatedly shipped a guard that covered one of
+  // its two AI routes.
+  it.each([
+    ['a plain prohibition', 'do not decrease'],
+    ['an absolute prohibition', 'never decrease'],
+    ['a bare negative', 'not decrease'],
+    ['a substitution', 'instead of decrease'],
+    ['a paraphrase naming the component back', 'decrease rear tire pressure'],
+    ['two intents in one value', 'increase or decrease depending on grip'],
+  ])('refuses %s in the direction field', async (_label, direction) => {
+    planWith([
+      {
+        component: 'rear_tire_pressure',
+        direction,
+        magnitude: '0.5 psi',
+        reason: 'Rear pressure and track temperature rose together.',
+      },
+    ]);
+
+    const response = await post({ vehicle_id: VEHICLE_ID });
+    const body = await response.json();
+
+    // What the rider actually receives: a refusal, and no change to act on.
+    expect(body.advice.refusal).toContain('could not verify a safe, supported setup change');
+    expect(body.advice.recommended_changes).toEqual([]);
+    expect(JSON.stringify(body)).not.toContain(direction);
+    expect(
+      aiRequests.find((e) => e.request_id === body.request_id)?.policy_violations,
+    ).toContain('unsupported_direction');
+  });
+
+  // WALL TWO at the route. Folding casing, surrounding whitespace and the
+  // separator run is deliberate, and a canonical direction wearing any of them
+  // must still reach the rider.
+  it.each([
+    ['the canonical spelling', 'toe-in'],
+    ['an underscore separator', 'toe_in'],
+    ['a space separator', 'toe in'],
+    ['shouted casing', 'TOE-IN'],
+    ['surrounding whitespace', '  toe-in  '],
+  ])('still delivers %s of a canonical direction', async (_label, direction) => {
+    planWith([{ component: 'front_toe', direction, magnitude: '2 mm', reason: 'Sharpen turn-in.' }]);
+
+    const response = await post({ vehicle_id: VEHICLE_ID });
+    const body = await response.json();
+
+    expect(body.advice.refusal, direction).toBeNull();
+    expect(body.advice.recommended_changes).toHaveLength(1);
+    expect(aiRequests.find((e) => e.request_id === body.request_id)?.status).toBe('ok');
+  });
+
   it('still refuses a component outside the vocabulary', async () => {
     planWith([
       { component: 'Tire pressures', direction: 'Monitor rear hot pressure', magnitude: '26 psi hot', reason: 'r' },
