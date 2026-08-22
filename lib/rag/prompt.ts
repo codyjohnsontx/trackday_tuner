@@ -620,6 +620,26 @@ function collectRaceEngineerContextRiderText(
     pushRiderText(fields, disposition, label, recommendation.predicted_effect);
   }
 
+  // Refuses, and the actionability argument is narrower than it first looks -
+  // recorded here because the obvious version of it is WRONG. `replaceSessionLaps`
+  // does regenerate this row, but its upsert carries
+  // `where telemetry_summaries.source = 'manual'`
+  // (`20260717000900_add_session_laps.sql`), so the lap editor clears a row only
+  // while its stored source is still `manual`. A row with any other source cannot
+  // be cleared that way.
+  //
+  // Refusing is nonetheless reachable, because of who can be in that state at all.
+  // The only writer in this repository is that same function, and it writes
+  // `source = 'manual'`, a summary of the form "<n> included manual laps" and a
+  // numeric `metrics` object - none of which can carry a phrase. So a phrase here
+  // implies the rider wrote it through the Data API, and `authenticated` holds
+  // DELETE on this table, which is the remedy in exactly the case the lap editor
+  // cannot reach. A rider who did not put it there cannot end up locked out by it.
+  //
+  // That balance depends on there being no import path. THE DAY ONE LANDS, a
+  // third party writes non-manual rows the rider never typed, the lap editor
+  // still cannot clear them, and these three fields move to the wrong side of the
+  // refuse/skip split - re-decide this then rather than assuming it still holds.
   if (context.telemetrySummary) {
     pushRiderText(fields, REFUSE_ON_MATCH, 'the telemetry source name', context.telemetrySummary.source);
     pushRiderText(fields, REFUSE_ON_MATCH, 'the telemetry summary', context.telemetrySummary.summary);
@@ -862,8 +882,22 @@ export function dropScreenedSources(
     throw new Error('A screened session environment was not in the context it was collected from.');
   }
 
+  // `dataUsed.feedback` is derived from BOTH lists the loader had
+  // (`recentFeedback.length > 0 || recentRecommendations.some(status !== 'proposed')`
+  // in `race-engineer-context`), so dropping the only applied recommendation can
+  // leave the prompt claiming feedback it just withheld - the same defect the
+  // `weather` recompute below exists to prevent, one field over. Recomputed from
+  // the surviving lists rather than left alone, and recomputed on BOTH exits
+  // because a recommendation drop does not require an environment drop.
+  const dataUsedAfterDrops: RaceEngineerContext['dataUsed'] = {
+    ...context.dataUsed,
+    feedback:
+      context.recentFeedback.length > 0 ||
+      recentRecommendations.some((recommendation) => recommendation.status !== 'proposed'),
+  };
+
   if (!dropSessionEnvironment) {
-    return { ...context, recentRecommendations };
+    return { ...context, recentRecommendations, dataUsed: dataUsedAfterDrops };
   }
 
   return {
@@ -886,7 +920,7 @@ export function dropScreenedSources(
       buildDayTrend(session, null, context.similarSessions),
       hasDegradedContextPrefix(context.dayTrend),
     ),
-    dataUsed: { ...context.dataUsed, weather: false },
+    dataUsed: { ...dataUsedAfterDrops, weather: false },
   };
 }
 

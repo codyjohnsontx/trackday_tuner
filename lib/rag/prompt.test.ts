@@ -692,6 +692,64 @@ describe('dropScreenedSources', () => {
     expect(dropScreenedSources(input, [], CURRENT)).toBe(input);
   });
 
+  // `dataUsed.feedback` is derived from the recommendation list as well as the
+  // feedback list, so dropping the only applied recommendation has to move it.
+  // Left alone the prompt withholds every feedback source and then tells the
+  // model feedback was used - the same contradiction the environment drop was
+  // fixed for, one field over.
+  it('recomputes dataUsed.feedback when the only applied recommendation is dropped', () => {
+    const dropped = recommendation('rec-applied');
+    const before = context({
+      sessionEnvironment: null,
+      recentFeedback: [],
+      recentRecommendations: [dropped],
+      dataUsed: {
+        manual: true,
+        weather: false,
+        history: false,
+        // What the loader derives from an `applied` recommendation.
+        feedback: true,
+        lap_data: false,
+        telemetry: false,
+      },
+    });
+
+    const after = dropScreenedSources(
+      before,
+      [{ kind: 'recommendation', id: 'rec-applied' }],
+      CURRENT,
+    );
+
+    expect(after.recentRecommendations).toEqual([]);
+    expect(after.dataUsed.feedback).toBe(false);
+  });
+
+  // The mirror case: a surviving feedback row still justifies the flag, so the
+  // recompute must not clear it just because a recommendation went.
+  it('keeps dataUsed.feedback when a feedback row survives the drop', () => {
+    const before = context({
+      sessionEnvironment: null,
+      recentFeedback: [stampedFeedback()],
+      recentRecommendations: [recommendation('rec-applied')],
+      dataUsed: {
+        manual: true,
+        weather: false,
+        history: false,
+        feedback: true,
+        lap_data: false,
+        telemetry: false,
+      },
+    });
+
+    const after = dropScreenedSources(
+      before,
+      [{ kind: 'recommendation', id: 'rec-applied' }],
+      CURRENT,
+    );
+
+    expect(after.dataUsed.feedback).toBe(true);
+  });
+
   // Everything derived from the environment has to move with it. Left alone the
   // prompt would say the environment is absent, that no weather data was used,
   // and that the track temperature is logged - three statements about the same
