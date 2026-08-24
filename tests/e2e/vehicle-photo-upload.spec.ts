@@ -137,18 +137,47 @@ test.describe('adding a vehicle with a photo', () => {
     expect(signupUserId).not.toBeNull();
     const userId = signupUserId!;
 
-    await page.goto('/garage/new');
+    // A cold `npm run dev` compiles a route on its first visit, and compiling one
+    // can make Fast Refresh reload every document it already serves - so the
+    // first navigation to /garage/new in a dev server's life has been cut short
+    // by a reload of the /dashboard it was leaving ("Navigation to /garage/new is
+    // interrupted by another navigation to /dashboard"). A navigation that was
+    // interrupted is repeated until it lands; a rider who saw the page flash
+    // would do the same. The garage is visited first because the form returns
+    // there, and that visit compiles it before the save is waiting on it.
+    const visit = async (path: string, done: RegExp) => {
+      await expect(async () => {
+        await page.goto(path);
+        await expect(page).toHaveURL(done);
+      }).toPass({ timeout: 30_000 });
+    };
+    await visit('/garage', /\/garage$/);
+    await visit('/garage/new', /\/garage\/new$/);
     const vehicleForm = page.locator('form');
     const nicknameField = vehicleForm.getByLabel('Nickname');
+    const addVehicle = vehicleForm.getByRole('button', { name: 'Add Vehicle' });
     const nickname = `Photo bike ${testInfo.project.name}`;
-    // A cold `npm run dev` compiles /garage/new on this first visit, and several
-    // device projects share that one server, so the form can take longer than
-    // the fill loop's budget just to appear. Wait for it on the same 20s the
-    // navigations below get, then retry the fill for hydration as usual.
+    // Several device projects share that one server, so the form can take
+    // longer than the fill loop's budget just to appear. Wait for it on the same
+    // 20s the navigations below get, then retry the fill for hydration.
     await expect(nicknameField).toBeVisible({ timeout: 20_000 });
+    // `toHaveValue` alone is not proof the fill survived hydration: the streamed
+    // HTML keeps whatever was typed into it, so the check passes, and React then
+    // resets the controlled input to its empty state on the next render - the
+    // photo preview below - and the submit button stays disabled for good. That
+    // is what iphone-safari did three runs out of three. Only React state can
+    // enable the button, so its being enabled is the fill having been seen.
+    //
+    // The field is cleared before every attempt on purpose. When React hydrates
+    // an input that already holds the text, it records that text as the value it
+    // last saw, and an `input` event that leaves the value unchanged is dropped
+    // before `onChange` - so refilling the same nickname would never be seen
+    // however often it was retried. Clearing first makes the next fill a change.
     await expect(async () => {
+      await nicknameField.clear();
       await nicknameField.fill(nickname);
       await expect(nicknameField).toHaveValue(nickname);
+      await expect(addVehicle).toBeEnabled();
     }).toPass({ timeout: 10_000 });
 
     await vehicleForm.locator('input[type="file"]').setInputFiles({
@@ -160,7 +189,7 @@ test.describe('adding a vehicle with a photo', () => {
     // been taken rather than silently dropped.
     await expect(vehicleForm.getByRole('img', { name: 'Vehicle preview' })).toBeVisible();
 
-    await vehicleForm.getByRole('button', { name: 'Add Vehicle' }).click();
+    await addVehicle.click();
 
     // The defect in one assertion. The form either lands on the garage or stays
     // put and surfaces the storage error verbatim, so wait for whichever comes
