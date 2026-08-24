@@ -117,12 +117,28 @@ enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
 file_size_limit = "50MiB"
 
-# Uncomment to configure local storage buckets
-# [storage.buckets.images]
-# public = false
-# file_size_limit = "50MiB"
-# allowed_mime_types = ["image/png", "image/jpeg"]
-# objects_path = "./images"
+# Every bucket the application uploads to is declared here, so a database built
+# from this repository has it. `supabase start` and `supabase db reset` seed these
+# into the local stack; the hosted project gets them from
+# `npx supabase seed buckets --linked`, which creates a missing bucket and brings
+# an existing one's settings into line with this file. Who may write into a bucket
+# is a policy on storage.objects, which is SQL and lives in supabase/migrations/
+# beside every other policy - see 20260824001300_add_vehicle_photos_storage_policies.sql.
+# tests/unit/storage-bucket-provisioning.test.ts fails if the application uploads
+# to a bucket this file does not declare.
+
+# components/garage/vehicle-form.tsx uploads a rider's vehicle photo here under
+# `<user id>/<timestamp>_<file name>` and stores `getPublicUrl` of the object on
+# the vehicle row, which components/garage/vehicle-card.tsx renders with no
+# session at all - so the bucket is public for reads. Writes are owner-scoped by
+# the policies in that migration. The form offers `accept="image/*"`, and the bucket accepts
+# the same, so a file picker that ignores the hint is refused server-side rather
+# than stored. No per-bucket size limit: the project-wide `file_size_limit`
+# above applies, and a lower one here would change what an existing hosted bucket
+# accepts the next time it is seeded.
+[storage.buckets.vehicle-photos]
+public = true
+allowed_mime_types = ["image/*"]
 
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]

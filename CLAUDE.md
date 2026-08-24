@@ -207,10 +207,24 @@ truncate. `tests/unit/migrations-bootstrap.test.ts` fails on any migration that
 grants those roles more than `select` on `profiles`, or that reaches them with a
 schema-wide or default table grant
 
-What it builds is the schema and nothing else. The repository does not provision
-the `vehicle-photos` storage bucket that `components/garage/vehicle-form.tsx`
-uploads to, so adding a vehicle with a photo fails with `Bucket not found` until
-that bucket is created out of band, and no tracks are seeded.
+What it builds is the schema and the storage bucket, and the bucket comes from a
+different file. The CLI provisions buckets from `[storage.buckets.*]` in
+`supabase/config.toml`, not from migrations: `supabase start` and `db reset` seed
+`vehicle-photos` locally, and the hosted project gets it from a one-time
+`npx supabase seed buckets --linked` after `supabase link` (README "Local Run"),
+which `db push` does not do. The policies on `storage.objects` that scope writes
+to the rider's own folder are SQL, so they are a migration
+(`20260824001300`). Before that block existed every `[storage.buckets.*]` line was
+the CLI's commented-out template, a fresh database applied every migration cleanly,
+and `components/garage/vehicle-form.tsx` answered the first photo with
+`Photo upload failed: Bucket not found` - invisible on any stack somebody had
+already fixed by hand. `tests/unit/storage-bucket-provisioning.test.ts` fails if
+the app uploads to a bucket that file does not declare as public, or that no
+migration gives owner-scoped insert *and* update policies (the form upserts).
+`tests/e2e/vehicle-photo-upload.spec.ts` is the walk against a rebuilt stack. No
+tracks are seeded. A local stack still cannot *render* the photo it stored:
+`next.config.ts` allows `next/image` only `https://*.supabase.co`, which is a
+separate defect.
 
 Functions are deliberately *not* granted schema-wide. RLS contains a table; it does
 not contain a `security definer` function, which runs as its owner and bypasses

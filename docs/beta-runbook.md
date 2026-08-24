@@ -16,10 +16,12 @@
    arrive through the invite route can never subscribe. On a deployment whose
    database already predates this work, those five are what is left to apply;
    run the check below before `20260816001200` and the audit below after it.
-   Migrations build the schema and nothing else: the repository does not
-   provision the `vehicle-photos` storage bucket, so on a deployment standing up
-   its own database, adding a vehicle with a photo fails with "Bucket not found"
-   until that bucket is created out of band.
+   Migrations build the schema and the storage policies, not the storage bucket:
+   the CLI provisions buckets from `[storage.buckets.*]` in `supabase/config.toml`,
+   so on a deployment standing up its own project, `npx supabase seed buckets
+   --linked` once after `supabase link` is what creates `vehicle-photos`. Without
+   it, adding a vehicle with a photo fails with "Photo upload failed: Bucket not
+   found". See "Local Run" in README.md.
 2. Set `BETA_INVITE_ONLY=true`, a long random `BETA_INVITE_SECRET`, and a distinct
    `BETA_FORM_RATE_LIMIT_SECRET` in the deployment environment.
 3. Deploy and verify the public home page, waitlist, invitation signup, session

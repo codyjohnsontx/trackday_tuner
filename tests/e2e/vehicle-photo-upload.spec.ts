@@ -1,0 +1,248 @@
+import { randomUUID } from 'node:crypto';
+import { test, expect } from '@playwright/test';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
+import type { Database } from '@/types/supabase';
+
+// The walk that tests/unit/storage-bucket-provisioning.test.ts says it cannot do.
+//
+// That guard reads supabase/config.toml and the migrations as text: it proves a
+// `[storage.buckets.vehicle-photos]` block is declared public and that a
+// migration writes owner-scoped insert and update policies on storage.objects for
+// it. It cannot prove the CLI seeds the bucket, that the storage API honours the
+// policies, or that the public URL the form stores is one the card can fetch.
+// This is that check, driven the way a rider drives it: the ordinary form, a
+// photo, then the row, the object and the URL.
+//
+// It ends on the assertion the bug was actually reported through. A database
+// built fresh from this repository once had no bucket at all, so the form
+// answered "Photo upload failed: Bucket not found" to every rider who attached a
+// photo - and a stack anyone had worked against for a while never showed it,
+// because the bucket had long since been created by hand.
+//
+// Signs up its own throwaway rider rather than using the shared E2E account. A
+// new rider has no vehicles, so the free-plan vehicle cap in lib/plans.ts cannot
+// refuse the save, and nothing here touches a row another project is using.
+const PUBLIC_SIGNUP = (process.env.BETA_INVITE_ONLY ?? 'true') === 'false';
+const BUCKET = 'vehicle-photos';
+
+// A 1x1 transparent PNG. Bytes rather than a fixture file, so the spec carries
+// the whole of what it uploads.
+const ONE_PIXEL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+/**
+ * Last resort for cleanup when the id was never captured. Same shape as
+ * signup-creates-profile.spec.ts: `listUsers()` is paginated with no email
+ * argument, so page until the address turns up or the list runs out.
+ */
+async function findUserIdByEmail(
+  admin: SupabaseClient<Database>,
+  email: string,
+): Promise<string | null> {
+  const perPage = 200;
+  const wanted = email.toLowerCase();
+
+  for (let page = 1; page <= 100; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) return null;
+
+    const match = data.users.find((user) => user.email?.toLowerCase() === wanted);
+    if (match) return match.id;
+    if (data.users.length < perPage) return null;
+  }
+
+  return null;
+}
+
+test.describe('adding a vehicle with a photo', () => {
+  // Signup, the vehicle form and the garage each render on demand under a cold
+  // `npm run dev`, and the explicit waits below total 50s against the 30s
+  // default in playwright.config.ts. Same budget as signup-creates-profile.spec.ts.
+  test.describe.configure({ timeout: 120_000 });
+
+  test.skip(
+    !hasServiceRole(),
+    'NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.',
+  );
+  test.skip(
+    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY is required to upload as the rider and as nobody.',
+  );
+  test.skip(
+    !PUBLIC_SIGNUP,
+    'Requires BETA_INVITE_ONLY=false, so the form signs up a throwaway rider through GoTrue.',
+  );
+
+  let signupEmail: string | null = null;
+  let signupUserId: string | null = null;
+
+  // A hook rather than a `finally`: Playwright abandons the body on timeout, and
+  // the hook runs on its own budget afterwards. Objects are removed first because
+  // storage.objects does not cascade from auth.users the way public.vehicles does,
+  // and an orphaned object under a deleted rider's folder is what the next run
+  // would read as "the upload leaked".
+  test.afterEach(async () => {
+    const email = signupEmail;
+    const captured = signupUserId;
+    signupEmail = null;
+    signupUserId = null;
+    if (!email) return;
+
+    try {
+      const admin = createTestAdminClient();
+      const userId = captured ?? (await findUserIdByEmail(admin, email));
+      if (!userId) return;
+      const { data: objects } = await admin.storage.from(BUCKET).list(userId);
+      if (objects && objects.length > 0) {
+        await admin.storage.from(BUCKET).remove(objects.map((object) => `${userId}/${object.name}`));
+      }
+      await admin.auth.admin.deleteUser(userId);
+    } catch {
+      // Deliberately ignored: a failure to tidy up must not throw over the
+      // assertion error underneath it.
+    }
+  });
+
+  test('stores the photo in the vehicle-photos bucket and serves it publicly', async ({
+    page,
+  }, testInfo) => {
+    const email = `vehicle-photo-${testInfo.project.name}-${randomUUID()}@example.com`;
+    const password = `pw-${randomUUID()}`;
+    signupEmail = email;
+    const admin = createTestAdminClient();
+
+    await page.goto('/login');
+    await page.getByRole('button', { name: /^Sign Up$/ }).click();
+
+    const loginForm = page.locator('form');
+    const emailField = loginForm.getByLabel('Email');
+    const passwordField = loginForm.getByLabel('Password');
+
+    // Controlled inputs: anything typed before React hydrates is discarded.
+    await expect(async () => {
+      await emailField.fill(email);
+      await passwordField.fill(password);
+      await expect(emailField).toHaveValue(email);
+      await expect(passwordField).toHaveValue(password);
+    }).toPass({ timeout: 10_000 });
+
+    const signupResponseUserId = page
+      .waitForResponse(
+        (response) =>
+          response.url().includes('/auth/v1/signup') && response.request().method() === 'POST',
+        { timeout: 20_000 },
+      )
+      .then(async (response) => {
+        if (!response.ok()) return null;
+        const body = (await response.json()) as { id?: string; user?: { id?: string } | null };
+        return body.user?.id ?? body.id ?? null;
+      })
+      .catch(() => null);
+
+    await loginForm.getByRole('button', { name: 'Create Account' }).click();
+    signupUserId = await signupResponseUserId;
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
+    expect(signupUserId).not.toBeNull();
+    const userId = signupUserId!;
+
+    await page.goto('/garage/new');
+    const vehicleForm = page.locator('form');
+    const nicknameField = vehicleForm.getByLabel('Nickname');
+    const nickname = `Photo bike ${testInfo.project.name}`;
+    await expect(async () => {
+      await nicknameField.fill(nickname);
+      await expect(nicknameField).toHaveValue(nickname);
+    }).toPass({ timeout: 10_000 });
+
+    await vehicleForm.locator('input[type="file"]').setInputFiles({
+      name: 'bike.png',
+      mimeType: 'image/png',
+      buffer: ONE_PIXEL_PNG,
+    });
+    // The form previews what it is about to upload, so this is the file having
+    // been taken rather than silently dropped.
+    await expect(vehicleForm.getByRole('img', { name: 'Vehicle preview' })).toBeVisible();
+
+    await vehicleForm.getByRole('button', { name: 'Add Vehicle' }).click();
+
+    // The defect in one assertion. The form either lands on the garage or stays
+    // put and surfaces the storage error verbatim, so wait for whichever comes
+    // first and then read the message - reading it, rather than counting it, is
+    // what puts the storage API's own words in the failure. On a database built
+    // from the repository alone it read "Photo upload failed: Bucket not found".
+    const uploadError = page.getByText(/Photo upload failed/);
+    await expect
+      .poll(async () => /\/garage$/.test(page.url()) || (await uploadError.count()) > 0, {
+        timeout: 20_000,
+      })
+      .toBe(true);
+    expect(await uploadError.allTextContents()).toEqual([]);
+    await expect(page).toHaveURL(/\/garage$/);
+
+    // What was persisted, read past the UI. The row has to point at the public
+    // object endpoint of this bucket under the rider's own folder, because that
+    // is the URL components/garage/vehicle-card.tsx renders.
+    const { data: vehicle, error: vehicleError } = await admin
+      .from('vehicles')
+      .select('id, photo_url')
+      .eq('user_id', userId)
+      .eq('nickname', nickname)
+      .maybeSingle();
+    expect(vehicleError).toBeNull();
+    expect(vehicle).not.toBeNull();
+    const photoUrl = vehicle!.photo_url!;
+    expect(photoUrl).toContain(`/storage/v1/object/public/${BUCKET}/${userId}/`);
+
+    const { data: objects, error: listError } = await admin.storage.from(BUCKET).list(userId);
+    expect(listError).toBeNull();
+    expect(objects?.map((object) => object.name)).toEqual([expect.stringMatching(/_bike\.png$/)]);
+
+    // A public bucket answers the stored URL to anyone, which is what lets the
+    // card show the photo with no session at all.
+    const publicFetch = await page.request.get(photoUrl);
+    expect(publicFetch.status()).toBe(200);
+    expect(publicFetch.headers()['content-type']).toMatch(/^image\//);
+    expect((await publicFetch.body()).equals(ONE_PIXEL_PNG)).toBe(true);
+
+    // The other half of "owners can manage their own photos": nobody else can
+    // write into the bucket, and the rider cannot write outside their own folder.
+    const anon = createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { auth: { persistSession: false, autoRefreshToken: false } },
+    );
+    const { error: anonUpload } = await anon.storage
+      .from(BUCKET)
+      .upload(`${userId}/anon.png`, ONE_PIXEL_PNG, { contentType: 'image/png', upsert: true });
+    expect(anonUpload).not.toBeNull();
+
+    const rider = createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { auth: { persistSession: false, autoRefreshToken: false } },
+    );
+    const { error: signInError } = await rider.auth.signInWithPassword({ email, password });
+    expect(signInError).toBeNull();
+    const { error: foreignFolderUpload } = await rider.storage
+      .from(BUCKET)
+      .upload(`${randomUUID()}/stray.png`, ONE_PIXEL_PNG, { contentType: 'image/png', upsert: true });
+    expect(foreignFolderUpload).not.toBeNull();
+
+    // The bucket accepts what the form's `accept="image/*"` offers and nothing
+    // else, so a picker that ignores the hint is refused rather than stored.
+    const { error: notAnImage } = await rider.storage
+      .from(BUCKET)
+      .upload(`${userId}/notes.txt`, Buffer.from('not a photo'), {
+        contentType: 'text/plain',
+        upsert: true,
+      });
+    expect(notAnImage).not.toBeNull();
+
+    // None of the refusals left anything behind.
+    const { data: afterwards } = await admin.storage.from(BUCKET).list(userId);
+    expect(afterwards?.length).toBe(1);
+  });
+});
