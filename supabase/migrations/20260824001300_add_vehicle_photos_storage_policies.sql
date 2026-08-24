@@ -16,10 +16,12 @@
 --
 -- The form uploads to `<user id>/<timestamp>_<file name>` with `upsert: true`
 -- and stores `getPublicUrl` of the object on the vehicle row. So:
---   - reads need no policy: the bucket is public, and the public object
+--   - public reads need no policy: the bucket is public, and the public object
 --     endpoint serves without consulting storage.objects. The select policy
---     below is what lets a rider list and read their own folder through the
---     authenticated API, which is also what the e2e cleanup relies on
+--     below is for the authenticated API: it is what lets a rider list and
+--     read their own folder there, and nothing else - the app does not do that
+--     today, and the e2e cleanup reads with the service role, which bypasses
+--     RLS. It is kept because "manage their own photos" includes seeing them
 --   - insert AND update are both required. An upsert onto an existing object
 --     is an update, and an insert-only policy refuses it with an error that
 --     reads like the bucket is fine
@@ -43,7 +45,8 @@
 -- policy for this bucket goes missing or stops naming `auth.uid()`.
 -- tests/e2e/vehicle-photo-upload.spec.ts is the walk: an upload through the
 -- real form against a rebuilt stack, the stored URL fetched with no session,
--- and an anonymous client, a foreign-folder write and a non-image all refused.
+-- and an anonymous client, a write into a foreign folder, an upsert onto an
+-- object somebody else owns and a non-image all refused.
 
 create policy "vehicle-photos: select own"
   on storage.objects for select

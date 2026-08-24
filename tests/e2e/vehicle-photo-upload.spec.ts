@@ -78,6 +78,11 @@ test.describe('adding a vehicle with a photo', () => {
 
   let signupEmail: string | null = null;
   let signupUserId: string | null = null;
+  // An object the service role plants under a folder that is nobody's, so the
+  // rider's upsert onto it exercises the UPDATE policy rather than INSERT. It
+  // lives outside the rider's folder, so the folder sweep below cannot find it
+  // and it is removed by path.
+  let foreignObjectPath: string | null = null;
 
   // A hook rather than a `finally`: Playwright abandons the body on timeout, and
   // the hook runs on its own budget afterwards. Objects are removed first because
@@ -87,12 +92,16 @@ test.describe('adding a vehicle with a photo', () => {
   test.afterEach(async () => {
     const email = signupEmail;
     const captured = signupUserId;
+    const foreign = foreignObjectPath;
     signupEmail = null;
     signupUserId = null;
-    if (!email) return;
+    foreignObjectPath = null;
+    if (!email && !foreign) return;
 
     try {
       const admin = createTestAdminClient();
+      if (foreign) await admin.storage.from(BUCKET).remove([foreign]);
+      if (!email) return;
       const userId = captured ?? (await findUserIdByEmail(admin, email));
       if (!userId) return;
       const { data: objects } = await admin.storage.from(BUCKET).list(userId);
@@ -152,6 +161,11 @@ test.describe('adding a vehicle with a photo', () => {
     const vehicleForm = page.locator('form');
     const nicknameField = vehicleForm.getByLabel('Nickname');
     const nickname = `Photo bike ${testInfo.project.name}`;
+    // A cold `npm run dev` compiles /garage/new on this first visit, and several
+    // device projects share that one server, so the form can take longer than
+    // the fill loop's budget just to appear. Wait for it on the same 20s the
+    // navigations below get, then retry the fill for hydration as usual.
+    await expect(nicknameField).toBeVisible({ timeout: 20_000 });
     await expect(async () => {
       await nicknameField.fill(nickname);
       await expect(nicknameField).toHaveValue(nickname);
@@ -230,6 +244,29 @@ test.describe('adding a vehicle with a photo', () => {
       .from(BUCKET)
       .upload(`${randomUUID()}/stray.png`, ONE_PIXEL_PNG, { contentType: 'image/png', upsert: true });
     expect(foreignFolderUpload).not.toBeNull();
+
+    // That path was new, so `upsert: true` took the INSERT branch and the refusal
+    // above says nothing about UPDATE. The form always upserts, so a rider who
+    // can name a path that already exists would otherwise overwrite the photo
+    // behind somebody else's vehicle card. Plant one as the service role, then
+    // upsert onto it as the rider.
+    foreignObjectPath = `${randomUUID()}/owned.png`;
+    const { error: plantError } = await admin.storage
+      .from(BUCKET)
+      .upload(foreignObjectPath, ONE_PIXEL_PNG, { contentType: 'image/png' });
+    expect(plantError).toBeNull();
+    const { error: foreignObjectOverwrite } = await rider.storage
+      .from(BUCKET)
+      .upload(foreignObjectPath, Buffer.from('overwritten'), {
+        contentType: 'image/png',
+        upsert: true,
+      });
+    expect(foreignObjectOverwrite).not.toBeNull();
+    const { data: untouched, error: untouchedError } = await admin.storage
+      .from(BUCKET)
+      .download(foreignObjectPath);
+    expect(untouchedError).toBeNull();
+    expect(Buffer.from(await untouched!.arrayBuffer()).equals(ONE_PIXEL_PNG)).toBe(true);
 
     // The bucket accepts what the form's `accept="image/*"` offers and nothing
     // else, so a picker that ignores the hint is refused rather than stored.

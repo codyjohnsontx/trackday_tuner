@@ -41,8 +41,9 @@ import { describe, expect, it } from 'vitest';
 // here; and anything about the hosted project, which is seeded by hand with the
 // command the README records. tests/e2e/vehicle-photo-upload.spec.ts is that walk:
 // it uploads through the real form against a rebuilt stack, fetches the stored
-// URL with no session, and watches an anonymous client, a foreign-folder write
-// and a file that is not an image all get refused.
+// URL with no session, and watches an anonymous client, a write into a foreign
+// folder, an upsert onto an object somebody else owns and a file that is not an
+// image all get refused.
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(testDir, '../..');
