@@ -1,15 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import { test, expect } from '@playwright/test';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
+import { createClient } from '@supabase/supabase-js';
+import {
+  createTestAdminClient,
+  findUserIdByEmail,
+  hasServiceRole,
+} from '@/tests/e2e/helpers/supabase';
 import type { Database } from '@/types/supabase';
 
 // The walk that tests/unit/storage-bucket-provisioning.test.ts says it cannot do.
 //
 // That guard reads supabase/config.toml and the migrations as text: it proves a
 // `[storage.buckets.vehicle-photos]` block is declared public and that a
-// migration writes owner-scoped insert and update policies on storage.objects for
-// it. It cannot prove the CLI seeds the bucket, that the storage API honours the
+// migration writes owner-scoped select, insert and update policies on
+// storage.objects for it. It cannot prove the CLI seeds the bucket, that the storage API honours the
 // policies, or that the public URL the form stores is one the card can fetch.
 // This is that check, driven the way a rider drives it: the ordinary form, a
 // photo, then the row, the object and the URL.
@@ -32,30 +36,6 @@ const ONE_PIXEL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
   'base64',
 );
-
-/**
- * Last resort for cleanup when the id was never captured. Same shape as
- * signup-creates-profile.spec.ts: `listUsers()` is paginated with no email
- * argument, so page until the address turns up or the list runs out.
- */
-async function findUserIdByEmail(
-  admin: SupabaseClient<Database>,
-  email: string,
-): Promise<string | null> {
-  const perPage = 200;
-  const wanted = email.toLowerCase();
-
-  for (let page = 1; page <= 100; page += 1) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
-    if (error) return null;
-
-    const match = data.users.find((user) => user.email?.toLowerCase() === wanted);
-    if (match) return match.id;
-    if (data.users.length < perPage) return null;
-  }
-
-  return null;
-}
 
 test.describe('adding a vehicle with a photo', () => {
   // Signup, the vehicle form and the garage each render on demand under a cold

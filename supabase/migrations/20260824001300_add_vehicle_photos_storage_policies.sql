@@ -17,14 +17,17 @@
 -- The form uploads to `<user id>/<timestamp>_<file name>` with `upsert: true`
 -- and stores `getPublicUrl` of the object on the vehicle row. So:
 --   - public reads need no policy: the bucket is public, and the public object
---     endpoint serves without consulting storage.objects. The select policy
---     below is for the authenticated API: it is what lets a rider list and
---     read their own folder there, and nothing else - the app does not do that
---     today, and the e2e cleanup reads with the service role, which bypasses
---     RLS. It is kept because "manage their own photos" includes seeing them
---   - insert AND update are both required. An upsert onto an existing object
---     is an update, and an insert-only policy refuses it with an error that
---     reads like the bucket is fine
+--     endpoint serves without consulting storage.objects
+--   - select, insert AND update are all required, by the form's own upload.
+--     The storage API performs `upsert: true` as
+--     `insert ... on conflict do update ... returning`, and under RLS the
+--     returned row - and any existing row it conflicts with - has to pass the
+--     select policy. That was verified on an isolated stack: with the select
+--     policy dropped, the form's exact call is refused with 403 "new row
+--     violates row-level security policy" even on a brand-new path, while a
+--     plain non-upsert upload still succeeds. And an upsert onto an existing
+--     object is an update, which an insert-only policy refuses with an error
+--     that reads like the bucket is fine
 --   - every write is scoped to the first path segment being the caller's own
 --     id, which is the folder the form writes. `storage.foldername(name)` is
 --     the storage schema's own helper for exactly this, and `auth.uid()::text`
@@ -41,8 +44,8 @@
 -- rebuilt from nothing. The hosted `postgres` role has the same shape, but only
 -- `db push` there proves it.
 --
--- tests/unit/storage-bucket-provisioning.test.ts fails if the insert or update
--- policy for this bucket goes missing or stops naming `auth.uid()`.
+-- tests/unit/storage-bucket-provisioning.test.ts fails if the select, insert or
+-- update policy for this bucket goes missing or stops naming `auth.uid()`.
 -- tests/e2e/vehicle-photo-upload.spec.ts is the walk: an upload through the
 -- real form against a rebuilt stack, the stored URL fetched with no session,
 -- and an anonymous client, a write into a foreign folder, an upsert onto an

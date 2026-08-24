@@ -220,7 +220,8 @@ and `components/garage/vehicle-form.tsx` answered the first photo with
 `Photo upload failed: Bucket not found` - invisible on any stack somebody had
 already fixed by hand. `tests/unit/storage-bucket-provisioning.test.ts` fails if
 the app uploads to a bucket that file does not declare as public, or that no
-migration gives owner-scoped insert *and* update policies (the form upserts).
+migration gives owner-scoped select, insert *and* update policies (the form
+upserts, and the storage API returns the row under RLS).
 `tests/e2e/vehicle-photo-upload.spec.ts` is the walk against a rebuilt stack. No
 tracks are seeded. A local stack still cannot *render* the photo it stored:
 `next.config.ts` allows `next/image` only `https://*.supabase.co`, which is a

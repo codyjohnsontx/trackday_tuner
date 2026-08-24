@@ -29,11 +29,14 @@ import { describe, expect, it } from 'vitest';
 //     including a block commented back out, which is the shape of the original bug
 //   - a bucket the code reads through `getPublicUrl` that is not `public = true`,
 //     which would store a URL the card renders as a broken image
-//   - a bucket with no owner-scoped insert or update policy on storage.objects.
-//     Both verbs are required because the form uploads with `upsert: true`, and an
-//     upsert onto an existing object is an update that an insert-only policy
-//     refuses. `auth.uid()` is what makes it owner-scoped, matching how every
-//     table policy in the migrations reads
+//   - a bucket with no owner-scoped select, insert or update policy on
+//     storage.objects. All three are required because the form uploads with
+//     `upsert: true`: the storage API performs that as an insert-on-conflict-update
+//     that returns the row, and under RLS the returned row has to pass the select
+//     policy, so without one even a brand-new path is refused. An upsert onto an
+//     existing object is also an update that an insert-only policy refuses.
+//     `auth.uid()` is what makes it owner-scoped, matching how every table policy
+//     in the migrations reads
 //
 // WHAT IT DOES NOT CATCH: whether the bucket is actually seeded, which depends on
 // the CLI reading the block; whether the predicate is *right* - a policy naming
@@ -181,9 +184,9 @@ export function provisioningViolations(
       );
     }
 
-    // `for all` covers every verb; otherwise each of the two the upsert needs
+    // `for all` covers every verb; otherwise each of the three the upsert needs
     // has to be written, and each has to be scoped to the owner.
-    for (const verb of ['insert', 'update']) {
+    for (const verb of ['select', 'insert', 'update']) {
       const covering = policies.filter(
         (policy) => policy.bucket === use.name && (policy.command === verb || policy.command === 'all'),
       );
@@ -229,7 +232,7 @@ describe('every storage bucket the application uploads to is provisioned by the 
     ]);
   });
 
-  it('declares each one in supabase/config.toml and gives its owners a write policy', () => {
+  it('declares each one in supabase/config.toml and gives its owners select and write policies', () => {
     expect(provisioningViolations(uses, declared, policies)).toEqual([]);
   });
 });
@@ -267,6 +270,9 @@ enabled = true
     {
       file: 'policies.sql',
       sql: `
+        create policy "vehicle-photos: select own"
+          on storage.objects for select to authenticated
+          using (bucket_id = 'vehicle-photos' and (storage.foldername(name))[1] = auth.uid()::text);
         create policy "vehicle-photos: insert own"
           on storage.objects for insert to authenticated
           with check (bucket_id = 'vehicle-photos' and (storage.foldername(name))[1] = auth.uid()::text);
@@ -340,10 +346,11 @@ public = true
     ]);
   });
 
-  it('catches a bucket with an insert policy and no update policy', () => {
-    // The form uploads with `upsert: true`. Re-uploading onto an existing object
-    // is an update, and an insert-only policy refuses it with a message that
-    // reads like the bucket is fine.
+  it('catches a bucket with an insert policy and no select or update policy', () => {
+    // The form uploads with `upsert: true`. The storage API returns the row it
+    // wrote, which RLS checks against the select policy, so an insert-only policy
+    // refuses even a brand-new path; and re-uploading onto an existing object is
+    // an update. Both refusals read like the bucket is fine.
     const insertOnly = storagePoliciesIn([
       {
         file: 'policies.sql',
@@ -355,6 +362,7 @@ public = true
       },
     ]);
     expect(provisioningViolations(formUses, declaredPublic, insertOnly)).toEqual([
+      'no migration writes a select policy on storage.objects for bucket vehicle-photos',
       'no migration writes a update policy on storage.objects for bucket vehicle-photos',
     ]);
   });
@@ -371,6 +379,7 @@ public = true
       },
     ]);
     expect(provisioningViolations(formUses, declaredPublic, otherBucket)).toEqual([
+      'no migration writes a select policy on storage.objects for bucket vehicle-photos',
       'no migration writes a insert policy on storage.objects for bucket vehicle-photos',
       'no migration writes a update policy on storage.objects for bucket vehicle-photos',
     ]);
@@ -391,12 +400,13 @@ public = true
       },
     ]);
     expect(provisioningViolations(formUses, declaredPublic, unscoped)).toEqual([
+      'policies.sql: the select policy on storage.objects for bucket vehicle-photos is not scoped to auth.uid()',
       'policies.sql: the insert policy on storage.objects for bucket vehicle-photos is not scoped to auth.uid()',
       'policies.sql: the update policy on storage.objects for bucket vehicle-photos is not scoped to auth.uid()',
     ]);
   });
 
-  it('accepts a single `for all` policy that covers both verbs', () => {
+  it('accepts a single `for all` policy that covers every verb', () => {
     const forAll = storagePoliciesIn([
       {
         file: 'policies.sql',
