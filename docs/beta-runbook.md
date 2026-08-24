@@ -10,12 +10,14 @@
    is optional. See "Building a database from nothing" in CLAUDE.md.
    The beta-specific tail of that same order is `20260716000800` (session
    outcomes), `20260717000900` (session laps), `20260718001000` (beta
-   foundation), then `20260719001100` (the Data API grants), and finally
+   foundation), then `20260719001100` (the Data API grants), then
    `20260816001200`, which is not beta-specific but installs the trigger that
    gives every signup path a `profiles` row - without it a rider who did not
-   arrive through the invite route can never subscribe. On a deployment whose
-   database already predates this work, those five are what is left to apply;
-   run the check below before `20260816001200` and the audit below after it.
+   arrive through the invite route can never subscribe - and finally
+   `20260824001300`, the owner-scoped write policies on the `vehicle-photos`
+   bucket. On a deployment whose database already predates this work, those six
+   are what is left to apply; run the check below before `20260816001200` and
+   the audit below after it.
    Migrations build the schema and the storage policies, not the storage bucket:
    the CLI provisions buckets from `[storage.buckets.*]` in `supabase/config.toml`,
    so on a deployment standing up its own project, `npx supabase seed buckets
