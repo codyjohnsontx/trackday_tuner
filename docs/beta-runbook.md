@@ -160,11 +160,22 @@ already record) and must not be given this block.
 Whether a project needs it is one query in the SQL editor:
 
 ```sql
-select has_table_privilege('authenticated', 'public.profiles', 'update') as rider_can_update_profiles;
+select
+  has_table_privilege('authenticated', 'public.profiles', 'update')
+  or has_any_column_privilege('authenticated', 'public.profiles', 'update')
+    as rider_can_update_profiles;
 ```
 
 `true` means the escalation is open. `false` means the block below, or the
-migration, has already been applied, and there is nothing to do.
+migration, has already been applied, and there is nothing to do. The
+`has_any_column_privilege` half is not redundant: `has_table_privilege(...,
+'update')` returns false for an `update` granted only on a column, so a stray
+`grant update (tier) on profiles` would read as closed while leaving the paid
+tier writable. The two together are true if the rider can write any column by
+any grant. A table-level grant to `public` also shows here, because
+`authenticated` inherits it - so this catches a `public`-inherited grant even
+though the block, mirroring the migration, revokes only from `anon` and
+`authenticated` (see the note under "Verify").
 
 **1. Confirm every table the block names exists.** The block runs as one
 transaction, so a missing table fails all of it, and a table this app reads
@@ -288,7 +299,21 @@ group by grantee, table_name
 order by grantee, table_name;
 ```
 
-Expect no `anon` row at all, and exactly these fifteen for `authenticated`:
+Expect no `anon` row at all, and exactly these fifteen for `authenticated`.
+
+If `rider_can_update_profiles` still reads `true` after the block, the residual
+grant is not one the block reaches. The block mirrors the migration, which
+revokes from `anon` and `authenticated` only; a privilege granted to `public`
+survives it, and `authenticated` inherits it. Supabase's legacy defaults grant
+to `anon`, `authenticated` and `service_role`, not `public`, so this was not the
+hosted state on 2026-08-25 and the block closed it in full - but a project that
+does carry a `public` grant needs `revoke all on public.profiles from public`
+(or `... on all tables in schema public from public`) as well, which is outside
+this block precisely because no migration issues it. The e2e proof below is the
+decisive check either way: it returns 200 with the elevated row for any residual
+write grant, whatever role holds it.
+
+The fifteen `authenticated` rows:
 
 | table                  | privileges                     |
 | ---------------------- | ------------------------------ |

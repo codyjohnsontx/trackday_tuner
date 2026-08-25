@@ -606,14 +606,22 @@ function entitlementWriteViolations(migrations: Migration[]): string[] {
     );
 
   for (const { file, sql } of migrations) {
-    // `([^;]*?)` before `on` keeps a column list inside the privilege text, so
-    // `update (tier)` is read as an update. The table name is read with or
-    // without its `public.` qualifier, and quoted or bare, because search_path
-    // puts an unqualified `profiles` in public and Postgres folds the rest.
+    // The whole object list between `on` and `to` is captured, then required to
+    // name `profiles`. `([^;]*?)` before `on` keeps a column list inside the
+    // privilege text, so `update (tier)` is read as an update. `profiles` is
+    // read with or without its `public.` qualifier, quoted or bare, and
+    // anywhere in a comma-separated list, because search_path puts an
+    // unqualified `profiles` in public, Postgres folds the rest, and
+    // `grant update on public.profiles, public.vehicles to ...` reaches
+    // profiles exactly as a single-table grant does. `\bprofiles\b` does not
+    // fire on `profiles_backup`, whose `_` leaves no word boundary. A
+    // schema-wide `on all tables in schema public` is captured here too but
+    // names no `profiles`, so it falls through to the schema-wide arm below.
     for (const match of sql.matchAll(
-      /grant\s+([^;]*?)\s+on\s+(?:table\s+)?(?:"?public"?\.)?"?profiles"?\s+to\s+([^;]*)/gi,
+      /grant\s+([^;]*?)\s+on\s+((?:table\s+)?[^;]+?)\s+to\s+([^;]*)/gi,
     )) {
-      const [, privileges, targets] = match;
+      const [, privileges, objects, targets] = match;
+      if (!/\bprofiles\b/i.test(objects)) continue;
       const exposed = exposedRoles(targets);
       const writes = ['insert', 'update', 'delete', 'all'].filter((privilege) =>
         new RegExp(`\\b${privilege}\\b`, 'i').test(privileges),
@@ -624,9 +632,12 @@ function entitlementWriteViolations(migrations: Migration[]): string[] {
     }
 
     // A schema-wide or default grant reaching these roles would carry profiles
-    // with it, whatever the per-table statements say.
+    // with it, whatever the per-table statements say. The schema name is read
+    // quoted or bare (`in schema "public"` is the same schema); the default-
+    // privileges arm already tolerates it, since everything up to `grant` is
+    // wildcarded.
     for (const match of sql.matchAll(
-      /(?:grant\s+[^;]*?\s+on\s+all\s+tables\s+in\s+schema\s+public|alter\s+default\s+privileges[^;]*?\bgrant\s+[^;]*?\s+on\s+tables)\s+to\s+([^;]*)/gi,
+      /(?:grant\s+[^;]*?\s+on\s+all\s+tables\s+in\s+schema\s+"?public"?|alter\s+default\s+privileges[^;]*?\bgrant\s+[^;]*?\s+on\s+tables)\s+to\s+([^;]*)/gi,
     )) {
       const exposed = exposedRoles(match[1]);
       if (exposed.length === 0) continue;
@@ -1121,6 +1132,32 @@ describe('the entitlement-write check, against migrations written wrongly on pur
       ),
     ).toEqual([
       'grant_insert_delete_on_profiles_to_authenticated.sql: grant insert, delete on profiles to authenticated',
+    ]);
+  });
+
+  it('catches profiles buried in a multi-table grant list', () => {
+    // `grant update on public.profiles, public.vehicles to authenticated`
+    // reaches profiles the same as a single-table grant. A guard reading
+    // profiles only when it sits alone immediately before TO passed this.
+    expect(
+      entitlementWriteViolations(
+        loadFixtures('grant_update_on_profiles_in_list_to_authenticated.sql'),
+      ),
+    ).toEqual([
+      'grant_update_on_profiles_in_list_to_authenticated.sql: grant update on profiles to authenticated',
+    ]);
+  });
+
+  it('catches a schema-wide grant whose schema name is quoted', () => {
+    // `in schema "public"` is the same schema as `in schema public`, so the
+    // grant carries profiles with it. A guard matching only the bare word
+    // missed it.
+    expect(
+      entitlementWriteViolations(
+        loadFixtures('grant_all_tables_quoted_schema_to_authenticated.sql'),
+      ),
+    ).toEqual([
+      'grant_all_tables_quoted_schema_to_authenticated.sql: schema-wide table grant reaches authenticated',
     ]);
   });
 });
