@@ -67,6 +67,13 @@ keeps the free-plan vehicle cap out of the result. That spec also needs the stac
 to have been built with the `[storage.buckets.vehicle-photos]` block in
 `supabase/config.toml` - `supabase start` or `db reset` since it was added - which
 is exactly what it exists to prove.
+`tests/e2e/profile-entitlement-columns.spec.ts` also makes its own throwaway
+rider, through the admin API rather than the form, so it needs the anon and
+service-role keys and nothing else: no `BETA_INVITE_ONLY`, no signed-in account,
+and no dev server, because it never opens a page - it sends the Data API the
+request a rider would use to set their own `tier` and asserts the refusal. That
+is what makes it runnable against any stack, including the hosted project after
+the grants block in `docs/beta-runbook.md` has been applied there.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a

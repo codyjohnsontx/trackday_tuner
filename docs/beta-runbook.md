@@ -17,7 +17,10 @@
    `20260824001300`, the owner-scoped write policies on the `vehicle-photos`
    bucket. On a deployment whose database already predates this work, those six
    are what is left to apply; run the check below before `20260816001200` and
-   the audit below after it.
+   the audit below after it. On a deployment whose database has no migration
+   history at all, `20260719001100` is applied in the SQL editor by hand - see
+   "Apply the Data API grants by hand" below, and do that first: until it is
+   done any rider can set their own tier to `pro`.
    Migrations build the schema and the storage policies, not the storage bucket:
    the CLI provisions buckets from `[storage.buckets.*]` in `supabase/config.toml`,
    so on a deployment standing up its own project, `npx supabase seed buckets
@@ -134,6 +137,215 @@ failed `deleteUser` and leaves the auth user behind.
 If the query returns rows, **escalate rather than improvising**. What to do about
 an existing account with no profile is a product-owner decision, and this runbook
 deliberately prescribes no backfill.
+
+### Apply the Data API grants by hand on a project with no migration history
+
+`20260719001100` is what stops a rider granting themselves paid access. It
+replaces the platform's legacy `grant all` to the Data API roles with a grant
+per role and per table, and leaves `authenticated` with SELECT only on
+`profiles`. Postgres RLS chooses which ROW a policy admits and cannot restrict
+which COLUMN is written, so with UPDATE on that table a rider's own session can
+set `tier`, `beta_access_expires_at` and the Stripe identifiers on their own
+row - `lib/access.ts` reads the first two as Pro, and the checkout and portal
+routes trust the third. On 2026-08-25 the hosted project still answered that
+request with 200 and the elevated values: its schema was never applied through
+the CLI, there is no `supabase_migrations.schema_migrations` there for
+`db push` to compare against, so the grants have to be applied in the SQL editor
+by hand. **Nothing in this repository can do that step; the owner runs it and
+verifies it.** A database that does apply migrations through the CLI gets the
+same statements from the migration itself (`npm run db:push`, with
+`--include-all` because the baseline is dated before files the remote may
+already record) and must not be given this block.
+
+Whether a project needs it is one query in the SQL editor:
+
+```sql
+select has_table_privilege('authenticated', 'public.profiles', 'update') as rider_can_update_profiles;
+```
+
+`true` means the escalation is open. `false` means the block below, or the
+migration, has already been applied, and there is nothing to do.
+
+**1. Confirm every table the block names exists.** The block runs as one
+transaction, so a missing table fails all of it, and a table this app reads
+being absent is its own finding - stop and escalate rather than editing a line
+out.
+
+```sql
+-- hosted-grants-tables: the tables 20260719001100 grants to authenticated
+select count(*) as granted_tables
+from information_schema.tables
+where table_schema = 'public'
+  and table_name in (
+    'profiles', 'vehicles', 'tracks', 'sessions', 'session_environment',
+    'session_changes', 'vehicle_baselines', 'sag_entries', 'session_laps',
+    'telemetry_summaries', 'session_feedback', 'race_engineer_memory',
+    'ai_recommendations', 'beta_feedback', 'product_events'
+  );
+```
+
+Expect `15`.
+
+**2. Run this block, whole, in the SQL editor.** It is
+`supabase/migrations/20260719001100_grant_data_api_access.sql` with its
+comments removed, in the order that file runs, inside a transaction so an error
+anywhere applies nothing. `tests/unit/hosted-grants-runbook.test.ts` fails if
+the two ever differ. `alter default privileges` binds to the role running it,
+which in the SQL editor is `postgres` - the same role the CLI applies
+migrations as, so the defaults land where a table created from the dashboard
+or a later hand-applied migration will pick them up.
+
+```sql
+-- hosted-grants: mirror of supabase/migrations/20260719001100_grant_data_api_access.sql
+begin;
+grant usage on schema public to anon, authenticated, service_role;
+revoke all on all tables in schema public from anon, authenticated;
+revoke all on all sequences in schema public from anon, authenticated;
+alter default privileges in schema public
+  revoke all on tables from anon, authenticated;
+alter default privileges in schema public
+  revoke all on sequences from anon, authenticated;
+grant select, insert, update, delete on all tables in schema public to service_role;
+grant usage, select, update on all sequences in schema public to service_role;
+grant select on public.profiles to authenticated;
+grant select, insert, update, delete on public.vehicles to authenticated;
+grant select, insert, update, delete on public.tracks to authenticated;
+grant select, insert, update, delete on public.sessions to authenticated;
+grant select, insert, update, delete on public.session_environment to authenticated;
+grant select, insert, update, delete on public.session_changes to authenticated;
+grant select, insert, update, delete on public.vehicle_baselines to authenticated;
+grant select, insert, update, delete on public.sag_entries to authenticated;
+grant select, insert, update, delete on public.session_laps to authenticated;
+grant select, insert, update, delete on public.telemetry_summaries to authenticated;
+grant select, insert, update, delete on public.session_feedback to authenticated;
+grant select, insert, update on public.race_engineer_memory to authenticated;
+grant select, update on public.ai_recommendations to authenticated;
+grant select, insert, update on public.beta_feedback to authenticated;
+grant select, insert on public.product_events to authenticated;
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to service_role;
+alter default privileges in schema public
+  grant usage, select, update on sequences to service_role;
+alter default privileges in schema public
+  revoke execute on routines from public;
+revoke execute on function public.save_session_outcome(
+  uuid, uuid, uuid, uuid, text, smallint, text[], text, smallint
+) from public, anon, authenticated;
+grant execute on function public.save_session_outcome(
+  uuid, uuid, uuid, uuid, text, smallint, text[], text, smallint
+) to authenticated;
+revoke execute on function public.record_race_engineer_memory_feedback(
+  uuid, uuid, uuid, uuid, text, date, text, text[], text
+) from public, anon, authenticated;
+grant execute on function public.record_race_engineer_memory_feedback(
+  uuid, uuid, uuid, uuid, text, date, text, text[], text
+) to authenticated;
+commit;
+```
+
+What it deliberately leaves alone: `service_role` keeps whatever the platform
+already gave it (it is the trusted server identity and bypasses RLS either
+way), the legacy default privilege on *functions* for the Data API roles is
+not withdrawn (a new function's own migration decides its execute, exactly as
+CLAUDE.md requires), and no function other than the two named changes hands.
+A `function ... does not exist` error on one of those two means the hosted
+project is missing an RPC the app calls, which is a finding to escalate, not a
+line to delete.
+
+**3. Verify.** The first query is the one that was `true` on 2026-08-25:
+
+```sql
+select
+  has_table_privilege('authenticated', 'public.profiles', 'update') as rider_can_update_profiles,
+  has_table_privilege('authenticated', 'public.profiles', 'select') as rider_can_read_profiles,
+  has_table_privilege('anon', 'public.profiles', 'select') as nobody_can_read_profiles,
+  has_table_privilege('anon', 'public.sessions', 'truncate') as nobody_can_truncate_sessions;
+```
+
+Expect `false, true, false, false`. Then every column, because a column-level
+grant would pass the table check and reopen one column:
+
+```sql
+select
+  column_name,
+  has_column_privilege('authenticated', 'public.profiles', column_name, 'update') as rider_update,
+  has_column_privilege('service_role', 'public.profiles', column_name, 'update') as server_update
+from information_schema.columns
+where table_schema = 'public' and table_name = 'profiles'
+order by ordinal_position;
+```
+
+Expect `rider_update` to be `false` and `server_update` to be `true` on every
+row - `tier`, `beta_cohort`, `beta_access_started_at`, `beta_access_expires_at`,
+`stripe_customer_id`, `stripe_subscription_id`, `stripe_price_id` and
+`stripe_current_period_end` included. Then the whole surface:
+
+```sql
+select grantee, table_name, string_agg(privilege_type, ', ' order by privilege_type) as privileges
+from information_schema.role_table_grants
+where table_schema = 'public' and grantee in ('anon', 'authenticated')
+group by grantee, table_name
+order by grantee, table_name;
+```
+
+Expect no `anon` row at all, and exactly these fifteen for `authenticated`:
+
+| table                  | privileges                     |
+| ---------------------- | ------------------------------ |
+| `ai_recommendations`   | SELECT, UPDATE                 |
+| `beta_feedback`        | INSERT, SELECT, UPDATE         |
+| `product_events`       | INSERT, SELECT                 |
+| `profiles`             | SELECT                         |
+| `race_engineer_memory` | INSERT, SELECT, UPDATE         |
+| `sag_entries`          | DELETE, INSERT, SELECT, UPDATE |
+| `session_changes`      | DELETE, INSERT, SELECT, UPDATE |
+| `session_environment`  | DELETE, INSERT, SELECT, UPDATE |
+| `session_feedback`     | DELETE, INSERT, SELECT, UPDATE |
+| `session_laps`         | DELETE, INSERT, SELECT, UPDATE |
+| `sessions`             | DELETE, INSERT, SELECT, UPDATE |
+| `telemetry_summaries`  | DELETE, INSERT, SELECT, UPDATE |
+| `tracks`               | DELETE, INSERT, SELECT, UPDATE |
+| `vehicle_baselines`    | DELETE, INSERT, SELECT, UPDATE |
+| `vehicles`             | DELETE, INSERT, SELECT, UPDATE |
+
+The end-to-end proof is the request the escalation was reported through, and
+`tests/e2e/profile-entitlement-columns.spec.ts` sends it. Pointed at the hosted
+project it creates one throwaway auth user through the admin API, tries every
+entitlement and billing column as that rider and as nobody, checks the rider's
+own reads and garage writes and the service-role customer link still work, and
+deletes the user again:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co \
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key> \
+SUPABASE_SERVICE_ROLE_KEY=<service role key> \
+PW_SKIP_WEBSERVER=1 \
+npx playwright test tests/e2e/profile-entitlement-columns.spec.ts --project=desktop-chrome
+```
+
+Against a project still in the legacy state it fails 13 of 15, with the first
+failure printing `status: 200` and the row carrying `tier: "pro"`; against one
+the block has been applied to it passes 15 of 15.
+
+**4. Rollback, only to recover an app the block broke.** This reopens the
+escalation, so it is a way back to a working app while the cause is found, not
+a state to stay in. It restores the four data privileges to both Data API roles
+on every table and sequence, which is the part of the legacy state the app ever
+used; truncate, references and trigger are not restored because nothing uses
+them, and the two function grants are left as the block set them because
+`authenticated` still holds execute on both.
+
+```sql
+-- hosted-grants-rollback: reopens the escalation on profiles; recover the app, then come back
+begin;
+grant select, insert, update, delete on all tables in schema public to anon, authenticated;
+grant usage, select, update on all sequences in schema public to anon, authenticated;
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to anon, authenticated;
+alter default privileges in schema public
+  grant usage, select, update on sequences to anon, authenticated;
+commit;
+```
 
 ## Invite a Rider
 

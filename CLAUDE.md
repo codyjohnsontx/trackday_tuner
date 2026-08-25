@@ -204,8 +204,22 @@ Data API roles, so a migration adding a table grants what that table needs. The
 file also has to `revoke` before it grants, because the CLI itself hands `anon`
 and `authenticated` truncate, references and trigger, and RLS does not apply to
 truncate. `tests/unit/migrations-bootstrap.test.ts` fails on any migration that
-grants those roles more than `select` on `profiles`, or that reaches them with a
-schema-wide or default table grant
+grants those roles more than `select` on `profiles` - on the table or on one
+column - or that reaches them with a schema-wide or default table grant, and
+reads `public` as a target alongside them in every spelling, since both are
+members of it.
+
+**A migration in this repository is not evidence the hosted project has it.** On
+2026-08-25 `has_table_privilege('authenticated', 'public.profiles', 'update')`
+was still `true` there: the project was never built through the CLI, so
+`db push` has no history to compare against and `20260719001100` has to be
+applied in the SQL editor by hand. "Apply the Data API grants by hand" in
+`docs/beta-runbook.md` is that block with its verification and rollback, and
+`tests/unit/hosted-grants-runbook.test.ts` fails if it and the migration ever
+differ. Whether a database is actually closed is answered only by a request at
+it: `tests/e2e/profile-entitlement-columns.spec.ts` sends the escalation as a
+rider and as nobody, needs no dev server, and is what to run against a stack
+after applying either path
 
 What it builds is the schema and the storage bucket, and the bucket comes from a
 different file. The CLI provisions buckets from `[storage.buckets.*]` in

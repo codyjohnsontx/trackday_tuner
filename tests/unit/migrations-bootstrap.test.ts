@@ -24,6 +24,10 @@ import { describe, expect, it } from 'vitest';
 //   - the loss of the grants to anon / authenticated / service_role, or of the
 //     `alter default privileges` that keeps later migrations exposed without
 //     repeating those grants
+//   - a grant of any write on profiles to anon, authenticated or public - on the
+//     table, on one column, schema-wide or by default privilege. RLS picks the
+//     row and cannot restrict the column, so any UPDATE there lets a rider set
+//     their own tier; see entitlementWriteViolations below
 //   - a schema-wide grant of execute that reverses a deliberate per-function
 //     `revoke`. Tables are contained by RLS; a `security definer` function is not,
 //     because it runs as its owner and bypasses every policy, so for those the
@@ -560,6 +564,80 @@ function profileWriterViolations(migrations: Migration[]): string[] {
   return violations;
 }
 
+// The regression check for the privilege escalation this schema shipped with.
+//
+// An ordinary authenticated user, holding only the public key and their own
+// session, could PATCH their own profiles row and set tier to pro,
+// beta_access_expires_at to a future date, and both Stripe identifiers. It was
+// reproduced twice against a rebuilt local database and returned HTTP 200 with
+// the elevated values, and on 2026-08-25 the hosted project - which never
+// received 20260719001100 - still did. lib/access.ts grants Pro on either tier
+// or beta access, so that is paid entitlement for free, and rewriting
+// stripe_customer_id points a billing identifier wherever the caller likes.
+//
+// The cause is not the row policy, which is correct. Postgres RLS chooses which
+// ROW a policy admits and cannot restrict which COLUMN is written, so the only
+// thing standing between a user and their own tier column is whether
+// `authenticated` holds UPDATE on the table at all. Narrowing an earlier
+// `grant all` to CRUD did not help, because UPDATE is the privilege that
+// matters.
+//
+// WHAT THIS CATCHES: any migration granting anon, authenticated or public more
+// than SELECT on profiles - on the table, or on a single column, which is the
+// narrow-looking grant that reopens exactly `tier` - and any schema-wide or
+// default-privilege table grant that reaches those roles and would sweep
+// profiles up with everything else. `public` counts because anon and
+// authenticated are members of it, so a grant to public reaches both while
+// naming neither; every spelling Postgres accepts for it (`public`, `PUBLIC`,
+// `"public"`) is read the same way, and the fixtures use all three.
+//
+// WHAT IT DOES NOT CATCH: it reads SQL as text. It cannot see a grant made by
+// hand in the dashboard, and it says nothing about the hosted project, whose
+// privileges are not described by these files. Proving the attack fails needs a
+// real Data API request at a real database, which is
+// tests/e2e/profile-entitlement-columns.spec.ts - run it against a rebuilt
+// stack, and against the hosted project once the SQL-editor block in
+// docs/beta-runbook.md has been applied there.
+function entitlementWriteViolations(migrations: Migration[]): string[] {
+  const violations: string[] = [];
+  const exposedRoles = (targets: string): string[] =>
+    ['anon', 'authenticated', 'public'].filter((role) =>
+      new RegExp(`\\b${role}\\b`, 'i').test(targets),
+    );
+
+  for (const { file, sql } of migrations) {
+    // `([^;]*?)` before `on` keeps a column list inside the privilege text, so
+    // `update (tier)` is read as an update.
+    for (const match of sql.matchAll(
+      /grant\s+([^;]*?)\s+on\s+(?:table\s+)?public\.profiles\s+to\s+([^;]*)/gi,
+    )) {
+      const [, privileges, targets] = match;
+      const exposed = exposedRoles(targets);
+      const writes = ['insert', 'update', 'delete', 'all'].filter((privilege) =>
+        new RegExp(`\\b${privilege}\\b`, 'i').test(privileges),
+      );
+      if (exposed.length > 0 && writes.length > 0) {
+        violations.push(`${file}: grant ${writes.join(', ')} on profiles to ${exposed.join(', ')}`);
+      }
+    }
+
+    // A schema-wide or default grant reaching these roles would carry profiles
+    // with it, whatever the per-table statements say.
+    for (const match of sql.matchAll(
+      /(?:grant\s+[^;]*?\s+on\s+all\s+tables\s+in\s+schema\s+public|alter\s+default\s+privileges[^;]*?\bgrant\s+[^;]*?\s+on\s+tables)\s+to\s+([^;]*)/gi,
+    )) {
+      const exposed = exposedRoles(match[1]);
+      if (exposed.length === 0) continue;
+      const shape = /default\s+privileges/i.test(match[0])
+        ? 'default table privilege'
+        : 'schema-wide table grant';
+      violations.push(`${file}: ${shape} reaches ${exposed.join(', ')}`);
+    }
+  }
+
+  return violations;
+}
+
 const migrations = loadMigrations();
 
 describe('supabase migrations bootstrap a database from nothing', () => {
@@ -637,66 +715,8 @@ describe('supabase migrations bootstrap a database from nothing', () => {
     expect(sql).toMatch(/grant\s+[^;]*\son\s+public\.sessions\s+to\s+authenticated/);
   });
 
-  // The regression test for the privilege escalation this schema shipped with.
-  //
-  // An ordinary authenticated user, holding only the public key and their own
-  // session, could PATCH their own profiles row and set tier to pro,
-  // beta_access_expires_at to a future date, and both Stripe identifiers. It was
-  // reproduced twice against a rebuilt local database and returned HTTP 200 with
-  // the elevated values. lib/access.ts grants Pro on either tier or beta access,
-  // so that is paid entitlement for free, and rewriting stripe_customer_id points
-  // a billing identifier wherever the caller likes.
-  //
-  // The cause is not the row policy, which is correct. Postgres RLS chooses which
-  // ROW a policy admits and cannot restrict which COLUMN is written, so the only
-  // thing standing between a user and their own tier column is whether
-  // `authenticated` holds UPDATE on the table at all. Narrowing an earlier
-  // `grant all` to CRUD did not help, because UPDATE is the privilege that
-  // matters.
-  //
-  // WHAT THIS CATCHES: any migration granting anon or authenticated more than
-  // SELECT on profiles, and any schema-wide or default-privilege table grant that
-  // reaches those roles and would sweep profiles up with everything else.
-  //
-  // WHAT IT DOES NOT CATCH: it reads SQL as text. It cannot see a grant made by
-  // hand in the dashboard, and it says nothing about the hosted project, whose
-  // privileges are not described by these files. Proving the attack fails needs a
-  // rebuilt database and a real Data API request, which is how this fix was
-  // verified and is recorded in CLAUDE.md.
   it('never lets a user write their own entitlement or billing columns', () => {
-    const violations: string[] = [];
-
-    for (const { file, sql } of migrations) {
-      for (const match of sql.matchAll(
-        /grant\s+([^;]*?)\s+on\s+(?:table\s+)?public\.profiles\s+to\s+([^;]*)/gi,
-      )) {
-        const [, privileges, targets] = match;
-        const exposed = ['anon', 'authenticated', 'public'].filter((role) =>
-          new RegExp(`\\b${role}\\b`, 'i').test(targets),
-        );
-        const writes = ['insert', 'update', 'delete', 'all'].filter((privilege) =>
-          new RegExp(`\\b${privilege}\\b`, 'i').test(privileges),
-        );
-        if (exposed.length > 0 && writes.length > 0) {
-          violations.push(`${file}: grant ${writes.join(', ')} on profiles to ${exposed.join(', ')}`);
-        }
-      }
-
-      // A schema-wide or default grant reaching these roles would carry profiles
-      // with it, whatever the per-table statements say.
-      for (const match of sql.matchAll(
-        /(?:grant\s+[^;]*?\s+on\s+all\s+tables\s+in\s+schema\s+public|alter\s+default\s+privileges[^;]*?\bgrant\s+[^;]*?\s+on\s+tables)\s+to\s+([^;]*)/gi,
-      )) {
-        const exposed = ['anon', 'authenticated', 'public'].filter((role) =>
-          new RegExp(`\\b${role}\\b`, 'i').test(match[1]),
-        );
-        if (exposed.length > 0) {
-          violations.push(`${file}: schema-wide table grant reaches ${exposed.join(', ')}`);
-        }
-      }
-    }
-
-    expect(violations).toEqual([]);
+    expect(entitlementWriteViolations(migrations)).toEqual([]);
   });
 
   it('reads security definer off the two functions that declare it', () => {
@@ -1018,4 +1038,63 @@ describe('the execute check, against migrations written wrongly on purpose', () 
       ]);
     });
   }
+});
+
+describe('the entitlement-write check, against migrations written wrongly on purpose', () => {
+  it('accepts the select-only grant the real migration makes', () => {
+    // The control. Reading a profile is the one privilege a rider needs on the
+    // table, and a guard that rejected it would fail 20260719001100 itself.
+    expect(
+      entitlementWriteViolations(loadFixtures('grant_select_on_profiles_to_authenticated.sql')),
+    ).toEqual([]);
+  });
+
+  // The three roles a grant can name to reach a rider, each in a spelling of its
+  // own across the fixtures: `anon`, `authenticated`, and the pseudo-role that
+  // both belong to, written `PUBLIC` on the table grant, `"public"` on the
+  // schema-wide one and `public` on the default privilege. Postgres reads all
+  // three as the same role and so does the guard.
+  for (const role of ['anon', 'authenticated', 'public']) {
+    it(`catches update on profiles granted to ${role}`, () => {
+      expect(
+        entitlementWriteViolations(loadFixtures(`grant_update_on_profiles_to_${role}.sql`)),
+      ).toEqual([`grant_update_on_profiles_to_${role}.sql: grant update on profiles to ${role}`]);
+    });
+
+    it(`catches a schema-wide table grant reaching ${role}`, () => {
+      expect(entitlementWriteViolations(loadFixtures(`grant_all_tables_to_${role}.sql`))).toEqual([
+        `grant_all_tables_to_${role}.sql: schema-wide table grant reaches ${role}`,
+      ]);
+    });
+
+    it(`catches a tables default privilege reaching ${role}`, () => {
+      expect(
+        entitlementWriteViolations(loadFixtures(`default_privileges_tables_to_${role}.sql`)),
+      ).toEqual([
+        `default_privileges_tables_to_${role}.sql: default table privilege reaches ${role}`,
+      ]);
+    });
+  }
+
+  it('catches update granted on a single column of profiles', () => {
+    // `grant update (tier)` is the narrow-looking fix, and it reopens exactly
+    // the column the whole check exists to keep out of a rider's reach.
+    expect(
+      entitlementWriteViolations(
+        loadFixtures('grant_column_update_on_profiles_to_authenticated.sql'),
+      ),
+    ).toEqual([
+      'grant_column_update_on_profiles_to_authenticated.sql: grant update on profiles to authenticated',
+    ]);
+  });
+
+  it('catches insert and delete on profiles', () => {
+    expect(
+      entitlementWriteViolations(
+        loadFixtures('grant_insert_delete_on_profiles_to_authenticated.sql'),
+      ),
+    ).toEqual([
+      'grant_insert_delete_on_profiles_to_authenticated.sql: grant insert, delete on profiles to authenticated',
+    ]);
+  });
 });
