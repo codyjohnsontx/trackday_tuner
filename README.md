@@ -414,10 +414,32 @@ reads "Link expired". Put `127.0.0.1` back in the address bar and reload - the
 session is already there, the form appears, and the new password saves. The
 recovery code is spent by then and does not need to be used again.
 
-What that builds is the database, not everything the app touches. This repository
-does not provision the `vehicle-photos` storage bucket, so adding a vehicle with a
-photo fails with "Bucket not found" until that bucket is created out of band, and
-no tracks are seeded, so a fresh database starts with none to pick from.
+What that builds is the database and the storage bucket, not everything the app
+touches. `supabase start` (and `db reset`) seed the `vehicle-photos` bucket from
+`[storage.buckets.vehicle-photos]` in `supabase/config.toml` and log
+`Creating Storage bucket: vehicle-photos`; the policies that let a rider write
+their own folder are a migration like any other. Before that block existed a
+fresh database applied every migration cleanly and answered the first photo with
+"Photo upload failed: Bucket not found". No tracks are seeded, so a fresh
+database starts with none to pick from.
+
+The bucket is the one thing `db push` does not carry to the hosted project, because
+the CLI provisions buckets from `config.toml` rather than from migrations. A
+deployment standing up its own project runs this once after `supabase link`, with
+the same operator credentials `db push` needs:
+
+```bash
+npx supabase seed buckets --linked
+```
+
+It creates the bucket if it is missing and brings an existing one's settings
+(public, accepted MIME types, size limit) into line with `config.toml`. Run it
+again whenever that block changes.
+
+What a local stack cannot yet do is *show* the photo it just stored: `next.config.ts`
+allows `next/image` only `https://*.supabase.co`, so the garage card throws
+`hostname "127.0.0.1" is not configured` against a local stack. The upload and the
+public URL are correct; the card is a separate fix.
 
 To rebuild, `npx supabase db reset` re-applies every migration to the running
 stack, and `npx supabase stop --no-backup` followed by `npx supabase start`

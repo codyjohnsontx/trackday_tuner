@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { test, expect } from '@playwright/test';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
+import { createClient } from '@supabase/supabase-js';
+import {
+  createTestAdminClient,
+  findUserIdByEmail,
+  hasServiceRole,
+} from '@/tests/e2e/helpers/supabase';
 import type { Database } from '@/types/supabase';
 
 // The walk that tests/unit/migrations-bootstrap.test.ts says it cannot do.
@@ -25,33 +29,6 @@ import type { Database } from '@/types/supabase';
 // path. With BETA_INVITE_ONLY on, the form posts to /api/beta/signup, which is
 // the writer that always worked and not the one under test here.
 const PUBLIC_SIGNUP = (process.env.BETA_INVITE_ONLY ?? 'true') === 'false';
-
-/**
- * Last resort for cleanup when the id was never captured.
- *
- * `listUsers()` is paginated and takes no email argument, so reading page one is
- * not a lookup - it is a coin flip that gets quieter the more accounts the
- * database holds, and a cleanup that silently finds nothing is worse than none.
- * Page until the address turns up or the list runs out.
- */
-async function findUserIdByEmail(
-  admin: SupabaseClient<Database>,
-  email: string,
-): Promise<string | null> {
-  const perPage = 200;
-  const wanted = email.toLowerCase();
-
-  for (let page = 1; page <= 100; page += 1) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
-    if (error) return null;
-
-    const match = data.users.find((user) => user.email?.toLowerCase() === wanted);
-    if (match) return match.id;
-    if (data.users.length < perPage) return null;
-  }
-
-  return null;
-}
 
 test.describe('signing up outside the invite route', () => {
   // This spec's own explicit waits already total 50s - 10s for the hydration

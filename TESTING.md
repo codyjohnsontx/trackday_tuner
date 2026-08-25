@@ -51,15 +51,22 @@ one fails a spec for a reason that has nothing to do with what is under test: th
 vehicle and session caps refuse the save outright, and at the track cap
 resolution falls back to a name-only session, so the `track_id` and track-row
 assertions fail.
-`tests/e2e/signup-creates-profile.spec.ts` stands outside both of those, because
-it signs up its own throwaway rider rather than using that account. It needs
-`NEXT_PUBLIC_SUPABASE_ANON_KEY` as well as the service-role key, since it reads
-the new rider's `profiles` row back under their own session, and it also needs
-`BETA_INVITE_ONLY=false`. It skips without any of them. That last gate is the
-unusual one and nothing else in this file has it: with invite-only on, the form
-posts to `/api/beta/signup`, which is the `profiles` writer that always worked, so
-the spec would exercise the wrong path entirely instead of the GoTrue signup whose
-trigger it exists to guard.
+`tests/e2e/signup-creates-profile.spec.ts` and
+`tests/e2e/vehicle-photo-upload.spec.ts` stand outside both of those, because each
+signs up its own throwaway rider rather than using that account. Both need
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` as well as the service-role key - the first reads
+the new rider's `profiles` row back under their own session, the second uploads
+as the rider and as nobody - and both need `BETA_INVITE_ONLY=false`, because with
+invite-only on the form posts to `/api/beta/signup` rather than signing up through
+GoTrue. Each skips without any of them. For the signup spec that last gate is the
+point: `/api/beta/signup` is the `profiles` writer that always worked, so the spec
+would exercise the wrong path entirely instead of the GoTrue signup whose trigger
+it exists to guard. For the photo spec it is only how a throwaway rider is made;
+the bucket it guards is the same either way, and a rider with no vehicles is what
+keeps the free-plan vehicle cap out of the result. That spec also needs the stack
+to have been built with the `[storage.buckets.vehicle-photos]` block in
+`supabase/config.toml` - `supabase start` or `db reset` since it was added - which
+is exactly what it exists to prove.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a
