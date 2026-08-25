@@ -607,9 +607,11 @@ function entitlementWriteViolations(migrations: Migration[]): string[] {
 
   for (const { file, sql } of migrations) {
     // `([^;]*?)` before `on` keeps a column list inside the privilege text, so
-    // `update (tier)` is read as an update.
+    // `update (tier)` is read as an update. The table name is read with or
+    // without its `public.` qualifier, and quoted or bare, because search_path
+    // puts an unqualified `profiles` in public and Postgres folds the rest.
     for (const match of sql.matchAll(
-      /grant\s+([^;]*?)\s+on\s+(?:table\s+)?public\.profiles\s+to\s+([^;]*)/gi,
+      /grant\s+([^;]*?)\s+on\s+(?:table\s+)?(?:"?public"?\.)?"?profiles"?\s+to\s+([^;]*)/gi,
     )) {
       const [, privileges, targets] = match;
       const exposed = exposedRoles(targets);
@@ -1075,6 +1077,30 @@ describe('the entitlement-write check, against migrations written wrongly on pur
       ]);
     });
   }
+
+  // The table name gets the same treatment as the role: an unqualified
+  // `profiles` lands in public through search_path, and `"public"."profiles"`
+  // is the same identifier quoted, so a guard reading only `public.profiles`
+  // was evadable by respelling the table rather than the role.
+  it('catches update on profiles named without its schema', () => {
+    expect(
+      entitlementWriteViolations(
+        loadFixtures('grant_update_on_unqualified_profiles_to_authenticated.sql'),
+      ),
+    ).toEqual([
+      'grant_update_on_unqualified_profiles_to_authenticated.sql: grant update on profiles to authenticated',
+    ]);
+  });
+
+  it('catches update on profiles with the schema and table quoted', () => {
+    expect(
+      entitlementWriteViolations(
+        loadFixtures('grant_update_on_quoted_profiles_to_authenticated.sql'),
+      ),
+    ).toEqual([
+      'grant_update_on_quoted_profiles_to_authenticated.sql: grant update on profiles to authenticated',
+    ]);
+  });
 
   it('catches update granted on a single column of profiles', () => {
     // `grant update (tier)` is the narrow-looking fix, and it reopens exactly

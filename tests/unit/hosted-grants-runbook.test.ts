@@ -86,13 +86,15 @@ describe('the hosted apply block in docs/beta-runbook.md', () => {
     expect(runbook).toContain(`Expect \`${granted.length}\`.`);
   });
 
-  it('keeps the rollback a transaction that hands the Data API roles data privileges only', () => {
+  it('keeps the rollback a transaction that hands authenticated data privileges only', () => {
     const rollback = statements(fencedBlock(runbook, ROLLBACK_MARKER));
 
     expect(rollback[0]).toBe('begin');
     expect(rollback[rollback.length - 1]).toBe('commit');
     for (const statement of rollback.slice(1, -1)) {
-      expect(statement).toMatch(/^(?:grant|alter default privileges) .* to anon, authenticated$/);
+      // `authenticated` alone: the app never touches a table as anon, so a
+      // rollback naming it would reopen surface without recovering anything.
+      expect(statement).toMatch(/^(?:grant|alter default privileges) .* to authenticated$/);
       // Nothing uses these, RLS does not contain truncate, and restoring them
       // would be a wider hole than the one the rollback is recovering from.
       // `grant all` is the spelling that hands them over without naming them.

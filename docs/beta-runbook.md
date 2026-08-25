@@ -329,21 +329,23 @@ the block has been applied to it passes 15 of 15.
 
 **4. Rollback, only to recover an app the block broke.** This reopens the
 escalation, so it is a way back to a working app while the cause is found, not
-a state to stay in. It restores the four data privileges to both Data API roles
-on every table and sequence, which is the part of the legacy state the app ever
-used; truncate, references and trigger are not restored because nothing uses
-them, and the two function grants are left as the block set them because
-`authenticated` still holds execute on both.
+a state to stay in. It restores the four data privileges to `authenticated`
+only, on every table and sequence. `anon` is left as the block set it: the app
+never reads or writes any table as anon, since every unauthenticated write goes
+through the service client, so restoring it would reopen surface without
+recovering anything. Truncate, references and trigger are not restored because
+nothing uses them, and the two function grants are left as the block set them
+because `authenticated` still holds execute on both.
 
 ```sql
 -- hosted-grants-rollback: reopens the escalation on profiles; recover the app, then come back
 begin;
-grant select, insert, update, delete on all tables in schema public to anon, authenticated;
-grant usage, select, update on all sequences in schema public to anon, authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant usage, select, update on all sequences in schema public to authenticated;
 alter default privileges in schema public
-  grant select, insert, update, delete on tables to anon, authenticated;
+  grant select, insert, update, delete on tables to authenticated;
 alter default privileges in schema public
-  grant usage, select, update on sequences to anon, authenticated;
+  grant usage, select, update on sequences to authenticated;
 commit;
 ```
 

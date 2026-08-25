@@ -154,6 +154,7 @@ test.describe('a rider and their own profiles row', () => {
   );
 
   let admin: SupabaseClient<Database>;
+  let createdUserId: string | null = null;
   let rider: Rider;
   // The row as the trigger wrote it. Every refusal below is checked against
   // this, so the checks that change the row through the service role come last.
@@ -175,6 +176,7 @@ test.describe('a rider and their own profiles row', () => {
       throw new Error(`creating the throwaway rider failed: ${createError?.message ?? 'no user'}`);
     }
     const userId = created.user.id;
+    createdUserId = userId;
 
     const client = createClient<Database>(supabaseUrl(), anonKey(), {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -204,7 +206,10 @@ test.describe('a rider and their own profiles row', () => {
     // The profiles row and any vehicle go with the auth user through the FK
     // cascades. Swallowed so a cleanup failure never masks the finding.
     try {
-      if (rider) await admin.auth.admin.deleteUser(rider.userId);
+      if (createdUserId) {
+        await admin.auth.admin.deleteUser(createdUserId);
+        createdUserId = null;
+      }
     } catch {
       // Deliberately ignored.
     }
