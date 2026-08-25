@@ -589,7 +589,10 @@ function profileWriterViolations(migrations: Migration[]): string[] {
 // profiles up with everything else. `public` counts because anon and
 // authenticated are members of it, so a grant to public reaches both while
 // naming neither; every spelling Postgres accepts for it (`public`, `PUBLIC`,
-// `"public"`) is read the same way, and the fixtures use all three.
+// `"public"`) is read the same way. The fixtures write the grantee bare, as
+// `public` and `PUBLIC`; quoting is exercised where it actually evaded a guard,
+// on the table name in grant_update_on_quoted_profiles_to_authenticated.sql and
+// on the schema name in grant_all_tables_quoted_schema_to_authenticated.sql.
 //
 // WHAT IT DOES NOT CATCH: it reads SQL as text. It cannot see a grant made by
 // hand in the dashboard, and it says nothing about the hosted project, whose
@@ -1062,11 +1065,14 @@ describe('the entitlement-write check, against migrations written wrongly on pur
     ).toEqual([]);
   });
 
-  // The three roles a grant can name to reach a rider, each in a spelling of its
-  // own across the fixtures: `anon`, `authenticated`, and the pseudo-role that
-  // both belong to, written `PUBLIC` on the table grant, `"public"` on the
-  // schema-wide one and `public` on the default privilege. Postgres reads all
-  // three as the same role and so does the guard.
+  // The three roles a grant can name to reach a rider: `anon`, `authenticated`,
+  // and the pseudo-role that both belong to, written `PUBLIC` on the table grant
+  // and bare `public` on the schema-wide one and the default privilege. Postgres
+  // folds those to the same role and so does the guard, which also reads it
+  // quoted. The quoted spelling is exercised on the table and schema names
+  // instead, by grant_update_on_quoted_profiles_to_authenticated.sql and
+  // grant_all_tables_quoted_schema_to_authenticated.sql, because that is where
+  // it walked past a guard.
   for (const role of ['anon', 'authenticated', 'public']) {
     it(`catches update on profiles granted to ${role}`, () => {
       expect(
