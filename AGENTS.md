@@ -83,6 +83,13 @@ component. Recover with `rm -rf .next` and restart dev.
 Migrations live in `supabase/migrations/` and are applied with the Supabase CLI
 against the linked hosted project. `supabase_migrations.schema_migrations` on
 the remote is the source of truth for what has been applied.
+A hosted project may carry no CLI-tracked history at all - on 2026-08-25 the
+live project had no `supabase_migrations.schema_migrations` table - and then the
+bullets below, and the note further down that the baseline is dated before
+migrations the remote has already recorded, apply only once it is brought under
+CLI management; until then see "A migration in this repository is not evidence
+the hosted project has it" under the grants notes below and "Apply the Data API
+grants by hand" in `docs/beta-runbook.md`.
 
 - `npm run db:status` before and after any schema work. It compares the applied
   migration *history* — which versions the remote has recorded — against the
