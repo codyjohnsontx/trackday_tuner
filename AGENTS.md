@@ -222,10 +222,13 @@ already fixed by hand. `tests/unit/storage-bucket-provisioning.test.ts` fails if
 the app uploads to a bucket that file does not declare as public, or that no
 migration gives owner-scoped select, insert *and* update policies (the form
 upserts, and the storage API returns the row under RLS).
-`tests/e2e/vehicle-photo-upload.spec.ts` is the walk against a rebuilt stack. No
-tracks are seeded. A local stack still cannot *render* the photo it stored:
-`next.config.ts` allows `next/image` only `https://*.supabase.co`, which is a
-separate defect.
+`tests/e2e/vehicle-photo-upload.spec.ts` is the walk against a rebuilt stack, and
+it ends on the card actually rendering: `next/image` serves only hosts named in
+`images.remotePatterns`, which `lib/supabase-storage-remote-patterns.ts` derives
+from `NEXT_PUBLIC_SUPABASE_URL` when `next.config.ts` loads - so a local stack
+renders its own photos and the rule is not a second copy of the URL. It once named
+`*.supabase.co` alone, and the garage threw on every local photo while the spec
+passed, because nothing looked at the card. No tracks are seeded.
 
 Functions are deliberately *not* granted schema-wide. RLS contains a table; it does
 not contain a `security definer` function, which runs as its owner and bypasses

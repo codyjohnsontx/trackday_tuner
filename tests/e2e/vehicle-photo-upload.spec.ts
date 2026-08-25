@@ -16,7 +16,7 @@ import type { Database } from '@/types/supabase';
 // storage.objects for it. It cannot prove the CLI seeds the bucket, that the storage API honours the
 // policies, or that the public URL the form stores is one the card can fetch.
 // This is that check, driven the way a rider drives it: the ordinary form, a
-// photo, then the row, the object and the URL.
+// photo, then the card that shows it, the row, the object and the URL.
 //
 // It ends on the assertion the bug was actually reported through. A database
 // built fresh from this repository once had no bucket at all, so the form
@@ -218,6 +218,55 @@ test.describe('adding a vehicle with a photo', () => {
     expect(vehicle).not.toBeNull();
     const photoUrl = vehicle!.photo_url!;
     expect(photoUrl).toContain(`/storage/v1/object/public/${BUCKET}/${userId}/`);
+
+    // The card. components/garage/vehicle-card.tsx hands that URL to `next/image`,
+    // which serves an image only from a host `images.remotePatterns` in
+    // next.config.ts names. Against a local stack that host is 127.0.0.1, and the
+    // pattern once named only `*.supabase.co`: the upload succeeded, the row was
+    // right, the URL answered, and the garage still showed no photo. How it fails
+    // differs by build. `next dev` refuses at render and takes the whole page down
+    // with `hostname "127.0.0.1" is not configured under images`; a production
+    // build renders the `<img>` and has `/_next/image` answer 400. Every assertion
+    // above passed through both, because the URL still said /garage. So wait for
+    // the photo or for that refusal, whichever lands first, and read the refusal
+    // so its words are in the failure. Then fetch what the `<img>` actually asked
+    // for and require the browser to have decoded it - an `<img>` in the document
+    // with a 400 behind it is the production shape of the same bug.
+    const photo = page.getByRole('img', { name: nickname });
+    const unconfiguredHost = page.getByText(/is not configured under images/);
+    await expect
+      .poll(async () => (await photo.count()) > 0 || (await unconfiguredHost.count()) > 0, {
+        timeout: 20_000,
+      })
+      .toBe(true);
+    expect(await unconfiguredHost.allTextContents()).toEqual([]);
+    await expect(photo).toBeVisible();
+    // `currentSrc` is the candidate the browser chose from the srcset, so it is
+    // what was really requested - empty until the browser has picked one.
+    await expect.poll(() => photo.evaluate((img: HTMLImageElement) => img.currentSrc)).not.toBe('');
+    const requestedSrc = await photo.evaluate((img: HTMLImageElement) => img.currentSrc);
+    expect(decodeURIComponent(requestedSrc)).toContain(photoUrl);
+    const optimizedFetch = await page.request.get(requestedSrc);
+    expect(optimizedFetch.status(), await optimizedFetch.text()).toBe(200);
+    expect(optimizedFetch.headers()['content-type']).toMatch(/^image\//);
+    // Decoded by the browser, not merely fetched by the test. `naturalWidth` is
+    // not the way to ask: it is corrected for density, so a one-pixel fixture
+    // chosen from the `2x` candidate reads 0 on every project with a
+    // deviceScaleFactor above 1, loaded or not. `decode()` measures nothing - it
+    // resolves once the image has decoded and rejects on a broken one - and the
+    // rejection's name is the failure message.
+    await expect
+      .poll(
+        () =>
+          photo.evaluate((img: HTMLImageElement) =>
+            img.decode().then(
+              () => 'decoded',
+              (error: Error) => `${error.name}: ${error.message}`,
+            ),
+          ),
+        { timeout: 20_000 },
+      )
+      .toBe('decoded');
 
     const { data: objects, error: listError } = await admin.storage.from(BUCKET).list(userId);
     expect(listError).toBeNull();
