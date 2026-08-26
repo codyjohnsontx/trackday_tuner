@@ -20,6 +20,39 @@ Each filename says what it is. The three role spellings - `anon`,
 `authenticated` and `public` - are covered separately because `public` is the
 one the real migrations revoke from, and the one the guard used to miss.
 
+Seventeen cover the entitlement-write check: the escalation where a rider holding
+UPDATE on `profiles` sets their own `tier`, beta access and Stripe identifiers,
+which RLS cannot stop because it picks the row and not the column. Nine are the
+same three roles across the three shapes a write can arrive in -
+`grant_update_on_profiles_to_*.sql` per table, `grant_all_tables_to_*.sql`
+schema-wide and `default_privileges_tables_to_*.sql` aimed at every future
+table - and between them the pseudo-role is written `PUBLIC` and bare `public`,
+because Postgres folds the two to one role and a guard reading only one spelling
+is evadable by recasing. The guard reads it quoted as well; the quoted spelling
+is exercised on identifiers rather than the grantee, because that is where it
+actually walked past a guard.
+`grant_update_on_unqualified_profiles_to_authenticated.sql` and
+`grant_update_on_quoted_profiles_to_authenticated.sql` respell the table
+instead of the role - a bare `profiles`, which search_path puts in public, and
+`"public"."profiles"`, which is the same identifier quoted - because the guard
+once read only `public.profiles` and either spelling walked past it.
+`grant_update_on_profiles_in_list_to_authenticated.sql` buries `profiles` in a
+multi-table grant list, `public.profiles, public.vehicles`, because the guard
+once read `profiles` only when it sat alone immediately before `to`.
+`grant_all_tables_quoted_schema_to_authenticated.sql` is the schema-wide grant
+with the schema name quoted, `in schema "public"`, which the guard's
+schema-wide arm once required bare.
+`grant_all_tables_multi_schema_to_authenticated.sql` puts `public` in a
+multi-schema list, `in schema private, public`, which the schema-wide arm
+once read only when `public` was the sole schema before `to`.
+`grant_column_update_on_profiles_to_authenticated.sql` is the narrow-looking
+`grant update (tier)`, which reopens exactly the column the check exists to
+close; `grant_insert_delete_on_profiles_to_authenticated.sql` is the other two
+writes. `grant_select_on_profiles_to_authenticated.sql` is the control: the one
+privilege a rider needs on that table, and what `20260719001100` grants, so the
+guard has to stay quiet about it. Those fixtures read as text; the same
+escalation sent at a real database is `tests/e2e/profile-entitlement-columns.spec.ts`.
+
 Fifteen cover the profiles-writer check rather than execute.
 `profiles_without_signup_trigger.sql` is the repository as it stood before
 `20260816001200`: a profiles table keyed to `auth.users` that nothing ever

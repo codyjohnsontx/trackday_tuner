@@ -153,7 +153,7 @@ and execution order may legitimately diverge; the reason is recorded there.
    item where a bad day means the data model cannot be rebuilt.
 
    `20260223000000_init_baseline_schema.sql` now creates those four tables and their
-   policies, dated before the rest of the history so the migrations the hosted
+   policies, dated before the rest of the history so any migrations a hosted
    project has already recorded stay untouched. It was reconstructed from
    `types/supabase.ts` and from what the later migrations alter and reference,
    rather than captured with `supabase db pull`, which needs a linked hosted
@@ -165,7 +165,10 @@ and execution order may legitimately diverge; the reason is recorded there.
    mechanics and the hosted-project caveat are in CLAUDE.md under "Building a
    database from nothing".
 
-   Remaining: the hosted project has not recorded the out-of-order baseline yet.
+   Remaining: the hosted project carries no CLI migration history at all (as of
+   2026-08-25), so it has recorded neither the baseline nor anything else;
+   until it is brought under CLI management the grants are applied by hand -
+   see "Apply the Data API grants by hand" in `docs/beta-runbook.md`.
 
 <!-- The band headings and the paragraph above name items by absolute position,
      so these lists continue the numbering across headings rather than each
