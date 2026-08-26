@@ -39,10 +39,18 @@ export default function HomePage() {
             at `lg:` and not `sm:` because 1024px is where the shell's max-w-5xl
             cap makes that desktop assumption true; taking over at 640px left the
             transparent right-hand end under the tail of a 72px headline that is
-            still near-full-width, and the second line measured 1.6:1 there. */}
+            still near-full-width, and the second line measured 1.6:1 there.
+            That leaves 640-1023 on the phone's end stop, which is too light for
+            a headline this wide - so `sm:to-canvas/72` carries the band alone.
+            /72 is the lightest step that holds the ink-faint second line over
+            3:1 at every width in it (worst 3.03 at 740); /70 and /71 read as
+            clearing on a coarse sweep and dip to 2.95-2.99 around 690-750, which
+            is why the band was measured at 4px. It is bounded on both sides by
+            stops already here - `to-canvas/65` still governs below 640 and
+            `lg:to-transparent` above 1023 - so phone and desktop do not move. */}
         <div className="absolute inset-x-0 top-0 h-[22%] bg-gradient-to-b from-canvas to-transparent" />
         <div className="absolute inset-x-0 bottom-0 h-[45%] bg-gradient-to-t from-canvas via-canvas/80 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-r from-canvas via-canvas/90 via-[55%] to-canvas/65 lg:via-canvas/85 lg:via-[72%] lg:to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-canvas via-canvas/90 via-[55%] to-canvas/65 sm:to-canvas/72 lg:via-canvas/85 lg:via-[72%] lg:to-transparent" />
         <div className="relative z-10 mx-auto flex min-h-[calc(100svh-11rem)] max-w-4xl flex-col justify-center">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-ink-faint">Founding beta · Motorcycle track days</p>
           <h1 className="mt-5 max-w-3xl text-5xl font-black leading-[0.94] tracking-[-0.045em] text-ink sm:text-7xl">Know what changed.<br /><span className="text-ink-faint">Learn what worked.</span></h1>
