@@ -436,10 +436,14 @@ It creates the bucket if it is missing and brings an existing one's settings
 (public, accepted MIME types, size limit) into line with `config.toml`. Run it
 again whenever that block changes.
 
-What a local stack cannot yet do is *show* the photo it just stored: `next.config.ts`
-allows `next/image` only `https://*.supabase.co`, so the garage card throws
-`hostname "127.0.0.1" is not configured` against a local stack. The upload and the
-public URL are correct; the card is a separate fix.
+The garage card renders that photo through `next/image`, which serves only hosts
+named in `images.remotePatterns`. `next.config.ts` derives that host from
+`NEXT_PUBLIC_SUPABASE_URL` (`lib/supabase-storage-remote-patterns.ts`), so the
+local stack is admitted as soon as `.env.local` points at it, next to
+`*.supabase.co` for hosted projects. The value is read when the config loads:
+after changing it, restart `npm run dev`. Before that rule existed the card threw
+`hostname "127.0.0.1" is not configured under images` against a local stack while
+the upload and the public URL were both correct.
 
 To rebuild, `npx supabase db reset` re-applies every migration to the running
 stack, and `npx supabase stop --no-backup` followed by `npx supabase start`

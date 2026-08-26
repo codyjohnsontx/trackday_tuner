@@ -1,5 +1,6 @@
 import type { NextConfig } from 'next';
 import withBundleAnalyzer from '@next/bundle-analyzer';
+import { supabaseStorageRemotePatterns } from './lib/supabase-storage-remote-patterns';
 
 const nextConfig: NextConfig = {
   typedRoutes: true,
@@ -10,13 +11,12 @@ const nextConfig: NextConfig = {
     '/api/ai/**': ['./data/rag-index.json'],
   },
   images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '*.supabase.co',
-        pathname: '/storage/v1/object/public/**',
-      },
-    ],
+    // Vehicle photos come off the configured project's storage endpoint, so the
+    // host is derived from the URL the app already reads rather than listed here
+    // a second time - see lib/supabase-storage-remote-patterns.ts for the rule
+    // and the local-stack failure it closes. Next loads `.env*` before it
+    // evaluates this file, so `.env.local` counts.
+    remotePatterns: supabaseStorageRemotePatterns(process.env.NEXT_PUBLIC_SUPABASE_URL),
   },
 };
 
