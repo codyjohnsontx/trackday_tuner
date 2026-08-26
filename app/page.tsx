@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import { ArrowRight, Gauge, History, Sparkles } from 'lucide-react';
 import { WaitlistForm } from '@/components/beta/waitlist-form';
 
@@ -5,8 +6,39 @@ export default function HomePage() {
   return (
     <div className="-mx-4 -mt-5 sm:-mx-5 md:-mx-6">
       <section className="relative min-h-[calc(100svh-4.5rem)] overflow-hidden border-b border-white/5 px-4 pb-12 pt-10 sm:px-8 md:px-12">
-        <div aria-hidden className="absolute -right-32 top-8 h-[34rem] w-[34rem] rotate-12 rounded-[45%] border-[3rem] border-white/5 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] sm:right-0" />
-        <div aria-hidden className="absolute right-20 top-24 h-64 w-24 -rotate-12 rounded-full bg-white/5 blur-3xl" />
+        {/* Photo: provenance unconfirmed - see PR discussion */}
+        {/* Decorative rather than described: the headline and subhead carry the
+            whole message, so announcing the backdrop only delays them. The two
+            white shapes that used to sit here were dropped - they landed on the
+            same right-hand third as the bikes and read as haze over them. */}
+        {/* The box is far taller than the photo's 16:9 at every phone and laptop
+            shape, so `object-cover` fits it by HEIGHT and the width the browser
+            paints is ~16/9 of the hero height, not the viewport width. `100vw`
+            would hand a 390px phone a 640px source and stretch it to ~1370px. */}
+        {/* `44%` centres the crop on the leading pair: a 1024px-wide desktop hero
+            shows 70% of the frame (all three bikes), a 390px phone shows 28% and
+            lands on the KTM whole. Pushing it right to follow the subjects loses
+            the phone crop into one rider's back. */}
+        <Image
+          src="/images/gpslide.webp"
+          alt=""
+          aria-hidden
+          fill
+          priority
+          sizes="178vh"
+          className="object-cover object-[44%_45%] opacity-60"
+        />
+        {/* Same canvas fades as the login hero, plus one it does not need. That
+            hero is a 42svh band with its text on the bottom edge; this one is
+            full height with the text centred, so a top-and-bottom pair alone
+            leaves the headline over the brightest part of the frame. The third
+            fade runs left to right instead, which suits the composition: the
+            copy sits on near-canvas at the left and the bikes keep the right.
+            It has to reach further across a 390px phone, where the copy is full
+            width, than across the 1024px shell - hence the `sm:` stops. */}
+        <div className="absolute inset-x-0 top-0 h-[22%] bg-gradient-to-b from-canvas to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-[45%] bg-gradient-to-t from-canvas via-canvas/80 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-canvas via-canvas/90 via-[55%] to-canvas/65 sm:via-canvas/85 sm:via-[72%] sm:to-transparent" />
         <div className="relative z-10 mx-auto flex min-h-[calc(100svh-11rem)] max-w-4xl flex-col justify-center">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-ink-faint">Founding beta · Motorcycle track days</p>
           <h1 className="mt-5 max-w-3xl text-5xl font-black leading-[0.94] tracking-[-0.045em] text-ink sm:text-7xl">Know what changed.<br /><span className="text-ink-faint">Learn what worked.</span></h1>
