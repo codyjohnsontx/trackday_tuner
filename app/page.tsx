@@ -11,10 +11,26 @@ export default function HomePage() {
             whole message, so announcing the backdrop only delays them. The two
             white shapes that used to sit here were dropped - they landed on the
             same right-hand third as the bikes and read as haze over them. */}
-        {/* The box is far taller than the photo's 16:9 at every phone and laptop
-            shape, so `object-cover` fits it by HEIGHT and the width the browser
-            paints is ~16/9 of the hero height, not the viewport width. `100vw`
-            would hand a 390px phone a 640px source and stretch it to ~1370px. */}
+        {/* `sizes` has to answer "how wide will this be painted", and `object-cover`
+            answers that from whichever axis is short. In PORTRAIT the box is taller
+            than the photo's 16:9, so the fit is height-driven and the painted width
+            is ~16/9 of the hero height rather than the viewport width - `100vw`
+            alone would hand a 390px phone a 640px source and stretch it across
+            ~1370px. In LANDSCAPE the box is wider than 16:9 and the fit flips to
+            width-driven, where `178vh` under-advertises: measured at 844x390 dpr1
+            the browser picked w=750 for an 844px paint. So each branch advertises
+            whichever of the two is LARGER. Below the shell's max-w-5xl cap the box
+            width is the viewport width, and `100vw` wins exactly when the viewport
+            reaches 16/9. At or above the cap the box width is pinned to 1024px,
+            which beats `178vh` only below 575px of viewport height - the cap is why
+            the branch is a height and not an aspect ratio: at 2560x1440 the viewport
+            IS 16/9 while the box is a tall 1024x1368, and an aspect test there
+            advertised 1024 against a 2432px paint.
+            The residue this cannot reach: the box grows past `100svh-4.5rem` when
+            the copy outgrows that min-height, and no `vh` figure sees that. It
+            needs a viewport short enough to wrap the copy tall - measured fine at
+            every size in the e2e matrix - and the source caps at 2000px, so the
+            failure is a mild upscale and never an over-download. */}
         {/* `44%` centres the crop on the leading pair: a 1024px-wide desktop hero
             shows 70% of the frame (all three bikes), a 390px phone shows 28% and
             lands on the KTM whole. Pushing it right to follow the subjects loses
@@ -25,7 +41,7 @@ export default function HomePage() {
           aria-hidden
           fill
           priority
-          sizes="178vh"
+          sizes="(min-width: 1024px) and (max-height: 575px) 1024px, (max-width: 1023px) and (min-aspect-ratio: 16/9) 100vw, 178vh"
           className="object-cover object-[44%_45%] opacity-60"
         />
         {/* Same canvas fades as the login hero, plus one it does not need. That
