@@ -634,20 +634,33 @@ function entitlementWriteViolations(migrations: Migration[]): string[] {
       }
     }
 
-    // A schema-wide or default grant reaching these roles would carry profiles
-    // with it, whatever the per-table statements say. The schema name is read
-    // quoted or bare (`in schema "public"` is the same schema); the default-
-    // privileges arm already tolerates it, since everything up to `grant` is
-    // wildcarded.
+    // A schema-wide grant over all tables in a schema list that names public
+    // carries profiles with it, whatever the per-table statements say. The
+    // schema list is captured whole and tested for `public`, so the name is
+    // read quoted or bare (`in schema "public"`) and anywhere in a
+    // comma-separated list (`in schema private, public`), which reaches
+    // public.profiles the same as `in schema public` alone.
     for (const match of sql.matchAll(
-      /(?:grant\s+[^;]*?\s+on\s+all\s+tables\s+in\s+schema\s+"?public"?|alter\s+default\s+privileges[^;]*?\bgrant\s+[^;]*?\s+on\s+tables)\s+to\s+([^;]*)/gi,
+      /grant\s+[^;]*?\son\s+all\s+tables\s+in\s+schema\s+([^;]+?)\s+to\s+([^;]*)/gi,
+    )) {
+      const [, schemas, targets] = match;
+      if (!/\bpublic\b/i.test(schemas)) continue;
+      const exposed = exposedRoles(targets);
+      if (exposed.length === 0) continue;
+      violations.push(`${file}: schema-wide table grant reaches ${exposed.join(', ')}`);
+    }
+
+    // A default privilege that will carry future public tables to these roles.
+    // Everything up to `grant` is wildcarded, so a quoted `in schema "public"`
+    // is tolerated; the schema is not pinned because a bare
+    // `alter default privileges grant ... on tables` (no schema) is a
+    // database-wide default that reaches public too.
+    for (const match of sql.matchAll(
+      /alter\s+default\s+privileges[^;]*?\bgrant\s+[^;]*?\son\s+tables\s+to\s+([^;]*)/gi,
     )) {
       const exposed = exposedRoles(match[1]);
       if (exposed.length === 0) continue;
-      const shape = /default\s+privileges/i.test(match[0])
-        ? 'default table privilege'
-        : 'schema-wide table grant';
-      violations.push(`${file}: ${shape} reaches ${exposed.join(', ')}`);
+      violations.push(`${file}: default table privilege reaches ${exposed.join(', ')}`);
     }
   }
 
@@ -1164,6 +1177,19 @@ describe('the entitlement-write check, against migrations written wrongly on pur
       ),
     ).toEqual([
       'grant_all_tables_quoted_schema_to_authenticated.sql: schema-wide table grant reaches authenticated',
+    ]);
+  });
+
+  it('catches public buried in a multi-schema grant list', () => {
+    // Postgres accepts `in schema private, public`, granting on every table in
+    // both. A guard reading public only when it is the sole schema before TO
+    // passed this while reopening the entitlement columns.
+    expect(
+      entitlementWriteViolations(
+        loadFixtures('grant_all_tables_multi_schema_to_authenticated.sql'),
+      ),
+    ).toEqual([
+      'grant_all_tables_multi_schema_to_authenticated.sql: schema-wide table grant reaches authenticated',
     ]);
   });
 });

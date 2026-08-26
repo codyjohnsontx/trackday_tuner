@@ -207,11 +207,22 @@ test.describe('a rider and their own profiles row', () => {
     // cascades. Swallowed so a cleanup failure never masks the finding.
     try {
       if (createdUserId) {
-        await admin.auth.admin.deleteUser(createdUserId);
-        createdUserId = null;
+        // deleteUser reports API failures in `error` rather than throwing, so a
+        // failed delete would slip past a bare `await` and leak a throwaway
+        // rider - which matters because the runbook points this spec at the
+        // hosted project. Surface it and keep the id so the leak is visible
+        // rather than silently cleared.
+        const { error } = await admin.auth.admin.deleteUser(createdUserId);
+        if (error) {
+          console.warn(`cleanup: could not delete throwaway rider ${createdUserId}: ${error.message}`);
+        } else {
+          createdUserId = null;
+        }
       }
-    } catch {
-      // Deliberately ignored.
+    } catch (error) {
+      // A thrown failure (network, unexpected) is logged for the same reason and
+      // never rethrown over the assertion error underneath it.
+      console.warn(`cleanup: deleting throwaway rider ${createdUserId} threw: ${String(error)}`);
     }
   });
 

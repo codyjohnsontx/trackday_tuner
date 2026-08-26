@@ -166,8 +166,13 @@ select
     as rider_can_update_profiles;
 ```
 
-`true` means the escalation is open. `false` means the block below, or the
-migration, has already been applied, and there is nothing to do. The
+`true` means the escalation is open. `false` means this rider can no longer
+write `profiles` by any grant, so the paid-tier escalation is closed - which is
+what this section exists to close. It does not by itself prove the whole grants
+migration ran: a project could have had `profiles` write revoked by hand while
+other parts of `20260719001100` (the `anon` revokes, the `service_role` grants,
+the sequence and default privileges) are still missing. If you need to confirm
+the rest, the full-surface query under "Verify" below is what shows it. The
 `has_any_column_privilege` half is not redundant: `has_table_privilege(...,
 'update')` returns false for an `update` granted only on a column, so a stray
 `grant update (tier) on profiles` would read as closed while leaving the paid
