@@ -167,8 +167,12 @@ select
 ```
 
 `true` means the escalation is open. `false` means this rider can no longer
-write `profiles` by any grant, so the paid-tier escalation is closed - which is
-what this section exists to close. It does not by itself prove the whole grants
+`update` `profiles` by any grant, table-level or column-level, so the paid-tier
+escalation is closed - which is what this section exists to close. It checks
+`update` because that is the escalation (the rider rewrites `tier` on their own
+existing row); a stray `insert` or `delete` grant is a different shape and is
+not what this line tests - the full-surface query under "Verify" below is what
+would surface one. It does not by itself prove the whole grants
 migration ran: a project could have had `profiles` write revoked by hand while
 other parts of `20260719001100` are still missing. The full-surface query under
 "Verify" below confirms two of those, the `anon` revokes and the `authenticated`
