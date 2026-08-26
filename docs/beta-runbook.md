@@ -170,9 +170,15 @@ select
 write `profiles` by any grant, so the paid-tier escalation is closed - which is
 what this section exists to close. It does not by itself prove the whole grants
 migration ran: a project could have had `profiles` write revoked by hand while
-other parts of `20260719001100` (the `anon` revokes, the `service_role` grants,
-the sequence and default privileges) are still missing. If you need to confirm
-the rest, the full-surface query under "Verify" below is what shows it. The
+other parts of `20260719001100` are still missing. The full-surface query under
+"Verify" below confirms two of those, the `anon` revokes and the `authenticated`
+table grants, and nothing more: it reads `role_table_grants` for those two roles
+only. The remaining pieces of the migration - the `service_role` grants, the
+sequence privileges and the default privileges - are what make the Data API
+work rather than part of this escalation, so this section does not verify
+them (the per-column query's `server_update` column is the one glimpse of
+`service_role`, and only on `profiles`); on a CLI-managed database they come
+from applying the migration itself. The
 `has_any_column_privilege` half is not redundant: `has_table_privilege(...,
 'update')` returns false for an `update` granted only on a column, so a stray
 `grant update (tier) on profiles` would read as closed while leaving the paid
