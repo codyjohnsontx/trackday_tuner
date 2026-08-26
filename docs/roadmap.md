@@ -153,7 +153,7 @@ and execution order may legitimately diverge; the reason is recorded there.
    item where a bad day means the data model cannot be rebuilt.
 
    `20260223000000_init_baseline_schema.sql` now creates those four tables and their
-   policies, dated before the rest of the history so the migrations the hosted
+   policies, dated before the rest of the history so any migrations a hosted
    project has already recorded stay untouched. It was reconstructed from
    `types/supabase.ts` and from what the later migrations alter and reference,
    rather than captured with `supabase db pull`, which needs a linked hosted

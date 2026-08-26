@@ -73,7 +73,9 @@ service-role keys and nothing else: no `BETA_INVITE_ONLY`, no signed-in account,
 and no dev server, because it never opens a page - it sends the Data API the
 request a rider would use to set their own `tier` and asserts the refusal. That
 is what makes it runnable against any stack, including the hosted project after
-the grants block in `docs/beta-runbook.md` has been applied there.
+the grants block in `docs/beta-runbook.md` has been applied there. Playwright
+still starts `next dev` for it unless `PW_SKIP_WEBSERVER=1` is set, which is why
+the runbook's command sets it.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a
