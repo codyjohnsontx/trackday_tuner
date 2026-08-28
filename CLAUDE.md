@@ -358,7 +358,7 @@ data/session-logs/   # sample session log JSON
 ## Design Conventions
 
 - Dark mode only — no light mode
-- Mobile-first, max-width-md (448px) app shell
+- Mobile-first, max-w-5xl (1024px) app shell - the cap lives in `components/layout/app-shell.tsx`
 - 44px minimum touch targets
 - Use the tokens in `app/globals.css`, never raw palette classes (`zinc-*`, `cyan-*`, `amber-*`)
 
