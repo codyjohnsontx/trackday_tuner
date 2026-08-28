@@ -46,6 +46,8 @@ export function SessionCompareSetupDeltas({ rows }: SessionCompareSetupDeltasPro
                   <li key={`${row.group}-${row.label}`} className="rounded-row bg-surface-3 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <p className="text-sm font-semibold text-ink">{row.label}</p>
+                      {/* Status chip. Stays round so it is not mistaken for a
+                          filter the rider can toggle. */}
                       <span className="rounded-full border border-white/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-ink-dim">
                         {row.changed ? 'Changed' : 'Same'}
                       </span>

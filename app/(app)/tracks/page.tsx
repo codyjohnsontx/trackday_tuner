@@ -47,7 +47,7 @@ export default async function TracksPage() {
 
       <Link
         href="/sessions/new"
-        className="mx-auto flex min-h-11 w-fit items-center justify-center rounded-full px-4 text-sm text-ink-dim transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+        className="mx-auto flex min-h-11 w-fit items-center justify-center rounded-control px-4 text-sm text-ink-dim transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
       >
         Back to New Session
       </Link>

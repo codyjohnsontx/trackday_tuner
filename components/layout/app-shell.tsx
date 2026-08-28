@@ -30,6 +30,8 @@ export function AppShell({ children, isAuthenticated, isDemoMode = false }: AppS
           </Link>
           <div className="flex shrink-0 items-center gap-2">
             {isDemoMode ? (
+              // A status chip, not a control. Round is what keeps it reading as
+              // a label rather than something the rider can press.
               <span className="rounded-full bg-signal/12 px-2.5 py-1 text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-signal">
                 Demo
               </span>
@@ -38,7 +40,7 @@ export function AppShell({ children, isAuthenticated, isDemoMode = false }: AppS
             {!isAuthenticated && (
               <Link
                 href="/login"
-                className="inline-flex min-h-11 items-center justify-center rounded-full bg-surface-3 px-4 text-xs font-semibold uppercase leading-none tracking-wide text-ink transition hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+                className="inline-flex min-h-11 items-center justify-center rounded-control bg-surface-3 px-4 text-xs font-semibold uppercase leading-none tracking-wide text-ink transition hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
               >
                 Log In
               </Link>

@@ -3,7 +3,7 @@ export default function SessionsLoading() {
     <div className="space-y-4 animate-pulse">
       <div className="flex items-center justify-between">
         <div className="h-6 w-20 rounded bg-surface" />
-        <div className="h-9 w-28 rounded-full bg-surface" />
+        <div className="h-9 w-28 rounded-control bg-surface" />
       </div>
 
       {[0, 1, 2, 3, 4].map((i) => (
