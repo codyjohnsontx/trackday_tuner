@@ -35,6 +35,10 @@ export function PreferenceToggle<T extends string>({
       <p className="mt-2 text-sm text-ink-dim">{description}</p>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <span className="text-sm font-medium text-ink">{label}</span>
+        {/* The segmented control sits on `bg-surface-2` inside a `bg-surface`
+            card, which is the tone pairing the row rung of the radius ladder
+            names, so both the track and its buttons take that rung rather than
+            the control one. ChoiceRow is built the same way. */}
         <div
           role="group"
           aria-label={groupLabel}

@@ -449,7 +449,7 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
           <p className="text-xs text-ink-faint">Planning for {selectedVehicle.nickname}.</p>
         ) : null}
 
-        {/* In demo the button is a label, not an offer — a white pill would make
+        {/* In demo the button is a label, not an offer — a white fill would make
             the loudest thing on the page something you cannot press. */}
         <Button
           type="submit"
