@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import { ArrowRight, Gauge, History, Sparkles } from 'lucide-react';
 import { WaitlistForm } from '@/components/beta/waitlist-form';
+import { Button } from '@/components/ui/button';
 
 export default function HomePage() {
   return (
@@ -71,7 +72,21 @@ export default function HomePage() {
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-ink-faint">Founding beta · Motorcycle track days</p>
           <h1 className="mt-5 max-w-3xl text-5xl font-black leading-[0.94] tracking-[-0.045em] text-ink sm:text-7xl">Know what changed.<br /><span className="text-ink-faint">Learn what worked.</span></h1>
           <p className="mt-6 max-w-xl text-base leading-relaxed text-ink-dim sm:text-lg">Log the setup, compare the result, and get conservative AI guidance grounded in your own track history.</p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row"><a href="#beta" className="inline-flex min-h-12 items-center justify-center rounded-full bg-ink px-5 text-sm font-bold text-canvas transition hover:bg-white active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-signal/80">Join the Founding Beta <ArrowRight className="ml-2 h-4 w-4" /></a><a href="/demo" className="inline-flex min-h-12 items-center justify-center rounded-full bg-surface px-5 text-sm font-semibold text-ink transition hover:border-white/10 hover:bg-surface focus-visible:ring-2 focus-visible:ring-signal/80">Explore the demo</a></div>
+          {/* These two were hand-written anchors carrying a copy of the button
+              utilities, so the page built the same control two ways - the
+              waitlist CTA in the section below is the real component. The copy
+              had drifted: "Explore the demo" was painted `bg-surface`, the card
+              shade, where a control is `bg-surface-3`, which is why it read as
+              a flat patch against the photo rather than something to press. It
+              also carried `hover:border-white/10` while having no border. */}
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Button asChild>
+              <a href="#beta">Join the Founding Beta <ArrowRight className="ml-2 h-4 w-4" /></a>
+            </Button>
+            <Button asChild variant="secondary">
+              <a href="/demo">Explore the demo</a>
+            </Button>
+          </div>
         </div>
       </section>
 
