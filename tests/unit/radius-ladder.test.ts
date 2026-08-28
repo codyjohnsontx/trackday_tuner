@@ -16,9 +16,11 @@ import { describe, expect, it } from 'vitest';
 //   - any of the four tokens changing value, or being deleted
 //   - a fifth `--radius-*` token appearing without a decision being taken here,
 //     which is what a magic number sneaking back into the ladder looks like
-//   - the Button base class losing `rounded-control`, or any `rounded-full`
-//     reaching the `cva` call on the base or on a variant - the exact
-//     regression this change exists to undo, and one a base-only check misses
+//   - the Button base class losing `rounded-control`, or `rounded-full`
+//     appearing anywhere in components/ui/button.tsx - on the `cva` base, on a
+//     variant, or in either `cn()` list that builds the rendered class string.
+//     All three reach the rendered corner, and a check scoped any narrower
+//     than the file misses the ones outside the `cva` parens
 //
 // WHAT IT DOES NOT CATCH, because a guard credited with more than it does is
 // worse than none:
@@ -27,10 +29,10 @@ import { describe, expect, it } from 'vitest';
 //     is a per-site judgement (a nav pill and a status chip are round on
 //     purpose, and both are annotated where they live), so it needs eyes rather
 //     than a pattern
-//   - any corner in components/ui/button.tsx outside the `cva` call. The Button
-//     assertions read that call alone, so a round sub-element elsewhere in the
-//     file is out of scope on purpose: app/globals.css reserves `rounded-full`
-//     for the press ripple, which the Button owns and renders as a real circle
+//   - a corner reaching the Button from outside its own file: a caller passing
+//     `rounded-full` down through `className`, or an arbitrary
+//     `rounded-[9999px]` in either spelling. The negative check reads
+//     components/ui/button.tsx as text, so it sees only what that file spells
 //   - anything about how the corners actually render. Only a browser answers
 //     that, and the before/after screenshots on the pull request are that
 //     evidence.
@@ -63,36 +65,29 @@ function radiusTokens(css: string): Map<string, string> {
   return tokens;
 }
 
-// The Button's shape comes out of its `cva` call, so that call is the unit both
-// assertions read - not the whole file, where a `rounded-control` in a comment
-// could stand in for a base class that lost it and the press ripple's own
-// `rounded-full` would read as the regression this guards against.
+// The two Button assertions are scoped differently, because they fail
+// differently.
 //
-// The base class and the variants are read separately because they fail
-// differently. The base must CARRY `rounded-control`. No variant may carry
-// `rounded-full`, and that half is not cosmetic: `cn()` is `twMerge`, which does
-// not know `rounded-control` belongs to the `rounded-*` group, so it keeps both
-// classes instead of collapsing them (unlike `rounded-sm rounded-full`, which it
-// does collapse). Tailwind then emits `.rounded-full` after `.rounded-control`,
-// so at equal specificity the round one wins and the Button silently goes back
-// to a pill. Checking only the base string would pass while that happened.
-function cvaCall(source: string): string {
-  const start = source.search(/\bcva\(/);
-  expect(start, 'components/ui/button.tsx must call cva').toBeGreaterThan(-1);
-  // Walk to the matching close paren so variant objects are included whole.
-  let depth = 0;
-  for (let i = source.indexOf('(', start); i < source.length; i += 1) {
-    if (source[i] === '(') depth += 1;
-    else if (source[i] === ')') {
-      depth -= 1;
-      if (depth === 0) return source.slice(start, i + 1);
-    }
-  }
-  throw new Error('components/ui/button.tsx has an unterminated cva( call');
-}
-
+// The POSITIVE half reads the `cva` base class alone: the base must CARRY
+// `rounded-control`, and a whole-file `toContain` would be satisfied by the word
+// sitting in a comment while the base class it stands for had lost it.
+//
+// The NEGATIVE half reads the WHOLE file, because nothing in
+// components/ui/button.tsx legitimately needs `rounded-full` and so there is
+// nothing there for it to collide with. The press ripple is a real circle, but
+// its radius is `.tt-ripple { border-radius: 9999px }` in app/globals.css - the
+// element here carries only the `tt-ripple` class, not a utility. Whole-file is
+// also the only scope that holds: `rounded-full` reaches the rendered corner
+// from the `cva` base, from a variant, or from either `cn()` list that composes
+// the final class string, and `cn()` is `twMerge`, which does not know
+// `rounded-control` belongs to the `rounded-*` group, so it keeps both classes
+// instead of collapsing them (unlike `rounded-sm rounded-full`, which it does
+// collapse). Tailwind then emits `.rounded-full` after `.rounded-control`, so at
+// equal specificity the round one wins and the Button silently goes back to a
+// pill. A check scoped to the base string, or to the `cva` call, passes while
+// that happens.
 function cvaBaseClass(source: string): string {
-  const match = cvaCall(source).match(/\bcva\(\s*(['"`])((?:[^\\]|\\.)*?)\1/);
+  const match = source.match(/\bcva\(\s*(['"`])((?:[^\\]|\\.)*?)\1/);
   expect(match, 'components/ui/button.tsx must pass cva a base class string').not.toBeNull();
   return (match as RegExpMatchArray)[2];
 }
@@ -136,9 +131,9 @@ describe('radius ladder', () => {
     expect(cvaBaseClass(buttonSource)).toContain('rounded-control');
   });
 
-  it('lets no Button variant put a competing radius back on the base', () => {
-    // Anywhere in the cva call, base or variant: twMerge keeps both classes and
-    // the round one wins in the emitted CSS, so this must not be base-only.
-    expect(cvaCall(buttonSource)).not.toContain('rounded-full');
+  it('lets nothing in the Button put a competing radius back on it', () => {
+    // Anywhere in the file - cva base, variant, or either cn() list: twMerge
+    // keeps both classes and the round one wins in the emitted CSS.
+    expect(buttonSource).not.toContain('rounded-full');
   });
 });
