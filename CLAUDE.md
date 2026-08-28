@@ -366,9 +366,15 @@ data/session-logs/   # sample session log JSON
 page, `surface` a card on it, `surface-2` a row nested in that card, `surface-3` a
 control on that row. Never skip a step, and never nest deeper than `surface-3`.
 Radii tighten with depth along a four-rung ladder: `rounded-card` →
-`rounded-row` → `rounded-plate` → `rounded-control`, the rung anything the rider
-presses sits on. It is tight on purpose (10/8/6/6), so the app reads as
-instrumentation rather than as a consumer app. `rounded-full` is reserved for
+`rounded-row` → `rounded-plate` → `rounded-control`, tight on purpose (10/8/6/6)
+so the app reads as instrumentation rather than as a consumer app.
+`rounded-control` is the rung a *free-standing* pressable thing sits on; one that
+is a row in a list or a segment of a track takes its container's rung instead so
+the two agree, which is why the drawer navigation rows, `ChoiceRow` and the
+settings segmented control are `rounded-row`. What picks the rung is what the
+element is in the layout - not whether it can be pressed, and not its surface
+tone, which does not track the rung (`rounded-control` sits on `bg-surface-2` in
+several places). `rounded-full` is reserved for
 what is round by nature - the floating nav pill, status chips, badges, dots, the
 press ripple - and squaring one of those makes a label look pressable. The values
 and the reasoning live in the `@theme` block of `app/globals.css`;

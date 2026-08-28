@@ -35,10 +35,12 @@ export function PreferenceToggle<T extends string>({
       <p className="mt-2 text-sm text-ink-dim">{description}</p>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <span className="text-sm font-medium text-ink">{label}</span>
-        {/* The segmented control sits on `bg-surface-2` inside a `bg-surface`
-            card, which is the tone pairing the row rung of the radius ladder
-            names, so both the track and its buttons take that rung rather than
-            the control one. ChoiceRow is built the same way. */}
+        {/* A segmented control is one widget: the buttons are segments of
+            this track, not free-standing controls, so track and segments share
+            the row rung and agree with each other. ChoiceRow is built the same
+            way. Not a tone argument - `rounded-control` elements sit on
+            `bg-surface-2` elsewhere; what picks the rung is what the element
+            is in the layout. */}
         <div
           role="group"
           aria-label={groupLabel}

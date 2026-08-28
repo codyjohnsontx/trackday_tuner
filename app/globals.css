@@ -32,8 +32,13 @@
 
   /* The radius ladder. Radii are part of the hierarchy: the deeper the
      nesting, the tighter the corner. `card` is a card on the canvas, `row` a
-     row nested in it, `plate` a small plate on that row, and `control` is
-     anything the rider presses.
+     row nested in it, `plate` a small plate on that row, and `control` a
+     free-standing thing the rider presses. A pressable element that is a row in
+     a list or a segment of a track takes its container's rung instead, so the
+     two agree - the drawer navigation rows and both segmented controls are
+     `rounded-row`. What picks the rung is what the element IS in the layout,
+     not whether it can be pressed, and not its surface tone: `rounded-control`
+     sits on `bg-surface-2` in several places.
 
      The ladder is deliberately tight. This is a product about lap times and
      tyre pressures, so it should read as instrumentation rather than as a

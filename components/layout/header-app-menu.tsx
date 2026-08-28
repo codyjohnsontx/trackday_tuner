@@ -15,9 +15,12 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
-// Drawer navigation rows. Pressable, but `bg-surface-2` on the panel's
-// `bg-surface` is the tone pairing the row rung of the radius ladder names,
-// so they take that rung rather than the control one.
+// Drawer navigation rows. Pressable, but each one IS a row in this list
+// rather than a free-standing control, so it takes the row rung and agrees
+// with the list it belongs to. Not a tone argument: `rounded-control`
+// elements sit on `bg-surface-2` elsewhere (the tracks list View/Edit pair,
+// the Race Engineer symptom toggles). What picks the rung is what the
+// element is in the layout.
 const linkRowClass =
   'flex min-h-11 items-center rounded-row px-4 text-sm font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80';
 

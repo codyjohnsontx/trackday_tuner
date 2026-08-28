@@ -16,8 +16,9 @@ import { describe, expect, it } from 'vitest';
 //   - any of the four tokens changing value, or being deleted
 //   - a fifth `--radius-*` token appearing without a decision being taken here,
 //     which is what a magic number sneaking back into the ladder looks like
-//   - the Button base class losing `rounded-control`, or going back to
-//     `rounded-full` - the exact regression this change exists to undo
+//   - the Button base class losing `rounded-control`, or any `rounded-full`
+//     reaching the `cva` call on the base or on a variant - the exact
+//     regression this change exists to undo, and one a base-only check misses
 //
 // WHAT IT DOES NOT CATCH, because a guard credited with more than it does is
 // worse than none:
@@ -26,10 +27,10 @@ import { describe, expect, it } from 'vitest';
 //     is a per-site judgement (a nav pill and a status chip are round on
 //     purpose, and both are annotated where they live), so it needs eyes rather
 //     than a pattern
-//   - any corner in components/ui/button.tsx other than the base class. The
-//     Button assertions read the first `cva` argument alone, so a round
-//     sub-element there is out of scope on purpose: app/globals.css reserves
-//     `rounded-full` for the press ripple, which the Button owns
+//   - any corner in components/ui/button.tsx outside the `cva` call. The Button
+//     assertions read that call alone, so a round sub-element elsewhere in the
+//     file is out of scope on purpose: app/globals.css reserves `rounded-full`
+//     for the press ripple, which the Button owns and renders as a real circle
 //   - anything about how the corners actually render. Only a browser answers
 //     that, and the before/after screenshots on the pull request are that
 //     evidence.
@@ -62,12 +63,36 @@ function radiusTokens(css: string): Map<string, string> {
   return tokens;
 }
 
-// The Button's shape is the first argument to `cva` and nothing else. Matching
-// the whole file would let a `rounded-control` in a comment or on a variant
-// stand in for a base class that lost it, and would read a sub-element's
-// `rounded-full` as the regression this guards against.
+// The Button's shape comes out of its `cva` call, so that call is the unit both
+// assertions read - not the whole file, where a `rounded-control` in a comment
+// could stand in for a base class that lost it and the press ripple's own
+// `rounded-full` would read as the regression this guards against.
+//
+// The base class and the variants are read separately because they fail
+// differently. The base must CARRY `rounded-control`. No variant may carry
+// `rounded-full`, and that half is not cosmetic: `cn()` is `twMerge`, which does
+// not know `rounded-control` belongs to the `rounded-*` group, so it keeps both
+// classes instead of collapsing them (unlike `rounded-sm rounded-full`, which it
+// does collapse). Tailwind then emits `.rounded-full` after `.rounded-control`,
+// so at equal specificity the round one wins and the Button silently goes back
+// to a pill. Checking only the base string would pass while that happened.
+function cvaCall(source: string): string {
+  const start = source.search(/\bcva\(/);
+  expect(start, 'components/ui/button.tsx must call cva').toBeGreaterThan(-1);
+  // Walk to the matching close paren so variant objects are included whole.
+  let depth = 0;
+  for (let i = source.indexOf('(', start); i < source.length; i += 1) {
+    if (source[i] === '(') depth += 1;
+    else if (source[i] === ')') {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  throw new Error('components/ui/button.tsx has an unterminated cva( call');
+}
+
 function cvaBaseClass(source: string): string {
-  const match = source.match(/\bcva\(\s*(['"`])((?:[^\\]|\\.)*?)\1/);
+  const match = cvaCall(source).match(/\bcva\(\s*(['"`])((?:[^\\]|\\.)*?)\1/);
   expect(match, 'components/ui/button.tsx must pass cva a base class string').not.toBeNull();
   return (match as RegExpMatchArray)[2];
 }
@@ -108,8 +133,12 @@ describe('radius ladder', () => {
   });
 
   it('shapes the Button from the control rung, not from rounded-full', () => {
-    const baseClass = cvaBaseClass(buttonSource);
-    expect(baseClass).toContain('rounded-control');
-    expect(baseClass).not.toContain('rounded-full');
+    expect(cvaBaseClass(buttonSource)).toContain('rounded-control');
+  });
+
+  it('lets no Button variant put a competing radius back on the base', () => {
+    // Anywhere in the cva call, base or variant: twMerge keeps both classes and
+    // the round one wins in the emitted CSS, so this must not be base-only.
+    expect(cvaCall(buttonSource)).not.toContain('rounded-full');
   });
 });
