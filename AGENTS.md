@@ -384,7 +384,9 @@ system sans. Digits are tabular by default.
 
 **Primitives.** Compose screens from `components/ui/surface.tsx` (`Card`,
 `CardGroup`, `GroupRow`, `Eyebrow`, `SectionHeader`), `PageHeader`, and `DataPlate`
-rather than hand-rolling card markup.
+rather than hand-rolling card markup, and a button from `components/ui/button.tsx`
+(`asChild` when it has to render a link) rather than a copy of its utility classes,
+which drifts.
 
 ## CSS Variables
 
