@@ -71,7 +71,7 @@
    own preflight uses. Unlayered CSS beats every layered rule no matter how
    specific, so an unlayered `a { color: inherit }` silently outranks
    `text-canvas` on every link in the app: the primary CTA rendered as white
-   text on a white pill. Same trap for `font` and `min-height` below, which
+   text on a white fill. Same trap for `font` and `min-height` below, which
    would otherwise outrank `text-sm`, `font-semibold`, and `min-h-*`.
    Anything written here must stay inside a layer. */
 @layer base {

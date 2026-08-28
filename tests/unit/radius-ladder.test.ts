@@ -26,6 +26,10 @@ import { describe, expect, it } from 'vitest';
 //     is a per-site judgement (a nav pill and a status chip are round on
 //     purpose, and both are annotated where they live), so it needs eyes rather
 //     than a pattern
+//   - any corner in components/ui/button.tsx other than the base class. The
+//     Button assertions read the first `cva` argument alone, so a round
+//     sub-element there is out of scope on purpose: app/globals.css reserves
+//     `rounded-full` for the press ripple, which the Button owns
 //   - anything about how the corners actually render. Only a browser answers
 //     that, and the before/after screenshots on the pull request are that
 //     evidence.
@@ -56,6 +60,16 @@ function radiusTokens(css: string): Map<string, string> {
     tokens.set(match[1], match[2].trim());
   }
   return tokens;
+}
+
+// The Button's shape is the first argument to `cva` and nothing else. Matching
+// the whole file would let a `rounded-control` in a comment or on a variant
+// stand in for a base class that lost it, and would read a sub-element's
+// `rounded-full` as the regression this guards against.
+function cvaBaseClass(source: string): string {
+  const match = source.match(/\bcva\(\s*(['"`])((?:[^\\]|\\.)*?)\1/);
+  expect(match, 'components/ui/button.tsx must pass cva a base class string').not.toBeNull();
+  return (match as RegExpMatchArray)[2];
 }
 
 const EXPECTED_LADDER: ReadonlyArray<readonly [string, string]> = [
@@ -94,7 +108,8 @@ describe('radius ladder', () => {
   });
 
   it('shapes the Button from the control rung, not from rounded-full', () => {
-    expect(buttonSource).toContain('rounded-control');
-    expect(buttonSource).not.toContain('rounded-full');
+    const baseClass = cvaBaseClass(buttonSource);
+    expect(baseClass).toContain('rounded-control');
+    expect(baseClass).not.toContain('rounded-full');
   });
 });
