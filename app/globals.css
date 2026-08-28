@@ -30,11 +30,38 @@
   --color-faster: #3fd77e;
   --color-slower: #ff5347;
 
-  /* Card, nested row, and small plate. Radii are part of the hierarchy:
-     the deeper the nesting, the tighter the corner. */
-  --radius-card: 1.5rem;
-  --radius-row: 1.125rem;
-  --radius-plate: 0.875rem;
+  /* The radius ladder. Radii are part of the hierarchy: the deeper the
+     nesting, the tighter the corner. `card` is a card on the canvas, `row` a
+     row nested in it, `plate` a small plate on that row, and `control` is
+     anything the rider presses.
+
+     The ladder is deliberately tight. This is a product about lap times and
+     tyre pressures, so it should read as instrumentation rather than as a
+     consumer app: a 10px corner still softens a card without rounding it into
+     a lozenge, and a button at 6px reads as a machined control instead of a
+     pill.
+
+     `control` and `plate` carry the same 6px today and are still two names,
+     because they answer different questions. Both are the smallest things in
+     the system, and both sit on `surface-3` - a plate is a value you read, a
+     control is a thing you press. Naming the button's rung is what keeps it
+     inside the ladder; before this it was `rounded-full`, which is to say
+     outside the ladder entirely. Change one without the other freely.
+
+     Fixed pixels rather than rem, unlike everything else here. A corner is a
+     machined dimension, not a typographic one, so it should not grow with the
+     reader's text size the way padding and leading should. Browser zoom still
+     scales these; only a text-only size bump leaves them put, which is the
+     intent.
+
+     `rounded-full` survives on purpose for things that are round by nature:
+     the floating nav pill, status chips, badges, dots and the press ripple.
+     Those are labels and shapes, not controls, and squaring them would make a
+     chip look pressable. */
+  --radius-card: 10px;
+  --radius-row: 8px;
+  --radius-plate: 6px;
+  --radius-control: 6px;
 
   --font-display: var(--font-instrument-serif), ui-serif, Georgia, serif;
 }

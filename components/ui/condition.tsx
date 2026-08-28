@@ -87,6 +87,8 @@ export function DataPlate({
       <div className="flex h-14 w-14 items-center justify-center rounded-plate bg-surface-3 text-lg font-semibold text-ink">
         {value}
       </div>
+      {/* A badge notched into the plate's corner: circular by nature, so it
+          keeps `rounded-full` rather than joining the radius ladder. */}
       <span
         className={cn(
           'absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full ring-4',

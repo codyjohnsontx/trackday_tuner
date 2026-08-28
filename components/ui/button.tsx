@@ -17,11 +17,11 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  'relative isolate inline-flex items-center justify-center overflow-hidden rounded-full font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98]',
+  'relative isolate inline-flex items-center justify-center overflow-hidden rounded-control font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98]',
   {
     variants: {
       variant: {
-        // The primary action is a white pill rather than an accent fill. Amber
+        // The primary action is a white fill rather than an accent fill. Amber
         // stays reserved for marking state (active tab, focus, live values), so
         // a screen never has to compete with its own call to action.
         primary: 'bg-ink text-canvas hover:bg-white',

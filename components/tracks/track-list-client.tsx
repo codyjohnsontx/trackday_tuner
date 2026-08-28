@@ -71,14 +71,14 @@ export function TrackListClient({ tracks, demoMode = false }: TrackListClientPro
                 <div className={cn('grid gap-2', !demoMode && 'grid-cols-2')}>
                   <Link
                     href={`/tracks/${track.id}`}
-                    className="inline-flex min-h-11 items-center justify-center rounded-full bg-surface-2 px-3 text-sm font-medium text-ink transition hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+                    className="inline-flex min-h-11 items-center justify-center rounded-control bg-surface-2 px-3 text-sm font-medium text-ink transition hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
                   >
                     View
                   </Link>
                   {!demoMode ? (
                     <Link
                       href={`/tracks/${track.id}`}
-                      className="inline-flex min-h-11 items-center justify-center rounded-full bg-surface-2 px-3 text-sm font-medium text-ink transition hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+                      className="inline-flex min-h-11 items-center justify-center rounded-control bg-surface-2 px-3 text-sm font-medium text-ink transition hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
                     >
                       Edit
                     </Link>
@@ -115,7 +115,7 @@ export function TrackListClient({ tracks, demoMode = false }: TrackListClientPro
                 <div className="mt-3">
                   <Link
                     href={`/tracks/${track.id}`}
-                    className="block inline-flex min-h-11 items-center justify-center rounded-full bg-surface-2 px-3 text-sm font-medium text-ink transition hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+                    className="block inline-flex min-h-11 items-center justify-center rounded-control bg-surface-2 px-3 text-sm font-medium text-ink transition hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
                   >
                     View
                   </Link>

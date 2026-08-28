@@ -24,7 +24,7 @@ export function DemoBanner() {
         */}
         <a
           href="/demo/exit"
-          className="inline-flex min-h-11 shrink-0 select-none items-center justify-center self-start rounded-full bg-surface-3 px-5 text-sm font-semibold text-ink transition hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+          className="inline-flex min-h-11 shrink-0 select-none items-center justify-center self-start rounded-control bg-surface-3 px-5 text-sm font-semibold text-ink transition hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
         >
           Exit Demo
         </a>

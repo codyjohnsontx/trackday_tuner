@@ -38,7 +38,7 @@ export function PreferenceToggle<T extends string>({
         <div
           role="group"
           aria-label={groupLabel}
-          className="flex gap-1 rounded-full bg-surface-2 p-1 text-xs"
+          className="flex gap-1 rounded-row bg-surface-2 p-1 text-xs"
         >
           {options.map((option) => (
             <button
@@ -47,7 +47,7 @@ export function PreferenceToggle<T extends string>({
               aria-pressed={value === option.value}
               onClick={() => onChange(option.value)}
               className={cn(
-                'inline-flex min-h-11 items-center rounded-full px-4 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80',
+                'inline-flex min-h-11 items-center rounded-row px-4 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80',
                 value === option.value ? 'bg-ink text-canvas' : 'text-ink-dim hover:text-ink',
               )}
             >
