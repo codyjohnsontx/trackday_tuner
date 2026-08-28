@@ -62,10 +62,10 @@ test.describe('unauthenticated route guards', () => {
 
     // The hero CTA is `bg-ink text-canvas`, so its text must compute to the
     // canvas token, #08080a / rgb(8, 8, 10) - the near-black asserted below,
-    // sitting on the white pill. If an unlayered rule in globals.css ever
+    // sitting on the white fill. If an unlayered rule in globals.css ever
     // outranks a text-colour utility again, the anchor stops taking `text-canvas`
     // and falls back to inheriting body's ink token, #f4f4f5, which is the same
-    // colour as the pill: white-on-white at 1.00:1.
+    // colour as the fill: white-on-white at 1.00:1.
     const heroCta = page.getByRole('link', { name: 'Join the Founding Beta' });
     await expect(heroCta).toBeVisible();
     await expect(heroCta).toHaveCSS('color', 'rgb(8, 8, 10)');
