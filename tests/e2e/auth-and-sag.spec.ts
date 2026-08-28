@@ -69,6 +69,15 @@ test.describe('unauthenticated route guards', () => {
     const heroCta = page.getByRole('link', { name: 'Join the Founding Beta' });
     await expect(heroCta).toBeVisible();
     await expect(heroCta).toHaveCSS('color', 'rgb(8, 8, 10)');
+
+    // Its neighbour is the secondary variant, `bg-surface-3` - the control
+    // shade, #26262b / rgb(38, 38, 43). The hero once built both buttons from a
+    // hand-written copy of the button utilities, and that copy had drifted to
+    // `bg-surface` (#141417), the card shade, so the demo button read as a flat
+    // patch of the photo rather than as something to press.
+    const demoCta = page.getByRole('link', { name: 'Explore the demo' });
+    await expect(demoCta).toBeVisible();
+    await expect(demoCta).toHaveCSS('background-color', 'rgb(38, 38, 43)');
   });
 });
 
