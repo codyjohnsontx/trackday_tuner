@@ -365,7 +365,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
                   aria-pressed={active}
                   onClick={() => toggleSymptom(opt.id)}
                   className={cn(
-                    'min-h-11 rounded-full px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
+                    'min-h-11 rounded-control px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas',
                     active
                       ? 'bg-surface-3 text-ink'
                       : 'bg-surface-2 text-ink-dim hover:bg-surface-3',

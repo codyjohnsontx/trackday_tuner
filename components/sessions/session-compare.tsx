@@ -40,7 +40,7 @@ export function SessionCompare({ rows, previousDateLabel }: SessionCompareProps)
         </div>
         <button
           type="button"
-          className="inline-flex min-h-11 items-center rounded-full bg-surface-3 px-3.5 text-xs text-ink-dim transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+          className="inline-flex min-h-11 items-center rounded-control bg-surface-3 px-3.5 text-xs text-ink-dim transition hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
           onClick={() => setShowUnchanged((v) => !v)}
         >
           {showUnchanged ? 'Hide unchanged' : 'Show unchanged'}

@@ -15,8 +15,14 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
+// Drawer navigation rows. Pressable, but each one IS a row in this list
+// rather than a free-standing control, so it takes the row rung and agrees
+// with the list it belongs to. Not a tone argument: `rounded-control`
+// elements sit on `bg-surface-2` elsewhere (the tracks list View/Edit pair,
+// the Race Engineer symptom toggles). What picks the rung is what the
+// element is in the layout.
 const linkRowClass =
-  'flex min-h-11 items-center rounded-full px-4 text-sm font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80';
+  'flex min-h-11 items-center rounded-row px-4 text-sm font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80';
 
 const activeRowClass = 'bg-surface-2 text-ink';
 const idleRowClass = 'text-ink-faint hover:bg-surface-2 hover:text-ink';
@@ -32,7 +38,7 @@ export function HeaderAppMenu({ isDemoMode = false }: { isDemoMode?: boolean }) 
       <DialogTrigger asChild>
         <button
           type="button"
-          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full bg-surface-3 text-ink transition hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-control bg-surface-3 text-ink transition hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
           aria-label="Open menu"
           aria-expanded={open}
           aria-controls="app-menu-panel"
@@ -59,7 +65,7 @@ export function HeaderAppMenu({ isDemoMode = false }: { isDemoMode?: boolean }) 
             <DialogClose asChild>
               <button
                 type="button"
-                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-ink-faint transition hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-control text-ink-faint transition hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
                 aria-label="Close menu"
               >
                 <span className="text-lg leading-none" aria-hidden>

@@ -12,6 +12,12 @@ import { cn } from '@/lib/utils';
  *
  * The bar clears the home indicator via the safe-area inset; the matching
  * bottom padding on `main` is what stops the last card sliding under it.
+ *
+ * Both radii here stay `rounded-full` while the rest of the app moved onto the
+ * radius ladder in `app/globals.css`. The shell is a pill on purpose, and the
+ * items sit inside it under only 6px of padding: squaring the first and last
+ * would cut a crescent of surface between a square corner and the pill's arc.
+ * The nav is one shape, so it is round all the way through.
  */
 export function BottomNav() {
   const pathname = usePathname();
