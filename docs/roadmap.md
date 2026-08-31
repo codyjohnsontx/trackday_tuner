@@ -268,9 +268,19 @@ and execution order may legitimately diverge; the reason is recorded there.
     is not hamburger-only, `CLAUDE.md` and the code agree, and there is nothing left
     to correct on either side.
 
-14. **Free-tier limits duplicated** - `F5` - `lib/plans.ts` is authoritative, but the
-    sessions and dashboard pages inline `10` in four places. Changing a plan silently
-    desyncs the displayed limit from the enforced one.
+14. **Free-tier limits duplicated** - `F5` - **Fixed in the repo on 2026-08-31.**
+    `lib/plans.ts` was authoritative, but the sessions and dashboard pages inlined
+    `10` in four places, and `/garage` and `/tracks` inlined `1` and `3` beside it.
+    Changing a plan silently desynced the displayed limit from the enforced one.
+
+    `isAtFreePlanLimit` in `lib/plans.ts` is now the one place a "can this rider
+    add another?" question is answered, and every displayed count reads
+    `getFreePlanLimit`. The gap that made the duplication expensive is closed with
+    it: `/sessions/new`, `/garage/new` and `/tracks/new` used to render the whole
+    form at the limit and let the server action refuse the save, so they now answer
+    with `PlanLimitNotice` instead, the way the read-only demo already refuses at
+    the door. `tests/unit/plan-limit-gate.test.ts` and
+    `tests/e2e/plan-limit-gate.spec.ts` guard it.
 
 15. **Unbounded session queries** - `F4` - `/sessions` fetches every session with no
     limit, then every matching environment row, then derives analytics across the
