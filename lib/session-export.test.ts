@@ -300,6 +300,34 @@ describe('session export helpers', () => {
   });
 
   /**
+   * A lap compares against another lap on the same vehicle at the same track -
+   * `getComparableSessions` filters `vehicle_id` before applying
+   * `sessionsMatchTrack`. Keying the board on the circuit alone let the car's
+   * lap beat the bike's and the bike's personal best appeared nowhere.
+   */
+  it('keeps a best lap per vehicle at one circuit', () => {
+    const analytics = deriveSessionAnalytics([
+      {
+        session: session({ id: 's1', vehicle_id: 'bike-1', date: '2026-05-01', track_id: 'track-1' }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [103980] }),
+      },
+      {
+        session: session({ id: 's2', vehicle_id: 'car-1', date: '2026-05-02', track_id: 'track-1' }),
+        vehicle: car,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [92500] }, { session_id: 's2', vehicle_id: 'car-1' }),
+      },
+    ]);
+
+    expect(analytics.bestLapByTrack.map((best) => [best.trackName, best.vehicleLabel, best.bestLap])).toEqual([
+      ['Road America', 'Miata', '1:32.500'],
+      ['Road America', 'R6', '1:43.980'],
+    ]);
+  });
+
+  /**
    * A circuit typed by hand and the same circuit picked from the saved row are
    * one track, so they share one personal best. `sessionsMatchTrack` says so;
    * the board has to agree or a rider reads two records for one place.
@@ -341,6 +369,24 @@ describe('session export helpers', () => {
     // Space separated: comma and semicolon are both field delimiters some
     // readers sniff for, and a space is never one.
     expect(row.lap_times_ms).toBe('104620 104110 103980 104250');
+  });
+
+  /**
+   * `telemetry_summaries.metrics` is unconstrained jsonb that `authenticated`
+   * can write, so a zero or a negative reading is reachable. The aggregates drop
+   * it, and the per-lap cell has to drop it too - a row reading `lap_count` 3
+   * beside four printed times contradicts itself.
+   */
+  it('prints only the laps the aggregates counted', () => {
+    const row = flattenSessionForExport({
+      session: session(),
+      vehicle: motorcycle,
+      environment: null,
+      telemetry: telemetry({ lap_times_ms: [104620, 0, 103980, -104250] }),
+    });
+
+    expect(row.lap_count).toBe(2);
+    expect(row.lap_times_ms).toBe('104620 103980');
   });
 
   it('leaves the lap columns empty for a session with no laps', () => {

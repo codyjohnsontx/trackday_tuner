@@ -1,4 +1,4 @@
-import { extractLapMetrics, formatLapTime } from '@/lib/session-compare';
+import { extractLapMetrics, extractLapTimes, formatLapTime } from '@/lib/session-compare';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import { trackNameKey } from '@/lib/session-track';
 import type {
@@ -116,11 +116,13 @@ function exportLapTime(ms: number | null): string | null {
  * semicolon separated: both of those are field delimiters some readers sniff
  * for, and a space is never one. This is the only place the per-lap detail
  * leaves the app.
+ *
+ * `extractLapTimes` decides which entries are laps, because the aggregates in
+ * the columns beside this one are built from the same list. Filtering it any
+ * other way lets one row report `lap_count` 3 next to four printed times.
  */
 function exportLapTimeList(telemetry: TelemetrySummary | null): string | null {
-  const raw = telemetry?.metrics?.lap_times_ms;
-  if (!Array.isArray(raw)) return null;
-  const times = raw.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const times = extractLapTimes(telemetry);
   return times.length > 0 ? times.join(' ') : null;
 }
 
@@ -239,24 +241,26 @@ export function buildSessionExportCsv(inputs: SessionExportInput[]): string {
 export type AnalyticsCoverageKey = keyof SessionEnabledModules | 'environment' | 'lap_times';
 
 /**
- * The fastest lap logged at one circuit.
+ * The fastest lap one vehicle logged at one circuit.
  *
- * A lap time only compares against another lap at the same track - the rule
- * `sessionsMatchTrack` states and the compare page enforces - so a season best
- * is a board and never a single number. The vehicle that set it is carried
- * because a garage can hold a bike and a car, and an anonymous track record
- * would silently blend them.
+ * A lap time only compares against another lap ridden at the same track on the
+ * same vehicle - the rule `getComparableSessions` enforces, filtering on
+ * `vehicle_id` before applying `sessionsMatchTrack` - so a season best is a
+ * board and never a single number. Keying on the circuit alone made a bike and
+ * a car at one track compete for one row, and the slower of the two had no
+ * personal best anywhere on the panel.
  */
 export interface AnalyticsTrackBest {
-  /** `buildSessionTrackKeys` grouping key, so a typed name folds into the saved row. */
+  /** `buildSessionTrackKeys` grouping key and the vehicle, so a typed name folds into the saved row and the two vehicles do not. */
   key: string;
   trackName: string;
   bestLapMs: number;
   /** Already formatted as `1:43.640`, so every surface reads the same string. */
   bestLap: string;
   sessionId: string;
+  vehicleId: string;
   vehicleLabel: string;
-  /** Most recent `sessions.date` at this track, used to order the board. */
+  /** Most recent `sessions.date` this vehicle ran at this track, used to order the board. */
   lastRunDate: string;
 }
 
@@ -407,7 +411,7 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
   const ambientTemps: number[] = [];
   const trackTemps: number[] = [];
   const trackBests = new Map<string, AnalyticsTrackBest>();
-  const lastRunByTrack = new Map<string, string>();
+  const lastRunByBoardRow = new Map<string, string>();
   let withEnvironment = 0;
   let totalLaps = 0;
   let sessionsWithLaps = 0;
@@ -437,21 +441,28 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
 
     const track = trackKeys.get(input.session.id);
     if (track) {
-      // The board is ordered by when the rider was last at a circuit, so the
-      // date advances on every session there - not only on the ones with laps.
-      lastRunByTrack.set(
-        track.key,
-        maxDate(lastRunByTrack.get(track.key) ?? input.session.date, input.session.date),
+      // A row is one vehicle at one circuit, because that is the pair the app
+      // already calls comparable. Sharing a row across vehicles hid the slower
+      // one's personal best entirely.
+      const rowKey = `${track.key}|${input.session.vehicle_id}`;
+
+      // The board is ordered by when the rider was last out on that vehicle at
+      // that circuit, so the date advances on every session there - not only on
+      // the ones with laps.
+      lastRunByBoardRow.set(
+        rowKey,
+        maxDate(lastRunByBoardRow.get(rowKey) ?? input.session.date, input.session.date),
       );
 
-      const existing = trackBests.get(track.key);
+      const existing = trackBests.get(rowKey);
       if (bestLapMs !== null && (!existing || bestLapMs < existing.bestLapMs)) {
-        trackBests.set(track.key, {
-          key: track.key,
+        trackBests.set(rowKey, {
+          key: rowKey,
           trackName: track.trackName,
           bestLapMs,
           bestLap: formatLapTime(bestLapMs),
           sessionId: input.session.id,
+          vehicleId: input.session.vehicle_id,
           vehicleLabel: label,
           lastRunDate: input.session.date,
         });
@@ -488,10 +499,10 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
     totalSessions: inputs.length,
     laps: { totalLaps, sessionsWithLaps },
     bestLapByTrack: [...trackBests.values()]
-      .map((best) => ({ ...best, lastRunDate: lastRunByTrack.get(best.key) ?? best.lastRunDate }))
+      .map((best) => ({ ...best, lastRunDate: lastRunByBoardRow.get(best.key) ?? best.lastRunDate }))
       .sort((a, b) => {
         if (a.lastRunDate !== b.lastRunDate) return a.lastRunDate < b.lastRunDate ? 1 : -1;
-        return a.trackName.localeCompare(b.trackName);
+        return a.trackName.localeCompare(b.trackName) || a.vehicleLabel.localeCompare(b.vehicleLabel);
       })
       .slice(0, 5),
     sessionsByVehicle: [...byVehicle.entries()]

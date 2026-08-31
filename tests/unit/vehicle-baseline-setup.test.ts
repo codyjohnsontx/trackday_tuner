@@ -2,10 +2,11 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { VehicleBaselineSetup } from '@/components/garage/vehicle-baseline-setup';
+import { VehicleCard } from '@/components/garage/vehicle-card';
 import { baselineToComparableSession } from '@/lib/session-changes';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import { buildSetupView, isSetupViewEmpty } from '@/lib/setup-view';
-import type { VehicleBaseline } from '@/types';
+import type { Vehicle, VehicleBaseline } from '@/types';
 
 /**
  * `vehicle_baselines` stores a whole known-good setup - tires, suspension,
@@ -180,5 +181,45 @@ describe('vehicle baseline setup', () => {
       'Rear Compression',
       'Rear Rebound',
     ]);
+  });
+});
+
+describe('garage card baseline gate', () => {
+  const vehicle: Vehicle = {
+    id: 'bike-1',
+    user_id: 'user-1',
+    nickname: 'R6',
+    type: 'motorcycle',
+    year: 2020,
+    make: 'Yamaha',
+    model: 'YZF-R6',
+    photo_url: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  };
+
+  function card(baselineLocked: boolean): string {
+    return renderToStaticMarkup(
+      createElement(VehicleCard, { vehicle, baseline: baseline(), baselineLocked }),
+    );
+  }
+
+  it('shows the stored snapshot to a rider the feature is unlocked for', () => {
+    const html = card(false);
+
+    expect(html).toContain('Baseline setup');
+    expect(html).toContain('30 psi');
+  });
+
+  /**
+   * The snapshot obeys the gate the summary beside it already uses. Two halves
+   * of one card disagreeing about whether this rider may read the baseline is
+   * incoherent, whichever way round it reads.
+   */
+  it('withholds it while the baseline feature is locked', () => {
+    const html = card(true);
+
+    expect(html).not.toContain('Baseline setup');
+    expect(html).not.toContain('30 psi');
   });
 });

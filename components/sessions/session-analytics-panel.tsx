@@ -24,8 +24,11 @@ function CountList({
   items,
   emptyMessage = 'No data yet.',
 }: {
+  // `id` is for a list whose rows can read identically - two vehicles sharing a
+  // nickname put the same label and detail on the board twice, and without it
+  // React drops one of them.
+  items: { id?: string; label: string; detail: string }[];
   title: string;
-  items: { label: string; detail: string }[];
   emptyMessage?: string;
 }) {
   return (
@@ -33,7 +36,7 @@ function CountList({
       {items.length > 0 ? (
         <div className="divide-y divide-white/5 rounded-row bg-surface-2 px-4">
           {items.map((item) => (
-            <div key={`${item.label}-${item.detail}`} className="flex justify-between gap-3 py-2.5">
+            <div key={item.id ?? `${item.label}-${item.detail}`} className="flex justify-between gap-3 py-2.5">
               <span className="min-w-0 truncate text-sm text-ink-dim">{item.label}</span>
               <span className="shrink-0 text-sm font-medium text-ink">{item.detail}</span>
             </div>
@@ -47,8 +50,9 @@ function CountList({
 }
 
 export function SessionAnalyticsPanel({ analytics, tier }: SessionAnalyticsPanelProps) {
-  // A track record has to say which vehicle set it once the garage holds more
-  // than one, or a bike and a car quietly share one anonymous best lap.
+  // A board row is one vehicle at one circuit, so a garage holding more than one
+  // vehicle can show the same track twice and the vehicle is the only thing
+  // telling those rows apart.
   const multipleVehicles = analytics.sessionsByVehicle.length > 1;
 
   if (tier !== 'pro') {
@@ -100,11 +104,12 @@ export function SessionAnalyticsPanel({ analytics, tier }: SessionAnalyticsPanel
 
       <div className="grid gap-3 md:grid-cols-2">
         {/* First list on the panel: a lap time is the number the session was
-            logged for. It is per circuit because a lap only compares against
-            another lap at the same track. */}
+            logged for. It is per circuit and per vehicle because that is the
+            pair a lap compares against, the same one the compare page uses. */}
         <CountList
           title="Best Lap By Track"
           items={analytics.bestLapByTrack.map((item) => ({
+            id: item.key,
             label: multipleVehicles ? `${item.trackName} · ${item.vehicleLabel}` : item.trackName,
             detail: item.bestLap,
           }))}

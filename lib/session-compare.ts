@@ -157,13 +157,26 @@ export function formatLapTime(ms: number | null | undefined): string {
   return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
 }
 
+/**
+ * The lap times a summary includes, in stored order.
+ *
+ * `telemetry_summaries.metrics` is unconstrained jsonb that `authenticated` can
+ * insert and update, so a stored zero or a negative reading is reachable and is
+ * not a lap. This is the one place that decides which entries count, so a
+ * surface printing the per-lap list cannot disagree with the aggregates beside
+ * it about how many laps there were.
+ */
+export function extractLapTimes(summary: TelemetrySummary | null | undefined): number[] {
+  const rawLapTimes = summary?.metrics?.lap_times_ms;
+  if (!Array.isArray(rawLapTimes)) return [];
+  return rawLapTimes.map(validNumber).filter((lapTime): lapTime is number => lapTime !== null);
+}
+
 export function extractLapMetrics(summary: TelemetrySummary | null | undefined): LapMetrics {
   if (!summary) return { ...emptyLapMetrics };
 
   const metrics = summary.metrics ?? {};
-  const lapTimes = Array.isArray(metrics.lap_times_ms)
-    ? metrics.lap_times_ms.map(validNumber).filter((lapTime): lapTime is number => lapTime !== null)
-    : [];
+  const lapTimes = extractLapTimes(summary);
 
   const explicitBestLap = validNumber(metrics.best_lap_ms);
   const explicitAverageLap = validNumber(metrics.average_lap_ms);
