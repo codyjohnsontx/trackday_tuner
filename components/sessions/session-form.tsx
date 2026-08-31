@@ -416,6 +416,11 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
    * store the name they typed. See lib/session-track.ts.
    */
   function handleTrackKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    // Keydown during an IME composition still reports the real key, so without
+    // this a rider composing a non-Latin circuit name loses Arrow and Enter to
+    // the picker instead of moving through their candidate list.
+    if (event.nativeEvent.isComposing) return;
+
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       if (filteredTracks.length === 0) return;
       // Otherwise the caret jumps to the end of the typed name instead.
@@ -776,6 +781,11 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
             autoCapitalize="off"
             onChange={(event) => handleTrackInputChange(event.target.value)}
             onFocus={() => setShowDropdown(true)}
+            // Focus never leaves the input, so after picking a circuit a second
+            // click on the field fires no focus event and `onFocus` alone would
+            // leave the list shut. A pointer click in the textbox opens the
+            // popup, which is what the combobox pattern asks for anyway.
+            onClick={() => setShowDropdown(true)}
             onKeyDown={handleTrackKeyDown}
             onBlur={closeTrackList}
           />
