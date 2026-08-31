@@ -1,13 +1,39 @@
 import Link from 'next/link';
+import { PlanLimitNotice } from '@/components/billing/plan-limit-notice';
 import { DemoReadOnlyNotice } from '@/components/demo/read-only-notice';
 import { TrackForm } from '@/components/tracks/track-form';
 import { isDemoMode } from '@/lib/demo/mode';
+import { getTracks } from '@/lib/actions/tracks';
+import { getUserProfile } from '@/lib/actions/vehicles';
+import { resolveUserAccess } from '@/lib/access';
+import { isAtFreePlanLimit } from '@/lib/plans';
 import { pageTitleClass } from '@/components/ui/page-header';
 import { cn } from '@/lib/utils';
 
 export default async function NewTrackPage() {
-  if (await isDemoMode()) {
+  const [demoMode, tracks, profile] = await Promise.all([
+    isDemoMode(),
+    getTracks(),
+    getUserProfile(),
+  ]);
+
+  if (demoMode) {
     return <DemoReadOnlyNotice backHref="/tracks" backLabel="Back to Tracks" />;
+  }
+
+  // The limit counts the rider's own tracks; the seeded ones are shared, which
+  // is the same split /tracks and resolveSessionTrack already count on.
+  const customTrackCount = tracks.filter((track) => !track.is_seeded).length;
+
+  if (isAtFreePlanLimit('tracks', customTrackCount, resolveUserAccess(profile).hasProAccess)) {
+    return (
+      <PlanLimitNotice
+        resource="tracks"
+        backHref="/tracks"
+        backLabel="Back to Tracks"
+        hint="Seeded tracks stay available, and you can still type any circuit name when logging a session."
+      />
+    );
   }
 
   return (

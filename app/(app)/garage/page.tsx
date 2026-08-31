@@ -8,17 +8,21 @@ import { VehicleCard } from '@/components/garage/vehicle-card';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { resolveUserAccess } from '@/lib/access';
+import { getFreePlanLimit, isAtFreePlanLimit } from '@/lib/plans';
 
 export default async function GaragePage() {
   const [vehicles, profile, demoMode] = await Promise.all([getVehicles(), getUserProfile(), isDemoMode()]);
   const baselines = await getVehicleBaselines(vehicles.map((vehicle) => vehicle.id));
   const baselineByVehicleId = new Map(baselines.map((baseline) => [baseline.vehicle_id, baseline]));
 
-  const isFree = !resolveUserAccess(profile).hasProAccess;
-  const atLimit = isFree && vehicles.length >= 1;
+  const hasProAccess = resolveUserAccess(profile).hasProAccess;
+  const isFree = !hasProAccess;
+  // The same helper the /garage/new gate and createVehicle answer to, so the
+  // hidden "+ Add Vehicle" button and the refused save cannot disagree.
+  const atLimit = isAtFreePlanLimit('vehicles', vehicles.length, hasProAccess);
 
   const tierLabel = isFree
-    ? `Free plan · ${vehicles.length}/1 vehicle`
+    ? `Free plan · ${vehicles.length}/${getFreePlanLimit('vehicles')} vehicle`
     : `Pro plan · ${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''}`;
 
   return (

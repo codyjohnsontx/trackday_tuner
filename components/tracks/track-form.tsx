@@ -82,7 +82,11 @@ export function TrackForm({ initialTrack, onSuccessPath = '/tracks' }: TrackForm
         onChange={(event) => setLocation(event.target.value)}
       />
 
-      {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
+      {errorMessage ? (
+        <p role="alert" className="text-sm text-slower">
+          {errorMessage}
+        </p>
+      ) : null}
       {draftMessage ? <p className="text-sm text-faster">{draftMessage}</p> : null}
 
       <Button type="submit" fullWidth disabled={isPending}>

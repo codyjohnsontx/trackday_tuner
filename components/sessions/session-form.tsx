@@ -170,7 +170,6 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
-  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hydratedRef = useRef(false);
   const formOpenedAtRef = useRef(Date.now());
   const previousEnabledModulesRef = useRef<Pick<SessionEnabledModules, 'geometry' | 'drivetrain' | 'aero'> | null>(
@@ -243,13 +242,6 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setEnabledModules((current) => sanitizeEnabledModules(selectedVehicleType, current));
     setShowAdvancedModules((current) => sanitizeAdvancedVisibility(selectedVehicleType, current));
   }, [selectedVehicleType]);
-
-  useEffect(
-    () => () => {
-      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
-    },
-    [],
-  );
 
   useEffect(() => {
     const draft = loadDraft<SessionDraft>(sessionDraftKey);
@@ -609,13 +601,16 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
         });
       }
       setSaved(true);
-      // Hold the confirmed checkmark briefly before leaving the form. Tracked so
-      // it can be cancelled on unmount and never fire a redirect after teardown.
-      redirectTimerRef.current = setTimeout(() => {
-        redirectTimerRef.current = null;
-        router.push(`/sessions/${result.data.id}`);
-        router.refresh();
-      }, 700);
+      // Leave immediately rather than holding a cosmetic pause first. The save
+      // re-renders the route this form was called from, and the session that
+      // fills the free plan's last slot makes /sessions/new answer with the
+      // limit notice instead of the form - which unmounts this component and
+      // cancelled the pending redirect, stranding the rider on "Session limit
+      // reached" over a session that had saved perfectly well. Reproduced on the
+      // 10th save before the gate was added to that route. The button keeps its
+      // confirmed state while the destination loads.
+      router.push(`/sessions/${result.data.id}`);
+      router.refresh();
     });
   }
 
@@ -1044,10 +1039,24 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
         />
       </div>
 
-      {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
       {draftMessage ? <p className="text-sm text-faster">{draftMessage}</p> : null}
 
-      <div className="sticky bottom-20 z-20 rounded-card bg-surface-3 p-2 shadow-lg shadow-black backdrop-blur sm:bottom-4">
+      {/* The save error lives inside the sticky bar, not in document flow above
+          it. The bar is sticky precisely so a rider can save from anywhere in a
+          3,000px form, and an error left in flow rendered thousands of pixels
+          below the fold for exactly those riders: they tapped a visible Save
+          button and the screen did not change. role="alert" is what announces it
+          to a screen reader too. */}
+      {/* bottom-20 clears the floating nav pill, which renders at every width -
+          there is no wider layout that drops it, so the `sm:bottom-4` that used
+          to sit here put the Save button under the nav from 640px up, and a
+          click at the middle of "Save Session" hit a nav icon instead. */}
+      <div className="sticky bottom-20 z-20 space-y-2 rounded-card bg-surface-3 p-2 shadow-lg shadow-black backdrop-blur">
+        {errorMessage ? (
+          <p role="alert" className="px-1 pt-1 text-sm text-slower">
+            {errorMessage}
+          </p>
+        ) : null}
         <Button type="submit" fullWidth disabled={isPending || saved} loading={isPending} success={saved}>
           {saved ? 'Saved' : isPending ? 'Saving…' : 'Save Session'}
         </Button>
