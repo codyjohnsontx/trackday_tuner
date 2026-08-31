@@ -185,6 +185,10 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const [trackQuery, setTrackQuery] = useState('');
   const [trackId, setTrackId] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
+  // Which suggestion the arrow keys have travelled to. Focus stays in the input
+  // the whole time and this index becomes `aria-activedescendant`, which is what
+  // a screen reader follows - see the combobox notes on the field below.
+  const [activeTrackIndex, setActiveTrackIndex] = useState<number | null>(null);
   // Seeded on mount rather than at render, because the rider's calendar day is
   // only knowable in their browser: SSR would stamp the server's day (UTC in
   // production) into the markup and hydrate over it. See lib/local-date.ts.
@@ -239,6 +243,20 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     if (!query) return tracks;
     return tracks.filter((track) => track.name.toLowerCase().includes(query));
   }, [tracks, trackQuery]);
+
+  // The listbox stays in the document so `aria-controls` resolves to something;
+  // this is what `hidden` reads, and an empty list stays closed because there is
+  // nothing in it to announce or arrow to.
+  const trackListOpen = showDropdown && filteredTracks.length > 0;
+  const activeTrackOptionId =
+    trackListOpen && activeTrackIndex !== null ? `session-track-option-${activeTrackIndex}` : undefined;
+
+  useEffect(() => {
+    // The list scrolls at max-h-48, so a highlight the rider cannot see is the
+    // same dead end for them as no highlight at all.
+    if (!activeTrackOptionId) return;
+    document.getElementById(activeTrackOptionId)?.scrollIntoView({ block: 'nearest' });
+  }, [activeTrackOptionId]);
 
   useEffect(() => {
     setEnabledModules((current) => sanitizeEnabledModules(selectedVehicleType, current));
@@ -371,12 +389,71 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setTrackQuery(track.name);
     setTrackId(track.id);
     setShowDropdown(false);
+    setActiveTrackIndex(null);
   }
 
   function handleTrackInputChange(value: string) {
     setTrackQuery(value);
     setTrackId(null);
     setShowDropdown(true);
+    // The filtered list is about to change under it, so the old index would
+    // highlight a different circuit than the one it was pointing at.
+    setActiveTrackIndex(null);
+  }
+
+  function closeTrackList() {
+    setShowDropdown(false);
+    setActiveTrackIndex(null);
+  }
+
+  /**
+   * The keyboard half of the picker.
+   *
+   * Selection used to be bound to `onMouseDown` alone, so Arrow and Enter did
+   * nothing and the only way to reach a saved circuit was to point at it. Track
+   * is required and `track_id` is what the tracks list, the track page and every
+   * pace comparison key on, so a rider who cannot use a mouse could only ever
+   * store the name they typed. See lib/session-track.ts.
+   */
+  function handleTrackKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (filteredTracks.length === 0) return;
+      // Otherwise the caret jumps to the end of the typed name instead.
+      event.preventDefault();
+
+      const last = filteredTracks.length - 1;
+      const fromClosed = event.key === 'ArrowDown' ? 0 : last;
+      if (!trackListOpen) {
+        // Arrowing reopens a list Escape dismissed, on its first circuit.
+        setShowDropdown(true);
+        setActiveTrackIndex(fromClosed);
+        return;
+      }
+
+      setActiveTrackIndex((current) => {
+        if (current === null) return fromClosed;
+        const next = event.key === 'ArrowDown' ? current + 1 : current - 1;
+        if (next < 0) return last;
+        return next > last ? 0 : next;
+      });
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      // Only when a circuit is actually highlighted. With the list closed, or
+      // open on nothing, Enter still submits the form the way it always did.
+      if (!trackListOpen || activeTrackIndex === null) return;
+      event.preventDefault();
+      handleTrackSelect(filteredTracks[activeTrackIndex]);
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      if (!trackListOpen) return;
+      // Dismisses the list without discarding what the rider typed.
+      event.preventDefault();
+      closeTrackList();
+    }
   }
 
   function handleSessionNumberChange(value: string) {
@@ -669,10 +746,23 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
           <label htmlFor="session-track" className="block text-sm font-medium text-ink-dim">
             Track
           </label>
+          {/*
+            An ARIA 1.2 combobox: the input keeps focus and owns the keyboard,
+            and the highlight travels by `aria-activedescendant` rather than by
+            moving focus into the list. That is also why the list holds no
+            focusable control - a <button> in here is what used to swallow Tab,
+            because reaching it fired the input's blur and the list unmounted
+            from under the focus that was landing on it, leaving <body> focused.
+          */}
           <input
             id="session-track"
             ref={trackInputRef}
             type="text"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls="session-track-listbox"
+            aria-expanded={trackListOpen}
+            aria-activedescendant={activeTrackOptionId}
             className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             placeholder="Search or type a track name"
             value={trackQuery}
@@ -686,24 +776,41 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
             autoCapitalize="off"
             onChange={(event) => handleTrackInputChange(event.target.value)}
             onFocus={() => setShowDropdown(true)}
-            onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+            onKeyDown={handleTrackKeyDown}
+            onBlur={closeTrackList}
           />
-          {showDropdown && filteredTracks.length > 0 ? (
-            <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-row bg-surface-2 shadow-lg">
-              {filteredTracks.map((track) => (
-                <li key={track.id}>
-                  <button
-                    type="button"
-                    className="min-h-11 w-full px-3 py-3 text-left text-sm text-ink hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-signal/80"
-                    onMouseDown={() => handleTrackSelect(track)}
-                  >
-                    <span className="font-medium">{track.name}</span>
-                    {track.location ? <span className="ml-1 text-ink-faint">{track.location}</span> : null}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <ul
+            id="session-track-listbox"
+            role="listbox"
+            aria-label="Saved tracks"
+            // Closed by `hidden` rather than by unmounting: a reference that
+            // resolves to no element is one a screen reader announces as
+            // nothing, and `aria-controls` above has to point at something.
+            hidden={!trackListOpen}
+            className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-row bg-surface-2 shadow-lg"
+            // Keeps the pointer path working now that blur closes the list
+            // immediately: mousedown runs before blur, so refusing its default
+            // focus change means neither picking an option nor dragging the
+            // scrollbar pulls the list out from under the click.
+            onMouseDown={(event) => event.preventDefault()}
+          >
+            {filteredTracks.map((track, index) => (
+              <li
+                key={track.id}
+                id={`session-track-option-${index}`}
+                role="option"
+                aria-selected={index === activeTrackIndex}
+                className={cn(
+                  'min-h-11 cursor-pointer px-3 py-3 text-left text-sm text-ink hover:bg-surface-3',
+                  index === activeTrackIndex && 'bg-surface-3',
+                )}
+                onMouseDown={() => handleTrackSelect(track)}
+              >
+                <span className="font-medium">{track.name}</span>
+                {track.location ? <span className="ml-1 text-ink-faint">{track.location}</span> : null}
+              </li>
+            ))}
+          </ul>
         </div>
 
         <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
