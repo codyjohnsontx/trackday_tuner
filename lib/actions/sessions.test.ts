@@ -270,9 +270,10 @@ describe('sessions actions', () => {
   });
 
   // The Track field carried no validation while Vehicle and Date both did, so a
-  // rider who scrolled past it saved a session that reads "Unknown Track",
-  // reaches no track history and is refused by every pace comparison as being at
-  // a different circuit. Reproduced against a real account: the form saved,
+  // rider who scrolled past it saved a session that reads "Unknown Track" and
+  // matches no other session at the same circuit, so every comparison against it
+  // comes back flagged "Track mismatch" and weak (lib/session-compare.ts).
+  // Reproduced against a real account: the form saved,
   // `track_id` and `track_name` both came back null, and the detail screen showed
   // a dash. The form checks this too; these are the cases that reach the action
   // anyway. See lib/session-track.ts.

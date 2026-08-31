@@ -411,8 +411,9 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
    *
    * Selection used to be bound to `onMouseDown` alone, so Arrow and Enter did
    * nothing and the only way to reach a saved circuit was to point at it. Track
-   * is required and `track_id` is what the tracks list, the track page and every
-   * pace comparison key on, so a rider who cannot use a mouse could only ever
+   * is required, and `track_id` is what links a session to a saved track row and
+   * what `sessionsMatchTrack` pairs two sessions on when both carry one
+   * (lib/session-compare.ts), so a rider who cannot use a mouse could only ever
    * store the name they typed. See lib/session-track.ts.
    */
   function handleTrackKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
@@ -568,9 +569,10 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     }
 
     // Track sits between Vehicle and Date on the form and matters as much as
-    // either: the sessions list, the tracks list, the best-lap board and every
-    // pace comparison key on it, so a session saved without one is left out of
-    // all of them without saying so. See lib/session-track.ts.
+    // either: it is what one session is matched to another by, so a session saved
+    // without it reads as "Unknown Track" in every list and turns every
+    // comparison against it into a flagged track mismatch, none of which the save
+    // says. See lib/session-track.ts.
     if (!hasTrackName(trackQuery)) {
       setErrorMessage(MISSING_TRACK_MESSAGE);
       trackInputRef.current?.focus();

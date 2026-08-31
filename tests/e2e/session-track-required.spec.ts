@@ -16,8 +16,10 @@ import { MISSING_TRACK_MESSAGE } from '@/lib/session-track';
  * Reproduced against a real account before the fix: leaving the field untouched
  * saved the session, `track_id` and `track_name` both came back null, and the
  * detail screen read "Unknown Track" with a dash where the circuit should be. A
- * session in that state is left out of the tracks list, the track's own history,
- * the best-lap board and every pace comparison, and nothing on screen says so.
+ * session in that state matches no other session at the same circuit, so
+ * `sessionsMatchTrack` pairs it with nothing and every comparison against it is
+ * flagged "Track mismatch" and weak (lib/session-compare.ts) - and nothing on
+ * screen says so.
  *
  * The mocked action tests in lib/actions/sessions.test.ts cover the branches.
  * This is the part they cannot reach: what the browser does when a rider taps
