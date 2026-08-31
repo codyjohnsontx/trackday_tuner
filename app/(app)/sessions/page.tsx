@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { DemoBanner } from '@/components/demo/demo-banner';
-import { getSessionEnvironments, getSessions } from '@/lib/actions/sessions';
+import { getSessionEnvironments, getSessions, getTelemetrySummaries } from '@/lib/actions/sessions';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
 import { isDemoMode } from '@/lib/demo/mode';
 import { DayPlanPanel } from '@/components/ai/day-plan-panel';
@@ -20,7 +20,11 @@ export default async function SessionsPage() {
     getUserProfile(),
     isDemoMode(),
   ]);
-  const environments = await getSessionEnvironments(sessions.map((session) => session.id));
+  const sessionIds = sessions.map((session) => session.id);
+  const [environments, telemetry] = await Promise.all([
+    getSessionEnvironments(sessionIds),
+    getTelemetrySummaries(sessionIds),
+  ]);
 
   const isFree = !resolveUserAccess(profile).hasProAccess;
   const accessTier = effectiveTier(profile);
@@ -33,11 +37,13 @@ export default async function SessionsPage() {
   const vehicleMap = new Map(vehicles.map((v) => [v.id, v.nickname]));
   const vehicleRecordMap = new Map(vehicles.map((v) => [v.id, v]));
   const environmentMap = new Map(environments.map((environment) => [environment.session_id, environment]));
+  const telemetryMap = new Map(telemetry.map((summary) => [summary.session_id, summary]));
   const analytics = deriveSessionAnalytics(
     sessions.map((session) => ({
       session,
       vehicle: vehicleRecordMap.get(session.vehicle_id) ?? null,
       environment: environmentMap.get(session.id) ?? null,
+      telemetry: telemetryMap.get(session.id) ?? null,
     })),
   );
 

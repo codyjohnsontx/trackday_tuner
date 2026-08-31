@@ -32,7 +32,7 @@ export function SessionExportPanel({ vehicles, tier, demoMode = false }: Session
       <div>
         <p className="text-sm font-semibold text-ink">CSV Export</p>
         <p className="mt-1 text-sm text-ink-dim">
-          Download sessions with setup modules, conditions, environment, and notes.
+          Download sessions with lap times, setup modules, conditions, environment, and notes.
         </p>
       </div>
 

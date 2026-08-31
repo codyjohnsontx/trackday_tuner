@@ -19,7 +19,15 @@ function Stat({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-function CountList({ title, items }: { title: string; items: { label: string; detail: string }[] }) {
+function CountList({
+  title,
+  items,
+  emptyMessage = 'No data yet.',
+}: {
+  title: string;
+  items: { label: string; detail: string }[];
+  emptyMessage?: string;
+}) {
   return (
     <CardGroup eyebrow={title}>
       {items.length > 0 ? (
@@ -32,19 +40,24 @@ function CountList({ title, items }: { title: string; items: { label: string; de
           ))}
         </div>
       ) : (
-        <p className="rounded-row bg-surface-2 p-4 text-sm text-ink-faint">No data yet.</p>
+        <p className="rounded-row bg-surface-2 p-4 text-sm text-ink-faint">{emptyMessage}</p>
       )}
     </CardGroup>
   );
 }
 
 export function SessionAnalyticsPanel({ analytics, tier }: SessionAnalyticsPanelProps) {
+  // A track record has to say which vehicle set it once the garage holds more
+  // than one, or a bike and a car quietly share one anonymous best lap.
+  const multipleVehicles = analytics.sessionsByVehicle.length > 1;
+
   if (tier !== 'pro') {
     return (
       <section className="rounded-card bg-surface p-4">
         <p className="text-sm font-semibold text-ink">Analytics</p>
         <p className="mt-1 text-sm text-ink-dim">
-          Pro summarizes vehicle usage, track history, module coverage, tire pressures, and environment snapshots.
+          Pro summarizes your lap totals and best lap at each track, plus vehicle usage, track history, logging
+          coverage, and tire pressure trends.
         </p>
         <div className="mt-4">
           <UpgradeToProButton fullWidth />
@@ -64,10 +77,11 @@ export function SessionAnalyticsPanel({ analytics, tier }: SessionAnalyticsPanel
             and stacking them turns a glance into a scroll. */}
         <div className="grid grid-cols-3 gap-2">
           <Stat label="Sessions" value={String(analytics.totalSessions)} />
-          <Stat
-            label="Env logs"
-            value={`${analytics.environmentSnapshots.withEnvironment}/${analytics.totalSessions}`}
-          />
+          {/* Laps, not `Env logs`. The headline strip is what a rider glances
+              at, and the count of sessions carrying an environment row is a
+              logging diagnostic - it moved into the coverage list, which is
+              where every other "how much did you fill in" number already lives. */}
+          <Stat label="Laps" value={String(analytics.laps.totalLaps)} />
           <Stat
             label="Avg track"
             value={
@@ -85,6 +99,17 @@ export function SessionAnalyticsPanel({ analytics, tier }: SessionAnalyticsPanel
       </CardGroup>
 
       <div className="grid gap-3 md:grid-cols-2">
+        {/* First list on the panel: a lap time is the number the session was
+            logged for. It is per circuit because a lap only compares against
+            another lap at the same track. */}
+        <CountList
+          title="Best Lap By Track"
+          items={analytics.bestLapByTrack.map((item) => ({
+            label: multipleVehicles ? `${item.trackName} · ${item.vehicleLabel}` : item.trackName,
+            detail: item.bestLap,
+          }))}
+          emptyMessage="No lap times logged yet."
+        />
         <CountList
           title="Sessions by Vehicle"
           items={analytics.sessionsByVehicle.map((item) => ({
@@ -100,7 +125,7 @@ export function SessionAnalyticsPanel({ analytics, tier }: SessionAnalyticsPanel
           }))}
         />
         <CountList
-          title="Module Coverage"
+          title="Logging Coverage"
           items={analytics.moduleCoverage.map((item) => ({
             label: item.module.replace('_', ' '),
             detail: `${item.count} (${item.percent}%)`,
