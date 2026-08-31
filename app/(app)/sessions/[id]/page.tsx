@@ -394,6 +394,19 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
 
       <SectionCard title="Session Info">
         <DetailRow label="Track" value={session.track_name ?? '—'} />
+        {/* Track is required now, but sessions logged before it was are still out
+            here, and every consequence of the gap is silent: this one reads
+            "Unknown Track", reaches no track history, and is refused by every
+            pace comparison as being at a different circuit. A dash says none of
+            that, so say it where the blank is. There is no repair link because
+            this app has no session edit screen yet - naming one the rider cannot
+            open would be worse than naming nothing. */}
+        {!session.track_name ? (
+          <p className="rounded-row bg-surface-2 p-3 text-sm text-signal">
+            No track recorded, so this session is left out of your track history, your best
+            laps at that circuit, and every lap-time comparison.
+          </p>
+        ) : null}
         <DetailRow label="Vehicle" value={vehicleNickname} />
         <DetailRow label="Date" value={formattedDate} />
         {session.session_number ? (

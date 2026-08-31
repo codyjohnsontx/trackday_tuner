@@ -26,6 +26,7 @@ import {
 } from '@/lib/session-answers';
 import { trackProductEvent } from '@/lib/product-events.client';
 import { copyLastSessionSetup } from '@/lib/session-copy';
+import { MISSING_TRACK_MESSAGE, hasTrackName, normalizeTrackName } from '@/lib/session-track';
 import {
   getAvailableSessionModules,
   getDefaultAdvancedVisibility,
@@ -170,6 +171,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
+  const trackInputRef = useRef<HTMLInputElement>(null);
   const hydratedRef = useRef(false);
   const formOpenedAtRef = useRef(Date.now());
   const previousEnabledModulesRef = useRef<Pick<SessionEnabledModules, 'geometry' | 'drivetrain' | 'aero'> | null>(
@@ -483,6 +485,16 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       return;
     }
 
+    // Track sits between Vehicle and Date on the form and matters as much as
+    // either: the sessions list, the tracks list, the best-lap board and every
+    // pace comparison key on it, so a session saved without one is left out of
+    // all of them without saying so. See lib/session-track.ts.
+    if (!hasTrackName(trackQuery)) {
+      setErrorMessage(MISSING_TRACK_MESSAGE);
+      trackInputRef.current?.focus();
+      return;
+    }
+
     if (!date) {
       setErrorMessage('Please enter a date.');
       return;
@@ -557,7 +569,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       const result = await createSession({
         vehicle_id: vehicleId,
         track_id: trackId,
-        track_name: trackQuery.trim() || null,
+        track_name: normalizeTrackName(trackQuery),
         date,
         start_time: startTime || null,
         session_number: parsedSessionNumber,
@@ -659,10 +671,16 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
           </label>
           <input
             id="session-track"
+            ref={trackInputRef}
             type="text"
             className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             placeholder="Search or type a track name"
             value={trackQuery}
+            // `required` refuses an empty field in the browser, the way Vehicle
+            // and Date already do; the submit handler still checks, because
+            // `required` counts a space as filled and a session named " " is the
+            // same trackless session. See lib/session-track.ts.
+            required
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"

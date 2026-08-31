@@ -37,7 +37,7 @@ import {
 } from '@/lib/actions/sessions';
 import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
 import { COMPARABLE_SESSION_FETCH_LIMIT, COMPARABLE_SESSION_LIMIT } from '@/lib/session-compare';
-import { TRACK_NAME_MATCH_LIMIT } from '@/lib/session-track';
+import { MISSING_TRACK_MESSAGE, TRACK_NAME_MATCH_LIMIT } from '@/lib/session-track';
 import type {
   CreateSessionInput,
   Session,
@@ -144,10 +144,24 @@ function createWildcardLookup(rows: { id: string; name: string }[] = []) {
   return createQuery({ base: { data: rows, error: null } });
 }
 
+/**
+ * The single `tracks` read a payload carrying a `track_id` costs.
+ *
+ * `resolveSessionTrack` resolves the id rather than trusting it, and returns as
+ * soon as the row comes back, so a create from the fixture below opens with this
+ * one query and no name lookup.
+ */
+function createTrackIdLookup(row: { id: string; name: string } = { id: 'track-1', name: 'MSR Cresson' }) {
+  return createQuery({ single: { data: row, error: null } });
+}
+
 const validInput: CreateSessionInput = {
   vehicle_id: 'veh-1',
-  track_id: null,
-  track_name: null,
+  // A session has to name the circuit it ran at, so the fixture the successful
+  // paths below share names one: `createSession` refuses a payload that carries
+  // neither an id nor a name. See lib/session-track.ts.
+  track_id: 'track-1',
+  track_name: 'MSR Cresson',
   date: '2026-02-24',
   start_time: '09:30:00',
   session_number: 2,
@@ -178,8 +192,8 @@ const createdSession: Session = {
   id: 'sess-1',
   user_id: 'user-1',
   vehicle_id: 'veh-1',
-  track_id: null,
-  track_name: null,
+  track_id: 'track-1',
+  track_name: 'MSR Cresson',
   date: '2026-02-24',
   start_time: '09:30:00',
   session_number: 2,
@@ -253,6 +267,60 @@ describe('sessions actions', () => {
 
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error).toBe(MISSING_CONDITIONS_MESSAGE);
+  });
+
+  // The Track field carried no validation while Vehicle and Date both did, so a
+  // rider who scrolled past it saved a session that reads "Unknown Track",
+  // reaches no track history and is refused by every pace comparison as being at
+  // a different circuit. Reproduced against a real account: the form saved,
+  // `track_id` and `track_name` both came back null, and the detail screen showed
+  // a dash. The form checks this too; these are the cases that reach the action
+  // anyway. See lib/session-track.ts.
+  it('refuses a session that names no track, before reading anything', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const from = vi.fn();
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn() } as never);
+
+    const result = await createSession({ ...validInput, track_id: null, track_name: null });
+
+    expect(result).toEqual({ ok: false, error: MISSING_TRACK_MESSAGE });
+    // Refused on the payload, so no track row was written for a session that
+    // never existed - which on the free plan would have spent a custom-track slot.
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('refuses a track name that is only whitespace', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const from = vi.fn();
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn() } as never);
+
+    // `required` on the input counts a space as filled, so this is the spelling
+    // the browser lets through.
+    const result = await createSession({ ...validInput, track_id: null, track_name: '   ' });
+
+    expect(result).toEqual({ ok: false, error: MISSING_TRACK_MESSAGE });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('refuses a track_id that resolves to nothing with no name beside it', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    // An id the rider cannot see resolves to no row, and nothing was typed to
+    // fall back on - so the session would have stored no circuit at all.
+    const trackLookup = createQuery({ single: { data: null, error: null } });
+    const from = vi.fn().mockImplementation((table: string) => {
+      expect(table).toBe('tracks');
+      return trackLookup;
+    });
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn() } as never);
+
+    const result = await createSession({ ...validInput, track_id: 'track-nobody', track_name: null });
+
+    expect(result).toEqual({ ok: false, error: MISSING_TRACK_MESSAGE });
+    expect(from).not.toHaveBeenCalledWith('sessions');
   });
 
   it('enforces free tier session limit', async () => {
@@ -835,6 +903,10 @@ describe('sessions actions', () => {
     const from = vi
       .fn()
       .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return createTrackIdLookup();
+      })
+      .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
         return insertQuery;
       })
@@ -995,6 +1067,10 @@ describe('sessions actions', () => {
     const from = vi
       .fn()
       .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return createTrackIdLookup();
+      })
+      .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
         return insertQuery;
       })
@@ -1040,6 +1116,10 @@ describe('sessions actions', () => {
 
     const from = vi
       .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return createTrackIdLookup();
+      })
       .mockImplementationOnce(() => insertQuery)
       .mockImplementationOnce(() => vehicleQuery)
       .mockImplementationOnce(() => previousQuery)
@@ -1066,6 +1146,10 @@ describe('sessions actions', () => {
 
     const from = vi
       .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return createTrackIdLookup();
+      })
       .mockImplementationOnce(() => insertQuery)
       .mockImplementationOnce(() => vehicleQuery)
       .mockImplementationOnce(() => previousQuery)
@@ -1075,7 +1159,9 @@ describe('sessions actions', () => {
     const result = await createSession(validInput);
 
     expect(result.ok).toBe(true);
-    expect(from).toHaveBeenCalledTimes(4);
+    // One `tracks` resolve, the session insert, the vehicle type, the previous
+    // session and the baseline.
+    expect(from).toHaveBeenCalledTimes(5);
     expect(from).not.toHaveBeenCalledWith('session_changes');
   });
 
@@ -1092,6 +1178,10 @@ describe('sessions actions', () => {
 
     const from = vi
       .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return createTrackIdLookup();
+      })
       .mockImplementationOnce(() => insertQuery)
       .mockImplementationOnce(() => vehicleQuery)
       .mockImplementationOnce(() => previousQuery)
@@ -1102,7 +1192,7 @@ describe('sessions actions', () => {
     const result = await createSession(validInput);
 
     expect(result).toEqual({ ok: true, data: createdSession });
-    expect(from).toHaveBeenCalledTimes(5);
+    expect(from).toHaveBeenCalledTimes(6);
     expect(insertQuery.delete).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(
       '[sessions] session_changes insert failed',
@@ -1127,6 +1217,10 @@ describe('sessions actions', () => {
 
     const from = vi
       .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return createTrackIdLookup();
+      })
       .mockImplementationOnce(() => insertQuery)
       .mockImplementationOnce(() => vehicleQuery)
       .mockImplementationOnce(() => previousQuery)
@@ -1136,7 +1230,7 @@ describe('sessions actions', () => {
     const result = await createSession(validInput);
 
     expect(result).toEqual({ ok: true, data: createdSession });
-    expect(from).toHaveBeenCalledTimes(4);
+    expect(from).toHaveBeenCalledTimes(5);
     expect(from).not.toHaveBeenCalledWith('session_changes');
     expect(errorSpy).toHaveBeenCalledWith(
       '[sessions] session_changes skipped: unresolved vehicle type',
