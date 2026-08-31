@@ -3,13 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
-import { RefusalCard } from '@/components/ai/refusal-card';
-import { SafetyBanner } from '@/components/ai/safety-banner';
-import { WatchItems } from '@/components/ai/watch-items';
-import { formatComponentLabel, formatDirectionLabel } from '@/lib/rag/component-vocabulary';
+import { AdviceReport } from '@/components/ai/advice-report';
 import type { AdviceResponse } from '@/lib/rag/schema';
 import type { Vehicle } from '@/types';
-import { cn } from '@/lib/utils';
 import { useTemperatureInput, useTemperatureUnit } from '@/components/ui/temperature-display';
 import {
   displayTemperatureBound,
@@ -42,15 +38,6 @@ interface DayPlanError {
 }
 
 type DayPlanResponse = DayPlanSuccess | DayPlanError;
-
-const DATA_USED_LABELS: Record<string, string> = {
-  manual: 'Manual Input',
-  weather: 'Weather Data',
-  history: 'Session History',
-  feedback: 'Past Feedback',
-  lap_data: 'Lap Data',
-  telemetry: 'Telemetry',
-};
 
 function getLocalIsoDate(): string {
   const now = new Date();
@@ -127,114 +114,29 @@ const REFUSAL_EXAMPLES = [
   'Ambient and track temperatures you measured in the paddock.',
 ];
 
-function SafetyNotes({ notes }: { notes: string[] }) {
-  if (notes.length === 0) return null;
-  return (
-    <div>
-      <h3 className="text-sm font-semibold text-ink">Safety notes</h3>
-      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-dim">
-        {notes.map((note, idx) => (
-          <li key={`${note}-${idx}`}>{note}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 /**
  * A refused plan and a plan that recommends no change both arrive with an empty
  * `recommended_changes`, so `advice.refusal` is what tells them apart. A refusal
  * replaces the result rather than sitting beside it: a rider shown "nothing to
  * recommend yet" would never learn that the answer was withheld, or why.
  *
- * The safety copy sits on both branches, as it does on the Race Engineer panel.
- * It used to sit only on the refusal branch, which is backwards: the model is
- * told to return the disclaimer and the one-change note in every response, and
- * the rider needs them most on the branch that hands them a magnitude to go and
- * turn into their suspension.
+ * The whole payload goes through `AdviceReport`, which is what stopped this
+ * panel quietly dropping the tradeoffs and the personal evidence the same
+ * response carried. Only the wording is this surface's own.
  */
 export function DayPlanAdviceResult({ advice }: { advice: AdviceResponse }) {
-  const refusal = advice.refusal?.trim();
-
-  if (refusal) {
-    return (
-      <div className="space-y-3 border-t border-white/5 pt-4">
-        <SafetyBanner />
-        <RefusalCard
-          title="Couldn't build that plan"
-          message={refusal}
-          helpTitle="Morning Plan works from details like:"
-          examples={REFUSAL_EXAMPLES}
-        />
-        <SafetyNotes notes={advice.safety_notes} />
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-3 border-t border-white/5 pt-4">
-      <SafetyBanner />
-      <div>
-        <h3 className="text-sm font-semibold text-ink">Plan</h3>
-        <p className="mt-1 text-sm text-ink-dim">{advice.summary}</p>
-        <p className="mt-1 text-xs uppercase tracking-wide text-ink-faint">
-          Confidence: <span className="text-ink-dim">{advice.confidence}</span>
-        </p>
-      </div>
-      {advice.recommended_changes.length > 0 ? (
-        <ul className="space-y-2">
-          {advice.recommended_changes.map((change, idx) => (
-            <li key={`${change.component}-${idx}`} className="rounded-row bg-surface-2 p-3">
-              <p className="text-sm font-medium text-ink">{formatComponentLabel(change.component)}</p>
-              <p className="text-sm text-ink-dim">{formatDirectionLabel(change.direction)} · {change.magnitude}</p>
-              <p className="mt-1 text-sm text-ink-dim">{change.reason}</p>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="rounded-row border border-dashed border-white/5 bg-surface-2 p-3 text-sm text-ink-faint">
-          No specific setup change recommended yet. Establish a baseline and log feedback after the next session.
-        </div>
-      )}
-      {advice.prediction ? (
-        <div className="space-y-1 rounded-row bg-surface-2 p-3 text-sm text-ink-dim">
-          <p>{advice.prediction.expected_effect}</p>
-          <p className="text-ink-dim">{advice.prediction.day_trend}</p>
-          <WatchItems items={advice.prediction.watch_items} />
-        </div>
-      ) : null}
-      <div>
-        <h3 className="text-sm font-semibold text-ink">Data used</h3>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {Object.entries(advice.data_used).map(([key, used]) => (
-            <span
-              key={key}
-              className={cn(
-                'rounded-plate px-2 py-1 text-xs font-medium',
-                used
-                  ? 'bg-surface-3 text-ink'
-                  : 'bg-surface-2 text-ink-faint',
-              )}
-            >
-              {DATA_USED_LABELS[key] ?? key}
-            </span>
-          ))}
-        </div>
-      </div>
-      <SafetyNotes notes={advice.safety_notes} />
-      {advice.citations.length > 0 ? (
-        <div>
-          <h3 className="text-sm font-semibold text-ink">Citations</h3>
-          <ul className="mt-2 space-y-2">
-            {advice.citations.map((citation, idx) => (
-              <li key={`${citation.source}-${idx}`} className="rounded-row bg-surface-2 p-2">
-                <p className="font-mono text-xs text-ink-dim">{citation.source}</p>
-                <p className="mt-1 text-sm text-ink-dim">{citation.snippet}</p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+    <div className="border-t border-white/5 pt-4">
+      <AdviceReport
+        advice={advice}
+        summaryHeading="Plan"
+        refusal={{
+          title: "Couldn't build that plan",
+          helpTitle: 'Morning Plan works from details like:',
+          examples: REFUSAL_EXAMPLES,
+        }}
+        emptyChangesMessage="No specific setup change recommended yet. Establish a baseline and log feedback after the next session."
+      />
     </div>
   );
 }

@@ -3,11 +3,8 @@
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
-import { RefusalCard } from '@/components/ai/refusal-card';
-import { SafetyBanner } from '@/components/ai/safety-banner';
-import { WatchItems } from '@/components/ai/watch-items';
+import { AdviceReport } from '@/components/ai/advice-report';
 import { useTemperatureInput, useTemperatureUnit } from '@/components/ui/temperature-display';
-import { formatComponentLabel, formatDirectionLabel } from '@/lib/rag/component-vocabulary';
 import { classifyRaceEngineerQuestion } from '@/lib/rag/domain-guard';
 import {
   displayTemperatureBound,
@@ -41,15 +38,6 @@ const INTENT_OPTIONS: Array<{ id: string; label: string }> = [
   { id: 'better_feel', label: 'Better feel' },
 ];
 
-const DATA_USED_LABELS: Record<string, string> = {
-  manual: 'Manual Input',
-  weather: 'Weather Data',
-  history: 'Session History',
-  feedback: 'Past Feedback',
-  lap_data: 'Lap Data',
-  telemetry: 'Telemetry',
-};
-
 interface TuningAdvicePanelProps {
   sessionId: string;
   vehicleId: string;
@@ -73,11 +61,15 @@ interface ApiSuccessBody {
 
 type ApiResponseBody = ApiErrorBody | ApiSuccessBody;
 
-const REFUSAL_EXAMPLES = [
-  'Front pushed on entry after I raised pressure 1 psi. What should I try next?',
-  'Rear overheated after four laps. What is the first thing I should check?',
-  'I changed rebound and the bike started wallowing. Should I undo that or try another small step?',
-];
+const REFUSAL_COPY = {
+  title: "Couldn't answer that request",
+  helpTitle: 'Race Engineer can help with questions like:',
+  examples: [
+    'Front pushed on entry after I raised pressure 1 psi. What should I try next?',
+    'Rear overheated after four laps. What is the first thing I should check?',
+    'I changed rebound and the bike started wallowing. Should I undo that or try another small step?',
+  ],
+};
 
 function ProUpgradeCard() {
   return (
@@ -177,7 +169,6 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
     question.trim().length >= 10 && questionAssessment.decision === 'refuse';
 
   if (demoMode) {
-    const advice = demoTuningAdvice;
     return (
       <section className="space-y-4 rounded-card bg-surface p-4">
         <div>
@@ -186,34 +177,11 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
             Static sample advice from the demo history. Real Pro accounts can ask Race Engineer about their own sessions.
           </p>
         </div>
-        <SafetyBanner />
-        <div>
-          <h3 className="text-sm font-semibold text-ink">Summary</h3>
-          <p className="mt-1 text-sm text-ink whitespace-pre-wrap">{advice.summary}</p>
-          <p className="mt-1 text-xs uppercase tracking-wide text-ink-faint">
-            Confidence: <span className="text-ink-dim">{advice.confidence}</span>
-          </p>
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold text-ink">Recommended change</h3>
-          <ul className="mt-2 space-y-3">
-            {advice.recommended_changes.map((change, idx) => (
-              <li key={`${change.component}-${idx}`} className="rounded-row bg-surface-2 p-3">
-                <p className="text-sm font-medium text-ink">{formatComponentLabel(change.component)}</p>
-                <p className="text-sm text-ink-dim">{formatDirectionLabel(change.direction)} · {change.magnitude}</p>
-                <p className="mt-1 text-sm text-ink-dim">{change.reason}</p>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold text-ink">Tradeoffs</h3>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-dim">
-            {advice.tradeoffs.map((tradeoff) => (
-              <li key={tradeoff}>{tradeoff}</li>
-            ))}
-          </ul>
-        </div>
+        {/* The same renderer the live answer uses. This branch had its own, and
+            printed the summary, the recommendation and the tradeoffs while
+            dropping the safety notes, the prediction, the personal evidence,
+            the data-used chips and the citations the fixture carries. */}
+        <AdviceReport advice={demoTuningAdvice} summaryHeading="Summary" refusal={REFUSAL_COPY} />
       </section>
     );
   }
@@ -309,9 +277,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
   }
 
   const advice = response?.advice ?? null;
-  const refusal = advice?.refusal?.trim();
   const hasRecommendations = Boolean(advice && advice.recommended_changes.length > 0);
-  const isRefusal = Boolean(refusal);
 
   return (
     <section className="space-y-4 rounded-card bg-surface p-4">
@@ -426,128 +392,7 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
 
       {advice ? (
         <div className="space-y-4">
-          <SafetyBanner />
-
-          {isRefusal ? (
-            <RefusalCard
-              title="Couldn't answer that request"
-              message={refusal!}
-              helpTitle="Race Engineer can help with questions like:"
-              examples={REFUSAL_EXAMPLES}
-            />
-          ) : null}
-
-          {!isRefusal ? (
-            <>
-              <div>
-                <h3 className="text-sm font-semibold text-ink">Summary</h3>
-                <p className="mt-1 text-sm text-ink whitespace-pre-wrap">{advice.summary}</p>
-                <p className="mt-1 text-xs uppercase tracking-wide text-ink-faint">
-                  Confidence: <span className="text-ink-dim">{advice.confidence}</span>
-                </p>
-              </div>
-
-              {hasRecommendations ? (
-                <div>
-                  <h3 className="text-sm font-semibold text-ink">Recommended change</h3>
-                  <ul className="mt-2 space-y-3">
-                    {advice.recommended_changes.map((change, idx) => (
-                      <li
-                        key={`${change.component}-${idx}`}
-                        className="rounded-row bg-surface-2 p-3"
-                      >
-                        <p className="text-sm font-medium text-ink">
-                          {formatComponentLabel(change.component)}
-                        </p>
-                        <p className="text-sm text-ink-dim">
-                          {formatDirectionLabel(change.direction)} · {change.magnitude}
-                        </p>
-                        <p className="mt-1 text-sm text-ink-dim">{change.reason}</p>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
-              {advice.tradeoffs.length > 0 ? (
-                <div>
-                  <h3 className="text-sm font-semibold text-ink">Tradeoffs</h3>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-dim">
-                    {advice.tradeoffs.map((t, i) => (
-                      <li key={i}>{t}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
-              {advice.prediction ? (
-                <div>
-                  <h3 className="text-sm font-semibold text-ink">Prediction</h3>
-                  <div className="mt-2 space-y-2 rounded-row bg-surface-2 p-3 text-sm text-ink-dim">
-                    <p>{advice.prediction.expected_effect}</p>
-                    <p className="text-ink-dim">{advice.prediction.day_trend}</p>
-                    <WatchItems items={advice.prediction.watch_items} />
-                  </div>
-                </div>
-              ) : null}
-
-              {advice.personal_evidence.length > 0 ? (
-                <div>
-                  <h3 className="text-sm font-semibold text-ink">Personal evidence</h3>
-                  <ul className="mt-2 space-y-2 text-sm text-ink-dim">
-                    {advice.personal_evidence.map((evidence, idx) => (
-                      <li key={idx} className="rounded-row bg-surface-2 p-3">
-                        <p className="font-medium text-ink">{evidence.label}</p>
-                        <p className="mt-1 text-ink-dim">{evidence.detail}</p>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
-              <div>
-                <h3 className="text-sm font-semibold text-ink">Data used</h3>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {Object.entries(advice.data_used).map(([key, used]) => (
-                    <span
-                      key={key}
-                      className={cn(
-                        'rounded-plate px-2 py-1 text-xs font-medium',
-                        used
-                          ? 'bg-surface-3 text-ink'
-                          : 'bg-surface-2 text-ink-faint',
-                      )}
-                    >
-                      {DATA_USED_LABELS[key] ?? key}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </>
-          ) : null}
-
-          <div>
-            <h3 className="text-sm font-semibold text-ink">Safety notes</h3>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-dim">
-              {advice.safety_notes.map((n, i) => (
-                <li key={i}>{n}</li>
-              ))}
-            </ul>
-          </div>
-
-          {!isRefusal && advice.citations.length > 0 ? (
-            <div>
-              <h3 className="text-sm font-semibold text-ink">Citations</h3>
-              <ul className="mt-2 space-y-2 text-sm text-ink-dim">
-                {advice.citations.map((c, i) => (
-                  <li key={i} className="rounded-row bg-surface-2 p-2">
-                    <p className="text-xs font-mono text-ink-dim">{c.source}</p>
-                    <p className="mt-1 text-sm text-ink">{c.snippet}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          <AdviceReport advice={advice} summaryHeading="Summary" refusal={REFUSAL_COPY} />
 
           {response?.request_id ? (
             <p className="text-xs text-ink-faint">Request id: {response.request_id}</p>
