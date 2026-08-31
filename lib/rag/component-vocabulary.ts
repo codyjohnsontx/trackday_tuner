@@ -269,12 +269,12 @@ export function findComponentPolicy(component: string): ComponentPolicy | null {
  * the vocabulary existed hold prose like "Front setup", and they still have to
  * read correctly in the outcome picker years later.
  *
- * WHERE IT BELONGS, AND WHERE IT MUST NOT GO. Four sites render a component to a
- * rider and all four call this: the two AI panels
- * (`components/ai/day-plan-panel.tsx`, `components/ai/tuning-advice-panel.tsx`,
- * twice) and the "AI recommendation tested" select in
- * `components/sessions/session-outcome-panel.tsx`, whose rows come from
- * `getOutcomeReferences` in `lib/actions/outcomes.ts`. Three sites read a
+ * WHERE IT BELONGS, AND WHERE IT MUST NOT GO. Two sites render a component to a
+ * rider and both call this: `components/ai/advice-report.tsx`, the one place an
+ * `AdviceResponse` becomes a screen, and the "AI recommendation tested" select
+ * in `components/sessions/session-outcome-panel.tsx`, whose rows come from
+ * `getOutcomeReferences` in `lib/actions/outcomes.ts`. It was four while the two
+ * AI panels each rendered the payload themselves. Three sites read a
  * component and must stay RAW: `app/api/ai/tuning-advice/route.ts` writes the
  * wire value to storage, `lib/rag/prompt.ts` renders it back into the model
  * prompt where the canonical identifier is the point, and `evaluateAdvicePolicy`
@@ -285,7 +285,7 @@ export function findComponentPolicy(component: string): ComponentPolicy | null {
  * `lib` and `scripts`, then tracing every consumer of `ai_recommendations`; the
  * CSV export carries no component field and `scripts/eval-rag.mjs` only checks
  * the shape, so neither is rider-facing. Repeat that sweep rather than adding a
- * fifth site by accident - this helper was added for three of the four and the
+ * third site by accident - this helper was added for the AI panels and the
  * outcome picker was found separately, afterwards.
  */
 export function formatComponentLabel(component: string): string {
@@ -319,20 +319,23 @@ const DIRECTION_LABELS = new Map<string, string>(
  * pre-vocabulary row like "Return toward baseline" must.
  *
  * WHAT THE SWEEP COVERED AND WHAT IT DELIBERATELY LEAVES RAW. Method: grep
- * `\.direction|\.magnitude|\.summary|\.reason` across `components` and `app`,
- * then trace each hit to whether the value is model-supplied or rider-entered.
+ * `\.direction|\.magnitude|\.summary|\.reason` across `app`, `components` and
+ * `lib` - a render's rows can be built outside the component that prints them,
+ * as `buildSetupView` builds the session detail page's - then trace each hit to
+ * whether the value is model-supplied or rider-entered.
  *
- * - `direction` is formatted, at the same four sites as the component.
+ * - `direction` is formatted, at the same two sites as the component.
  * - `magnitude` stays raw: "0.5 psi", "1 click" - a quantity with its unit, and
  *   already rider-readable.
  * - `summary` and `reason` stay raw: free model prose, not identifiers.
  * - `confidence` stays raw: a lowercase enum that reads as English in
  *   "Confidence: medium", not identifier-shaped.
- * - `data_used` keys already resolve through each panel's own `DATA_USED_LABELS`
- *   map, so they never reach a rider raw.
- * - `session.suspension.front.direction` in `app/(app)/sessions/[id]/page.tsx`
- *   is a FALSE MATCH and must stay untouched: same field name, but it is the
- *   rider's own "in"/"out" entry, not a model-supplied recommendation.
+ * - `data_used` keys resolve through the `DATA_USED_LABELS` map in
+ *   `components/ai/advice-report.tsx`, so they never reach a rider raw.
+ * - `suspension.front.direction` in `lib/setup-view.ts` and in the compare rows
+ *   of `app/(app)/sessions/[id]/page.tsx` is a FALSE MATCH and must stay
+ *   untouched: same field name, but it is the rider's own "in"/"out" entry, not
+ *   a model-supplied recommendation.
  */
 export function formatDirectionLabel(direction: string): string {
   return DIRECTION_LABELS.get(directionKey(direction)) ?? direction;

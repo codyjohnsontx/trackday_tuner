@@ -277,7 +277,7 @@ export interface SessionAnalyticsSummary {
     totalLaps: number;
     sessionsWithLaps: number;
   };
-  /** Fastest lap per circuit, most recently run first. */
+  /** Fastest lap for each vehicle at each circuit, most recently run first. */
   bestLapByTrack: AnalyticsTrackBest[];
   sessionsByVehicle: { vehicleId: string; label: string; count: number }[];
   topTracks: { trackName: string; count: number }[];
