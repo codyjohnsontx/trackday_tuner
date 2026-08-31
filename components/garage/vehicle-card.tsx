@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
+import { VehicleBaselineSetup } from '@/components/garage/vehicle-baseline-setup';
 import { VehicleBaselineSummary } from '@/components/garage/vehicle-baseline-summary';
 import type { Vehicle, VehicleBaseline } from '@/types';
 
@@ -58,7 +59,12 @@ export function VehicleCard({
           )}
         </div>
       </div>
-      <VehicleBaselineSummary baseline={baseline} locked={baselineLocked} />
+      <div>
+        <VehicleBaselineSummary baseline={baseline} locked={baselineLocked} />
+        {/* The stored snapshot itself, not just the label of the session it came
+            from - which is all any screen showed until this was here. */}
+        {baseline ? <VehicleBaselineSetup baseline={baseline} vehicleType={vehicle.type} /> : null}
+      </div>
     </li>
   );
 }
