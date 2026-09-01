@@ -424,10 +424,44 @@ describe('session export helpers', () => {
 
     expect(analytics.bestLapByTrack).toHaveLength(2);
     // Two rows a rider cannot tell apart are the same defect one row is, so the
-    // label carries what identifies the session: the day it ran and its number.
+    // label carries what identifies the session: the day it ran and its number,
+    // in the shape every other track/date/session line in the app reads in.
     expect(analytics.bestLapByTrack.map((best) => [best.trackName, best.bestLap])).toEqual([
-      ['Unnamed track · 2026-06-14 · Session 3', '1:43.980'],
-      ['Unnamed track · 2026-05-01 · Session 1', '1:44.620'],
+      ['Unknown Track · Jun 14, 2026 · Session 3', '1:43.980'],
+      ['Unknown Track · May 1, 2026 · Session 1', '1:44.620'],
+    ]);
+  });
+
+  /**
+   * `session_number` is optional at the form and `start_time` is nullable on the
+   * column, so neither can end the chain. Two trackless sessions on one day for
+   * one vehicle with both of them missing once rendered byte-identical labels,
+   * which puts the collapse back in the label after the key stopped merging the
+   * rows - a rider still could not tell which session either best lap came from.
+   */
+  it('tells two trackless sessions on the same day apart when nothing numbers them', () => {
+    const analytics = deriveSessionAnalytics(
+      ['s1', 's2'].map((id, index) => ({
+        session: session({
+          id,
+          date: '2026-05-01',
+          vehicle_id: 'bike-1',
+          session_number: null,
+          track_id: null,
+          track_name: null,
+        }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [104620 + index] }, { session_id: id }),
+      })),
+    );
+
+    expect(analytics.bestLapByTrack).toHaveLength(2);
+    const labels = analytics.bestLapByTrack.map((best) => best.trackName);
+    expect(new Set(labels).size).toBe(2);
+    expect(analytics.bestLapByTrack.map((best) => [best.trackName, best.bestLap])).toEqual([
+      ['Unknown Track · May 1, 2026 · Entry 1', '1:44.620'],
+      ['Unknown Track · May 1, 2026 · Entry 2', '1:44.621'],
     ]);
   });
 

@@ -1,4 +1,5 @@
-import { extractLapMetrics, extractLapTimes, formatLapTime } from '@/lib/session-compare';
+import { compareSessionsDesc, extractLapMetrics, extractLapTimes, formatLapTime } from '@/lib/session-compare';
+import { formatSessionDateLabel, formatSessionTimeLabel } from '@/lib/session-history';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import { trackNameKey } from '@/lib/session-track';
 import type {
@@ -300,21 +301,69 @@ export interface SessionAnalyticsSummary {
 }
 
 /** What the board calls a circuit a session named nothing for. */
-const UNNAMED_TRACK = 'Unnamed track';
+const UNNAMED_TRACK = 'Unknown Track';
 
 /**
- * What the board calls a session carrying neither a track row nor a typed name.
+ * What the board calls the sessions carrying neither a track row nor a typed
+ * name, keyed by session id.
  *
  * `sessionsMatchTrack` pairs such a session with nothing - not even another
  * session in the same state - so each one is its own board row. Two rows a
  * rider cannot tell apart merge those sessions again just as surely as one
- * shared key did, so the label carries what identifies the session everywhere
- * else in the app: the day it ran, and its number within that day.
+ * shared key did, so the label carries the day it ran plus a discriminator
+ * within that day, in the shape `baselineSourceLabel` already reads in.
+ *
+ * The first two rungs are optional columns, so the chain has to fall through to
+ * one that always exists:
+ *
+ * 1. `session_number`, which the session form leaves null when the rider skips it
+ * 2. otherwise `start_time`, which is nullable on the column as well
+ * 3. otherwise the session's place in that day, from the total order
+ *    `compareSessionsDesc` defines - it falls back to `created_at` and then
+ *    `id`, so the ordinal is the same whatever order the rows arrived in
+ *
+ * A rung is only taken when its value is unique within the group, so two
+ * sessions the rider gave the same number still read apart rather than
+ * collapsing into one label again. The group is a day on one vehicle because a
+ * board row is one vehicle at one circuit, and the panel names the vehicle
+ * whenever the garage holds more than one - so a discriminator unique there is
+ * unique on screen.
  */
-function unnamedTrackLabel(session: Session): string {
-  const parts = [UNNAMED_TRACK, session.date];
-  if (session.session_number) parts.push(`Session ${session.session_number}`);
-  return parts.join(' · ');
+function buildUnnamedTrackLabels(sessions: readonly Session[]): Map<string, string> {
+  const days = new Map<string, Session[]>();
+  for (const session of sessions) {
+    const dayKey = `${session.date}|${session.vehicle_id}`;
+    const day = days.get(dayKey);
+    if (day) day.push(session);
+    else days.set(dayKey, [session]);
+  }
+
+  const labels = new Map<string, string>();
+  for (const day of days.values()) {
+    const ordered = [...day].sort((a, b) => compareSessionsDesc(b, a));
+    const rungs = ordered.map((session) => [
+      session.session_number ? `Session ${session.session_number}` : '',
+      formatSessionTimeLabel(session.start_time),
+    ]);
+
+    const counts = new Map<string, number>();
+    for (const rung of rungs.flat()) {
+      if (rung) counts.set(rung, (counts.get(rung) ?? 0) + 1);
+    }
+
+    ordered.forEach((session, index) => {
+      // `Entry n` rather than `Session n`, so the ordinal cannot read as a
+      // number the rider gave - or collide with one another session carries.
+      const discriminator =
+        rungs[index].find((rung) => rung && counts.get(rung) === 1) ?? `Entry ${index + 1}`;
+      labels.set(
+        session.id,
+        [UNNAMED_TRACK, formatSessionDateLabel(session.date), discriminator].join(' · '),
+      );
+    });
+  }
+
+  return labels;
 }
 
 function increment(map: Map<string, number>, key: string) {
@@ -395,6 +444,10 @@ function buildSessionTrackKeys(sessions: readonly Session[]): Map<string, Resolv
     if (nameKey && !savedByName.has(nameKey)) savedByName.set(nameKey, entry);
   }
 
+  const unnamedLabels = buildUnnamedTrackLabels(
+    sessions.filter((session) => !session.track_id && !trackNameKey(session.track_name)),
+  );
+
   for (const session of sessions) {
     if (session.track_id) continue;
 
@@ -407,7 +460,7 @@ function buildSessionTrackKeys(sessions: readonly Session[]): Map<string, Resolv
       // this state now, but the rows logged before it did still exist.
       resolved.set(session.id, {
         key: `unknown:${session.id}`,
-        trackName: unnamedTrackLabel(session),
+        trackName: unnamedLabels.get(session.id) ?? UNNAMED_TRACK,
       });
       continue;
     }
