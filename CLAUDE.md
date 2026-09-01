@@ -479,6 +479,21 @@ with and without the flag and watching the cookie survive or vanish on render.
   name. `resolveDashboardHeroSubject` (`lib/dashboard-hero.ts`) returns the name and
   the session together so the two cannot be picked off different lists.
   `lib/dashboard-hero.test.ts` guards it
+- **A read whose answer decides a destructive write has to report its failure.**
+  `getSessionLaps` discarded its Supabase error, so a failed select and a session
+  with no laps were the same `[]`. The panel read that as "no laps yet" and offered
+  "Add Lap Times" on a session holding four; the rider retyping what they
+  remembered called `replace_session_laps`, which deletes the whole set before
+  inserting, so their own recovery was what lost the times. It returns
+  `ActionResult<SessionLap[]>` now and `SessionLapsPanel` takes `null` for a failed
+  read - it offers nothing that saves until the read succeeds, because a rider
+  cannot be told about this by a server log. The database holds the same line for
+  callers not yet written: `replace_session_laps` takes `p_expected_lap_count`,
+  raises SQLSTATE `TT409` when the stored count differs, and has no unguarded
+  overload left (20260901001400). The sibling readers - `getSessions`,
+  `getSessionEnvironment`, `getSessionEnvironments`, `getLatestSessionsByVehicle`,
+  `getComparableSessions` - still discard theirs; none feeds a write, so they
+  degrade a display only, and that is the line to check before copying one
 
 ## What a Rider Told You
 

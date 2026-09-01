@@ -32,6 +32,7 @@ import {
   getComparableSessions,
   getPreviousSession,
   getSessionEnvironments,
+  getSessionLaps,
   getTelemetrySummaries,
   replaceSessionLaps,
 } from '@/lib/actions/sessions';
@@ -1445,7 +1446,7 @@ describe('sessions actions', () => {
     const rpc = vi.fn();
     vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
 
-    const result = await replaceSessionLaps('session-1', []);
+    const result = await replaceSessionLaps('session-1', [], 0);
 
     expect(result).toEqual({ ok: false, error: 'snapshot failed' });
     expect(rpc).not.toHaveBeenCalled();
@@ -1460,14 +1461,98 @@ describe('sessions actions', () => {
     const rpc = vi.fn(async () => ({ data: null, error: { message: 'lap transaction failed' } }));
     vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
 
-    const result = await replaceSessionLaps('sess-1', []);
+    const result = await replaceSessionLaps('sess-1', [], 3);
 
     expect(result).toEqual({ ok: false, error: 'lap transaction failed' });
     expect(rpc).toHaveBeenCalledWith('replace_session_laps', {
       p_user_id: 'user-1',
       p_session_id: 'sess-1',
       p_laps: [],
+      p_expected_lap_count: 3,
     });
+  });
+
+
+  /**
+   * The read failing and the session holding no laps have to stay two different
+   * answers, all the way to the panel. Flattened into one they cost the rider
+   * their lap times: the panel reads an empty list as "no laps yet", offers "Add
+   * Lap Times", and the save behind it replaces the whole set. Against the code
+   * this fixes, the first of these got `[]` back and passed nothing to fail on.
+   */
+  it('reports a failed lap read instead of answering with no laps', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const from = vi.fn(() => createQuery({
+      base: { data: null, error: { message: 'permission denied for table session_laps' } },
+    }));
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await getSessionLaps('session-1');
+
+    expect(result).toEqual({ ok: false, error: 'permission denied for table session_laps' });
+  });
+
+  it('answers with no laps only when the read actually succeeded', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const from = vi.fn(() => createQuery({ base: { data: [], error: null } }));
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await getSessionLaps('session-1');
+
+    expect(result).toEqual({ ok: true, data: [] });
+  });
+
+  it('reports a lap read it cannot attribute to a rider as a failure', async () => {
+    vi.mocked(getRealUser).mockResolvedValue(null);
+
+    const result = await getSessionLaps('session-1');
+
+    expect(result).toEqual({ ok: false, error: 'Not authenticated.' });
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it('tells the rider a stale save was refused rather than repeating the database', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const sessionQuery = createQuery({ single: { data: createdSession, error: null } });
+    const from = vi.fn(() => sessionQuery);
+    const rpc = vi.fn(async () => ({
+      data: null,
+      error: { code: 'TT409', message: 'replace_session_laps stale read: 12 laps stored, caller expected 0' },
+    }));
+    vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
+
+    const result = await replaceSessionLaps('sess-1', [], 0);
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).toContain('changed since this page loaded');
+    expect(!result.ok && result.error).not.toContain('replace_session_laps');
+  });
+
+  it('tells a new session the database is holding none of its laps yet', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const trackQuery = createQuery({ single: { data: { id: 'track-1', name: 'MSR Cresson' }, error: null } });
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => trackQuery)
+      .mockImplementationOnce(() => insertQuery)
+      .mockImplementation(() =>
+        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
+      );
+    const rpc = vi.fn(async () => ({ data: null, error: null }));
+    vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
+
+    const result = await createSession({
+      ...validInput,
+      laps: [{ lap_number: 1, lap_time_ms: 90_000, included: true }],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(rpc).toHaveBeenCalledWith(
+      'replace_session_laps',
+      expect.objectContaining({ p_expected_lap_count: 0 }),
+    );
   });
 
   it('returns demo telemetry summaries without calling Supabase', async () => {

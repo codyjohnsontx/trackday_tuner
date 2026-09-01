@@ -71,11 +71,28 @@ function hasEnvironmentValues(environment: CreateSessionEnvironmentInput | null 
   });
 }
 
+/**
+ * The SQLSTATE `replace_session_laps` raises when the caller's lap count does
+ * not match what is stored - see 20260901001400. Matched on the code rather than
+ * the message so the rider-facing sentence and the database's wording can move
+ * independently.
+ */
+const SESSION_LAPS_STALE_READ_CODE = 'TT409';
+
+const SESSION_LAPS_STALE_READ_MESSAGE =
+  'The lap times on this session changed since this page loaded, so nothing was overwritten. Reload the session and try again.';
+
 async function persistSessionLaps(params: {
   supabase: Awaited<ReturnType<typeof createClient>>;
   userId: string;
   session: Session;
   laps: CreateSessionLapInput[];
+  /**
+   * How many laps the caller read before deciding on this replacement. The RPC
+   * refuses the delete when the database disagrees, so a caller that mistook a
+   * failed read for an empty session cannot replace laps it never saw.
+   */
+  expectedLapCount: number;
 }): Promise<string | null> {
   const validationError = validateLaps(params.laps);
   if (validationError) return validationError;
@@ -83,8 +100,10 @@ async function persistSessionLaps(params: {
     p_user_id: params.userId,
     p_session_id: params.session.id,
     p_laps: params.laps as unknown as Json,
+    p_expected_lap_count: params.expectedLapCount,
   });
-  return error?.message ?? null;
+  if (!error) return null;
+  return error.code === SESSION_LAPS_STALE_READ_CODE ? SESSION_LAPS_STALE_READ_MESSAGE : error.message;
 }
 
 /**
@@ -375,46 +394,67 @@ export async function getTelemetrySummaries(sessionIds: string[]): Promise<Telem
   return (data ?? []) as TelemetrySummary[];
 }
 
-export async function getSessionLaps(sessionId: string): Promise<SessionLap[]> {
+/**
+ * The rider's laps for a session, or the reason they could not be read.
+ *
+ * The two answers have to stay distinguishable all the way to the panel, which
+ * is why this reports a failure instead of returning an empty list. An empty
+ * list is a claim - "this session holds no laps" - and `SessionLapsPanel` acts
+ * on it by offering "Add Lap Times". The save behind that button calls
+ * `replace_session_laps`, which deletes every lap on the session before
+ * inserting and has no minimum in `validateLaps`, so a rider who believed the
+ * claim and retyped what they remembered destroyed the rest of their times. The
+ * read failing was the only thing that ever went wrong; the rider's own
+ * recovery was what lost the data.
+ *
+ * Logging the error is not the fix and was never enough on its own - a server
+ * log does not reach the rider standing in front of an empty editor - so the
+ * failure is a value the caller has to handle. It is logged as well, because
+ * the operator wants to know the read is failing at all.
+ */
+export async function getSessionLaps(sessionId: string): Promise<ActionResult<SessionLap[]>> {
   if (await isDemoMode()) {
     const summary = getDemoTelemetrySummaries([sessionId])[0];
     const times = summary?.metrics.lap_times_ms ?? [];
-    return times.map((lapTime, index) => ({
-      id: `demo-lap-${sessionId}-${index + 1}`,
-      user_id: '00000000-0000-0000-0000-000000000001',
-      session_id: sessionId,
-      lap_number: index + 1,
-      lap_time_ms: lapTime,
-      included: true,
-      source: 'manual',
-      created_at: new Date(0).toISOString(),
-      updated_at: new Date(0).toISOString(),
-    }));
+    return {
+      ok: true,
+      data: times.map((lapTime, index) => ({
+        id: `demo-lap-${sessionId}-${index + 1}`,
+        user_id: '00000000-0000-0000-0000-000000000001',
+        session_id: sessionId,
+        lap_number: index + 1,
+        lap_time_ms: lapTime,
+        included: true,
+        source: 'manual',
+        created_at: new Date(0).toISOString(),
+        updated_at: new Date(0).toISOString(),
+      })),
+    };
   }
 
   const user = await getRealUser();
-  if (!user) return [];
+  // Not "this session has no laps": with no rider there is nobody whose laps
+  // these are, and answering with an empty list would put the panel back in
+  // front of the destructive save. Every unknown resolves the same way here.
+  if (!user) return { ok: false, error: 'Not authenticated.' };
   const supabase = await createClient();
-  // Known gap, and a data-loss one rather than a display nit: this read
-  // discards its error, so a failed select returns `[]`, which is
-  // indistinguishable from a session with no laps. The detail page hands that
-  // to `SessionLapsPanel`, which sees no saved laps and offers "Add Lap Times",
-  // telling the rider the session holds none. Re-entering them calls
-  // `replaceSessionLaps`, and the `replace_session_laps` RPC behind it deletes
-  // every lap on the session before inserting, with no minimum in
-  // `validateLaps` - so the rider's own recovery is what destroys the rows.
-  // Logging alone would not fix it, because a server log never reaches the
-  // rider looking at an empty editor. Deliberately deferred rather than
-  // unnoticed: the `telemetry_summaries` sibling directly above was closed here
-  // because it only under-reports a number, while this one loses data.
-  // Tracked as https://github.com/codyjohnsontx/trackday_tuner/issues/58.
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('session_laps')
     .select('*')
     .eq('user_id', user.id)
     .eq('session_id', sessionId)
     .order('lap_number');
-  return (data ?? []) as SessionLap[];
+
+  if (error) {
+    console.error('[sessions] session-laps query failed', {
+      userId: user.id,
+      sessionId,
+      error: error.message,
+    });
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true, data: (data ?? []) as SessionLap[] };
 }
 
 /** Which track row a session belongs to, and the name stored alongside it. */
@@ -697,6 +737,9 @@ export async function createSession(
     userId: user.id,
     session: createdSession,
     laps: input.laps ?? [],
+    // The session row was inserted two statements ago, so nothing can be holding
+    // laps against it yet.
+    expectedLapCount: 0,
   });
   if (lapError) {
     await rollbackCreatedSession({
@@ -839,10 +882,24 @@ export async function createSession(
   return { ok: true, data: createdSession };
 }
 
+/**
+ * Replace a session's laps with the set the rider is looking at.
+ *
+ * `expectedLapCount` is how many laps the caller read before the rider edited
+ * them. It is passed through to `replace_session_laps`, which refuses the delete
+ * when the stored count differs, so a save built on a read that failed - or on a
+ * page another tab has already saved over - cannot overwrite laps the caller
+ * never saw. See `getSessionLaps` for how that read is now reported.
+ *
+ * Nothing is returned but success: the caller already holds the laps it just
+ * sent, and reading them back would only add a second read that can fail after
+ * the write is committed.
+ */
 export async function replaceSessionLaps(
   sessionId: string,
   laps: CreateSessionLapInput[],
-): Promise<ActionResult<SessionLap[]>> {
+  expectedLapCount: number,
+): Promise<ActionResult> {
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
   const validationError = validateLaps(laps);
@@ -866,12 +923,12 @@ export async function replaceSessionLaps(
     userId: user.id,
     session: sessionRow as Session,
     laps,
+    expectedLapCount,
   });
   if (persistError) return { ok: false, error: persistError };
 
   revalidatePath(`/sessions/${sessionId}`);
-  const updated = await getSessionLaps(sessionId);
-  return { ok: true, data: updated };
+  return { ok: true, data: undefined };
 }
 
 export async function deleteSession(id: string): Promise<ActionResult> {
