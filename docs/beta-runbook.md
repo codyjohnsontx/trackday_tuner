@@ -27,6 +27,17 @@
    --linked` once after `supabase link` is what creates `vehicle-photos`. Without
    it, adding a vehicle with a photo fails with "Photo upload failed: Bucket not
    found". See "Local Run" in README.md.
+   `20260901001400` closes the tail, and it is the one migration in that list
+   with a **deploy-ordering requirement**: it changes the signature of
+   `replace_session_laps`, so apply it *before* the release that calls it goes
+   live. Migrations here are applied by hand while Vercel deploys on merge, so on
+   an existing deployment that means applying it before merging the pull request.
+   Either order leaves a window and both were walked in a browser: the mismatched
+   call gets `PGRST202` from PostgREST, the message reaches the rider, nothing is
+   saved and nothing stored is lost. Saving laps *and* logging a session are both
+   down for that window - `createSession` calls the function even for a session
+   with no laps - while reading is unaffected. The migration's own header carries
+   the detail.
 2. Set `BETA_INVITE_ONLY=true`, a long random `BETA_INVITE_SECRET`, and a distinct
    `BETA_FORM_RATE_LIMIT_SECRET` in the deployment environment.
 3. Deploy and verify the public home page, waitlist, invitation signup, session

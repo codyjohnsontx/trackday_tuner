@@ -19,6 +19,29 @@
 -- edited: everything below is the body it holds, plus the guard and the
 -- `stored_lap_count` it needs. `drop function` takes the function's privileges
 -- with it, so the revoke/grant pair is restated here.
+--
+-- APPLY THIS MIGRATION BEFORE MERGING THE PULL REQUEST THAT SHIPS ITS CALLER.
+-- Dropping the overload means the signature changes, and migrations are applied
+-- by hand here while Vercel deploys on merge - so the merge is the moment the
+-- new code goes live and the migration is the step that has to already be done.
+-- Either order leaves a window, and both were walked in a browser against a
+-- rebuilt stack rather than reasoned about:
+--
+--   migration first, old code still live -> PostgREST answers PGRST202 for
+--     `replace_session_laps(p_laps, p_session_id, p_user_id)`
+--   deploy first, migration not yet applied -> the same for
+--     `(p_expected_lap_count, p_laps, p_session_id, p_user_id)`
+--
+-- Both fail LOUDLY and identically: the message is rendered to the rider, no
+-- "Lap data saved." appears, the stored laps survive untouched, and a new
+-- session rolls back with no half-written row and no orphan track. The window is
+-- a visible outage on saving, not a silent one - which matters here, because a
+-- save that appears to work while dropping data is the class of bug this whole
+-- migration exists to close.
+--
+-- The window covers LOGGING A SESSION as well as saving laps: `createSession`
+-- calls this function on every save, including a session with no laps at all.
+-- Reading a session, and every other screen, is unaffected.
 
 drop function if exists public.replace_session_laps(uuid, uuid, jsonb);
 
