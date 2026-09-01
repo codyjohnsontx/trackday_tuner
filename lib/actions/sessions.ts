@@ -353,11 +353,24 @@ export async function getTelemetrySummaries(sessionIds: string[]): Promise<Telem
   if (!user) return [];
 
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('telemetry_summaries')
     .select('*')
     .eq('user_id', user.id)
     .in('session_id', sessionIds);
+
+  if (error) {
+    // A discarded read renders as `Laps 0`, `lap times 0 (0%)` and "No lap
+    // times logged yet." on the Pro analytics panel - exactly what a rider who
+    // logged no laps sees - so nobody can tell a failed read from an empty one
+    // unless it says so here. Returning the empty list rather than throwing
+    // keeps the rest of the page, which does not depend on laps, on screen.
+    console.error('[sessions] telemetry-summaries query failed', {
+      userId: user.id,
+      sessionCount: sessionIds.length,
+      error: error.message,
+    });
+  }
 
   return (data ?? []) as TelemetrySummary[];
 }
@@ -382,6 +395,19 @@ export async function getSessionLaps(sessionId: string): Promise<SessionLap[]> {
   const user = await getRealUser();
   if (!user) return [];
   const supabase = await createClient();
+  // Known gap, and a data-loss one rather than a display nit: this read
+  // discards its error, so a failed select returns `[]`, which is
+  // indistinguishable from a session with no laps. The detail page hands that
+  // to `SessionLapsPanel`, which sees no saved laps and offers "Add Lap Times",
+  // telling the rider the session holds none. Re-entering them calls
+  // `replaceSessionLaps`, and the `replace_session_laps` RPC behind it deletes
+  // every lap on the session before inserting, with no minimum in
+  // `validateLaps` - so the rider's own recovery is what destroys the rows.
+  // Logging alone would not fix it, because a server log never reaches the
+  // rider looking at an empty editor. Deliberately deferred rather than
+  // unnoticed: the `telemetry_summaries` sibling directly above was closed here
+  // because it only under-reports a number, while this one loses data.
+  // Tracked as https://github.com/codyjohnsontx/trackday_tuner/issues/58.
   const { data } = await supabase
     .from('session_laps')
     .select('*')

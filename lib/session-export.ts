@@ -1,4 +1,5 @@
-import { extractLapMetrics, extractLapTimes, formatLapTime } from '@/lib/session-compare';
+import { compareSessionsDesc, extractLapMetrics, extractLapTimes, formatLapTime } from '@/lib/session-compare';
+import { formatSessionDateLabel, formatSessionTimeLabel } from '@/lib/session-history';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import { trackNameKey } from '@/lib/session-track';
 import type {
@@ -277,7 +278,11 @@ export interface SessionAnalyticsSummary {
     totalLaps: number;
     sessionsWithLaps: number;
   };
-  /** Fastest lap for each vehicle at each circuit, most recently run first. */
+  /**
+   * Fastest lap for each vehicle at each circuit, most recently run first, and
+   * uncapped - the panel renders the whole list, so what is on screen is what
+   * the rider has.
+   */
   bestLapByTrack: AnalyticsTrackBest[];
   sessionsByVehicle: { vehicleId: string; label: string; count: number }[];
   topTracks: { trackName: string; count: number }[];
@@ -296,7 +301,70 @@ export interface SessionAnalyticsSummary {
 }
 
 /** What the board calls a circuit a session named nothing for. */
-const UNNAMED_TRACK = 'Unnamed track';
+const UNNAMED_TRACK = 'Unknown Track';
+
+/**
+ * What the board calls the sessions carrying neither a track row nor a typed
+ * name, keyed by session id.
+ *
+ * `sessionsMatchTrack` pairs such a session with nothing - not even another
+ * session in the same state - so each one is its own board row. Two rows a
+ * rider cannot tell apart merge those sessions again just as surely as one
+ * shared key did, so the label carries the day it ran plus a discriminator
+ * within that day, in the shape `baselineSourceLabel` already reads in.
+ *
+ * The first two rungs are optional columns, so the chain has to fall through to
+ * one that always exists:
+ *
+ * 1. `session_number`, which the session form leaves null when the rider skips it
+ * 2. otherwise `start_time`, which is nullable on the column as well
+ * 3. otherwise the session's place in that day, from the total order
+ *    `compareSessionsDesc` defines - it falls back to `created_at` and then
+ *    `id`, so the ordinal is the same whatever order the rows arrived in
+ *
+ * A rung is only taken when its value is unique within the group, so two
+ * sessions the rider gave the same number still read apart rather than
+ * collapsing into one label again. The group is a day on one vehicle because a
+ * board row is one vehicle at one circuit, and the panel names the vehicle
+ * whenever the garage holds more than one - so a discriminator unique there is
+ * unique on screen.
+ */
+function buildUnnamedTrackLabels(sessions: readonly Session[]): Map<string, string> {
+  const days = new Map<string, Session[]>();
+  for (const session of sessions) {
+    const dayKey = `${session.date}|${session.vehicle_id}`;
+    const day = days.get(dayKey);
+    if (day) day.push(session);
+    else days.set(dayKey, [session]);
+  }
+
+  const labels = new Map<string, string>();
+  for (const day of days.values()) {
+    const ordered = [...day].sort((a, b) => compareSessionsDesc(b, a));
+    const rungs = ordered.map((session) => [
+      session.session_number ? `Session ${session.session_number}` : '',
+      formatSessionTimeLabel(session.start_time),
+    ]);
+
+    const counts = new Map<string, number>();
+    for (const rung of rungs.flat()) {
+      if (rung) counts.set(rung, (counts.get(rung) ?? 0) + 1);
+    }
+
+    ordered.forEach((session, index) => {
+      // `Entry n` rather than `Session n`, so the ordinal cannot read as a
+      // number the rider gave - or collide with one another session carries.
+      const discriminator =
+        rungs[index].find((rung) => rung && counts.get(rung) === 1) ?? `Entry ${index + 1}`;
+      labels.set(
+        session.id,
+        [UNNAMED_TRACK, formatSessionDateLabel(session.date), discriminator].join(' · '),
+      );
+    });
+  }
+
+  return labels;
+}
 
 function increment(map: Map<string, number>, key: string) {
   map.set(key, (map.get(key) ?? 0) + 1);
@@ -376,12 +444,24 @@ function buildSessionTrackKeys(sessions: readonly Session[]): Map<string, Resolv
     if (nameKey && !savedByName.has(nameKey)) savedByName.set(nameKey, entry);
   }
 
+  const unnamedLabels = buildUnnamedTrackLabels(
+    sessions.filter((session) => !session.track_id && !trackNameKey(session.track_name)),
+  );
+
   for (const session of sessions) {
     if (session.track_id) continue;
 
     const nameKey = trackNameKey(session.track_name);
     if (!nameKey) {
-      resolved.set(session.id, { key: 'unknown', trackName: UNNAMED_TRACK });
+      // Nothing links this session to another, so it gets a key of its own.
+      // Every one of them once shared the key `unknown`, which put separate
+      // track days on one board row: only the fastest survived, and the row
+      // named a circuit the rider had never been to. `createSession` refuses
+      // this state now, but the rows logged before it did still exist.
+      resolved.set(session.id, {
+        key: `unknown:${session.id}`,
+        trackName: unnamedLabels.get(session.id) ?? UNNAMED_TRACK,
+      });
       continue;
     }
 
@@ -498,13 +578,18 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
   return {
     totalSessions: inputs.length,
     laps: { totalLaps, sessionsWithLaps },
+    // Every pair, not the newest few. This board is the only place a personal
+    // best appears, and a list cut short with nothing on screen saying so reads
+    // as the whole set - a rider lapping an eighth circuit silently lost the
+    // three they had ridden least recently. Raising the cap moves that cliff
+    // rather than removing it, so there is none; the ordering below already
+    // puts the most recent pair first.
     bestLapByTrack: [...trackBests.values()]
       .map((best) => ({ ...best, lastRunDate: lastRunByBoardRow.get(best.key) ?? best.lastRunDate }))
       .sort((a, b) => {
         if (a.lastRunDate !== b.lastRunDate) return a.lastRunDate < b.lastRunDate ? 1 : -1;
         return a.trackName.localeCompare(b.trackName) || a.vehicleLabel.localeCompare(b.vehicleLabel);
-      })
-      .slice(0, 5),
+      }),
     sessionsByVehicle: [...byVehicle.entries()]
       .map(([vehicleId, count]) => ({ vehicleId, label: vehicleLabels.get(vehicleId) ?? 'Unknown Vehicle', count }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
@@ -528,6 +613,13 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
         first: values[0],
         latest: values[values.length - 1],
       }))
+      // Known silent cap, the same shape as the best-lap board cap removed
+      // above: a list cut short with nothing on screen saying so reads as the
+      // whole set. Each vehicle contributes a front row and a rear row, so a
+      // rider with a fourth bike loses rows here without being told. It costs
+      // them a partial chart rather than any stored data, which is why it is
+      // recorded here rather than fixed - it was not one of the three defects
+      // this change was scoped to.
       .slice(0, 6),
     environmentSnapshots: {
       withEnvironment,

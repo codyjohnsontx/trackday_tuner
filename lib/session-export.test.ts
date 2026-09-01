@@ -352,6 +352,119 @@ describe('session export helpers', () => {
     expect(analytics.bestLapByTrack[0]).toMatchObject({ trackName: 'Road America', bestLap: '1:43.500' });
   });
 
+  /**
+   * The board is the only place these personal bests appear, and a capped list
+   * rendered with no notice reads as the whole set - a rider with laps at seven
+   * vehicle/circuit pairs saw five and had no way to tell. It once ended in
+   * `.slice(0, 5)`, which hid the two oldest pairs; raising that number moves
+   * the cliff rather than removing it, so there is no cap at all.
+   */
+  it('returns a board row for every vehicle/circuit pair the rider has lapped', () => {
+    const pairs = [1, 2, 3, 4, 5, 6, 7];
+    const analytics = deriveSessionAnalytics(
+      pairs.map((n) => ({
+        session: session({
+          id: `s${n}`,
+          date: `2026-05-0${n}`,
+          track_id: `track-${n}`,
+          track_name: `Circuit ${n}`,
+        }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [100000 + n] }, { session_id: `s${n}` }),
+      })),
+    );
+
+    expect(analytics.bestLapByTrack).toHaveLength(pairs.length);
+    expect(analytics.bestLapByTrack.map((best) => best.trackName)).toEqual([
+      'Circuit 7',
+      'Circuit 6',
+      'Circuit 5',
+      'Circuit 4',
+      'Circuit 3',
+      'Circuit 2',
+      'Circuit 1',
+    ]);
+  });
+
+  /**
+   * `sessionsMatchTrack` pairs a session carrying neither a track row nor a
+   * typed name with nothing - not even another session in the same state - so
+   * the board must not either. Every one of them once shared the key `unknown`,
+   * which merged genuinely separate track days into one row: only the fastest
+   * survived, and the row named a circuit the rider had never been to.
+   */
+  it('keeps each trackless session its own board row', () => {
+    const analytics = deriveSessionAnalytics([
+      {
+        session: session({
+          id: 's1',
+          date: '2026-05-01',
+          session_number: 1,
+          track_id: null,
+          track_name: null,
+        }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [104620] }),
+      },
+      {
+        session: session({
+          id: 's2',
+          date: '2026-06-14',
+          session_number: 3,
+          track_id: null,
+          track_name: null,
+        }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [103980] }, { session_id: 's2' }),
+      },
+    ]);
+
+    expect(analytics.bestLapByTrack).toHaveLength(2);
+    // Two rows a rider cannot tell apart are the same defect one row is, so the
+    // label carries what identifies the session: the day it ran and its number,
+    // in the shape every other track/date/session line in the app reads in.
+    expect(analytics.bestLapByTrack.map((best) => [best.trackName, best.bestLap])).toEqual([
+      ['Unknown Track · Jun 14, 2026 · Session 3', '1:43.980'],
+      ['Unknown Track · May 1, 2026 · Session 1', '1:44.620'],
+    ]);
+  });
+
+  /**
+   * `session_number` is optional at the form and `start_time` is nullable on the
+   * column, so neither can end the chain. Two trackless sessions on one day for
+   * one vehicle with both of them missing once rendered byte-identical labels,
+   * which puts the collapse back in the label after the key stopped merging the
+   * rows - a rider still could not tell which session either best lap came from.
+   */
+  it('tells two trackless sessions on the same day apart when nothing numbers them', () => {
+    const analytics = deriveSessionAnalytics(
+      ['s1', 's2'].map((id, index) => ({
+        session: session({
+          id,
+          date: '2026-05-01',
+          vehicle_id: 'bike-1',
+          session_number: null,
+          track_id: null,
+          track_name: null,
+        }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [104620 + index] }, { session_id: id }),
+      })),
+    );
+
+    expect(analytics.bestLapByTrack).toHaveLength(2);
+    const labels = analytics.bestLapByTrack.map((best) => best.trackName);
+    expect(new Set(labels).size).toBe(2);
+    expect(analytics.bestLapByTrack.map((best) => [best.trackName, best.bestLap])).toEqual([
+      ['Unknown Track · May 1, 2026 · Entry 1', '1:44.620'],
+      ['Unknown Track · May 1, 2026 · Entry 2', '1:44.621'],
+    ]);
+  });
+
   it('exports the lap columns the rider logged', () => {
     const row = flattenSessionForExport({
       session: session(),

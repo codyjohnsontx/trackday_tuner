@@ -32,12 +32,21 @@ function CountList({
   emptyMessage?: string;
 }) {
   return (
-    <CardGroup eyebrow={title}>
+    // `min-w-0`: a grid item sizes to its content by default, so without it a
+    // long row makes this section wider than its track and the whole page
+    // scrolls sideways on a phone. A circuit name beside a vehicle nickname is
+    // enough to do it, and the row can only wrap once the section can shrink.
+    <CardGroup eyebrow={title} className="min-w-0">
       {items.length > 0 ? (
         <div className="divide-y divide-white/5 rounded-row bg-surface-2 px-4">
           {items.map((item) => (
             <div key={item.id ?? `${item.label}-${item.detail}`} className="flex justify-between gap-3 py-2.5">
-              <span className="min-w-0 truncate text-sm text-ink-dim">{item.label}</span>
+              {/* Wraps rather than truncating. A row's label is what says which
+                  circuit, vehicle and - for a session that named no track -
+                  which day and session it is, so an ellipsis through it hides
+                  the very thing that tells two rows apart. Nothing here is
+                  pressable, so a second line costs only height. */}
+              <span className="min-w-0 break-words text-sm text-ink-dim">{item.label}</span>
               <span className="shrink-0 text-sm font-medium text-ink">{item.detail}</span>
             </div>
           ))}
