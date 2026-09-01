@@ -85,6 +85,16 @@ anon key and no `BETA_INVITE_ONLY`. Its second half is a different subject - tha
 a tap at the middle of "Save Session" reaches the button rather than the floating
 nav - and drives the shared account like everything else, so that half also skips
 without `E2E_EMAIL` and `E2E_PASSWORD`.
+`tests/e2e/session-laps-stale-read-guard.spec.ts` makes one through the admin API
+as well. `replace_session_laps` is `security invoker` and checks `auth.uid()`, so
+its calls have to carry a real session, and the laps it plants must not land in
+the shared account other specs read. It needs the service-role key and
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`, no `E2E_EMAIL`, `E2E_PASSWORD` or
+`BETA_INVITE_ONLY`, and a running app only for its last test - the one thing here
+a browser has to settle, that clearing every lap in the editor asks first. It is
+also the one spec that needs a particular migration applied: the guard its other
+five tests assert is `20260901001400`, so a stack rebuilt without it fails the
+spec rather than skipping it.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a
