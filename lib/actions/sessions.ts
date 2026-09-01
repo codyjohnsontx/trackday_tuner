@@ -28,8 +28,10 @@ import { resolveUserAccess } from '@/lib/access';
 import { validateLaps } from '@/lib/lap-times';
 import { MISSING_CONDITIONS_MESSAGE, isSessionCondition } from '@/lib/session-answers';
 import {
+  MISSING_TRACK_MESSAGE,
   TRACK_NAME_MATCH_LIMIT,
   findSavedTrackByName,
+  hasTrackName,
   normalizeTrackName,
   trackNameExactPattern,
   trackNameSearchPattern,
@@ -596,6 +598,16 @@ export async function createSession(
   // with whatever the form happened to open with. See lib/session-answers.ts.
   if (!isSessionCondition(input.conditions)) return { ok: false, error: MISSING_CONDITIONS_MESSAGE };
 
+  // Track is checked here as well as on the form, and checked on the payload
+  // rather than after resolution, so a refusal happens before anything is
+  // written: `resolveSessionTrack` inserts a track row, and refusing after it
+  // would spend one of a free rider's three custom-track slots on a session that
+  // was never saved. A payload naming neither an id nor a name cannot resolve to
+  // a circuit, so nothing later can rescue it. See lib/session-track.ts.
+  if (!input.track_id && !hasTrackName(input.track_name)) {
+    return { ok: false, error: MISSING_TRACK_MESSAGE };
+  }
+
   const profile = await getUserProfile();
   const hasProAccess = resolveUserAccess(profile).hasProAccess;
   if (!hasProAccess) {
@@ -613,6 +625,16 @@ export async function createSession(
   }
 
   const track = await resolveSessionTrack(supabase, user.id, hasProAccess, input.track_id, input.track_name);
+
+  // A `track_id` the rider cannot see resolves to nothing, and with no typed name
+  // beside it the session would still store no circuit. Rolling the auto-created
+  // row back is unnecessary here - a resolution that created one always carries
+  // its name - but it is called anyway so this guard cannot start leaking rows if
+  // resolution changes.
+  if (!track.trackName) {
+    await rollbackAutoCreatedTrack(supabase, user.id, track);
+    return { ok: false, error: MISSING_TRACK_MESSAGE };
+  }
 
   const payload: TableInsert<'sessions'> = {
     user_id: user.id,

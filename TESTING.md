@@ -47,10 +47,11 @@ from `tests/e2e/helpers/run-id.ts`, and scope the spec's cleanup to it.
 That account also has to be on the **Pro** tier. These specs create a vehicle, a
 custom track and sessions per run across parallel device projects, and every
 free-plan cap in `lib/plans.ts` sits below what six projects need at once. Each
-one fails a spec for a reason that has nothing to do with what is under test: the
-vehicle and session caps refuse the save outright, and at the track cap
-resolution falls back to a name-only session, so the `track_id` and track-row
-assertions fail.
+one fails a spec for a reason that has nothing to do with what is under test: at
+the vehicle and session caps `/garage/new` and `/sessions/new` serve
+`PlanLimitNotice` instead of the form, so the spec times out looking for a field
+that was never rendered, and at the track cap resolution falls back to a
+name-only session, so the `track_id` and track-row assertions fail.
 `tests/e2e/signup-creates-profile.spec.ts` and
 `tests/e2e/vehicle-photo-upload.spec.ts` stand outside both of those, because each
 signs up its own throwaway rider rather than using that account. Both need
@@ -76,6 +77,14 @@ is what makes it runnable against any stack, including the hosted project after
 the grants block in `docs/beta-runbook.md` has been applied there. Playwright
 still starts `next dev` for it unless `PW_SKIP_WEBSERVER=1` is set, which is why
 the runbook's command sets it.
+`tests/e2e/plan-limit-gate.spec.ts` makes one too, for the opposite reason to all
+of them: what it tests is a rider the free-plan caps can reach, which the Pro
+account never is. That rider is created through the admin API and seeded to the
+session limit, so the spec needs the service-role key and a running app, but no
+anon key and no `BETA_INVITE_ONLY`. Its second half is a different subject - that
+a tap at the middle of "Save Session" reaches the button rather than the floating
+nav - and drives the shared account like everything else, so that half also skips
+without `E2E_EMAIL` and `E2E_PASSWORD`.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a

@@ -26,6 +26,7 @@ import {
 } from '@/lib/session-answers';
 import { trackProductEvent } from '@/lib/product-events.client';
 import { copyLastSessionSetup } from '@/lib/session-copy';
+import { MISSING_TRACK_MESSAGE, hasTrackName, normalizeTrackName } from '@/lib/session-track';
 import {
   getAvailableSessionModules,
   getDefaultAdvancedVisibility,
@@ -170,7 +171,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
-  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const trackInputRef = useRef<HTMLInputElement>(null);
   const hydratedRef = useRef(false);
   const formOpenedAtRef = useRef(Date.now());
   const previousEnabledModulesRef = useRef<Pick<SessionEnabledModules, 'geometry' | 'drivetrain' | 'aero'> | null>(
@@ -184,6 +185,10 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const [trackQuery, setTrackQuery] = useState('');
   const [trackId, setTrackId] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
+  // Which suggestion the arrow keys have travelled to. Focus stays in the input
+  // the whole time and this index becomes `aria-activedescendant`, which is what
+  // a screen reader follows - see the combobox notes on the field below.
+  const [activeTrackIndex, setActiveTrackIndex] = useState<number | null>(null);
   // Seeded on mount rather than at render, because the rider's calendar day is
   // only knowable in their browser: SSR would stamp the server's day (UTC in
   // production) into the markup and hydrate over it. See lib/local-date.ts.
@@ -239,17 +244,24 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     return tracks.filter((track) => track.name.toLowerCase().includes(query));
   }, [tracks, trackQuery]);
 
+  // The listbox stays in the document so `aria-controls` resolves to something;
+  // this is what `hidden` reads, and an empty list stays closed because there is
+  // nothing in it to announce or arrow to.
+  const trackListOpen = showDropdown && filteredTracks.length > 0;
+  const activeTrackOptionId =
+    trackListOpen && activeTrackIndex !== null ? `session-track-option-${activeTrackIndex}` : undefined;
+
+  useEffect(() => {
+    // The list scrolls at max-h-48, so a highlight the rider cannot see is the
+    // same dead end for them as no highlight at all.
+    if (!activeTrackOptionId) return;
+    document.getElementById(activeTrackOptionId)?.scrollIntoView({ block: 'nearest' });
+  }, [activeTrackOptionId]);
+
   useEffect(() => {
     setEnabledModules((current) => sanitizeEnabledModules(selectedVehicleType, current));
     setShowAdvancedModules((current) => sanitizeAdvancedVisibility(selectedVehicleType, current));
   }, [selectedVehicleType]);
-
-  useEffect(
-    () => () => {
-      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
-    },
-    [],
-  );
 
   useEffect(() => {
     const draft = loadDraft<SessionDraft>(sessionDraftKey);
@@ -377,12 +389,77 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setTrackQuery(track.name);
     setTrackId(track.id);
     setShowDropdown(false);
+    setActiveTrackIndex(null);
   }
 
   function handleTrackInputChange(value: string) {
     setTrackQuery(value);
     setTrackId(null);
     setShowDropdown(true);
+    // The filtered list is about to change under it, so the old index would
+    // highlight a different circuit than the one it was pointing at.
+    setActiveTrackIndex(null);
+  }
+
+  function closeTrackList() {
+    setShowDropdown(false);
+    setActiveTrackIndex(null);
+  }
+
+  /**
+   * The keyboard half of the picker.
+   *
+   * Selection used to be bound to `onMouseDown` alone, so Arrow and Enter did
+   * nothing and the only way to reach a saved circuit was to point at it. Track
+   * is required, and `track_id` is what links a session to a saved track row and
+   * what `sessionsMatchTrack` pairs two sessions on when both carry one
+   * (lib/session-compare.ts), so a rider who cannot use a mouse could only ever
+   * store the name they typed. See lib/session-track.ts.
+   */
+  function handleTrackKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    // Keydown during an IME composition still reports the real key, so without
+    // this a rider composing a non-Latin circuit name loses Arrow and Enter to
+    // the picker instead of moving through their candidate list.
+    if (event.nativeEvent.isComposing) return;
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (filteredTracks.length === 0) return;
+      // Otherwise the caret jumps to the end of the typed name instead.
+      event.preventDefault();
+
+      const last = filteredTracks.length - 1;
+      const fromClosed = event.key === 'ArrowDown' ? 0 : last;
+      if (!trackListOpen) {
+        // Arrowing reopens a list Escape dismissed, on its first circuit.
+        setShowDropdown(true);
+        setActiveTrackIndex(fromClosed);
+        return;
+      }
+
+      setActiveTrackIndex((current) => {
+        if (current === null) return fromClosed;
+        const next = event.key === 'ArrowDown' ? current + 1 : current - 1;
+        if (next < 0) return last;
+        return next > last ? 0 : next;
+      });
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      // Only when a circuit is actually highlighted. With the list closed, or
+      // open on nothing, Enter still submits the form the way it always did.
+      if (!trackListOpen || activeTrackIndex === null) return;
+      event.preventDefault();
+      handleTrackSelect(filteredTracks[activeTrackIndex]);
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      if (!trackListOpen) return;
+      // Dismisses the list without discarding what the rider typed.
+      event.preventDefault();
+      closeTrackList();
+    }
   }
 
   function handleSessionNumberChange(value: string) {
@@ -491,6 +568,17 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       return;
     }
 
+    // Track sits between Vehicle and Date on the form and matters as much as
+    // either: it is what one session is matched to another by, so a session saved
+    // without it reads as "Unknown Track" in every list and turns every
+    // comparison against it into a flagged track mismatch, none of which the save
+    // says. See lib/session-track.ts.
+    if (!hasTrackName(trackQuery)) {
+      setErrorMessage(MISSING_TRACK_MESSAGE);
+      trackInputRef.current?.focus();
+      return;
+    }
+
     if (!date) {
       setErrorMessage('Please enter a date.');
       return;
@@ -565,7 +653,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       const result = await createSession({
         vehicle_id: vehicleId,
         track_id: trackId,
-        track_name: trackQuery.trim() || null,
+        track_name: normalizeTrackName(trackQuery),
         date,
         start_time: startTime || null,
         session_number: parsedSessionNumber,
@@ -609,13 +697,16 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
         });
       }
       setSaved(true);
-      // Hold the confirmed checkmark briefly before leaving the form. Tracked so
-      // it can be cancelled on unmount and never fire a redirect after teardown.
-      redirectTimerRef.current = setTimeout(() => {
-        redirectTimerRef.current = null;
-        router.push(`/sessions/${result.data.id}`);
-        router.refresh();
-      }, 700);
+      // Leave immediately rather than holding a cosmetic pause first. The save
+      // re-renders the route this form was called from, and the session that
+      // fills the free plan's last slot makes /sessions/new answer with the
+      // limit notice instead of the form - which unmounts this component and
+      // cancelled the pending redirect, stranding the rider on "Session limit
+      // reached" over a session that had saved perfectly well. Reproduced on the
+      // 10th save before the gate was added to that route. The button keeps its
+      // confirmed state while the destination loads.
+      router.push(`/sessions/${result.data.id}`);
+      router.refresh();
     });
   }
 
@@ -662,35 +753,76 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
           <label htmlFor="session-track" className="block text-sm font-medium text-ink-dim">
             Track
           </label>
+          {/*
+            An ARIA 1.2 combobox: the input keeps focus and owns the keyboard,
+            and the highlight travels by `aria-activedescendant` rather than by
+            moving focus into the list. That is also why the list holds no
+            focusable control - a <button> in here is what used to swallow Tab,
+            because reaching it fired the input's blur and the list unmounted
+            from under the focus that was landing on it, leaving <body> focused.
+          */}
           <input
             id="session-track"
+            ref={trackInputRef}
             type="text"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls="session-track-listbox"
+            aria-expanded={trackListOpen}
+            aria-activedescendant={activeTrackOptionId}
             className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
             placeholder="Search or type a track name"
             value={trackQuery}
+            // `required` refuses an empty field in the browser, the way Vehicle
+            // and Date already do; the submit handler still checks, because
+            // `required` counts a space as filled and a session named " " is the
+            // same trackless session. See lib/session-track.ts.
+            required
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
             onChange={(event) => handleTrackInputChange(event.target.value)}
             onFocus={() => setShowDropdown(true)}
-            onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+            // Focus never leaves the input, so after picking a circuit a second
+            // click on the field fires no focus event and `onFocus` alone would
+            // leave the list shut. A pointer click in the textbox opens the
+            // popup, which is what the combobox pattern asks for anyway.
+            onClick={() => setShowDropdown(true)}
+            onKeyDown={handleTrackKeyDown}
+            onBlur={closeTrackList}
           />
-          {showDropdown && filteredTracks.length > 0 ? (
-            <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-row bg-surface-2 shadow-lg">
-              {filteredTracks.map((track) => (
-                <li key={track.id}>
-                  <button
-                    type="button"
-                    className="min-h-11 w-full px-3 py-3 text-left text-sm text-ink hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-signal/80"
-                    onMouseDown={() => handleTrackSelect(track)}
-                  >
-                    <span className="font-medium">{track.name}</span>
-                    {track.location ? <span className="ml-1 text-ink-faint">{track.location}</span> : null}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <ul
+            id="session-track-listbox"
+            role="listbox"
+            aria-label="Saved tracks"
+            // Closed by `hidden` rather than by unmounting: a reference that
+            // resolves to no element is one a screen reader announces as
+            // nothing, and `aria-controls` above has to point at something.
+            hidden={!trackListOpen}
+            className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-row bg-surface-2 shadow-lg"
+            // Keeps the pointer path working now that blur closes the list
+            // immediately: mousedown runs before blur, so refusing its default
+            // focus change means neither picking an option nor dragging the
+            // scrollbar pulls the list out from under the click.
+            onMouseDown={(event) => event.preventDefault()}
+          >
+            {filteredTracks.map((track, index) => (
+              <li
+                key={track.id}
+                id={`session-track-option-${index}`}
+                role="option"
+                aria-selected={index === activeTrackIndex}
+                className={cn(
+                  'min-h-11 cursor-pointer px-3 py-3 text-left text-sm text-ink hover:bg-surface-3',
+                  index === activeTrackIndex && 'bg-surface-3',
+                )}
+                onMouseDown={() => handleTrackSelect(track)}
+              >
+                <span className="font-medium">{track.name}</span>
+                {track.location ? <span className="ml-1 text-ink-faint">{track.location}</span> : null}
+              </li>
+            ))}
+          </ul>
         </div>
 
         <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
@@ -1044,10 +1176,24 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
         />
       </div>
 
-      {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
       {draftMessage ? <p className="text-sm text-faster">{draftMessage}</p> : null}
 
-      <div className="sticky bottom-20 z-20 rounded-card bg-surface-3 p-2 shadow-lg shadow-black backdrop-blur sm:bottom-4">
+      {/* The save error lives inside the sticky bar, not in document flow above
+          it. The bar is sticky precisely so a rider can save from anywhere in a
+          3,000px form, and an error left in flow rendered thousands of pixels
+          below the fold for exactly those riders: they tapped a visible Save
+          button and the screen did not change. role="alert" is what announces it
+          to a screen reader too. */}
+      {/* bottom-20 clears the floating nav pill, which renders at every width -
+          there is no wider layout that drops it, so the `sm:bottom-4` that used
+          to sit here put the Save button under the nav from 640px up, and a
+          click at the middle of "Save Session" hit a nav icon instead. */}
+      <div className="sticky bottom-20 z-20 space-y-2 rounded-card bg-surface-3 p-2 shadow-lg shadow-black backdrop-blur">
+        {errorMessage ? (
+          <p role="alert" className="px-1 pt-1 text-sm text-slower">
+            {errorMessage}
+          </p>
+        ) : null}
         <Button type="submit" fullWidth disabled={isPending || saved} loading={isPending} success={saved}>
           {saved ? 'Saved' : isPending ? 'Saving…' : 'Save Session'}
         </Button>

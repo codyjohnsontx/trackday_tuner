@@ -12,6 +12,7 @@ import { SessionAnalyticsPanel } from '@/components/sessions/session-analytics-p
 import { SessionExportPanel } from '@/components/sessions/session-export-panel';
 import { SessionHistoryList } from '@/components/sessions/session-history-list';
 import { effectiveTier, resolveUserAccess } from '@/lib/access';
+import { getFreePlanLimit, getFreePlanLimitTitle, isAtFreePlanLimit } from '@/lib/plans';
 
 export default async function SessionsPage() {
   const [sessions, vehicles, profile, demoMode] = await Promise.all([
@@ -22,12 +23,13 @@ export default async function SessionsPage() {
   ]);
   const environments = await getSessionEnvironments(sessions.map((session) => session.id));
 
-  const isFree = !resolveUserAccess(profile).hasProAccess;
+  const hasProAccess = resolveUserAccess(profile).hasProAccess;
+  const isFree = !hasProAccess;
   const accessTier = effectiveTier(profile);
-  const atLimit = isFree && sessions.length >= 10;
+  const atLimit = isAtFreePlanLimit('sessions', sessions.length, hasProAccess);
 
   const tierLabel = isFree
-    ? `Free plan · ${sessions.length}/10 sessions`
+    ? `Free plan · ${sessions.length}/${getFreePlanLimit('sessions')} sessions`
     : `Pro plan · ${sessions.length} session${sessions.length !== 1 ? 's' : ''}`;
 
   const vehicleMap = new Map(vehicles.map((v) => [v.id, v.nickname]));
@@ -95,7 +97,7 @@ export default async function SessionsPage() {
 
       {atLimit && !demoMode ? (
         <section className="rounded-card bg-surface p-4 text-center">
-          <p className="text-sm font-semibold text-ink">Session limit reached</p>
+          <p className="text-sm font-semibold text-ink">{getFreePlanLimitTitle('sessions')}</p>
           <p className="mt-1 text-sm text-ink-dim">
             Upgrade to Pro for unlimited sessions, full history, and AI-powered tuning suggestions.
           </p>

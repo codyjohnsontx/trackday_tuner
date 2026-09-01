@@ -12,12 +12,33 @@
  * These helpers state what counts as the same circuit. Case and spacing are not a
  * different track: `cota` and `COTA` are one, and so are `Barber  Motorsports
  * Park` and `Barber Motorsports Park`.
+ *
+ * They also state that a session names one at all. Vehicle and Date were both
+ * validated while Track was not, so a rider who scrolled past it saved a session
+ * that reads "Unknown Track" wherever it is listed and matches no other session
+ * at the same circuit. `sessionsMatchTrack` in lib/session-compare.ts pairs two
+ * sessions by `track_id`, or by an identical name when neither carries one, so a
+ * trackless session is never a match for anything. It is still offered for
+ * comparison - the picker filters on vehicle, not track - but `buildContextFlags`
+ * marks every comparison against it with a critical "Track mismatch" and
+ * `assignComparisonStrength` calls the result weak. All of it silent at save
+ * time. `MISSING_TRACK_MESSAGE` and `hasTrackName` are the rule the form and
+ * `createSession` both check, so the two cannot disagree about it.
  */
 
 /** The stored form of a typed track name: trimmed, or null when nothing was typed. */
 export function normalizeTrackName(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+/** Shown by the session form and returned by `createSession` when no circuit is named. */
+export const MISSING_TRACK_MESSAGE =
+  'Please enter a track. Sessions are matched to each other by track, so one saved without it reads as "Unknown Track" and every comparison against it is flagged as a track mismatch.';
+
+/** Whether a session payload names the circuit it ran at. */
+export function hasTrackName(value: string | null | undefined): boolean {
+  return normalizeTrackName(value) !== null;
 }
 
 /** Two spellings of the same circuit, as a comparable key. */
