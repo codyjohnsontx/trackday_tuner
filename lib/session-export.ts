@@ -277,7 +277,11 @@ export interface SessionAnalyticsSummary {
     totalLaps: number;
     sessionsWithLaps: number;
   };
-  /** Fastest lap for each vehicle at each circuit, most recently run first. */
+  /**
+   * Fastest lap for each vehicle at each circuit, most recently run first, and
+   * uncapped - the panel renders the whole list, so what is on screen is what
+   * the rider has.
+   */
   bestLapByTrack: AnalyticsTrackBest[];
   sessionsByVehicle: { vehicleId: string; label: string; count: number }[];
   topTracks: { trackName: string; count: number }[];
@@ -297,6 +301,21 @@ export interface SessionAnalyticsSummary {
 
 /** What the board calls a circuit a session named nothing for. */
 const UNNAMED_TRACK = 'Unnamed track';
+
+/**
+ * What the board calls a session carrying neither a track row nor a typed name.
+ *
+ * `sessionsMatchTrack` pairs such a session with nothing - not even another
+ * session in the same state - so each one is its own board row. Two rows a
+ * rider cannot tell apart merge those sessions again just as surely as one
+ * shared key did, so the label carries what identifies the session everywhere
+ * else in the app: the day it ran, and its number within that day.
+ */
+function unnamedTrackLabel(session: Session): string {
+  const parts = [UNNAMED_TRACK, session.date];
+  if (session.session_number) parts.push(`Session ${session.session_number}`);
+  return parts.join(' · ');
+}
 
 function increment(map: Map<string, number>, key: string) {
   map.set(key, (map.get(key) ?? 0) + 1);
@@ -381,7 +400,15 @@ function buildSessionTrackKeys(sessions: readonly Session[]): Map<string, Resolv
 
     const nameKey = trackNameKey(session.track_name);
     if (!nameKey) {
-      resolved.set(session.id, { key: 'unknown', trackName: UNNAMED_TRACK });
+      // Nothing links this session to another, so it gets a key of its own.
+      // Every one of them once shared the key `unknown`, which put separate
+      // track days on one board row: only the fastest survived, and the row
+      // named a circuit the rider had never been to. `createSession` refuses
+      // this state now, but the rows logged before it did still exist.
+      resolved.set(session.id, {
+        key: `unknown:${session.id}`,
+        trackName: unnamedTrackLabel(session),
+      });
       continue;
     }
 
@@ -498,13 +525,18 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
   return {
     totalSessions: inputs.length,
     laps: { totalLaps, sessionsWithLaps },
+    // Every pair, not the newest few. This board is the only place a personal
+    // best appears, and a list cut short with nothing on screen saying so reads
+    // as the whole set - a rider lapping an eighth circuit silently lost the
+    // three they had ridden least recently. Raising the cap moves that cliff
+    // rather than removing it, so there is none; the ordering below already
+    // puts the most recent pair first.
     bestLapByTrack: [...trackBests.values()]
       .map((best) => ({ ...best, lastRunDate: lastRunByBoardRow.get(best.key) ?? best.lastRunDate }))
       .sort((a, b) => {
         if (a.lastRunDate !== b.lastRunDate) return a.lastRunDate < b.lastRunDate ? 1 : -1;
         return a.trackName.localeCompare(b.trackName) || a.vehicleLabel.localeCompare(b.vehicleLabel);
-      })
-      .slice(0, 5),
+      }),
     sessionsByVehicle: [...byVehicle.entries()]
       .map(([vehicleId, count]) => ({ vehicleId, label: vehicleLabels.get(vehicleId) ?? 'Unknown Vehicle', count }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
