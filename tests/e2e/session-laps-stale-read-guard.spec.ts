@@ -68,6 +68,12 @@ test.describe('replace_session_laps against a caller that never read the laps', 
     !hasServiceRole(),
     'NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required to plant a rider with laps',
   );
+  // Separate from hasServiceRole(): the service role only plants the rider, while
+  // every call under test goes out through createRiderClient().
+  test.skip(
+    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY is required to call replace_session_laps as the rider - it is security invoker and checks auth.uid().',
+  );
 
   // Its own throwaway rider: the RPC is `security invoker` and checks
   // `auth.uid()`, so the call has to carry a real session, and the laps this
