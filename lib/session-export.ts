@@ -613,6 +613,13 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
         first: values[0],
         latest: values[values.length - 1],
       }))
+      // Known silent cap, the same shape as the best-lap board cap removed
+      // above: a list cut short with nothing on screen saying so reads as the
+      // whole set. Each vehicle contributes a front row and a rear row, so a
+      // rider with a fourth bike loses rows here without being told. It costs
+      // them a partial chart rather than any stored data, which is why it is
+      // recorded here rather than fixed - it was not one of the three defects
+      // this change was scoped to.
       .slice(0, 6),
     environmentSnapshots: {
       withEnvironment,
