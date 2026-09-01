@@ -5,7 +5,7 @@ import {
   escapeCsvValue,
   flattenSessionForExport,
 } from '@/lib/session-export';
-import type { Session, SessionEnvironment, Vehicle } from '@/types';
+import type { Session, SessionEnvironment, TelemetryMetrics, TelemetrySummary, Vehicle } from '@/types';
 
 const motorcycle: Vehicle = {
   id: 'bike-1',
@@ -87,6 +87,21 @@ function environment(overrides: Partial<SessionEnvironment> = {}): SessionEnviro
   };
 }
 
+function telemetry(metrics: TelemetryMetrics, overrides: Partial<TelemetrySummary> = {}): TelemetrySummary {
+  return {
+    id: 'telemetry-1',
+    user_id: 'user-1',
+    session_id: 'session-1',
+    vehicle_id: 'bike-1',
+    source: 'manual',
+    summary: null,
+    metrics,
+    created_at: '2026-05-01T09:00:00Z',
+    updated_at: '2026-05-01T09:00:00Z',
+    ...overrides,
+  };
+}
+
 describe('session export helpers', () => {
   it('escapes csv values', () => {
     expect(escapeCsvValue(null)).toBe('');
@@ -106,6 +121,7 @@ describe('session export helpers', () => {
       session: session(),
       vehicle: motorcycle,
       environment: environment(),
+      telemetry: null,
     });
 
     expect(row.vehicle_nickname).toBe('R6');
@@ -143,6 +159,7 @@ describe('session export helpers', () => {
       }),
       vehicle: car,
       environment: null,
+      telemetry: null,
     });
 
     expect(row.vehicle_type).toBe('car');
@@ -158,6 +175,7 @@ describe('session export helpers', () => {
         session: session({ notes: 'Comma, quote "ok"' }),
         vehicle: motorcycle,
         environment: null,
+        telemetry: null,
       },
     ]);
 
@@ -177,9 +195,9 @@ describe('session export helpers', () => {
     });
 
     const analytics = deriveSessionAnalytics([
-      { session: session({ id: 's1', date: '2026-05-01', vehicle_id: 'bike-1' }), vehicle: motorcycle, environment: environment() },
-      { session: session({ id: 's2', date: '2026-05-02', vehicle_id: 'bike-1', tires: { ...session().tires, front: { ...session().tires.front, pressure: '32' } } }), vehicle: motorcycle, environment: null },
-      { session: session({ id: 's3', vehicle_id: 'car-1', track_name: 'Laguna Seca' }), vehicle: car, environment: environment({ ambient_temperature_c: 26 }) },
+      { session: session({ id: 's1', date: '2026-05-01', vehicle_id: 'bike-1' }), vehicle: motorcycle, environment: environment(), telemetry: null },
+      { session: session({ id: 's2', date: '2026-05-02', vehicle_id: 'bike-1', tires: { ...session().tires, front: { ...session().tires.front, pressure: '32' } } }), vehicle: motorcycle, environment: null, telemetry: null },
+      { session: session({ id: 's3', vehicle_id: 'car-1', track_name: 'Laguna Seca' }), vehicle: car, environment: environment({ ambient_temperature_c: 26 }), telemetry: null },
     ]);
 
     expect(analytics.totalSessions).toBe(3);
@@ -194,10 +212,201 @@ describe('session export helpers', () => {
     expect(analytics.environmentSnapshots.averageAmbientTemperatureC).toBe(25);
   });
 
+  /**
+   * The panel labelled Analytics is handed every session's telemetry and used
+   * to throw it away, so it answered with session counts, module coverage and
+   * tire pressures while the rows on the same page carried best laps and lap
+   * counts. These are the numbers it was missing.
+   */
+  it('totals the laps it is handed', () => {
+    const analytics = deriveSessionAnalytics([
+      {
+        session: session({ id: 's1', date: '2026-05-01' }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [104620, 104110, 103980, 104250] }),
+      },
+      {
+        session: session({ id: 's2', date: '2026-05-02' }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [103920, 103640] }, { session_id: 's2' }),
+      },
+      { session: session({ id: 's3', date: '2026-05-03' }), vehicle: motorcycle, environment: null, telemetry: null },
+    ]);
+
+    expect(analytics.laps).toEqual({ totalLaps: 6, sessionsWithLaps: 2 });
+    expect(analytics.moduleCoverage.find((row) => row.module === 'lap_times')).toEqual({
+      module: 'lap_times',
+      count: 2,
+      percent: 67,
+    });
+  });
+
+  it('reports zero laps rather than nothing when no session carries any', () => {
+    const analytics = deriveSessionAnalytics([
+      { session: session({ id: 's1' }), vehicle: motorcycle, environment: null, telemetry: null },
+    ]);
+
+    expect(analytics.laps).toEqual({ totalLaps: 0, sessionsWithLaps: 0 });
+    expect(analytics.bestLapByTrack).toEqual([]);
+  });
+
+  /**
+   * `environment` moved out of the headline strip, where a logging diagnostic
+   * sat in the slot the lap total belongs in, and into the coverage list beside
+   * every other "how much did you fill in" number.
+   */
+  it('counts environment rows as coverage rather than a headline number', () => {
+    const analytics = deriveSessionAnalytics([
+      { session: session({ id: 's1' }), vehicle: motorcycle, environment: environment(), telemetry: null },
+      { session: session({ id: 's2' }), vehicle: motorcycle, environment: null, telemetry: null },
+    ]);
+
+    expect(analytics.moduleCoverage.find((row) => row.module === 'environment')).toEqual({
+      module: 'environment',
+      count: 1,
+      percent: 50,
+    });
+    expect(analytics.environmentSnapshots.withEnvironment).toBe(1);
+  });
+
+  it('keeps a best lap per circuit, most recently run first', () => {
+    const analytics = deriveSessionAnalytics([
+      {
+        session: session({ id: 's1', date: '2026-05-01', track_id: 'track-1', track_name: 'Road America' }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [104620, 103980] }),
+      },
+      {
+        session: session({ id: 's2', date: '2026-05-02', track_id: 'track-1', track_name: 'Road America' }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [104100] }, { session_id: 's2' }),
+      },
+      {
+        session: session({ id: 's3', date: '2026-06-01', track_id: 'track-2', track_name: 'Laguna Seca' }),
+        vehicle: car,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [92500] }, { session_id: 's3', vehicle_id: 'car-1' }),
+      },
+    ]);
+
+    expect(analytics.bestLapByTrack.map((best) => [best.trackName, best.bestLap, best.vehicleLabel])).toEqual([
+      ['Laguna Seca', '1:32.500', 'Miata'],
+      ['Road America', '1:43.980', 'R6'],
+    ]);
+  });
+
+  /**
+   * A lap compares against another lap on the same vehicle at the same track -
+   * `getComparableSessions` filters `vehicle_id` before applying
+   * `sessionsMatchTrack`. Keying the board on the circuit alone let the car's
+   * lap beat the bike's and the bike's personal best appeared nowhere.
+   */
+  it('keeps a best lap per vehicle at one circuit', () => {
+    const analytics = deriveSessionAnalytics([
+      {
+        session: session({ id: 's1', vehicle_id: 'bike-1', date: '2026-05-01', track_id: 'track-1' }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [103980] }),
+      },
+      {
+        session: session({ id: 's2', vehicle_id: 'car-1', date: '2026-05-02', track_id: 'track-1' }),
+        vehicle: car,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [92500] }, { session_id: 's2', vehicle_id: 'car-1' }),
+      },
+    ]);
+
+    expect(analytics.bestLapByTrack.map((best) => [best.trackName, best.vehicleLabel, best.bestLap])).toEqual([
+      ['Road America', 'Miata', '1:32.500'],
+      ['Road America', 'R6', '1:43.980'],
+    ]);
+  });
+
+  /**
+   * A circuit typed by hand and the same circuit picked from the saved row are
+   * one track, so they share one personal best. `sessionsMatchTrack` says so;
+   * the board has to agree or a rider reads two records for one place.
+   */
+  it('folds a typed track name into the saved row it names', () => {
+    const analytics = deriveSessionAnalytics([
+      {
+        session: session({ id: 's1', date: '2026-05-01', track_id: 'track-1', track_name: 'Road America' }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [104620] }),
+      },
+      {
+        session: session({ id: 's2', date: '2026-05-02', track_id: null, track_name: 'road  america' }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: telemetry({ lap_times_ms: [103500] }, { session_id: 's2' }),
+      },
+    ]);
+
+    expect(analytics.bestLapByTrack).toHaveLength(1);
+    expect(analytics.bestLapByTrack[0]).toMatchObject({ trackName: 'Road America', bestLap: '1:43.500' });
+  });
+
+  it('exports the lap columns the rider logged', () => {
+    const row = flattenSessionForExport({
+      session: session(),
+      vehicle: motorcycle,
+      environment: null,
+      telemetry: telemetry({ lap_times_ms: [104620, 104110, 103980, 104250] }),
+    });
+
+    expect(row.lap_count).toBe(4);
+    expect(row.best_lap).toBe('1:43.980');
+    expect(row.best_lap_ms).toBe(103980);
+    expect(row.average_lap).toBe('1:44.240');
+    expect(row.average_lap_ms).toBe(104240);
+    expect(row.consistency_spread_ms).toBe(640);
+    // Space separated: comma and semicolon are both field delimiters some
+    // readers sniff for, and a space is never one.
+    expect(row.lap_times_ms).toBe('104620 104110 103980 104250');
+  });
+
+  /**
+   * `telemetry_summaries.metrics` is unconstrained jsonb that `authenticated`
+   * can write, so a zero or a negative reading is reachable. The aggregates drop
+   * it, and the per-lap cell has to drop it too - a row reading `lap_count` 3
+   * beside four printed times contradicts itself.
+   */
+  it('prints only the laps the aggregates counted', () => {
+    const row = flattenSessionForExport({
+      session: session(),
+      vehicle: motorcycle,
+      environment: null,
+      telemetry: telemetry({ lap_times_ms: [104620, 0, 103980, -104250] }),
+    });
+
+    expect(row.lap_count).toBe(2);
+    expect(row.lap_times_ms).toBe('104620 103980');
+  });
+
+  it('leaves the lap columns empty for a session with no laps', () => {
+    const row = flattenSessionForExport({
+      session: session(),
+      vehicle: motorcycle,
+      environment: null,
+      telemetry: null,
+    });
+
+    for (const column of ['lap_count', 'best_lap', 'best_lap_ms', 'average_lap', 'average_lap_ms', 'consistency_spread_ms', 'lap_times_ms']) {
+      expect(row[column]).toBeNull();
+      expect(escapeCsvValue(row[column])).toBe('');
+    }
+  });
+
   it('keeps tire pressure trends separate for vehicles with matching nicknames and skips disabled tires', () => {
     const sameNameCar: Vehicle = { ...car, id: 'car-2', nickname: 'R6' };
     const analytics = deriveSessionAnalytics([
-      { session: session({ id: 's1', vehicle_id: 'bike-1' }), vehicle: motorcycle, environment: null },
+      { session: session({ id: 's1', vehicle_id: 'bike-1' }), vehicle: motorcycle, environment: null, telemetry: null },
       {
         session: session({
           id: 's2',
@@ -210,6 +419,7 @@ describe('session export helpers', () => {
         }),
         vehicle: sameNameCar,
         environment: null,
+        telemetry: null,
       },
       {
         session: session({
@@ -232,6 +442,7 @@ describe('session export helpers', () => {
         }),
         vehicle: motorcycle,
         environment: null,
+        telemetry: null,
       },
     ]);
 

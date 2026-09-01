@@ -16,7 +16,7 @@ import { getRealUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { createClient } from '@/lib/supabase/server';
 import { GET } from '@/app/api/sessions/export/route';
-import type { Session, Vehicle } from '@/types';
+import type { Session, TelemetrySummary, Vehicle } from '@/types';
 
 type QueryResponse = {
   data?: unknown;
@@ -76,6 +76,48 @@ const session: Session = {
   updated_at: '2026-05-01T09:00:00Z',
 };
 
+const telemetry: TelemetrySummary = {
+  id: 'telemetry-1',
+  user_id: 'user-1',
+  session_id: 'session-1',
+  vehicle_id: 'veh-1',
+  source: 'manual',
+  summary: 'Four laps, steady pace.',
+  metrics: {
+    lap_times_ms: [104620, 104110, 103980, 104250],
+    lap_count: 4,
+    best_lap_ms: 103980,
+    average_lap_ms: 104240,
+    consistency_spread_ms: 640,
+  },
+  created_at: '2026-05-01T09:00:00Z',
+  updated_at: '2026-05-01T09:00:00Z',
+};
+
+/**
+ * The four reads the export makes, in call order. `session_environment` and
+ * `telemetry_summaries` are issued together, so the mock has to answer both or
+ * the export sees an undefined query rather than an empty result.
+ */
+function mockExportQueries(overrides: {
+  environments?: ReturnType<typeof createQuery>;
+  telemetry?: ReturnType<typeof createQuery>;
+} = {}) {
+  const sessionsQuery = createQuery({ data: [session], error: null });
+  const vehiclesQuery = createQuery({ data: [vehicle], error: null });
+  const environmentsQuery = overrides.environments ?? createQuery({ data: [], error: null });
+  const telemetryQuery = overrides.telemetry ?? createQuery({ data: [telemetry], error: null });
+  const byTable: Record<string, unknown> = {
+    sessions: sessionsQuery,
+    vehicles: vehiclesQuery,
+    session_environment: environmentsQuery,
+    telemetry_summaries: telemetryQuery,
+  };
+  const from = vi.fn((table: string) => byTable[table]);
+  vi.mocked(createClient).mockResolvedValue({ from } as never);
+  return { sessionsQuery, vehiclesQuery, environmentsQuery, telemetryQuery, from };
+}
+
 describe('GET /api/sessions/export', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -102,24 +144,7 @@ describe('GET /api/sessions/export', () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
 
-    const sessionsQuery = createQuery({ data: [session], error: null });
-    const vehiclesQuery = createQuery({ data: [vehicle], error: null });
-    const environmentsQuery = createQuery({ data: [], error: null });
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return sessionsQuery;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('vehicles');
-        return vehiclesQuery;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('session_environment');
-        return environmentsQuery;
-      });
-    vi.mocked(createClient).mockResolvedValue({ from } as never);
+    const { sessionsQuery, from } = mockExportQueries();
 
     const response = await GET(
       new Request('http://127.0.0.1:3000/api/sessions/export?vehicleId=veh-1&from=2026-05-01&to=2026-05-31'),
@@ -134,5 +159,47 @@ describe('GET /api/sessions/export', () => {
     expect(sessionsQuery.lte).toHaveBeenCalledWith('date', '2026-05-31');
     expect(csv).toContain('session_id,vehicle_id,vehicle_nickname');
     expect(csv).toContain('session-1,veh-1,R6');
+    expect(from).toHaveBeenCalledWith('telemetry_summaries');
+  });
+
+  /**
+   * The Pro export shipped 60 columns of setup and weather and not one lap
+   * number, on the same account whose `telemetry_summaries` row holds the best
+   * lap, the average and the spread. It never read the table.
+   */
+  it('exports the rider\'s lap times', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const { telemetryQuery } = mockExportQueries();
+
+    const csv = await (await GET(new Request('http://127.0.0.1:3000/api/sessions/export'))).text();
+    const [header, row] = csv.trim().split('\n');
+    const cell = (column: string) => row.split(',')[header.split(',').indexOf(column)];
+
+    expect(telemetryQuery.eq).toHaveBeenCalledWith('user_id', 'user-1');
+    expect(telemetryQuery.in).toHaveBeenCalledWith('session_id', ['session-1']);
+    expect(cell('lap_count')).toBe('4');
+    expect(cell('best_lap')).toBe('1:43.980');
+    expect(cell('best_lap_ms')).toBe('103980');
+    expect(cell('average_lap')).toBe('1:44.240');
+    expect(cell('average_lap_ms')).toBe('104240');
+    expect(cell('consistency_spread_ms')).toBe('640');
+    expect(cell('lap_times_ms')).toBe('104620 104110 103980 104250');
+  });
+
+  /**
+   * A failed lap read is not a session with no laps, and once it is a blank
+   * cell in a spreadsheet nothing distinguishes them - so the export fails
+   * rather than under-reporting the rider's own pace.
+   */
+  it('fails the export when lap data cannot be read', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    mockExportQueries({ telemetry: createQuery({ data: null, error: { message: 'boom' } }) });
+
+    const response = await GET(new Request('http://127.0.0.1:3000/api/sessions/export'));
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: 'Unable to load lap data for export.' });
   });
 });

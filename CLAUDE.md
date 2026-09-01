@@ -876,6 +876,23 @@ separately, afterwards, once `SYSTEM_PROMPT` started making every stored
 held to the same bar - `tests/unit/demo-advice-vocabulary.test.ts` runs the real
 `evaluateAdvicePolicy` over the objects the panels render.
 
+**An `AdviceResponse` is rendered in exactly one place, and that is the guard.**
+`components/ai/advice-report.tsx` prints the whole payload; the Race Engineer and
+Morning Plan panels supply only their own wording. They had grown three
+renderers between them and each printed a different subset of the identical
+response - the Morning Plan dropped the tradeoffs and the personal evidence, the
+Race Engineer demo branch dropped the safety notes, the prediction, the personal
+evidence, the data-used chips and the citations. Sharing the small pieces
+(`RefusalCard`, `SafetyBanner`, `WatchItems`) had not been enough, which is the
+lesson: a panel can always forget a field the payload later grows. So a new field
+is added to the one renderer, never to a panel.
+
+`safety_notes` renders outside the refusal branch on purpose - `completeAdvice`
+runs `ensureSafetyNotes` so every response carries them, and a withheld answer is
+exactly when a rider is most likely to go and change something anyway.
+`tests/unit/advice-report-completeness.test.ts` renders both demo fixtures and a
+full response and fails if any field stops reaching the rider.
+
 `/api/ai/day-plan` shipped with none of them, and with a hand-copied UUID pattern
 that had four groups instead of five. It therefore rejected every genuine
 `vehicle_id` and was inert in production for its whole life - the broken regex is

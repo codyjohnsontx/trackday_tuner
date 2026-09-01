@@ -45,8 +45,8 @@ Repo-backed current state:
 
 - `components/sessions/session-compare.tsx` compares the current session against the previous session and shows changed setup fields.
 - `app/(app)/sessions/[id]/page.tsx` renders the comparison on session detail.
-- `components/sessions/session-analytics-panel.tsx` summarizes pro analytics such as session counts, track history, module coverage, tire pressure trends, and environment snapshots.
-- `lib/session-export.ts` supports CSV export of flattened session data.
+- `components/sessions/session-analytics-panel.tsx` summarizes pro analytics such as lap totals, best lap per vehicle per track, session counts, track history, logging coverage, and tire pressure trends.
+- `lib/session-export.ts` supports CSV export of flattened session data, including each session's lap aggregates and per-lap times.
 - AI tuning advice and RAG context are active.
 - `telemetry_summaries` exists in schema/types, but the app does not yet provide a full lap-by-lap comparison UI.
 

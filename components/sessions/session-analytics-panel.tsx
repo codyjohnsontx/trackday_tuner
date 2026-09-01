@@ -19,32 +19,49 @@ function Stat({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-function CountList({ title, items }: { title: string; items: { label: string; detail: string }[] }) {
+function CountList({
+  title,
+  items,
+  emptyMessage = 'No data yet.',
+}: {
+  // `id` is for a list whose rows can read identically - two vehicles sharing a
+  // nickname put the same label and detail on the board twice, and without it
+  // React drops one of them.
+  items: { id?: string; label: string; detail: string }[];
+  title: string;
+  emptyMessage?: string;
+}) {
   return (
     <CardGroup eyebrow={title}>
       {items.length > 0 ? (
         <div className="divide-y divide-white/5 rounded-row bg-surface-2 px-4">
           {items.map((item) => (
-            <div key={`${item.label}-${item.detail}`} className="flex justify-between gap-3 py-2.5">
+            <div key={item.id ?? `${item.label}-${item.detail}`} className="flex justify-between gap-3 py-2.5">
               <span className="min-w-0 truncate text-sm text-ink-dim">{item.label}</span>
               <span className="shrink-0 text-sm font-medium text-ink">{item.detail}</span>
             </div>
           ))}
         </div>
       ) : (
-        <p className="rounded-row bg-surface-2 p-4 text-sm text-ink-faint">No data yet.</p>
+        <p className="rounded-row bg-surface-2 p-4 text-sm text-ink-faint">{emptyMessage}</p>
       )}
     </CardGroup>
   );
 }
 
 export function SessionAnalyticsPanel({ analytics, tier }: SessionAnalyticsPanelProps) {
+  // A board row is one vehicle at one circuit, so a garage holding more than one
+  // vehicle can show the same track twice and the vehicle is the only thing
+  // telling those rows apart.
+  const multipleVehicles = analytics.sessionsByVehicle.length > 1;
+
   if (tier !== 'pro') {
     return (
       <section className="rounded-card bg-surface p-4">
         <p className="text-sm font-semibold text-ink">Analytics</p>
         <p className="mt-1 text-sm text-ink-dim">
-          Pro summarizes vehicle usage, track history, module coverage, tire pressures, and environment snapshots.
+          Pro summarizes your lap totals and best lap at each track, plus vehicle usage, track history, logging
+          coverage, and tire pressure trends.
         </p>
         <div className="mt-4">
           <UpgradeToProButton fullWidth />
@@ -64,10 +81,11 @@ export function SessionAnalyticsPanel({ analytics, tier }: SessionAnalyticsPanel
             and stacking them turns a glance into a scroll. */}
         <div className="grid grid-cols-3 gap-2">
           <Stat label="Sessions" value={String(analytics.totalSessions)} />
-          <Stat
-            label="Env logs"
-            value={`${analytics.environmentSnapshots.withEnvironment}/${analytics.totalSessions}`}
-          />
+          {/* Laps, not `Env logs`. The headline strip is what a rider glances
+              at, and the count of sessions carrying an environment row is a
+              logging diagnostic - it moved into the coverage list, which is
+              where every other "how much did you fill in" number already lives. */}
+          <Stat label="Laps" value={String(analytics.laps.totalLaps)} />
           <Stat
             label="Avg track"
             value={
@@ -85,6 +103,18 @@ export function SessionAnalyticsPanel({ analytics, tier }: SessionAnalyticsPanel
       </CardGroup>
 
       <div className="grid gap-3 md:grid-cols-2">
+        {/* First list on the panel: a lap time is the number the session was
+            logged for. It is per circuit and per vehicle because that is the
+            pair a lap compares against, the same one the compare page uses. */}
+        <CountList
+          title="Best Lap By Track"
+          items={analytics.bestLapByTrack.map((item) => ({
+            id: item.key,
+            label: multipleVehicles ? `${item.trackName} · ${item.vehicleLabel}` : item.trackName,
+            detail: item.bestLap,
+          }))}
+          emptyMessage="No lap times logged yet."
+        />
         <CountList
           title="Sessions by Vehicle"
           items={analytics.sessionsByVehicle.map((item) => ({
@@ -100,7 +130,7 @@ export function SessionAnalyticsPanel({ analytics, tier }: SessionAnalyticsPanel
           }))}
         />
         <CountList
-          title="Module Coverage"
+          title="Logging Coverage"
           items={analytics.moduleCoverage.map((item) => ({
             label: item.module.replace('_', ' '),
             detail: `${item.count} (${item.percent}%)`,
