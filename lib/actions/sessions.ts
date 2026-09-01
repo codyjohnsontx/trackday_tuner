@@ -353,11 +353,24 @@ export async function getTelemetrySummaries(sessionIds: string[]): Promise<Telem
   if (!user) return [];
 
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('telemetry_summaries')
     .select('*')
     .eq('user_id', user.id)
     .in('session_id', sessionIds);
+
+  if (error) {
+    // A discarded read renders as `Laps 0`, `lap times 0 (0%)` and "No lap
+    // times logged yet." on the Pro analytics panel - exactly what a rider who
+    // logged no laps sees - so nobody can tell a failed read from an empty one
+    // unless it says so here. Returning the empty list rather than throwing
+    // keeps the rest of the page, which does not depend on laps, on screen.
+    console.error('[sessions] telemetry-summaries query failed', {
+      userId: user.id,
+      sessionCount: sessionIds.length,
+      error: error.message,
+    });
+  }
 
   return (data ?? []) as TelemetrySummary[];
 }

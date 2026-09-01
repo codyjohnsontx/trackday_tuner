@@ -1401,6 +1401,34 @@ describe('sessions actions', () => {
     expect(result).toEqual(summaries);
   });
 
+  /**
+   * A discarded read renders as `Laps 0` and "No lap times logged yet." on the
+   * Pro analytics panel, which is exactly what a rider who logged no laps sees.
+   * Nobody can act on a failure nothing records, so the degraded answer has to
+   * say so - the same rule `fetchPreviousSession` follows.
+   */
+  it('says so when the telemetry query fails rather than reading as no laps', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+
+    const telemetryQuery = createQuery({
+      base: { data: null, error: { message: 'permission denied for table telemetry_summaries' } },
+    });
+    const from = vi.fn(() => telemetryQuery);
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await getTelemetrySummaries(['session-1', 'session-2']);
+
+    expect(result).toEqual([]);
+    expect(consoleError).toHaveBeenCalledWith('[sessions] telemetry-summaries query failed', {
+      userId: 'user-1',
+      sessionCount: 2,
+      error: 'permission denied for table telemetry_summaries',
+    });
+
+    consoleError.mockRestore();
+  });
+
   it('returns no telemetry summaries for empty input', async () => {
     const result = await getTelemetrySummaries([]);
 
