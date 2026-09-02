@@ -89,8 +89,9 @@ async function persistSessionLaps(params: {
   laps: CreateSessionLapInput[];
   /**
    * How many laps the caller read before deciding on this replacement. The RPC
-   * refuses the delete when the database disagrees, so a caller that mistook a
-   * failed read for an empty session cannot replace laps it never saw.
+   * refuses the delete when the stored count differs, so a caller that mistook a
+   * failed read for an empty session cannot replace a session that holds laps.
+   * A count is all it compares - an equal-count stale save still goes through.
    */
   expectedLapCount: number;
 }): Promise<string | null> {
@@ -887,9 +888,13 @@ export async function createSession(
  *
  * `expectedLapCount` is how many laps the caller read before the rider edited
  * them. It is passed through to `replace_session_laps`, which refuses the delete
- * when the stored count differs, so a save built on a read that failed - or on a
- * page another tab has already saved over - cannot overwrite laps the caller
- * never saw. See `getSessionLaps` for how that read is now reported.
+ * when the stored NUMBER differs - so a save built on a read that returned no
+ * laps cannot replace a session that holds some. It compares a count and nothing
+ * else: two saves that each read 12 laps agree on 12, so the later one still
+ * overwrites the earlier one's edits to lap times or `included` flags. That
+ * equal-count case is open on purpose and written up in 20260901001400. See
+ * `getSessionLaps` for how the read itself is now reported, which is what closes
+ * the failure this was built for.
  *
  * Nothing is returned but success: the caller already holds the laps it just
  * sent, and reading them back would only add a second read that can fail after

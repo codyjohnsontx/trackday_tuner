@@ -11,9 +11,14 @@ import type { Database } from '@/types/supabase';
  * rider's times. `getSessionLaps` was that caller - it discarded its Supabase
  * error, the session page offered "Add Lap Times" on a session holding four, and
  * whatever the rider retyped replaced them. That caller is fixed, and this
- * covers the half of the fix that outlives it: the function now asks what the
- * caller believes is stored and refuses when the database disagrees, which is
- * what protects a caller nobody has written yet.
+ * covers the half of the fix that outlives it: the function now asks how many
+ * laps the caller believes are stored and refuses when that number differs,
+ * which is what protects a caller nobody has written yet.
+ *
+ * The tests below are all count MISMATCHES, because a count is all the guard
+ * compares. An equal-count stale save - two tabs that both read 12 laps, one
+ * editing times or `included` flags and saving before the other - passes it, and
+ * is written up in 20260901001400. Nothing here should be read as covering that.
  *
  * It runs the RPC as a rider rather than through the app, because the guard is a
  * property of the function and the point is that it holds for callers that are

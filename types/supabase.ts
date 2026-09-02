@@ -966,8 +966,9 @@ export type Database = {
           /**
            * How many laps the caller read before deciding on this replacement.
            * Required: the function deletes the whole set, and refuses when the
-           * stored count differs, so a caller that never read the laps cannot
-           * replace them. See 20260901001400.
+           * stored count differs, so a caller that read no laps cannot replace a
+           * session that holds some. A count is the whole comparison - an
+           * equal-count stale save is not caught. See 20260901001400.
            */
           p_expected_lap_count: number;
         };

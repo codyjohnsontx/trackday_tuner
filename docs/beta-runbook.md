@@ -15,7 +15,7 @@
    gives every signup path a `profiles` row - without it a rider who did not
    arrive through the invite route can never subscribe - then
    `20260824001300`, the owner-scoped write policies on the `vehicle-photos`
-   bucket, and finally `20260901001400`, the stale-read guard on
+   bucket, and finally `20260901001400`, the lap-count guard on
    `replace_session_laps`. On a deployment whose database already predates this
    work, those seven are what is left to apply; run the check below before
    `20260816001200` and the audit below after it. On a deployment whose database

@@ -114,7 +114,8 @@ function LapsEditor({ sessionId, vehicleId, initialLaps, demoMode }: { sessionId
 
     startTransition(async () => {
       // The count is what this panel read, so the database can refuse a save
-      // built on laps it never managed to hand over. See replaceSessionLaps.
+      // whose lap count disagrees with what is stored. That covers a read that
+      // came back empty, not an equal-count stale save - see replaceSessionLaps.
       const result = await replaceSessionLaps(sessionId, laps, savedLaps.length);
       if (!result.ok) { setMessage({ text: result.error, ok: false }); return; }
       trackProductEvent('lap_data_saved', { session_id: sessionId, vehicle_id: vehicleId, properties: { lap_count: laps.length, source: 'session_edit' } });

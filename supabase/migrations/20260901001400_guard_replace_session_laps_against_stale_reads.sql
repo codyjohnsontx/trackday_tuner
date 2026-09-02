@@ -5,8 +5,27 @@
 -- "Add Lap Times" on a session that held twenty, and the rider retyping five of
 -- them destroyed the other fifteen. That caller is fixed in the same change, but
 -- the function protects callers that have not been written yet, so it now asks
--- what the caller believes is stored and refuses the delete when the database
--- disagrees.
+-- how many laps the caller believes are stored and refuses the delete when that
+-- NUMBER differs from what is there.
+--
+-- WHAT THIS GUARD DOES AND DOES NOT CATCH. It compares a count, and nothing
+-- else. That is enough for the failure this migration is named after, where the
+-- caller read nothing and the session holds laps, because 0 differs from 20. It
+-- is NOT a general protection against overwriting laps the caller never saw, and
+-- the equal-count case is the one to know about:
+--
+--   two tabs both load a session holding 12 laps; the first edits lap TIMES or
+--   `included` flags without adding or removing a row and saves; the second tab
+--   then saves its own stale snapshot with p_expected_lap_count = 12; 12 still
+--   equals 12, this guard passes, and the first tab's edits are overwritten
+--   silently.
+--
+-- That case is open on purpose rather than overlooked. Catching it means the
+-- caller sending a version or a content hash of the set it read, which is a real
+-- decision about what identity a lap set has and needs its own test surface, so
+-- it is tracked separately rather than folded into a data-loss fix. Do not read
+-- any comment in this repository as promising more than the count comparison
+-- below; if one does, it is wrong and should be narrowed to this.
 --
 -- The parameter is required rather than defaulted, and the three-argument
 -- function is dropped rather than left beside this one. A default, or a
@@ -84,6 +103,10 @@ begin
   -- does not stop a write sent straight at `session_laps`, which `authenticated`
   -- still holds insert, update and delete on - the guard is about callers that
   -- go through this function, and RLS is what bounds the rest.
+  --
+  -- Serializing the two calls is not the same as telling them apart. Two saves
+  -- that each read 12 laps still both see 12 here, one after the other, and the
+  -- second overwrites the first - see the equal-count case in the header.
   select vehicle_id into session_vehicle_id
   from public.sessions
   where id = p_session_id and user_id = p_user_id
