@@ -13,20 +13,32 @@
    foundation), then `20260719001100` (the Data API grants), then
    `20260816001200`, which is not beta-specific but installs the trigger that
    gives every signup path a `profiles` row - without it a rider who did not
-   arrive through the invite route can never subscribe - and finally
+   arrive through the invite route can never subscribe - then
    `20260824001300`, the owner-scoped write policies on the `vehicle-photos`
-   bucket. On a deployment whose database already predates this work, those six
-   are what is left to apply; run the check below before `20260816001200` and
-   the audit below after it. On a deployment whose database has no migration
-   history at all, `20260719001100` is applied in the SQL editor by hand - see
-   "Apply the Data API grants by hand" below, and do that first: until it is
-   done any rider can set their own tier to `pro`.
+   bucket, and finally `20260901001400`, the lap-count guard on
+   `replace_session_laps`. On a deployment whose database already predates this
+   work, those seven are what is left to apply; run the check below before
+   `20260816001200` and the audit below after it. On a deployment whose database
+   has no migration history at all, `20260719001100` is applied in the SQL editor
+   by hand - see "Apply the Data API grants by hand" below, and do that first:
+   until it is done any rider can set their own tier to `pro`.
    Migrations build the schema and the storage policies, not the storage bucket:
    the CLI provisions buckets from `[storage.buckets.*]` in `supabase/config.toml`,
    so on a deployment standing up its own project, `npx supabase seed buckets
    --linked` once after `supabase link` is what creates `vehicle-photos`. Without
    it, adding a vehicle with a photo fails with "Photo upload failed: Bucket not
    found". See "Local Run" in README.md.
+   `20260901001400` is the one migration in that list carrying a
+   **deploy-ordering requirement**: it changes the signature of
+   `replace_session_laps`, so apply it *before* the release that calls it goes
+   live. Migrations here are applied by hand while Vercel deploys on merge, so on
+   an existing deployment that means applying it before merging the pull request.
+   Either order leaves a window and both were walked in a browser: the mismatched
+   call gets `PGRST202` from PostgREST, the message reaches the rider, nothing is
+   saved and nothing stored is lost. Saving laps *and* logging a session are both
+   down for that window - `createSession` calls the function even for a session
+   with no laps - while reading is unaffected. The migration's own header carries
+   the detail.
 2. Set `BETA_INVITE_ONLY=true`, a long random `BETA_INVITE_SECRET`, and a distinct
    `BETA_FORM_RATE_LIMIT_SECRET` in the deployment environment.
 3. Deploy and verify the public home page, waitlist, invitation signup, session

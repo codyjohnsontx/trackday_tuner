@@ -963,6 +963,14 @@ export type Database = {
           p_user_id: string;
           p_session_id: string;
           p_laps: Json;
+          /**
+           * How many laps the caller read before deciding on this replacement.
+           * Required: the function deletes the whole set, and refuses when the
+           * stored count differs, so a caller that read no laps cannot replace a
+           * session that holds some. A count is the whole comparison - an
+           * equal-count stale save is not caught. See 20260901001400.
+           */
+          p_expected_lap_count: number;
         };
         Returns: void;
       };

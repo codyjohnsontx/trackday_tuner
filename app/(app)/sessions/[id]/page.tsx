@@ -384,7 +384,10 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
 
       <TuningAdvicePanel sessionId={session.id} vehicleId={session.vehicle_id} tier={tier} demoMode={demoMode} />
 
-      <SessionLapsPanel sessionId={session.id} vehicleId={session.vehicle_id} initialLaps={sessionLaps} demoMode={demoMode} />
+      {/* A failed read arrives as `null`, not as an empty list: the panel offers
+          a destructive replace on an empty list, so the two cannot be flattened
+          here. See getSessionLaps. */}
+      <SessionLapsPanel sessionId={session.id} vehicleId={session.vehicle_id} initialLaps={sessionLaps.ok ? sessionLaps.data : null} demoMode={demoMode} />
 
       <SectionCard title="Session Info">
         <DetailRow label="Track" value={session.track_name ?? '—'} />

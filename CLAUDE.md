@@ -479,6 +479,30 @@ with and without the flag and watching the cookie survive or vanish on render.
   name. `resolveDashboardHeroSubject` (`lib/dashboard-hero.ts`) returns the name and
   the session together so the two cannot be picked off different lists.
   `lib/dashboard-hero.test.ts` guards it
+- **A read whose answer decides a destructive write has to report its failure.**
+  `getSessionLaps` discarded its Supabase error, so a failed select and a session
+  with no laps were the same `[]`. The panel read that as "no laps yet" and offered
+  "Add Lap Times" on a session holding four; the rider retyping what they
+  remembered called `replace_session_laps`, which deletes the whole set before
+  inserting, so their own recovery was what lost the times. It returns
+  `ActionResult<SessionLap[]>` now and `SessionLapsPanel` takes `null` for a failed
+  read - it offers nothing that saves until the read succeeds, because a rider
+  cannot be told about this by a server log. That is what closes the defect. The
+  database adds a narrower backstop for callers not yet written:
+  `replace_session_laps` takes `p_expected_lap_count`, raises SQLSTATE `TT409`
+  when the stored NUMBER differs, and has no unguarded overload left
+  (20260901001400). It compares a count and nothing else, so it catches a caller
+  that read no laps against a session that holds some, and NOT an equal-count
+  stale save - two tabs that both read 12 laps, one editing times or `included`
+  flags and saving first, still lose that edit silently. That boundary is on the
+  migration header; do not describe the guard as preventing overwrites in
+  general. Closing the equal-count case means comparing a snapshot identity
+  rather than a row count, which is its own design decision and test surface, so
+  it is tracked as tt-lap-guard-content-not-count. The sibling readers -
+  `getSessions`, `getSessionEnvironment`, `getSessionEnvironments`,
+  `getLatestSessionsByVehicle`, `getComparableSessions` - still discard theirs;
+  none feeds a write, so they degrade a display only, and that is the line to
+  check before copying one
 
 ## What a Rider Told You
 
