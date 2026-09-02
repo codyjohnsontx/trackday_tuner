@@ -494,12 +494,15 @@ with and without the flag and watching the cookie survive or vanish on render.
   (20260901001400). It compares a count and nothing else, so it catches a caller
   that read no laps against a session that holds some, and NOT an equal-count
   stale save - two tabs that both read 12 laps, one editing times or `included`
-  flags and saving first, still lose that edit. That boundary is on the migration
-  header; do not describe the guard as preventing overwrites in general. The
-  sibling readers - `getSessions`,
-  `getSessionEnvironment`, `getSessionEnvironments`, `getLatestSessionsByVehicle`,
-  `getComparableSessions` - still discard theirs; none feeds a write, so they
-  degrade a display only, and that is the line to check before copying one
+  flags and saving first, still lose that edit silently. That boundary is on the
+  migration header; do not describe the guard as preventing overwrites in
+  general. Closing the equal-count case means comparing a snapshot identity
+  rather than a row count, which is its own design decision and test surface, so
+  it is tracked as tt-lap-guard-content-not-count. The sibling readers -
+  `getSessions`, `getSessionEnvironment`, `getSessionEnvironments`,
+  `getLatestSessionsByVehicle`, `getComparableSessions` - still discard theirs;
+  none feeds a write, so they degrade a display only, and that is the line to
+  check before copying one
 
 ## What a Rider Told You
 

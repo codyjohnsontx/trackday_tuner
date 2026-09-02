@@ -21,11 +21,13 @@
 --   silently.
 --
 -- That case is open on purpose rather than overlooked. Catching it means the
--- caller sending a version or a content hash of the set it read, which is a real
--- decision about what identity a lap set has and needs its own test surface, so
--- it is tracked separately rather than folded into a data-loss fix. Do not read
--- any comment in this repository as promising more than the count comparison
--- below; if one does, it is wrong and should be narrowed to this.
+-- caller sending a version or a content hash of the set it read - comparing a
+-- snapshot identity rather than a row count - which is a real decision about
+-- what identity a lap set has and needs its own test surface, so it is tracked
+-- as tt-lap-guard-content-not-count rather than folded into a data-loss fix
+-- that is already green. Do not read any comment in this repository as
+-- promising more than the count comparison below; if one does, it is wrong and
+-- should be narrowed to this.
 --
 -- The parameter is required rather than defaulted, and the three-argument
 -- function is dropped rather than left beside this one. A default, or a
