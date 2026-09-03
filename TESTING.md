@@ -94,8 +94,10 @@ the shared account other specs read. It needs the service-role key and
 a browser has to settle, that clearing every lap in the editor asks first. It is
 also the one spec that needs a particular migration applied: the guard its other
 ten tests assert is `20260903001500`, so a stack rebuilt without it fails the
-spec rather than skipping it - including against `20260901001400` alone, whose
-count comparison passes the two equal-count tests it should refuse.
+spec rather than skipping it - on `20260901001400` alone the calls naming
+`p_expected_laps` get `PGRST202` instead. Two of those ten are the equal-count
+saves a count comparison lets through, and they were watched failing against one
+wearing this same signature.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a
