@@ -488,17 +488,29 @@ with and without the flag and watching the cookie survive or vanish on render.
   `ActionResult<SessionLap[]>` now and `SessionLapsPanel` takes `null` for a failed
   read - it offers nothing that saves until the read succeeds, because a rider
   cannot be told about this by a server log. That is what closes the defect. The
-  database adds a narrower backstop for callers not yet written:
-  `replace_session_laps` takes `p_expected_lap_count`, raises SQLSTATE `TT409`
-  when the stored NUMBER differs, and has no unguarded overload left
-  (20260901001400). It compares a count and nothing else, so it catches a caller
-  that read no laps against a session that holds some, and NOT an equal-count
-  stale save - two tabs that both read 12 laps, one editing times or `included`
-  flags and saving first, still lose that edit silently. That boundary is on the
-  migration header; do not describe the guard as preventing overwrites in
-  general. Closing the equal-count case means comparing a snapshot identity
-  rather than a row count, which is its own design decision and test surface, so
-  it is tracked as tt-lap-guard-content-not-count. The sibling readers -
+  database adds a backstop for callers not yet written: `replace_session_laps`
+  takes `p_expected_laps` - the set the caller read, echoed back - raises SQLSTATE
+  `TT409` unless the stored laps ARE that set, and has no weaker signature left
+  (20260903001500). **A LAP SET'S IDENTITY IS ITS CONTENT, DERIVED NOT STORED.**
+  `session_laps_identity` is the only definition of it, and both sides of the
+  comparison go through that one function so they cannot drift apart. It is read
+  off the rows on every call rather than kept in a stamp column, because
+  `authenticated` writes `session_laps` directly, so a stamp would say
+  "unchanged" while the laps had moved; and because a derived identity needs no
+  backfill and no null-tolerant compare. The caller echoes the rows rather than a
+  digest it folded itself - a fold in TypeScript and a fold in SQL are two records
+  of one fact. `source` is excluded on purpose: the editor cannot see it, so
+  including it would refuse every save against imported laps forever, and a guard
+  that refuses honest saves is worse than the gap it closes. The identity reads
+  `session_laps` alone, so the `telemetry_summaries` upsert on this same path
+  cannot make the next save look stale. Two tabs that both read 12 laps, one
+  editing a lap time or an `included` flag and saving first, are now told apart
+  and the second is refused. **20260901001400's header describes the weaker count
+  guard it shipped and is not edited, because an applied migration never is - its
+  "no comment promises more than the count comparison" is superseded by
+  20260903001500 and by this bullet.** What is still not caught is two saves
+  carrying the SAME laps, because nothing is lost when they are. The sibling
+  readers -
   `getSessions`, `getSessionEnvironment`, `getSessionEnvironments`,
   `getLatestSessionsByVehicle`, `getComparableSessions` - still discard theirs;
   none feeds a write, so they degrade a display only, and that is the line to

@@ -15,9 +15,10 @@
    gives every signup path a `profiles` row - without it a rider who did not
    arrive through the invite route can never subscribe - then
    `20260824001300`, the owner-scoped write policies on the `vehicle-photos`
-   bucket, and finally `20260901001400`, the lap-count guard on
-   `replace_session_laps`. On a deployment whose database already predates this
-   work, those seven are what is left to apply; run the check below before
+   bucket, then `20260901001400`, the lap-count guard on `replace_session_laps`,
+   and finally `20260903001500`, which replaces that count with a comparison of
+   the laps themselves. On a deployment whose database already predates this
+   work, those eight are what is left to apply; run the check below before
    `20260816001200` and the audit below after it. On a deployment whose database
    has no migration history at all, `20260719001100` is applied in the SQL editor
    by hand - see "Apply the Data API grants by hand" below, and do that first:
@@ -28,17 +29,17 @@
    --linked` once after `supabase link` is what creates `vehicle-photos`. Without
    it, adding a vehicle with a photo fails with "Photo upload failed: Bucket not
    found". See "Local Run" in README.md.
-   `20260901001400` is the one migration in that list carrying a
-   **deploy-ordering requirement**: it changes the signature of
-   `replace_session_laps`, so apply it *before* the release that calls it goes
+   `20260901001400` and `20260903001500` are the migrations in that list carrying
+   a **deploy-ordering requirement**: each changes the signature of
+   `replace_session_laps`, so apply them *before* the release that calls it goes
    live. Migrations here are applied by hand while Vercel deploys on merge, so on
-   an existing deployment that means applying it before merging the pull request.
-   Either order leaves a window and both were walked in a browser: the mismatched
-   call gets `PGRST202` from PostgREST, the message reaches the rider, nothing is
-   saved and nothing stored is lost. Saving laps *and* logging a session are both
-   down for that window - `createSession` calls the function even for a session
-   with no laps - while reading is unaffected. The migration's own header carries
-   the detail.
+   an existing deployment that means applying them before merging the pull
+   request that ships the matching caller. Either order leaves a window and both
+   were walked in a browser: the mismatched call gets `PGRST202` from PostgREST,
+   the message reaches the rider, nothing is saved and nothing stored is lost.
+   Saving laps *and* logging a session are both down for that window -
+   `createSession` calls the function even for a session with no laps - while
+   reading is unaffected. Each migration's own header carries the detail.
 2. Set `BETA_INVITE_ONLY=true`, a long random `BETA_INVITE_SECRET`, and a distinct
    `BETA_FORM_RATE_LIMIT_SECRET` in the deployment environment.
 3. Deploy and verify the public home page, waitlist, invitation signup, session

@@ -72,10 +72,10 @@ function hasEnvironmentValues(environment: CreateSessionEnvironmentInput | null 
 }
 
 /**
- * The SQLSTATE `replace_session_laps` raises when the caller's lap count does
- * not match what is stored - see 20260901001400. Matched on the code rather than
- * the message so the rider-facing sentence and the database's wording can move
- * independently.
+ * The SQLSTATE `replace_session_laps` raises when the laps the caller read are
+ * not the laps that are stored - see 20260903001500. Matched on the code rather
+ * than the message so the rider-facing sentence and the database's wording can
+ * move independently.
  */
 const SESSION_LAPS_STALE_READ_CODE = 'TT409';
 
@@ -88,12 +88,14 @@ async function persistSessionLaps(params: {
   session: Session;
   laps: CreateSessionLapInput[];
   /**
-   * How many laps the caller read before deciding on this replacement. The RPC
-   * refuses the delete when the stored count differs, so a caller that mistook a
-   * failed read for an empty session cannot replace a session that holds laps.
-   * A count is all it compares - an equal-count stale save still goes through.
+   * The laps the caller read before deciding on this replacement, echoed back
+   * for the RPC to check against what is stored. It refuses the delete when the
+   * two differ, so neither a caller that mistook a failed read for an empty
+   * session nor a second tab holding an equal-count snapshot can replace laps it
+   * never saw. The rows travel rather than a digest of them: folding an identity
+   * here as well as in SQL would be two records of one fact, and they drift.
    */
-  expectedLapCount: number;
+  expectedLaps: CreateSessionLapInput[];
 }): Promise<string | null> {
   const validationError = validateLaps(params.laps);
   if (validationError) return validationError;
@@ -101,7 +103,7 @@ async function persistSessionLaps(params: {
     p_user_id: params.userId,
     p_session_id: params.session.id,
     p_laps: params.laps as unknown as Json,
-    p_expected_lap_count: params.expectedLapCount,
+    p_expected_laps: params.expectedLaps as unknown as Json,
   });
   if (!error) return null;
   return error.code === SESSION_LAPS_STALE_READ_CODE ? SESSION_LAPS_STALE_READ_MESSAGE : error.message;
@@ -740,7 +742,7 @@ export async function createSession(
     laps: input.laps ?? [],
     // The session row was inserted two statements ago, so nothing can be holding
     // laps against it yet.
-    expectedLapCount: 0,
+    expectedLaps: [],
   });
   if (lapError) {
     await rollbackCreatedSession({
@@ -886,15 +888,14 @@ export async function createSession(
 /**
  * Replace a session's laps with the set the rider is looking at.
  *
- * `expectedLapCount` is how many laps the caller read before the rider edited
- * them. It is passed through to `replace_session_laps`, which refuses the delete
- * when the stored NUMBER differs - so a save built on a read that returned no
- * laps cannot replace a session that holds some. It compares a count and nothing
- * else: two saves that each read 12 laps agree on 12, so the later one still
- * overwrites the earlier one's edits to lap times or `included` flags. That
- * equal-count case is open on purpose and written up in 20260901001400. See
- * `getSessionLaps` for how the read itself is now reported, which is what closes
- * the failure this was built for.
+ * `expectedLaps` is the set the caller read before the rider edited it. It is
+ * passed through to `replace_session_laps`, which refuses the delete unless the
+ * stored laps ARE that set - lap numbers, lap times and `included` flags alike.
+ * So a save built on a read that returned no laps cannot replace a session that
+ * holds some, and neither can a second tab whose snapshot has the same number of
+ * laps as the one the first tab just edited. See 20260903001500 for what a lap
+ * set's identity is and why it is derived rather than stored, and
+ * `getSessionLaps` for how the read itself is reported.
  *
  * Nothing is returned but success: the caller already holds the laps it just
  * sent, and reading them back would only add a second read that can fail after
@@ -903,7 +904,7 @@ export async function createSession(
 export async function replaceSessionLaps(
   sessionId: string,
   laps: CreateSessionLapInput[],
-  expectedLapCount: number,
+  expectedLaps: CreateSessionLapInput[],
 ): Promise<ActionResult> {
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
@@ -928,7 +929,7 @@ export async function replaceSessionLaps(
     userId: user.id,
     session: sessionRow as Session,
     laps,
-    expectedLapCount,
+    expectedLaps,
   });
   if (persistError) return { ok: false, error: persistError };
 

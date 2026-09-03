@@ -671,9 +671,9 @@ function collectRaceEngineerContextRiderText(
   // recorded here because the obvious version of it is WRONG. `replaceSessionLaps`
   // does regenerate this row, but its upsert carries
   // `where telemetry_summaries.source = 'manual'`
-  // (`20260901001400_guard_replace_session_laps_against_stale_reads.sql`, which
-  // now holds the body `20260717000900` first created), so the lap editor clears
-  // a row only while its stored source is still `manual`. A row with any other
+  // (`20260903001500_replace_session_laps_compares_lap_content.sql`, which now
+  // holds the body `20260717000900` first created), so the lap editor clears a
+  // row only while its stored source is still `manual`. A row with any other
   // source cannot be cleared that way.
   //
   // Refusing is nonetheless reachable, because of who can be in that state at all.

@@ -1446,7 +1446,7 @@ describe('sessions actions', () => {
     const rpc = vi.fn();
     vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
 
-    const result = await replaceSessionLaps('session-1', [], 0);
+    const result = await replaceSessionLaps('session-1', [], []);
 
     expect(result).toEqual({ ok: false, error: 'snapshot failed' });
     expect(rpc).not.toHaveBeenCalled();
@@ -1461,15 +1461,53 @@ describe('sessions actions', () => {
     const rpc = vi.fn(async () => ({ data: null, error: { message: 'lap transaction failed' } }));
     vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
 
-    const result = await replaceSessionLaps('sess-1', [], 3);
+    const readLaps = [
+      { lap_number: 1, lap_time_ms: 90_000, included: true },
+      { lap_number: 2, lap_time_ms: 91_000, included: false },
+    ];
+
+    const result = await replaceSessionLaps('sess-1', [], readLaps);
 
     expect(result).toEqual({ ok: false, error: 'lap transaction failed' });
     expect(rpc).toHaveBeenCalledWith('replace_session_laps', {
       p_user_id: 'user-1',
       p_session_id: 'sess-1',
       p_laps: [],
-      p_expected_lap_count: 3,
+      p_expected_laps: readLaps,
     });
+  });
+
+  /**
+   * The whole point of sending the rows rather than their number. A count cannot
+   * describe an edit that leaves the count alone, so the caller has to hand the
+   * database the `included` flags and lap times it read for the guard in
+   * 20260903001500 to have anything to compare. Whether the database then
+   * refuses is its business and is covered in
+   * `tests/e2e/session-laps-stale-read-guard.spec.ts`; what this pins is that
+   * the belief travels at all.
+   */
+  it('sends the lap times and inclusion flags it read, not how many there were', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const from = vi.fn(() => createQuery({ single: { data: createdSession, error: null } }));
+    const rpc = vi.fn(async () => ({ data: null, error: null }));
+    vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
+
+    const readLaps = [
+      { lap_number: 1, lap_time_ms: 90_000, included: true },
+      { lap_number: 2, lap_time_ms: 91_000, included: true },
+    ];
+    // Same count, different content: only the second lap's flag moved.
+    const edited = [readLaps[0], { ...readLaps[1], included: false }];
+
+    const result = await replaceSessionLaps('sess-1', edited, readLaps);
+
+    expect(result.ok).toBe(true);
+    // The two lists are the same length, so a count could not have told the
+    // database these are different sets. The flags are what carry it.
+    expect(rpc).toHaveBeenCalledWith(
+      'replace_session_laps',
+      expect.objectContaining({ p_laps: edited, p_expected_laps: readLaps }),
+    );
   });
 
 
@@ -1517,11 +1555,14 @@ describe('sessions actions', () => {
     const from = vi.fn(() => sessionQuery);
     const rpc = vi.fn(async () => ({
       data: null,
-      error: { code: 'TT409', message: 'replace_session_laps stale read: 12 laps stored, caller expected 0' },
+      error: {
+        code: 'TT409',
+        message: 'replace_session_laps stale read: the stored laps (12) are not the ones the caller read (12)',
+      },
     }));
     vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
 
-    const result = await replaceSessionLaps('sess-1', [], 0);
+    const result = await replaceSessionLaps('sess-1', [], []);
 
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error).toContain('changed since this page loaded');
@@ -1551,7 +1592,7 @@ describe('sessions actions', () => {
     expect(result.ok).toBe(true);
     expect(rpc).toHaveBeenCalledWith(
       'replace_session_laps',
-      expect.objectContaining({ p_expected_lap_count: 0 }),
+      expect.objectContaining({ p_expected_laps: [] }),
     );
   });
 
