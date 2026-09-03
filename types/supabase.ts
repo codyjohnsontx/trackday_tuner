@@ -964,13 +964,16 @@ export type Database = {
           p_session_id: string;
           p_laps: Json;
           /**
-           * How many laps the caller read before deciding on this replacement.
-           * Required: the function deletes the whole set, and refuses when the
-           * stored count differs, so a caller that read no laps cannot replace a
-           * session that holds some. A count is the whole comparison - an
-           * equal-count stale save is not caught. See 20260901001400.
+           * The laps the caller read before deciding on this replacement, echoed
+           * back. Required: the function deletes the whole set, and refuses when
+           * what is stored is not what the caller read - a difference in a lap
+           * time or an `included` flag is enough, so an equal-count stale save
+           * from a second tab is refused rather than silently overwriting the
+           * first. The caller sends the rows rather than a digest of them so the
+           * only definition of a lap set's identity stays in the database
+           * (`session_laps_identity`). See 20260903001500.
            */
-          p_expected_lap_count: number;
+          p_expected_laps: Json;
         };
         Returns: void;
       };

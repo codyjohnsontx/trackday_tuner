@@ -7,20 +7,26 @@ import type { Database } from '@/types/supabase';
 
 /**
  * `replace_session_laps` deletes every lap on the session before inserting, so a
- * caller that mistakes "I read nothing" for "there is nothing" destroys the
- * rider's times. `getSessionLaps` was that caller - it discarded its Supabase
- * error, the session page offered "Add Lap Times" on a session holding four, and
- * whatever the rider retyped replaced them. That caller is fixed, and this
- * covers the half of the fix that outlives it: the function now asks how many
- * laps the caller believes are stored and refuses when that number differs,
- * which is what protects a caller nobody has written yet.
+ * caller that replaces a set it never saw destroys the rider's times. It asks
+ * the caller for the laps it believes are stored and refuses unless they ARE the
+ * stored ones - lap numbers, lap times and `included` flags alike (20260903001500).
  *
- * Where the guard itself refuses below, the reason is the COUNT - a caller that
- * read nothing against a session holding laps, or one that states no count at
- * all - because a count is all it compares. An equal-count stale save - two tabs
- * that both read 12 laps, one editing times or `included` flags and saving
- * before the other - passes it, and is written up in 20260901001400. Nothing
- * here should be read as covering that.
+ * Two failures live under that, and both are covered here. The first is the one
+ * that shipped: `getSessionLaps` discarded its Supabase error, so a failed read
+ * came back as `[]`, the session page offered "Add Lap Times" on a session
+ * holding four, and whatever the rider retyped replaced them. The second is the
+ * one a COUNT could never catch, and it is the headline below - two tabs both
+ * load a session holding twelve laps, the first re-times a lap and excludes
+ * another without changing how many there are, and the second saves its stale
+ * snapshot. Twelve equals twelve, so the count guard that preceded this passed
+ * it and the first tab's work went silently. It is refused now.
+ *
+ * The other thing these pin is the fail-safe direction: the guard has to refuse
+ * a stale save WITHOUT refusing a real one. So a legitimate sequential save, a
+ * claim listing the same laps in another order, and a save whose
+ * `telemetry_summaries` row was just rewritten - by this very function, and by
+ * the rider directly - all still succeed. A guard that refuses honest saves
+ * would be worse for a rider than the gap it closes.
  *
  * It runs the RPC as a rider rather than through the app, because the guard is a
  * property of the function and the point is that it holds for callers that are
@@ -37,6 +43,15 @@ const LAPS = [
 
 /** What a rider who was shown an empty editor types back in from memory. */
 const RETYPED = [{ lap_number: 1, lap_time_ms: 103_000, included: true }];
+
+/**
+ * What the first of two tabs saves: lap 2 re-timed and lap 4 dropped from the
+ * average. Four laps before, four laps after - which is the whole point.
+ */
+const FIRST_TAB_EDIT = LAPS.map((lap) =>
+  lap.lap_number === 2 ? { ...lap, lap_time_ms: 99_880 }
+  : lap.lap_number === 4 ? { ...lap, included: false }
+  : lap);
 
 function createRiderClient(): SupabaseClient<Database> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -100,6 +115,25 @@ test.describe('replace_session_laps against a caller that never read the laps', 
     return (data ?? []).map((lap) => lap.lap_time_ms);
   }
 
+  /** The stored set in the shape a caller states its belief in. */
+  async function storedLaps(): Promise<{ lap_number: number; lap_time_ms: number; included: boolean }[]> {
+    const { data } = await createTestAdminClient()
+      .from('session_laps')
+      .select('lap_number, lap_time_ms, included')
+      .eq('session_id', sessionId)
+      .order('lap_number');
+    return data ?? [];
+  }
+
+  async function storedSummary(): Promise<{ summary: string | null; updated_at: string } | null> {
+    const { data } = await createTestAdminClient()
+      .from('telemetry_summaries')
+      .select('summary, updated_at')
+      .eq('session_id', sessionId)
+      .maybeSingle();
+    return data;
+  }
+
   test.beforeEach(async ({}, testInfo: TestInfo) => {
     const admin = createTestAdminClient();
     email = `lap-guard-${testInfo.project.name}-${randomUUID()}@example.com`;
@@ -140,13 +174,13 @@ test.describe('replace_session_laps against a caller that never read the laps', 
     const { error: signInError } = await rider.auth.signInWithPassword({ email, password });
     expect(signInError, signInError?.message).toBeNull();
 
-    // The session holds no laps yet, so this is the honest count - and it is the
-    // same call `createSession` makes.
+    // The session holds no laps yet, so an empty claim is the honest one - and
+    // it is the same call `createSession` makes.
     const { error: seedError } = await rider.rpc('replace_session_laps', {
       p_user_id: riderId,
       p_session_id: sessionId,
       p_laps: LAPS,
-      p_expected_lap_count: 0,
+      p_expected_laps: [],
     });
     expect(seedError, seedError?.message).toBeNull();
     expect(await storedLapTimes()).toEqual(LAPS.map((lap) => lap.lap_time_ms));
@@ -166,7 +200,7 @@ test.describe('replace_session_laps against a caller that never read the laps', 
       p_user_id: riderId!,
       p_session_id: sessionId,
       p_laps: RETYPED,
-      p_expected_lap_count: 0,
+      p_expected_laps: [],
     });
 
     expect(error?.code).toBe('TT409');
@@ -178,7 +212,7 @@ test.describe('replace_session_laps against a caller that never read the laps', 
       p_user_id: riderId!,
       p_session_id: sessionId,
       p_laps: [],
-      p_expected_lap_count: 0,
+      p_expected_laps: [],
     });
 
     expect(error?.code).toBe('TT409');
@@ -190,24 +224,47 @@ test.describe('replace_session_laps against a caller that never read the laps', 
       p_user_id: riderId!,
       p_session_id: sessionId,
       p_laps: [],
-      p_expected_lap_count: null as unknown as number,
+      p_expected_laps: null as unknown as [],
     });
 
     expect(error?.code).toBe('TT409');
     expect(await storedLapTimes()).toEqual(LAPS.map((lap) => lap.lap_time_ms));
   });
 
-  test('leaves no unguarded three-argument function behind', async () => {
-    // `create or replace` with an added parameter would have made an overload
-    // rather than a replacement, and the old signature would still delete
-    // without asking anything. The migration drops it, so this call finds
-    // nothing rather than the function it used to reach.
-    const { error } = await rider.rpc(
+  test('refuses a claim that is not a set of laps, rather than failing on it', async () => {
+    // Nothing in the claim is cast on the way to the comparison, so a caller
+    // sending nonsense meets the guard rather than a cast error - and a guard
+    // that cannot be made to throw is one that cannot be talked past.
+    const { error } = await rider.rpc('replace_session_laps', {
+      p_user_id: riderId!,
+      p_session_id: sessionId,
+      p_laps: [],
+      p_expected_laps: [7, 'not a lap', {}] as unknown as [],
+    });
+
+    expect(error?.code).toBe('TT409');
+    expect(await storedLapTimes()).toEqual(LAPS.map((lap) => lap.lap_time_ms));
+  });
+
+  test('leaves no weaker signature behind to call instead', async () => {
+    // `create or replace` with an added or retyped parameter makes an overload
+    // rather than a replacement, and either older signature would still delete
+    // on a belief this one refuses - the three-argument form asks nothing at
+    // all, and the count form passes the equal-count save below. Both are
+    // dropped, so these calls find nothing rather than the function they used
+    // to reach.
+    const unguarded = await rider.rpc(
       'replace_session_laps',
       { p_user_id: riderId!, p_session_id: sessionId, p_laps: [] } as never,
     );
+    expect(unguarded.error?.code).toBe('PGRST202');
 
-    expect(error?.code).toBe('PGRST202');
+    const byCount = await rider.rpc(
+      'replace_session_laps',
+      { p_user_id: riderId!, p_session_id: sessionId, p_laps: [], p_expected_lap_count: LAPS.length } as never,
+    );
+    expect(byCount.error?.code).toBe('PGRST202');
+
     expect(await storedLapTimes()).toEqual(LAPS.map((lap) => lap.lap_time_ms));
   });
 
@@ -218,11 +275,134 @@ test.describe('replace_session_laps against a caller that never read the laps', 
       p_user_id: riderId!,
       p_session_id: sessionId,
       p_laps: replacement,
-      p_expected_lap_count: LAPS.length,
+      p_expected_laps: LAPS,
     });
 
     expect(error, error?.message).toBeNull();
     expect(await storedLapTimes()).toEqual([99_500]);
+  });
+
+  test('takes the laps it read in any order, because a set has no order', async () => {
+    // The caller echoes what it read, and nothing promises the order it read it
+    // in. Refusing over the order would be a false refusal on an honest save.
+    const { error } = await rider.rpc('replace_session_laps', {
+      p_user_id: riderId!,
+      p_session_id: sessionId,
+      p_laps: FIRST_TAB_EDIT,
+      p_expected_laps: [...LAPS].reverse(),
+    });
+
+    expect(error, error?.message).toBeNull();
+    expect(await storedLaps()).toEqual(FIRST_TAB_EDIT);
+  });
+
+  /**
+   * The case a count cannot see, and the reason this guard compares content.
+   *
+   * Both tabs read the same four laps. The first re-times lap 2 and drops lap 4
+   * from the average, so four laps go in and four laps come out. The second tab
+   * still believes the four it read. Against the count guard that preceded this
+   * (20260901001400) that second save was accepted - 4 equalled 4 - and the
+   * first tab's work vanished with no error anywhere.
+   */
+  test('refuses a stale save that holds the same NUMBER of laps as the stored set', async () => {
+    const first = await rider.rpc('replace_session_laps', {
+      p_user_id: riderId!,
+      p_session_id: sessionId,
+      p_laps: FIRST_TAB_EDIT,
+      p_expected_laps: LAPS,
+    });
+    expect(first.error, first.error?.message).toBeNull();
+    expect(await storedLaps()).toEqual(FIRST_TAB_EDIT);
+
+    // The second tab's own edit, built on the snapshot it loaded before any of
+    // that happened. Same lap count as what is stored; different laps.
+    const secondTabEdit = LAPS.map((lap) =>
+      lap.lap_number === 1 ? { ...lap, lap_time_ms: 100_010 } : lap);
+    const second = await rider.rpc('replace_session_laps', {
+      p_user_id: riderId!,
+      p_session_id: sessionId,
+      p_laps: secondTabEdit,
+      p_expected_laps: LAPS,
+    });
+
+    expect(second.error?.code).toBe('TT409');
+    expect(await storedLaps()).toEqual(FIRST_TAB_EDIT);
+  });
+
+  test('refuses a stale save whose only difference is an included flag', async () => {
+    // The weakest difference the guard has to see: same laps, same times, same
+    // count, one flag moved. A digest over lap times alone would miss it.
+    const excluded = LAPS.map((lap) =>
+      lap.lap_number === 3 ? { ...lap, included: false } : lap);
+    const first = await rider.rpc('replace_session_laps', {
+      p_user_id: riderId!,
+      p_session_id: sessionId,
+      p_laps: excluded,
+      p_expected_laps: LAPS,
+    });
+    expect(first.error, first.error?.message).toBeNull();
+
+    const second = await rider.rpc('replace_session_laps', {
+      p_user_id: riderId!,
+      p_session_id: sessionId,
+      p_laps: RETYPED,
+      p_expected_laps: LAPS,
+    });
+
+    expect(second.error?.code).toBe('TT409');
+    expect(await storedLaps()).toEqual(excluded);
+  });
+
+  /**
+   * The identity is read off `session_laps` and nothing else, so the
+   * `telemetry_summaries` upsert this same function runs on every successful
+   * save cannot make the next save look stale. Hanging the identity off that
+   * row's `updated_at` is the shortcut this design most invites, and it would
+   * fail here: the row is rewritten by the save itself, and - the second half of
+   * this test - `authenticated` can rewrite it directly.
+   */
+  test('does not refuse a save because telemetry_summaries was rewritten', async () => {
+    const seeded = await storedSummary();
+    expect(seeded, 'the seed save should have written a manual summary').not.toBeNull();
+
+    const first = await rider.rpc('replace_session_laps', {
+      p_user_id: riderId!,
+      p_session_id: sessionId,
+      p_laps: FIRST_TAB_EDIT,
+      p_expected_laps: LAPS,
+    });
+    expect(first.error, first.error?.message).toBeNull();
+
+    const rewritten = await storedSummary();
+    expect(rewritten!.updated_at).not.toBe(seeded!.updated_at);
+
+    // Straight after that rewrite, with an honest claim.
+    const second = await rider.rpc('replace_session_laps', {
+      p_user_id: riderId!,
+      p_session_id: sessionId,
+      p_laps: LAPS,
+      p_expected_laps: FIRST_TAB_EDIT,
+    });
+    expect(second.error, second.error?.message).toBeNull();
+    expect(await storedLaps()).toEqual(LAPS);
+
+    // And with the summary row rewritten by the rider rather than by the
+    // function, which is a write the identity must also stay blind to.
+    const { error: summaryError } = await rider
+      .from('telemetry_summaries')
+      .update({ summary: 'rewritten by the rider' })
+      .eq('session_id', sessionId);
+    expect(summaryError, summaryError?.message).toBeNull();
+
+    const third = await rider.rpc('replace_session_laps', {
+      p_user_id: riderId!,
+      p_session_id: sessionId,
+      p_laps: FIRST_TAB_EDIT,
+      p_expected_laps: LAPS,
+    });
+    expect(third.error, third.error?.message).toBeNull();
+    expect(await storedLaps()).toEqual(FIRST_TAB_EDIT);
   });
 
   test('asks before a save that clears every lap on the session', async ({ page }) => {

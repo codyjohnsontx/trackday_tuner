@@ -93,8 +93,9 @@ the shared account other specs read. It needs the service-role key and
 `BETA_INVITE_ONLY`, and a running app only for its last test - the one thing here
 a browser has to settle, that clearing every lap in the editor asks first. It is
 also the one spec that needs a particular migration applied: the guard its other
-five tests assert is `20260901001400`, so a stack rebuilt without it fails the
-spec rather than skipping it.
+ten tests assert is `20260903001500`, so a stack rebuilt without it fails the
+spec rather than skipping it - including against `20260901001400` alone, whose
+count comparison passes the two equal-count tests it should refuse.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a
