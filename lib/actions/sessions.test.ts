@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
@@ -246,6 +246,20 @@ describe('sessions actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(cookies).mockResolvedValue({ get: vi.fn(() => undefined) } as never);
+  });
+
+  // Several tests below silence console.error with vi.spyOn so an expected
+  // failure log does not clutter the run. Restoring it inline at the end of the
+  // body meant a body that threw first left the spy installed, and console.error
+  // was swallowed for every test after it - the next real failure then surfaced
+  // with no message, far from its cause. This restores exactly that one spy, and
+  // only when it is installed, rather than vi.restoreAllMocks(): on vitest 2 that
+  // would also reset every bare vi.fn() module mock this file declares, which is
+  // a broader change than the leak it closes.
+  afterEach(() => {
+    if (vi.isMockFunction(console.error)) {
+      vi.mocked(console.error).mockRestore();
+    }
   });
 
   it('returns auth error when creating session while logged out', async () => {
@@ -606,7 +620,6 @@ describe('sessions actions', () => {
         limit: TRACK_NAME_MATCH_LIMIT,
       }),
     );
-    errorSpy.mockRestore();
   });
 
   it('saves a typed track the rider has never logged as a track of their own', async () => {
@@ -663,7 +676,7 @@ describe('sessions actions', () => {
   it('still saves the session when the track row cannot be created', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const visibleTracks = createQuery({ base: { data: [], error: null } });
     const trackInsert = createQuery({ single: { data: null, error: { message: 'insert refused' } } });
@@ -693,7 +706,6 @@ describe('sessions actions', () => {
     expect(insertQuery.insert).toHaveBeenCalledWith(
       expect.objectContaining({ track_id: null, track_name: 'Harris Hill Raceway' }),
     );
-    errorSpy.mockRestore();
   });
 
   it('does not create a track for a free rider already at the plan limit', async () => {
@@ -940,7 +952,6 @@ describe('sessions actions', () => {
         error: 'env failed',
       }),
     );
-    errorSpy.mockRestore();
   });
 
   it('keeps the auto-created track when the session delete removed no row', async () => {
@@ -997,7 +1008,6 @@ describe('sessions actions', () => {
       '[sessions] session rollback failed',
       expect.objectContaining({ userId: 'user-1', sessionId: 'sess-1', error: 'no rows deleted' }),
     );
-    errorSpy.mockRestore();
   });
 
   it('keeps the auto-created track when the session it belongs to could not be deleted', async () => {
@@ -1053,7 +1063,6 @@ describe('sessions actions', () => {
       '[sessions] session rollback failed',
       expect.objectContaining({ userId: 'user-1', sessionId: 'sess-1', error: 'delete refused' }),
     );
-    errorSpy.mockRestore();
   });
 
   it('persists change records against the previous session and the active baseline', async () => {
@@ -1204,7 +1213,6 @@ describe('sessions actions', () => {
         error: 'changes failed',
       }),
     );
-    errorSpy.mockRestore();
   });
 
   it('skips persisting change records when the vehicle type cannot be resolved', async () => {
@@ -1238,7 +1246,6 @@ describe('sessions actions', () => {
       '[sessions] session_changes skipped: unresolved vehicle type',
       expect.objectContaining({ userId: 'user-1', sessionId: 'sess-1', vehicleId: 'veh-1' }),
     );
-    errorSpy.mockRestore();
   });
 
   it('returns the closest previous session for same day and earlier time', async () => {
@@ -1426,8 +1433,6 @@ describe('sessions actions', () => {
       sessionCount: 2,
       error: 'permission denied for table telemetry_summaries',
     });
-
-    consoleError.mockRestore();
   });
 
   it('returns no telemetry summaries for empty input', async () => {
@@ -1604,5 +1609,20 @@ describe('sessions actions', () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.session_id).toBe('demo-session-4');
     expect(createClient).not.toHaveBeenCalled();
+  });
+
+  // A console.error spy is installed inline by several tests above and, before
+  // the afterEach at the top of this describe, restored inline too. A body that
+  // threw between the two left the spy in place, so console.error was swallowed
+  // for every test that ran afterwards and the next real failure surfaced with
+  // no message, far from its cause. `it.fails` expects this body to throw; the
+  // test after it is the guarantee that the throw did not leak the spy.
+  it.fails('deliberately throws after installing a console.error spy', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    throw new Error('simulated test-body failure');
+  });
+
+  it('still sees the real console.error after the previous test threw', () => {
+    expect(vi.isMockFunction(console.error)).toBe(false);
   });
 });
