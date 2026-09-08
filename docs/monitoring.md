@@ -152,8 +152,11 @@ branch could not do it.
 
 Vercel → project → Settings → Log Drains → Add. Better Stack and Axiom both
 have a free tier that covers this volume; **neither was chosen for you.** It
-makes the ~50 `console.error` calls across `app/`, `lib/` and `components/`
-searchable and keeps them past Vercel's own short retention.
+makes the ~45 server-side `console.error` calls across `app/` and `lib/`
+searchable and keeps them past Vercel's own short retention. The three in
+`components/` are not among them: a drain carries build, function and edge
+logs, and those three run in the rider's browser, so nothing leaves the device.
+Sentry (step 3) is the only channel that catches a client-side failure.
 
 **Verify it worked:** `curl https://<your-app>/api/health`, then find Vercel's
 own request log line for `/api/health` in the drain. Do not search for
