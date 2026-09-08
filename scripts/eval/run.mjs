@@ -118,6 +118,100 @@ function buildVehicle(caseInput, ids) {
 }
 
 /**
+ * HOW THE COMMITTED NUMBERS MOVED, AND WHY. Emitted into `eval-baseline.json`
+ * beside the limitations for the same reason: the record has to outlive the
+ * conversation that produced it, and a commit body is not somewhere anyone
+ * looks a year later.
+ *
+ * These are fixed historical values, not a mirror of `metrics` above - a later
+ * re-baseline moves those and leaves this alone, which is the point of keeping
+ * the first measurement legible. `git show b115aaf:eval-baseline.json` is the
+ * primary source and this is derived from it.
+ */
+const BASELINE_CORRECTION_RECORD = {
+  what_this_is:
+    'The first baseline, committed at b115aaf, was measured by a harness carrying three ' +
+    'measurement bugs. Each was corrected under review and the baseline re-measured offline ' +
+    'against the SAME committed recordings - no re-recording, no model call, no change to any ' +
+    'golden case. This is what moved, from those first figures to the ones this file carries.',
+  first_baseline: 'b115aaf, 32 golden cases, offline replay of the recordings in tests/fixtures/rag-eval/recordings/',
+  no_pass_criterion_changed:
+    'rubric_pass_rate and refusal_accuracy are the two rates that encode a pass criterion, and ' +
+    'both are unchanged at 27/32. The rubric, the rule that a policy force_refusal is a rubric ' +
+    'failure, and every should_refuse label are exactly as first committed - including the two ' +
+    'contested sparse cases, which still fail and carry a note saying why they were left alone.',
+  the_obvious_objection:
+    'Every movement was UPWARD, which is what correcting your own scoring after seeing the score ' +
+    'always looks like from the outside. The defence is not that the corrections were modest, it ' +
+    'is that the before and the after are both published here and each was verified by decoding ' +
+    'the committed recordings rather than asserted: four of the six numerators below did not ' +
+    'change at all, because the bugs were in which cases counted rather than in how a case scored. ' +
+    'The one numerator that did move, direction 5 -> 7, is two responses that said `lower` where ' +
+    'the label said `decrease`.',
+  metrics: [
+    {
+      metric: 'rubric_pass_rate',
+      b115aaf: 0.84375,
+      corrected_to: 0.84375,
+      fraction: '27/32 -> 27/32',
+      cause: 'DID NOT MOVE.',
+    },
+    {
+      metric: 'refusal_accuracy',
+      b115aaf: 0.84375,
+      corrected_to: 0.84375,
+      fraction: '27/32 -> 27/32',
+      cause: 'DID NOT MOVE.',
+    },
+    {
+      metric: 'recall_at_4 -> recall_at_k',
+      b115aaf: 0.7777777777777778,
+      corrected_to: 0.8076923076923077,
+      fraction: '21/27 -> 21/26',
+      cause:
+        'A labelled case the classifier refused before anything was embedded was being scored ' +
+        'recall 0. The retriever never ran for it, so that 0 measured the classifier and not ' +
+        'retrieval; it is now not-applicable, which is what this file already claimed it was. ' +
+        'A measurement bug rather than a judgement: the same case still fails the rubric and ' +
+        'still counts against refusal accuracy. The numerator did not change - only which cases ' +
+        'the average is taken over. The key was also renamed, because the harness no longer ' +
+        'declares its own k; it reports the k production retrieved at.',
+    },
+    {
+      metric: 'mrr',
+      b115aaf: 0.7314814814814815,
+      corrected_to: 0.7596153846153846,
+      fraction: '19.75/27 -> 19.75/26',
+      cause: 'Same case, same correction, same untouched numerator.',
+    },
+    {
+      metric: 'component_accuracy',
+      b115aaf: 0.7857142857142857,
+      corrected_to: 0.8461538461538461,
+      fraction: '11/14 -> 11/13',
+      cause:
+        'The same misattribution one stage further on: a case the model was never asked, because ' +
+        'a classifier refused it first, was counted as a model miss. "Did the model reach the ' +
+        "human's answer\" is only a question about a case the model was asked. A model that WAS " +
+        'asked and recommended nothing still counts as a miss. Numerator unchanged.',
+    },
+    {
+      metric: 'direction_accuracy',
+      b115aaf: 0.35714285714285715,
+      corrected_to: 0.5384615384615384,
+      fraction: '5/14 -> 7/14 -> 7/13',
+      cause:
+        'Two corrections. First, the model\'s direction was compared to the label by exact string ' +
+        'equality, so `lower` against a label of `decrease` scored as a miss although ' +
+        'COMPONENT_POLICIES accepts both for tire pressure and they are the same instruction in ' +
+        'English - the metric was measuring spelling (5/14 -> 7/14). It is deliberately narrow: ' +
+        'stiffen is still not increase, so those misses stand. Then the never-asked exclusion ' +
+        'above (7/14 -> 7/13).',
+    },
+  ],
+};
+
+/**
  * The context `loadRaceEngineerContext` would build for a rider with one logged
  * session and no history: no similar sessions, no environment row, no feedback,
  * no stored recommendations. `dayTrend` comes from the real `buildDayTrend`
@@ -639,6 +733,7 @@ async function report(ctx) {
       metrics,
       coverage,
       limitations: BASELINE_LIMITATIONS,
+      correction_record: BASELINE_CORRECTION_RECORD,
       per_case: Object.fromEntries(
         scoredResults.map((r) => [
           r.id,

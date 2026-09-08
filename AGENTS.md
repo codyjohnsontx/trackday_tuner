@@ -1004,6 +1004,33 @@ file, so three chunks of one file is one document found). An empty list means th
 case is not retrieval-scored, which is forced anyway when a classifier refuses
 before anything is embedded.
 
+**The committed numbers moved after the first baseline, and `correction_record`
+in `eval-baseline.json` is the record of it.** That first baseline (b115aaf) was
+measured by a harness carrying three measurement bugs. Each was corrected under
+review and the baseline re-measured offline against the SAME committed
+recordings - no re-record, no model call, no golden case touched.
+
+| metric | b115aaf | now | fraction | what moved it |
+| --- | --- | --- | --- | --- |
+| `rubric_pass_rate` | 0.8438 | 0.8438 | 27/32 -> 27/32 | **did not move** |
+| `refusal_accuracy` | 0.8438 | 0.8438 | 27/32 -> 27/32 | **did not move** |
+| `recall_at_4` -> `recall_at_k` | 0.7778 | 0.8077 | 21/27 -> 21/26 | a labelled case the classifier refused before anything was embedded was scored recall 0, so that 0 measured the classifier rather than retrieval. The key was renamed because the harness no longer declares its own k |
+| `mrr` | 0.7315 | 0.7596 | 19.75/27 -> 19.75/26 | the same case, the same correction |
+| `component_accuracy` | 0.7857 | 0.8462 | 11/14 -> 11/13 | the same misattribution one stage on: a case the model was never asked was counted as a model miss |
+| `direction_accuracy` | 0.3571 | 0.5385 | 5/14 -> 7/14 -> 7/13 | exact string equality scored `lower` against a label of `decrease` as a miss although the policy accepts both (5 -> 7), then the never-asked exclusion above |
+
+**No pass criterion changed.** `rubric_pass_rate` and `refusal_accuracy` are the
+two rates that encode one, and both are unchanged at 27/32; so are the rubric,
+the force-refusal rule and every `should_refuse` label, including the two
+contested sparse cases. Every movement was UPWARD, which is what correcting your
+own scoring after seeing the score always looks like from the outside. The
+defence is not that the corrections were small: it is that both ends are
+published above and each was verified by decoding the committed recordings
+rather than asserted. Four of the six numerators never changed, because the bugs
+were in which cases counted and not in how a case scored - the one that did,
+direction 5 -> 7, is two responses that said `lower` where the label said
+`decrease`.
+
 **One recorded prompt is one boolean off production, and the baseline says so
 itself.** `buildContext` in `scripts/eval/run.mjs` reports `data_used.weather`
 as `temperature_c != null` while supplying no `session_environment` row, a pair
