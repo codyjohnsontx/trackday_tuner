@@ -266,14 +266,17 @@ Two deliberate settings:
   of shared JS on a mobile-first app. The performance question tracing would
   answer - how slow is the AI path - is already answered from `ai_requests` by
   `/api/monitoring/ai-health`.
-- **No session replay, `sendDefaultPii: false`, and no request bodies.** Replay
-  records what a rider types, and the session form carries the free text the
-  prompt pipeline already treats as untrusted (`lib/rag/prompt.ts`).
-  `sendDefaultPii: false` scrubs the session cookie but does **not** cover the
-  request body: the Node SDK captures incoming bodies on a path that setting
-  does not gate, which on the AI routes is the rider's question, symptoms and
-  change intent. The `beforeSend` in `lib/sentry-options.ts` drops it, so an
-  issue carries the error and the stack and not what the rider wrote.
+- **No session replay, and no headers, cookies or request bodies on an issue.**
+  Replay records what a rider types, and the session form carries the free text
+  the prompt pipeline already treats as untrusted (`lib/rag/prompt.ts`).
+  `sendDefaultPii: false` is set, but do not read it as more than it is: on the
+  event path it gates **none** of cookies, headers or the body - its deny list
+  is IP-revealing header names only. Left alone, an issue would carry the
+  rider's `sb-<ref>-auth-token` cookie, which holds their access **and** refresh
+  token, and the `Authorization: Bearer` header carrying
+  `MONITORING_CRON_SECRET`. The `beforeSend` in `lib/sentry-options.ts` is what
+  drops all three, so an issue carries the error, the stack, the method and the
+  URL - and not the rider's credentials or what they wrote.
 
 ## Where an alert goes
 

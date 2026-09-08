@@ -3,47 +3,48 @@ import type { ErrorEvent } from '@sentry/nextjs';
 
 import { sharedSentryOptions } from '@/lib/sentry-options';
 
-// `sendDefaultPii: false` does not gate the request body. The Node SDK captures
-// incoming bodies onto the isolation scope and attaches them to every event, so
-// without this an `ai/tuning-advice` 500 would carry the rider's question,
-// symptoms and change intent to sentry.io.
+// `sendDefaultPii: false` gates none of this on the event path - its deny list
+// is IP-revealing header names only. Without `beforeSend` an issue would carry
+// the rider's Supabase session cookie (access + refresh token), the monitoring
+// cron secret, and the AI request body holding their free text.
 describe('sharedSentryOptions.beforeSend', () => {
   const beforeSend = (event: ErrorEvent): ErrorEvent =>
     sharedSentryOptions.beforeSend(event);
 
-  it('drops a captured request body carrying rider free text', () => {
-    const event = {
-      type: undefined,
-      request: {
-        url: 'https://trackdaytuner.app/api/ai/tuning-advice',
-        method: 'POST',
-        data: JSON.stringify({
-          question: 'the bike pushes wide on corner exit at Barber',
-          symptoms: ['understeer'],
-          change_intent: 'softer rear rebound',
-        }),
+  const riderRequestEvent = (): ErrorEvent => ({
+    type: undefined,
+    request: {
+      url: 'https://trackdaytuner.app/api/ai/tuning-advice',
+      method: 'POST',
+      headers: {
+        cookie: 'sb-abcdef-auth-token=base64-access-and-refresh-token',
+        authorization: 'Bearer the-monitoring-cron-secret',
+        'content-type': 'application/json',
       },
-    } satisfies ErrorEvent;
+      cookies: { 'sb-abcdef-auth-token': 'base64-access-and-refresh-token' },
+      data: JSON.stringify({
+        question: 'the bike pushes wide on corner exit at Barber',
+        symptoms: ['understeer'],
+        change_intent: 'softer rear rebound',
+      }),
+    },
+  });
 
-    const sent = beforeSend(event);
+  it('drops the headers, the cookies and the body', () => {
+    const sent = beforeSend(riderRequestEvent());
 
     expect(sent.request).toBeDefined();
+    expect(sent.request).not.toHaveProperty('headers');
+    expect(sent.request).not.toHaveProperty('cookies');
     expect(sent.request).not.toHaveProperty('data');
   });
 
-  // The point is to drop the body and nothing else: which URL 500'd is the
+  // The point is to drop those three and nothing else: which URL 500'd is the
   // first thing an operator needs.
-  it('keeps the rest of the request', () => {
-    const sent = beforeSend({
-      type: undefined,
-      request: {
-        url: 'https://trackdaytuner.app/api/ai/day-plan',
-        method: 'POST',
-        data: 'anything the rider typed',
-      },
-    });
+  it('keeps the method and the URL', () => {
+    const sent = beforeSend(riderRequestEvent());
 
-    expect(sent.request?.url).toBe('https://trackdaytuner.app/api/ai/day-plan');
+    expect(sent.request?.url).toBe('https://trackdaytuner.app/api/ai/tuning-advice');
     expect(sent.request?.method).toBe('POST');
   });
 

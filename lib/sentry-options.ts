@@ -23,25 +23,50 @@ export const sharedSentryOptions = {
   // next.config.ts, where the reasoning lives. Setting a rate here would only
   // ship an option nothing reads.
 
-  // Session Replay is never added as an integration, and `sendDefaultPii: false`
-  // puts `cookie`, `sb-`, `auth` and `session` on a deny list, so the rider's
-  // Supabase session cookie never leaves the process.
+  // Session Replay is never added as an integration, so nothing records what a
+  // rider types.
+  //
+  // `sendDefaultPii: false` does much less than its name suggests, and reading
+  // it as "no rider data is sent" is the mistake to avoid. On the EVENT path it
+  // gates neither cookies, nor headers, nor the request body: it resolves to
+  // `{ deny: PII_HEADER_SNIPPETS }`, and that list is
+  // `['forwarded', '-ip', 'remote-', 'via', '-user']` - IP-revealing headers
+  // only. The list that does contain `cookie`, `auth` and `token` is applied to
+  // SPANS, and this configuration emits none.
   sendDefaultPii: false,
 
-  // Neither of those covers the request BODY, which the Node SDK captures on a
-  // path `sendDefaultPii` does not gate: the `httpIntegration` that
-  // `@sentry/nextjs` installs keeps `maxRequestBodySize` at its 10 kB default,
-  // copies what the handler reads onto the isolation scope, and
-  // `requestDataIntegration` then attaches it to every event unconditionally.
-  // On the AI routes that body is the rider's question, symptoms and change
-  // intent - the free text the prompt pipeline already treats as untrusted, see
-  // the `<user_data>` handling in lib/rag/prompt.ts - and `reportError` sends an
-  // event from both routes' catch blocks. It is dropped here rather than by
-  // reconfiguring `httpIntegration`, so server, edge and client are covered from
-  // one place and a future change to that integration's defaults cannot reopen
-  // it.
+  // So `beforeSend` is what enforces the boundary, and it drops all three:
+  //
+  // - `headers` carries `cookie` and `authorization`. Under `@supabase/ssr` the
+  //   `sb-<ref>-auth-token` cookie is base64 JSON holding the access token AND
+  //   the refresh token, so one issue would be a credential that mints sessions
+  //   for that rider until it is revoked; `/api/monitoring/ai-health` carries
+  //   `Authorization: Bearer $MONITORING_CRON_SECRET`. Both reach an event
+  //   through `onRequestError` (instrumentation.ts) and through every
+  //   `reportError` call on the Node runtime.
+  // - `cookies` is the same session cookie again, parsed into a second field.
+  // - `data` is the request body: on the AI routes, the rider's question,
+  //   symptoms and change intent - the free text the prompt pipeline already
+  //   treats as untrusted, see the `<user_data>` handling in lib/rag/prompt.ts.
+  //
+  // Headers go wholesale rather than by blanking `cookie`, `set-cookie` and
+  // `authorization` by name, because a deny list of sensitive header names is
+  // exactly what failed here: the SDK shipped one and `cookie` was not on it. A
+  // header worth keeping should be re-added by name as an allow list, as a
+  // decision somebody makes on purpose. What survives is the error, the stack,
+  // the method and the URL.
+  //
+  // Do NOT swap this for the `dataCollection` option: `resolveDataCollectionOptions`
+  // switches its base to the all-PII-on `DEFAULTS` as soon as that key is
+  // present, so a partial object silently turns `userInfo` back on and starts
+  // attaching the rider's IP. Keeping it here also covers server, edge and
+  // client from one place.
   beforeSend(event: ErrorEvent): ErrorEvent {
-    if (event.request) delete event.request.data;
+    if (event.request) {
+      delete event.request.headers;
+      delete event.request.cookies;
+      delete event.request.data;
+    }
     return event;
   },
 } as const;
