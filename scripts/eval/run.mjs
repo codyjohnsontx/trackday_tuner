@@ -479,7 +479,25 @@ async function report(ctx) {
     }
   }
 
-  if (updateBaseline) {
+  const errors = results.filter((r) => r.error);
+  const unsound = [];
+  if (selfCheckBroken.length > 0) {
+    unsound.push(`the scorer passed ${selfCheckBroken.length} response(s) production force-refuses`);
+  }
+  if (tape.stats.misses.length > 0) {
+    unsound.push(`${tape.stats.misses.length} request(s) had no recording`);
+  }
+  if (errors.length > 0) {
+    unsound.push(`${errors.length} case(s) threw`);
+  }
+
+  if (updateBaseline && unsound.length > 0) {
+    console.error(
+      `\n[rag:eval] Baseline NOT written: ${unsound.join('; ')}. A baseline is the floor ` +
+        'every later run is measured against, so it is only ever written from a run that ' +
+        'scored every case. Fix the failures below and re-run.',
+    );
+  } else if (updateBaseline) {
     const doc = {
       version: 1,
       recorded_at: new Date().toISOString(),
@@ -509,7 +527,6 @@ async function report(ctx) {
     `\n[rag:eval] tape: ${tape.stats.hits} replayed, ${tape.stats.recorded} recorded, ${tape.stats.misses.length} missed`,
   );
 
-  const errors = results.filter((r) => r.error);
   let exitCode = 0;
 
   if (selfCheckBroken.length > 0) {

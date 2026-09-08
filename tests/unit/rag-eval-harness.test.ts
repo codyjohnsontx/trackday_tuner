@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
@@ -8,6 +9,8 @@ import { evaluateAdvicePolicy } from '@/lib/rag/policy';
 import { scoreAdviceResponse } from '@/scripts/eval/scoring.mjs';
 // @ts-expect-error - see above.
 import { aggregateRetrieval, scoreRetrieval } from '@/scripts/eval/retrieval.mjs';
+// @ts-expect-error - see above.
+import { OpenAiTape, UNKEYABLE_REQUEST_ERROR_TYPE } from '@/scripts/eval/openai-tape.mjs';
 
 const repoRoot = process.cwd();
 const readJson = (relative: string) =>
@@ -267,5 +270,47 @@ describe('golden case set', () => {
     expect(tagged('inconsistent').length).toBeGreaterThanOrEqual(3);
     expect(tagged('adversarial').length).toBeGreaterThanOrEqual(5);
     expect(golden.cases.filter((c) => c.should_refuse).length).toBeGreaterThanOrEqual(5);
+  });
+});
+
+describe('tape request keying', () => {
+  const emptyTape = () =>
+    new OpenAiTape({ dir: path.join(os.tmpdir(), 'rag-eval-recordings-that-do-not-exist'), mode: 'offline' });
+
+  it('answers a request it cannot key rather than keying it on an absent body', async () => {
+    const tape = emptyTape();
+    await tape.load();
+    const restore = tape.install();
+    let response: Response;
+    try {
+      response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        body: new Uint8Array([1, 2, 3]),
+      });
+    } finally {
+      restore();
+    }
+
+    expect(response.status).toBe(499);
+    expect((await response.json()).error.type).toBe(UNKEYABLE_REQUEST_ERROR_TYPE);
+    expect(tape.stats.misses).toEqual([]);
+    expect(tape.stats.hits).toBe(0);
+  });
+
+  it('keys an ordinary string body and reports the miss offline', async () => {
+    const tape = emptyTape();
+    await tape.load();
+    const restore = tape.install();
+    try {
+      await fetch('https://api.openai.com/v1/embeddings', {
+        method: 'POST',
+        body: JSON.stringify({ input: 'front pushes mid-corner', model: 'text-embedding-3-small' }),
+      });
+    } finally {
+      restore();
+    }
+
+    expect(tape.stats.misses).toHaveLength(1);
+    expect(tape.stats.misses[0].kind).toBe('embeddings');
   });
 });

@@ -130,7 +130,18 @@ export class OpenAiTape {
 
   async handle({ kind, url, init, input }) {
     const method = (init?.method ?? input?.method ?? 'POST').toUpperCase();
-    const body = typeof init?.body === 'string' ? init.body : '';
+    const body = init?.body;
+    if (typeof body !== 'string' || body === '') {
+      return new Response(
+        JSON.stringify({
+          error: {
+            type: UNKEYABLE_REQUEST_ERROR_TYPE,
+            message: unkeyableRequestMessage(kind),
+          },
+        }),
+        { status: 499, headers: { 'content-type': 'application/json' } },
+      );
+    }
     const key = requestKey({ method, url, body });
     const entry = this.tapes[kind].entries[key];
 
@@ -186,6 +197,19 @@ export class OpenAiTape {
 }
 
 export const TAPE_MISS_ERROR_TYPE = 'rag_eval_tape_miss';
+
+export const UNKEYABLE_REQUEST_ERROR_TYPE = 'rag_eval_unkeyable_request';
+
+export function unkeyableRequestMessage(kind) {
+  return (
+    `A ${kind} request arrived with no string body, so it cannot be keyed. ` +
+    'A request is identified by its canonicalized body, so keying one without a body ' +
+    'would collide every request onto a single entry: offline mode would score all ' +
+    'cases against one recording, and a live run would record under that same key and ' +
+    'then prune the real recordings away. The OpenAI SDK sends a string body today; an ' +
+    'SDK that sends a Request object or a stream is what this catches.'
+  );
+}
 
 export function tapeMissMessage(kind, key) {
   return (
