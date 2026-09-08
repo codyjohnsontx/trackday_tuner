@@ -67,6 +67,9 @@ npm run test:e2e     # playwright e2e tests
 npm run lint         # eslint
 npx tsc --noEmit     # type check (run after build so .next/types exist)
 npm run rag:index    # build RAG index from docs/knowledge-base/
+npm run rag:eval     # RAG eval harness, offline replay (no API key needed)
+npm run rag:eval -- --live             # re-record against the real API
+npm run rag:eval -- --update-baseline  # commit this run's scores as the baseline
 npm run db:status    # which migrations are applied on the linked project
 npm run db:new <name>  # scaffold a migration
 npm run db:push      # apply pending migrations to the linked project
@@ -946,6 +949,70 @@ vocabulary and would be refused on every single request. `evaluateAdvicePolicy`
 takes `allowEmptyRecommendations` for the same reason: the day-plan prompt tells
 the model that recommending no change is a valid morning plan, so the default
 "no recommendation is a non-answer" refusal would throw away a correct one.
+
+## The RAG Eval Harness
+
+`scripts/eval-rag.mjs` runs the real pipeline over
+`tests/fixtures/rag-eval/golden-cases.json` - 32 requests - and scores what comes
+back. **Before this it did none of that.** It read eleven hand-written
+`AdviceResponse` objects, applied four boolean shape predicates, imported nothing
+from `lib/rag/`, and had reported 100% since the day it was written because its
+inputs were constants. A resume audit broke it by injection: responses
+recommending 50 psi into a front tire, removing a front brake, and citing a
+knowledge-base file that has never existed each scored a perfect 4/4 PASS while
+`evaluateAdvicePolicy` force-refuses all three. **An eval strictly weaker than
+the guard it evaluates is worse than none**, which is why the rules below are
+rules rather than preferences.
+
+**`evaluateAdvicePolicy` IS PART OF THE RUBRIC.** A response the policy
+force-refuses is a rubric FAILURE, not a pass - unless refusing is the case's
+expected answer (`should_refuse`). That one line is what makes the harness at
+least as strict as production. **Grounding resolves the citation path** against
+the knowledge index rather than checking the string is non-empty, which is the
+other half: `filterCitationsToRetrievedSources` (`lib/rag/advice.ts`) strips an
+invented source before a live answer reaches a scorer, so that class can only be
+caught by scoring a response directly. Both live in `scripts/eval/scoring.mjs`,
+and the three audit responses are `tests/fixtures/rag-eval/adversarial-responses.json`:
+every run scores them as a self-check and exits non-zero if any passes, so a run
+that reports a pass rate has also just proved it can report a failure.
+`tests/unit/rag-eval-harness.test.ts` locks that in the required checks, because
+`rag:eval` failing is not the same as `test:unit` failing.
+
+**Offline replays committed tapes; the tape key is the request.** The intercept
+is `globalThis.fetch` (`scripts/eval/openai-tape.mjs`), not a mock of
+`generateTuningAdvice` - that function builds its own client with no injection
+seam, so anything higher would score a response production never parsed. Entries
+are keyed by a hash of method, path and canonicalized body, so **the prompt is
+the key**: change `SYSTEM_PROMPT`, the component vocabulary, a retrieved chunk or
+a golden case and the key moves and offline mode reports a miss by name. That is
+deliberate. The old harness could not detect the largest prompt change in the
+project's history; this one turns it into a red check that says re-record.
+
+**The gate is `eval-baseline.json`, not an absolute threshold.** The 85% in
+`docs/ai-mvp-spec.md` is printed and not enforced: with 32 cases one case is
+3.1%, so a floor turns any honest case the model gets wrong into permanently red
+CI. What fails the build is a metric regressing against the committed baseline,
+which is also the thing the claim is about - comparing prompt and retrieval
+changes before shipping. Regressions gate in offline mode only; `--live`
+re-samples the model, so gating there would fail on sampling variance.
+
+`expected_component` / `expected_direction` are REPORTED, never gated - they
+track whether the model reaches a human's answer, which belongs in the baseline
+rather than in a pass condition. `expected_sources` is what recall@4 and MRR
+measure against, over sources rather than chunks (the index holds 4-6 chunks per
+file, so three chunks of one file is one document found). An empty list means the
+case is not retrieval-scored, which is forced anyway when a classifier refuses
+before anything is embedded.
+
+**No build step and no dependency.** `scripts/eval/ts-loader.mjs` is a resolve
+hook that maps `@/`, adds the missing extension and stubs `server-only` (a
+webpack alias Next resolves at build time, not an installed package). Node >=
+22.18 strips the types itself; CI pins Node 24. Adding `tsx` or a bundler to run
+one script would have been the larger change.
+
+There is no `--retrieval-only` mode. It would have to rebuild the query text
+`generateTuningAdvice` composes, and a second copy of that would drift; offline
+replay is free and complete, so the cost argument for a cheaper half is moot.
 
 ## Maintaining this file
 

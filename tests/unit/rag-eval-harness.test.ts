@@ -1,0 +1,271 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { evaluateAdvicePolicy } from '@/lib/rag/policy';
+// @ts-expect-error - the harness is plain JS on purpose; it runs under node with
+// no build step so that `npm run rag:eval` needs neither a bundler nor a new
+// dependency. There are no types to import.
+import { scoreAdviceResponse } from '@/scripts/eval/scoring.mjs';
+// @ts-expect-error - see above.
+import { aggregateRetrieval, scoreRetrieval } from '@/scripts/eval/retrieval.mjs';
+
+const repoRoot = process.cwd();
+const readJson = (relative: string) =>
+  JSON.parse(readFileSync(path.join(repoRoot, relative), 'utf8'));
+
+const knowledgeIndex = readJson('data/rag-index.json') as { chunks: Array<{ source: string }> };
+const knowledgeBaseSources = new Set(knowledgeIndex.chunks.map((chunk) => chunk.source));
+
+interface AdversarialFixture {
+  id: string;
+  scenario: string;
+  expected_failure: string;
+  response: Record<string, unknown> & { data_used: unknown };
+}
+
+interface GoldenCase {
+  id: string;
+  scenario: string;
+  input: {
+    vehicle: { type: string; nickname: string };
+    session: Record<string, unknown>;
+    question: string;
+    symptoms?: string[];
+  };
+  expected_sources: string[];
+  expected_component: string | null;
+  expected_direction: string | null;
+  should_refuse: boolean;
+}
+
+const adversarial = readJson('tests/fixtures/rag-eval/adversarial-responses.json') as {
+  cases: AdversarialFixture[];
+};
+const golden = readJson('tests/fixtures/rag-eval/golden-cases.json') as { cases: GoldenCase[] };
+
+/**
+ * THE REGRESSION THIS FILE EXISTS FOR.
+ *
+ * The previous harness scored hand-written `AdviceResponse` fixtures for JSON
+ * shape and had reported a 100% pass rate since the day it was written. A
+ * 2026-08-21 audit fed it three responses the runtime policy force-refuses -
+ * 50 psi into a front tire, removing a front brake, and a citation to a
+ * knowledge-base file that has never existed - and every one scored a perfect
+ * 4/4 PASS. The eval was strictly weaker than the guard it was evaluating.
+ *
+ * These assertions are the transition. They are here rather than only in the
+ * harness because `npm run rag:eval` is not a required check and `npm run
+ * test:unit` is: without this, the property could be lost without CI noticing.
+ */
+describe('adversarial responses the old harness passed', () => {
+  it('has all three of the audit fixtures', () => {
+    expect(adversarial.cases.map((c) => c.id)).toEqual([
+      'ADVERSARIAL-50psi',
+      'ADVERSARIAL-remove-brakes',
+      'ADVERSARIAL-fabricated-citation',
+    ]);
+  });
+
+  it.each(adversarial.cases.map((c) => [c.id, c] as const))(
+    'fails %s, and fails it for the recorded reason',
+    (_id, fixture) => {
+      const scored = scoreAdviceResponse({
+        response: fixture.response,
+        knowledgeBaseSources,
+        evaluateAdvicePolicy,
+        fallbackDataUsed: fixture.response.data_used,
+        validSessionIds: [],
+        shouldRefuse: false,
+      });
+
+      expect(scored.passed).toBe(false);
+      // The reason matters as much as the verdict: a scorer that rejected all
+      // three for the wrong reason would satisfy a bare `passed === false` and
+      // still be broken.
+      expect(scored.failures.some((f: string) => f.startsWith(fixture.expected_failure))).toBe(true);
+    },
+  );
+
+  it('rejects the 50 psi and brake-removal responses through the real policy', () => {
+    // Named separately so the coupling is explicit: two of the three are caught
+    // by `evaluateAdvicePolicy`, which is the production guard, and not by a
+    // check written for the harness.
+    for (const id of ['ADVERSARIAL-50psi', 'ADVERSARIAL-remove-brakes']) {
+      const fixture = adversarial.cases.find((c) => c.id === id)!;
+      const evaluation = evaluateAdvicePolicy({
+        advice: fixture.response as never,
+        fallbackDataUsed: fixture.response.data_used as never,
+        validSessionIds: [],
+      });
+      expect(evaluation.decision).toBe('force_refusal');
+    }
+  });
+
+  it('catches the fabricated citation on grounding, because the policy allows it', () => {
+    // Worth pinning: the fabricated-citation response names a real component, a
+    // real direction and a legal magnitude, so the policy ALLOWS it. Only
+    // resolving the citation path against the knowledge base rejects it, which
+    // is the check the old `scoreGrounding` was missing.
+    const fixture = adversarial.cases.find((c) => c.id === 'ADVERSARIAL-fabricated-citation')!;
+    const evaluation = evaluateAdvicePolicy({
+      advice: fixture.response as never,
+      fallbackDataUsed: fixture.response.data_used as never,
+      validSessionIds: [],
+    });
+    expect(evaluation.decision).toBe('allow');
+
+    const scored = scoreAdviceResponse({
+      response: fixture.response,
+      knowledgeBaseSources,
+      evaluateAdvicePolicy,
+      fallbackDataUsed: fixture.response.data_used,
+      validSessionIds: [],
+      shouldRefuse: false,
+    });
+    expect(scored.categories.grounding.ok).toBe(false);
+  });
+});
+
+describe('scoreAdviceResponse', () => {
+  const baseline = {
+    summary: 'Drop half a psi from the front to restore the contact patch.',
+    recommended_changes: [
+      {
+        component: 'front_tire_pressure',
+        direction: 'decrease',
+        magnitude: '0.5 psi',
+        reason: 'Restores the contact patch without giving up initial bite on entry.',
+      },
+    ],
+    tradeoffs: ['Steering may feel slightly less precise.'],
+    confidence: 'medium',
+    safety_notes: [
+      'This is informational only. You are responsible for vehicle safety and on-track conduct.',
+      'Make one change at a time and re-test for a full session before stacking another change.',
+    ],
+    citations: [
+      {
+        source: 'docs/knowledge-base/tires/pressure-basics.md',
+        snippet: 'Front pushing mid-corner after a pressure increase: try dropping 0.5 psi.',
+      },
+    ],
+    prediction: { expected_effect: 'Less mid-corner push.', day_trend: 'Stable.', watch_items: [] },
+    personal_evidence: [],
+    data_used: { manual: true, weather: true, history: false, feedback: false, lap_data: false, telemetry: false },
+    refusal: null,
+  };
+
+  const score = (response: unknown, shouldRefuse = false) =>
+    scoreAdviceResponse({
+      response,
+      knowledgeBaseSources,
+      evaluateAdvicePolicy,
+      fallbackDataUsed: baseline.data_used,
+      validSessionIds: [],
+      shouldRefuse,
+    });
+
+  it('passes a grounded, conservative recommendation', () => {
+    expect(score(baseline).passed).toBe(true);
+  });
+
+  it('fails a response missing a safety note', () => {
+    const scored = score({ ...baseline, safety_notes: [baseline.safety_notes[0]] });
+    expect(scored.passed).toBe(false);
+    expect(scored.categories.safety.ok).toBe(false);
+  });
+
+  it('does not treat an expected refusal as a policy failure', () => {
+    // A golden case tagged should_refuse ends in a refusal by design, and the
+    // policy reports force_refusal for it. Counting that as a rubric failure
+    // would invert the point of having refusal cases at all.
+    const refusal = {
+      ...baseline,
+      recommended_changes: [],
+      citations: [],
+      refusal: 'That request is outside the scope of post-session setup advice.',
+    };
+    expect(score(refusal, true).passed).toBe(true);
+    expect(score(refusal, false).passed).toBe(false);
+  });
+
+  it('fails a case that should refuse and recommends a change instead', () => {
+    const scored = score(baseline, true);
+    expect(scored.passed).toBe(false);
+    expect(scored.failures.some((f: string) => f.startsWith('policy:'))).toBe(true);
+  });
+});
+
+describe('retrieval metrics', () => {
+  const expected = ['a.md', 'b.md'];
+
+  it('scores recall over sources and rank over chunks', () => {
+    // Three chunks of a.md and one of b.md is one relevant document found out of
+    // two, not three - the index holds several chunks per file.
+    const result = scoreRetrieval(['a.md', 'a.md', 'a.md', 'c.md'], expected);
+    expect(result.recall).toBe(0.5);
+    expect(result.reciprocalRank).toBe(1);
+    expect(result.missed).toEqual(['b.md']);
+  });
+
+  it('takes the rank of the first relevant chunk', () => {
+    const result = scoreRetrieval(['c.md', 'd.md', 'b.md', 'e.md'], expected);
+    expect(result.reciprocalRank).toBeCloseTo(1 / 3, 10);
+    expect(result.recall).toBe(0.5);
+  });
+
+  it('ignores anything past k', () => {
+    const result = scoreRetrieval(['c.md', 'd.md', 'e.md', 'f.md', 'a.md'], expected);
+    expect(result.recall).toBe(0);
+    expect(result.reciprocalRank).toBe(0);
+  });
+
+  it('marks an unlabelled case as not applicable rather than scoring it zero', () => {
+    const result = scoreRetrieval(['a.md'], []);
+    expect(result.applicable).toBe(false);
+    expect(aggregateRetrieval([result])).toEqual({ cases: 0, recall: null, mrr: null });
+  });
+
+  it('averages only the labelled cases', () => {
+    const agg = aggregateRetrieval([
+      scoreRetrieval(['a.md', 'b.md'], expected),
+      scoreRetrieval(['z.md'], expected),
+      scoreRetrieval(['a.md'], []),
+    ]);
+    expect(agg.cases).toBe(2);
+    expect(agg.recall).toBe(0.5);
+    expect(agg.mrr).toBe(0.5);
+  });
+});
+
+describe('golden case set', () => {
+  it('holds between 25 and 40 cases with unique ids', () => {
+    expect(golden.cases.length).toBeGreaterThanOrEqual(25);
+    expect(golden.cases.length).toBeLessThanOrEqual(40);
+    const ids = golden.cases.map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('labels only sources the knowledge index actually holds', () => {
+    // A label naming a file that does not exist is unreachable, so the case
+    // would report recall 0 forever and read as a retrieval problem.
+    const unknown = golden.cases.flatMap((c) =>
+      c.expected_sources.filter((source) => !knowledgeBaseSources.has(source)),
+    );
+    expect(unknown).toEqual([]);
+  });
+
+  it('gives every knowledge-base file at least one case that should surface it', () => {
+    const labelled = new Set(golden.cases.flatMap((c) => c.expected_sources));
+    expect([...knowledgeBaseSources].filter((source) => !labelled.has(source))).toEqual([]);
+  });
+
+  it('covers sparse, inconsistent and adversarial inputs as well as ordinary ones', () => {
+    const tagged = (tag: string) =>
+      golden.cases.filter((c) => ((c as unknown as { tags?: string[] }).tags ?? []).includes(tag));
+    expect(tagged('sparse').length).toBeGreaterThanOrEqual(3);
+    expect(tagged('inconsistent').length).toBeGreaterThanOrEqual(3);
+    expect(tagged('adversarial').length).toBeGreaterThanOrEqual(5);
+    expect(golden.cases.filter((c) => c.should_refuse).length).toBeGreaterThanOrEqual(5);
+  });
+});

@@ -57,6 +57,19 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
+      # Offline mode replays the committed recordings in
+      # tests/fixtures/rag-eval/recordings/, so it runs the whole RAG pipeline -
+      # embed, retrieve, prompt, model, policy - without opening a socket and
+      # without a real key. The placeholder OPENAI_API_KEY above is never sent
+      # anywhere; it exists because the OpenAI client is constructed for real.
+      #
+      # It fails on three things: a recording that no longer matches the request
+      # (which is what a prompt or retrieval change looks like from here - see
+      # the PR template), a metric that regressed against eval-baseline.json, or
+      # a scorer that stopped rejecting the adversarial fixtures.
+      - name: RAG eval (offline replay)
+        run: npm run rag:eval
+
       - name: Build
         run: npm run build
 
