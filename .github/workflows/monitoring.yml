@@ -1,0 +1,92 @@
+# The scheduled probe. Every 15 minutes it asks the deployment two questions and
+# fails the run if either answer is not a 200:
+#
+#   /api/health                 - can this deployment serve? (Postgres reachable,
+#                                 RAG index present in the bundle)
+#   /api/monitoring/ai-health   - has anything failed in the last hour? (error
+#                                 rate and p95 latency over `ai_requests`)
+#
+# A failed scheduled run is itself the alert: GitHub emails the repository owner
+# on one, so this reaches somebody with no external monitoring account at all. A
+# webhook (`MONITORING_ALERT_WEBHOOK_URL` on the deployment) is the upgrade, and
+# an external uptime monitor pointed at /api/health is the belt-and-braces third
+# path. See docs/monitoring.md.
+#
+# GitHub disables a scheduled workflow in a public repository after 60 days with
+# no commit activity, and re-enabling it is a button in the Actions tab. That is
+# the one way this can go quiet without saying so, which is why it is not the
+# only channel.
+name: Monitoring
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub runs scheduled workflows on a best-effort basis
+    # and can delay one under load, which is fine here: the alert window is an
+    # hour, so a late run still sees the same failures.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: monitoring
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Probe production
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Until the URL and secret are set this exits clean with a warning rather
+      # than failing every 15 minutes, because an alert channel that cries wolf
+      # from the day it merges is one nobody reads by the time it matters.
+      - name: Check the probe is configured
+        id: config
+        env:
+          APP_URL: ${{ vars.MONITORING_APP_URL }}
+          CRON_SECRET: ${{ secrets.MONITORING_CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::warning::Monitoring is not wired up yet. Set the MONITORING_APP_URL repository variable and the MONITORING_CRON_SECRET repository secret - see docs/monitoring.md."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Uptime - /api/health
+        if: steps.config.outputs.configured == 'true'
+        env:
+          APP_URL: ${{ vars.MONITORING_APP_URL }}
+        run: |
+          set -uo pipefail
+          body=$(mktemp)
+          code=$(curl --silent --show-error --location --max-time 30 \
+            --output "$body" --write-out '%{http_code}' \
+            "${APP_URL%/}/api/health") || code=000
+          echo "HTTP $code"
+          cat "$body"; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::/api/health answered $code. The deployment cannot serve - the body above names the failing check."
+            exit 1
+          fi
+
+      - name: Alert - AI error rate and p95 latency over the last hour
+        if: steps.config.outputs.configured == 'true'
+        env:
+          APP_URL: ${{ vars.MONITORING_APP_URL }}
+          CRON_SECRET: ${{ secrets.MONITORING_CRON_SECRET }}
+        run: |
+          set -uo pipefail
+          body=$(mktemp)
+          code=$(curl --silent --show-error --location --max-time 30 \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            --output "$body" --write-out '%{http_code}' \
+            "${APP_URL%/}/api/monitoring/ai-health") || code=000
+          echo "HTTP $code"
+          cat "$body"; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::/api/monitoring/ai-health answered $code. The body above says which requests failed and why."
+            exit 1
+          fi

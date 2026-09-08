@@ -1,0 +1,121 @@
+# Monitoring
+
+## Why this exists
+
+R3 (`053c545`): `data/rag-index.json` was gitignored, never reached a Vercel
+bundle, and every Race Engineer call returned 500 for roughly three months.
+Pages kept rendering. The only signals were a `console.error` in a log nobody
+was reading and an `ai_requests` table that stopped growing - which looks
+exactly like riders losing interest. It was found by a manual audit, and it had
+already corrupted the beta success metric, because `summarizeAiGuidance` counts
+a rider as guided only on a success status.
+
+The product had instrumentation and no monitoring. These are the pieces that
+close the gap.
+
+## What is checked, and what each piece would have caught
+
+| Piece | Answers | Catches R3? |
+| --- | --- | --- |
+| `/api/health` | Is Postgres reachable, and does the RAG index load *in this bundle*? | Yes, on the first deploy |
+| `/api/monitoring/ai-health` | Has anything failed in the last hour? Error rate, p95 latency | Yes, on the first rider call |
+| `.github/workflows/monitoring.yml` | Runs both every 15 minutes and fails the run when either says no | This is what makes them alerts |
+
+### `/api/health`
+
+`200` when the deployment can serve, `503` with a named failing check when it
+cannot. Public, uncached, and excluded from the middleware matcher so it depends
+on as little as possible. The body carries an error *name* and never a message,
+because `MissingKnowledgeIndexError`'s own message embeds the absolute index
+path.
+
+```json
+{"status":"ok","checked_at":"...","checks":[
+  {"name":"supabase","status":"ok","duration_ms":10},
+  {"name":"rag_index","status":"ok","duration_ms":8,"detail":"75 chunks"}]}
+```
+
+The RAG check has to run in a route that carries the index, and each serverless
+function is its own bundle - so `/api/health` has its own
+`outputFileTracingIncludes` entry in `next.config.ts`.
+`tests/unit/rag-index-bundling.test.ts` walks the import graph of every API
+route and fails any that can reach `lib/rag/retriever` without one.
+
+### `/api/monitoring/ai-health`
+
+The alert built on the `ai_requests` audit table. Authenticated with
+`Authorization: Bearer $MONITORING_CRON_SECRET` - the header Vercel Cron sends,
+so the schedule can move there later with no change to the route. `200` when
+healthy, `503` when a threshold is crossed, so `curl --fail` is enough to turn
+it into an alert.
+
+The thresholds and the classification live in `lib/monitoring/ai-health.ts` as
+constants, not environment variables: they are load-bearing enough that changing
+one should be a diff somebody reviews. Two rules matter most:
+
+- **Any failure at all in the window alerts.** Error *rate* alone would not have
+  caught R3 - riders stopped calling a feature that never worked, so the windows
+  that mattered held one or two requests and any minimum-sample rule would have
+  suppressed them every time.
+- **An unrecognised status counts as a failure.** A monitor that treats what it
+  does not understand as healthy reproduces the exact defect it exists to catch.
+  If a new status starts alerting, the alert names it; classify it in
+  `lib/monitoring/ai-health.ts`.
+
+Refusals, rate limiting and duplicate suppression are *not* failures. Each is a
+guard working, and counting them would make the alert fire hardest when the
+product is behaving best.
+
+## Where an alert goes
+
+Three channels, in order of how little setup they need:
+
+1. **A failed scheduled workflow run.** `monitoring.yml` fails when either probe
+   is not `200`, and GitHub emails the repository owner on a failed scheduled
+   run. This needs no external account.
+2. **A webhook.** Set `MONITORING_ALERT_WEBHOOK_URL` on the deployment to a
+   Slack or Discord incoming webhook. The payload carries `text` and `content`
+   with the same string, so it renders in either.
+3. **An external uptime monitor** pointed at `/api/health`. Better Stack and
+   UptimeRobot both have a free tier that covers a 5-minute interval; this is the
+   only channel that survives GitHub Actions being down.
+
+## Wiring it up
+
+1. Pick a secret: `openssl rand -hex 32`.
+2. Vercel → project → Settings → Environment Variables: add
+   `MONITORING_CRON_SECRET` with that value, for Production. Optionally add
+   `MONITORING_ALERT_WEBHOOK_URL`.
+3. GitHub → repo → Settings → Secrets and variables → Actions:
+   - **Variables** tab: `MONITORING_APP_URL` = the production URL, e.g.
+     `https://trackdaytuner.vercel.app`
+   - **Secrets** tab: `MONITORING_CRON_SECRET` = the same value as step 2
+4. Redeploy so the deployment picks up the new environment variables.
+5. Run the workflow by hand (Actions → Monitoring → Run workflow) and read the
+   output. Until steps 2-3 are done it exits clean with a warning rather than
+   failing every 15 minutes, because an alert channel that cries wolf from the
+   day it merges is one nobody reads by the time it matters.
+
+Verify by hand:
+
+```bash
+curl -i https://<app>/api/health
+curl -i -H "Authorization: Bearer $MONITORING_CRON_SECRET" \
+  https://<app>/api/monitoring/ai-health
+```
+
+## Known limits
+
+- **GitHub disables a scheduled workflow in a public repository after 60 days
+  with no commit activity.** Re-enabling it is a button in the Actions tab. This
+  is the one way the schedule can go quiet without saying so, and it is why the
+  external uptime monitor is worth the ten minutes.
+- **No alert de-duplication.** A sustained outage fires every 15 minutes.
+  Suppressing repeats needs somewhere to keep the last alert state, and the
+  failure mode of getting that wrong - silence during a real outage - is worse
+  than the noise.
+- **A failed reservation insert writes no row**, so a Supabase outage that stops
+  `reservePendingSlot` is invisible to the `ai_requests` alert. `/api/health`'s
+  Supabase check is what covers that case.
+- **The scheduled probe is best effort.** GitHub delays scheduled runs under
+  load. The alert window is an hour, so a late run still sees the same failures.

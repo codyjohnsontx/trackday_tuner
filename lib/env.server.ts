@@ -78,3 +78,21 @@ export function getBetaInviteSecret(): string {
 export function getBetaFormRateLimitSecret(): string {
   return process.env.BETA_FORM_RATE_LIMIT_SECRET?.trim() || getBetaInviteSecret();
 }
+
+/**
+ * The shared secret the scheduled monitoring probe presents.
+ *
+ * Read through `readEnv`, so an unset value throws and
+ * `/api/monitoring/ai-health` refuses every caller rather than serving the
+ * numbers to anyone. `Authorization: Bearer <secret>` is also exactly what a
+ * Vercel Cron job sends, so the same route works from either scheduler.
+ */
+export function getMonitoringCronSecret(): string {
+  return readEnv('MONITORING_CRON_SECRET');
+}
+
+/** Optional. Absent means alerts reach the operator through the scheduled
+ * probe's failed workflow run instead - see `lib/monitoring/alert.ts`. */
+export function getMonitoringAlertWebhookUrl(): string | null {
+  return process.env.MONITORING_ALERT_WEBHOOK_URL?.trim() || null;
+}
