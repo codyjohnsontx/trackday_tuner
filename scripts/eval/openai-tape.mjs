@@ -73,6 +73,7 @@ export class OpenAiTape {
     this.mode = mode;
     this.tapes = { embeddings: null, completions: null };
     this.stats = { hits: 0, recorded: 0, misses: [] };
+    this.used = { embeddings: new Set(), completions: new Set() };
     this.realFetch = null;
   }
 
@@ -86,7 +87,12 @@ export class OpenAiTape {
     }
   }
 
-  async save() {
+  /**
+   * @param {{ prune?: boolean }} [options] `prune` keeps only the entries this
+   *   run replayed or recorded, so it is correct only after a run that reached
+   *   every case. A partial run has not touched the keys it never got to.
+   */
+  async save({ prune = false } = {}) {
     await fs.mkdir(this.dir, { recursive: true });
     for (const kind of ['embeddings', 'completions']) {
       const tape = this.tapes[kind];
@@ -94,6 +100,7 @@ export class OpenAiTape {
       // wholesale reordering of the file.
       const entries = Object.fromEntries(
         Object.keys(tape.entries)
+          .filter((key) => !prune || this.used[kind].has(key))
           .sort()
           .map((key) => [key, tape.entries[key]]),
       );
@@ -129,6 +136,7 @@ export class OpenAiTape {
 
     if (entry) {
       this.stats.hits += 1;
+      this.used[kind].add(key);
       return new Response(JSON.stringify(entry.response), {
         status: entry.status,
         headers: { 'content-type': 'application/json' },
@@ -167,6 +175,7 @@ export class OpenAiTape {
         response: parsed,
       };
       this.stats.recorded += 1;
+      this.used[kind].add(key);
     }
 
     return new Response(text, {

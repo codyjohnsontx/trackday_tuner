@@ -58,8 +58,8 @@ function buildSession(caseInput, ids) {
     tires: s.tires,
     suspension: s.suspension,
     alignment: s.alignment ?? null,
-    enabled_modules: null,
-    extra_modules: null,
+    enabled_modules: s.enabled_modules ?? null,
+    extra_modules: s.extra_modules ?? null,
     notes: s.notes ?? null,
     created_at: `${s.date}T12:00:00.000Z`,
     updated_at: `${s.date}T12:00:00.000Z`,
@@ -313,6 +313,7 @@ export async function main(argv) {
   const restoreFetch = tape.install();
 
   const results = [];
+  let reachedEveryCase = false;
   try {
     for (const [indexInCase, testCase] of golden.cases.entries()) {
       let outcome;
@@ -366,9 +367,15 @@ export async function main(argv) {
         refusalMatch: (testCase.should_refuse === true) === scored.refused,
       });
     }
+    reachedEveryCase = true;
   } finally {
     restoreFetch();
-    if (live) await tape.save();
+    // A live run that got through every case has replayed or recorded exactly
+    // the requests this pipeline makes, so anything left is a recording for a
+    // request no golden case sends any more. One that stopped short has not.
+    if (live) {
+      await tape.save({ prune: reachedEveryCase && results.every((r) => !r.error) });
+    }
   }
 
   return report({
