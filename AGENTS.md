@@ -1182,23 +1182,35 @@ doubled the file before this was added. `save({ prune })` keeps only the keys th
 run replayed or recorded, which is safe ONLY after a run that reached every case:
 a partial run has not touched the keys it never got to, and that objection is why
 the prune was removed once rather than guarded. `describeUnsoundRun` is the guard
-it pointed at - zero tape misses, zero broken self-check fixtures, a self-check
-that had fixtures at all, at least one case scored, and `scored + errored` equal
-to the size of the golden set - and it is the SAME function `--update-baseline`
-reads, because both writes are destructive and safe under exactly the same
-condition. The exit code is its third reader, so a run that cannot be trusted to
-have measured what it claims fails whatever the flags, and adding a condition
-covers all three at once. **That last count is the one doing the work here**, and
-it is arithmetic rather than a list of guarded call sites: a case that threw still
-produces a row, so a shortfall means the loop EXITED, and any exit added to it
-later is caught without anybody remembering to wrap the next call. It replaced
-"at least one case scored", which a partial run satisfies - the cases it never
-reached are simply absent from `results`, so it looked complete and pruned away
-recordings it had never replayed. A case error no longer causes one: the whole
-loop body is inside the per-case `try`, because scoring reads the case's own
-labels and a mistyped one in `golden-cases.json` throws in the vocabulary
-formatters rather than in `runCase`. An unsound run still saves what it recorded;
-it just keeps the stale keys until a clean run retires them.
+it pointed at, and it applies SIX conditions, all of them live: the self-check
+had fixtures at all, at least one case was scored, `scored + errored` equals the
+size of the golden set, no self-check fixture passed, no request missed the tape,
+and no case threw. It is the SAME function `--update-baseline` reads, because
+both writes are destructive and safe under exactly the same condition. The exit
+code is its third reader, so a run that cannot be trusted to have measured what
+it claims fails whatever the flags, and adding a condition covers all three at
+once.
+
+**The count is what catches a partial run**, and it is arithmetic rather than a
+list of guarded call sites: a case that threw still produces a row, so a
+shortfall means the loop EXITED, and any exit added to it later is caught without
+anybody remembering to wrap the next call. It was ADDED BESIDE "at least one case
+scored" rather than replacing it - that condition is still there and is the only
+thing that catches an empty golden set, where `0 + 0` equals the expected `0` and
+the count cannot fire. Before it, a partial run satisfied every condition there
+was: the cases it never reached are simply absent from `results`, so the run
+looked complete and pruned away recordings it had never replayed.
+
+**"No case threw" and the count are two conditions doing two different jobs**, and
+that is precisely why the first one is easy to drop as redundant - this document
+dropped it once. An errored case IS counted in `scored + errored`, so it causes NO
+shortfall; it makes the run unsound on its own account, because a case whose only
+verdict is an exception was not measured. What the per-case `try` changed is where
+a throw LANDS, not whether it matters: the whole loop body is inside it now,
+because scoring reads the case's own labels and a mistyped one in
+`golden-cases.json` throws in the vocabulary formatters rather than in `runCase`.
+An unsound run still saves what it recorded; it just keeps the stale keys until a
+clean run retires them.
 
 Retiring stale keys costs nothing. `--live` replays a matching entry BEFORE the
 mode is consulted, so a `--live` run on an unchanged prompt makes no API call at

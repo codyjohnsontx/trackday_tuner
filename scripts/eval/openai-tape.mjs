@@ -97,12 +97,20 @@ export class OpenAiTape {
   }
 
   /**
-   * @param {{ prune?: boolean }} [options] `prune` drops every entry this run
-   *   did not replay or record. A partial run has not touched the keys it never
-   *   got to, so this is safe ONLY when the run is known to have reached every
-   *   case - zero tape misses, zero case errors, a passing self-check and at
-   *   least one case scored. That is the same soundness the baseline write
-   *   requires, and the caller checks it; the flag alone promises nothing.
+   * @param {{ prune?: boolean }} [options] `prune` DELETES every committed entry
+   *   this run did not replay or record. A partial run has not touched the keys
+   *   it never got to, so this is safe ONLY when the run reached every case, and
+   *   `describeUnsoundRun` (`scripts/eval/run.mjs`) is the single definition of
+   *   when that holds - it requires `scored + errored` to equal the size of the
+   *   golden set, alongside a self-check that had fixtures and passed them, no
+   *   tape miss and no case that threw. That is the same soundness the baseline
+   *   write requires, and the caller checks it; the flag alone promises nothing.
+   *
+   *   The conditions are named above rather than enumerated, because this
+   *   comment used to carry its own copy of the list and it went stale on the
+   *   clause that mattered: it promised "at least one case scored", which is
+   *   exactly what a partial run satisfies while this deletes the recordings it
+   *   never replayed. Read the function, not a second copy of it.
    *
    *   Without it the tape grows without bound: correcting a prompt moves the
    *   keys, and the old ones stay forever, so a committed fixture ends up
