@@ -112,7 +112,7 @@ export async function checkSupabase(): Promise<HealthCheck> {
     const admin = createAdminClient();
     const { error } = await admin
       .from('profiles')
-      .select('id', { count: 'exact', head: true })
+      .select('id', { head: true })
       .limit(1);
     if (error) {
       const wrapped = new Error(error.message);

@@ -55,7 +55,7 @@ Expect `HTTP/2 200` and a body naming two checks:
   {"name":"rag_index","status":"ok","duration_ms":8,"detail":"75 chunks"}]}
 ```
 
-If `rag_index` says `error`, that is R3 happening again and the deployment
+If `rag_index` says `"status":"fail"`, that is R3 happening again and the deployment
 cannot answer a Race Engineer question. The response is `503` and the failing
 check is named.
 
