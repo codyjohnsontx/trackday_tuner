@@ -4,11 +4,13 @@
 
 R3 (`053c545`): `data/rag-index.json` was gitignored, never reached a Vercel
 bundle, and every Race Engineer call returned 500 for roughly three months.
-Pages kept rendering. The only signals were a `console.error` in a log nobody
-was reading and an `ai_requests` table that stopped growing - which looks
-exactly like riders losing interest. It was found by a manual audit, and it had
-already corrupted the beta success metric, because `summarizeAiGuidance` counts
-a rider as guided only on a success status.
+Pages kept rendering, and there was nothing in the logs to find: the catch that
+handled every one of those calls wrote an `ai_requests` row and returned without
+logging a line, and nothing on the retriever's path logged either. The only
+signal was that table quietly not growing - which looks exactly like riders
+losing interest. Nothing but a manual audit could have found it, and that is
+what did, by which point it had already corrupted the beta success metric,
+because `summarizeAiGuidance` counts a rider as guided only on a success status.
 
 The product had instrumentation and no monitoring. These are the pieces that
 close the gap.
@@ -167,7 +169,7 @@ their absence is good news rather than a broken drain.
 | --- | --- | --- | --- |
 | `MONITORING_APP_URL` | GitHub repo **variable** (Actions) | For the alert | The workflow exits clean with a warning. No probe ever runs, and nothing tells you that except the warning |
 | `MONITORING_CRON_SECRET` | GitHub repo **secret** (Actions) **and** Vercel env (Production) - identical in both | For the alert | Missing in GitHub: same clean-exit warning. Missing in Vercel: the route answers `503` to everyone, so the workflow fails every 15 minutes. Mismatched: `401` every 15 minutes |
-| `NEXT_PUBLIC_SENTRY_DSN` | Vercel env, Production + Preview | No | The Sentry SDK is never initialised. Errors still reach `console.error` in Vercel logs - which is exactly what R3 had |
+| `NEXT_PUBLIC_SENTRY_DSN` | Vercel env, Production + Preview | No | The Sentry SDK is never initialised. A caught failure still reaches `console.error` in the Vercel log, because `reportError` writes that line first - which is already more than R3 produced |
 | `MONITORING_ALERT_WEBHOOK_URL` | Vercel env, Production | No | Alerts reach you through the failed workflow run instead. The route reports `notified: "none"`, which is not a failure |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` | Vercel **build** env | No | The build skips the source map upload. Sentry stack traces point at minified code |
 

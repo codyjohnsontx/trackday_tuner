@@ -3,10 +3,10 @@
  *
  * This exists because of R3 (053c545): `data/rag-index.json` was gitignored,
  * never reached a Vercel bundle, and every Race Engineer call returned 500 for
- * roughly three months. Nothing noticed, because the only signal was a
- * `console.error` in a log nobody was reading and an `ai_requests` table that
- * simply stopped growing - an outage that looks exactly like riders losing
- * interest.
+ * roughly three months. Nothing noticed, because there was nothing to notice:
+ * the catch wrote an `ai_requests` row and returned without logging a line, so
+ * the only signal was that table quietly not growing - an outage that looks
+ * exactly like riders losing interest.
  *
  * So the two things a deployment can be broken in while still serving pages are
  * checked here, and a failure is reported as a non-2xx so an external monitor

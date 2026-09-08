@@ -176,12 +176,14 @@ describe('evaluateAiHealth', () => {
     expect(alert.reasons[0]).toContain('p95 latency');
   });
 
-  // A request refused before it reached the model carries no latency, so a
-  // window can hold plenty of requests and still have almost nothing to take a
-  // percentile over.
+  // A request refused before it reached the model carries no latency - the
+  // preflight write passes none - so a window can hold plenty of requests and
+  // still have almost nothing to take a percentile over. `out_of_domain` is one
+  // the classifier can actually return; `no_safe_answer` is post-policy only,
+  // and those rows do carry a latency.
   it('counts latency samples rather than requests', () => {
     const rows = [
-      ...Array.from({ length: MIN_SAMPLES_FOR_P95 }, () => row('completed_refusal_no_safe_answer')),
+      ...Array.from({ length: MIN_SAMPLES_FOR_P95 }, () => row('completed_refusal_out_of_domain')),
       row('ok', { latency_ms: 15_300 }),
     ];
     const summary = summarizeAiRequests(rows, NOW);
