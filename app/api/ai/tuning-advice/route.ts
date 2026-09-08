@@ -294,10 +294,10 @@ export async function POST(request: Request) {
     (vehicleError && !isNotFound(vehicleError));
 
   if (hasRealError) {
-    const message =
-      sessionError && !isNotFound(sessionError)
-        ? sessionError.message
-        : vehicleError?.message ?? 'Context lookup failed.';
+    const failingTable = sessionError && !isNotFound(sessionError) ? 'sessions' : 'vehicles';
+    const lookupError = failingTable === 'sessions' ? sessionError : vehicleError;
+    const message = lookupError?.message ?? 'Context lookup failed.';
+    reportError(LOG_TAG, lookupError, { requestId, table: failingTable });
     await updateRequestLog({
       logTag: LOG_TAG,
       requestId,

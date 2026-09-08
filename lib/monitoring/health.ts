@@ -31,9 +31,10 @@ export interface HealthCheck {
   status: HealthCheckStatus;
   duration_ms: number;
   /**
-   * A short machine-readable reason, present only on a failure.
+   * A short machine-readable value: the error *name* on a failure, a summary
+   * such as `75 chunks` on a success. A check with nothing to say omits it.
    *
-   * This is a public endpoint, so it carries an error *name* and never a
+   * This is a public endpoint, so a failure carries the name and never the
    * message: `MissingKnowledgeIndexError`'s own message embeds the absolute
    * index path, and the Supabase errors embed table and column names. The full
    * detail goes to the server log (and therefore to Sentry) instead.

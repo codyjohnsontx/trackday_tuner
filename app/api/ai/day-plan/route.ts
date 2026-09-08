@@ -603,17 +603,19 @@ export async function POST(request: Request) {
   ]);
 
   if (sessionsResult.error) {
-    console.error('[ai/day-plan] sessions query failed', {
+    reportError(LOG_TAG, sessionsResult.error, {
+      requestId,
       userId: user.id,
       vehicleId: vehicle.id,
-      error: sessionsResult.error.message,
+      query: 'sessions',
     });
   }
   if (feedbackResult.error) {
-    console.error('[ai/day-plan] feedback query failed', {
+    reportError(LOG_TAG, feedbackResult.error, {
+      requestId,
       userId: user.id,
       vehicleId: vehicle.id,
-      error: feedbackResult.error.message,
+      query: 'session_feedback',
     });
   }
 
@@ -635,10 +637,11 @@ export async function POST(request: Request) {
     }),
   ]);
   if (environmentsResult.error) {
-    console.error('[ai/day-plan] environments query failed', {
+    reportError(LOG_TAG, environmentsResult.error, {
+      requestId,
       userId: user.id,
       vehicleId: vehicle.id,
-      error: environmentsResult.error.message,
+      query: 'session_environment',
     });
   }
   if (sessionsResult.error || feedbackResult.error || environmentsResult.error) {
