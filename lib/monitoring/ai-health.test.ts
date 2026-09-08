@@ -150,7 +150,7 @@ describe('evaluateAiHealth', () => {
 
   // Three riders, three answers, and the slowest took 15.3s - inside the app's
   // own 30s upstream budget. Nothing is broken, so nobody should be emailed.
-  it('does not fire on one slow success in a window too small to have a p95', () => {
+  it('does not fire on one slow success below the sample floor', () => {
     const rows = [4_200, 6_100, 15_300].map((latency) => row('ok', { latency_ms: latency }));
     const summary = summarizeAiRequests(rows, NOW);
 
@@ -160,8 +160,8 @@ describe('evaluateAiHealth', () => {
     expect(evaluateAiHealth(summary).firing).toBe(false);
   });
 
-  // ...and the gate suppresses only a window too small to mean anything: the
-  // same p95 over a real sample still alerts.
+  // ...and the floor suppresses only the window beneath it: the same 15.3s
+  // still alerts once five timed requests stand behind it.
   it('fires on the same p95 once the window carries enough samples', () => {
     const rows = [
       ...Array.from({ length: MIN_SAMPLES_FOR_P95 - 1 }, () => row('ok', { latency_ms: 4_200 })),
@@ -176,8 +176,9 @@ describe('evaluateAiHealth', () => {
     expect(alert.reasons[0]).toContain('p95 latency');
   });
 
-  // Only a success carries a latency, so a window can hold plenty of requests
-  // and still have almost no sample to take a percentile over.
+  // A request refused before it reached the model carries no latency, so a
+  // window can hold plenty of requests and still have almost nothing to take a
+  // percentile over.
   it('counts latency samples rather than requests', () => {
     const rows = [
       ...Array.from({ length: MIN_SAMPLES_FOR_P95 }, () => row('completed_refusal_no_safe_answer')),

@@ -213,9 +213,9 @@ one should be a diff somebody reviews. Two rules matter most:
   that mattered held one or two requests and any minimum-sample rule would have
   suppressed them every time. That argument is about failures, and the failure
   rule is ungated because of it. **Latency is the one exception**: p95 needs at
-  least five timed successes (`MIN_SAMPLES_FOR_P95`) before it can fire, because
-  below that the "95th percentile" is just the slowest request. A slow hour
-  holding four requests will not alert.
+  least five timed requests (`MIN_SAMPLES_FOR_P95`) before it can fire, so one
+  slow answer cannot page on its own. A slow hour holding four requests will not
+  alert.
 - **An unrecognised status counts as a failure.** A monitor that treats what it
   does not understand as healthy reproduces the exact defect it exists to catch.
   If a new status starts alerting, the alert names it; classify it in

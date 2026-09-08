@@ -43,16 +43,23 @@ export const ERROR_COUNT_THRESHOLD = 1;
 export const P95_LATENCY_THRESHOLD_MS = 15_000;
 
 /**
- * How many latencies a window needs before its p95 may alert.
+ * How many timed requests a window needs before its p95 may alert.
  *
- * Below this a "95th percentile" is just the slowest request. Three successes
- * at 4.2s, 6.1s and 15.3s put the nearest-rank p95 on the last one, and that is
- * inside the app's own 30s upstream budget on a request the rider got an answer
- * from - so alerting there is crying wolf, and a channel that does so from the
- * day it merges is one nobody reads by the time it matters. Latency is counted
- * rather than requests because only a success carries one: every catch path
- * writes none, so a window of five refusals and one slow success is still a
- * single sample.
+ * This floor does not turn the number into a true percentile, and it is not
+ * claimed to. `percentile` is nearest-rank, so `ceil(0.95 * n)` lands on the
+ * last element for every window smaller than 20 and the p95 simply IS the
+ * slowest request in it - at five samples as much as at one. Twenty is where
+ * the two first come apart.
+ *
+ * What the floor buys is that a single slow request cannot page on its own. One
+ * 15.3s answer is inside the app's own 30s upstream budget and reached the
+ * rider, so it is not an outage, and a channel that cries wolf from the day it
+ * merges is one nobody reads by the time it matters.
+ *
+ * A sample is any row carrying `latency_ms`, which is every request that
+ * reached the model and came back - successes and post-policy refusals alike,
+ * since a `completed_refusal_*` row is written with the latency it took. A
+ * request refused before the model, and every catch path, writes none.
  */
 export const MIN_SAMPLES_FOR_P95 = 5;
 
