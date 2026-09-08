@@ -102,9 +102,11 @@ const BASELINE_LIMITATIONS = [
       'refusal_accuracy currently measures the PIPELINE refusing, not the model refusing.',
     why_it_is_not_a_safety_gap:
       'Production refuses in exactly these cases - that is the same evaluateAdvicePolicy on ' +
-      'the same input - so no unsafe advice reaches a rider. Three of the six are refused by ' +
-      'the domain-guard classifier before the model is called at all, where "did the model ' +
-      'refuse" is not a question that has an answer.',
+      'the same input - so no unsafe advice reaches a rider. Five of the six are refused in ' +
+      'lib/rag/domain-guard.ts before the model is called at all - three by ' +
+      'classifyRaceEngineerQuestion and two by classifyStoredRiderText - where "did the model ' +
+      'refuse" is not a question that has an answer. Only mc-refusal-mechanical reaches the ' +
+      'model, which is the sole one of the six appearing in the embeddings tape.',
     why_it_is_recorded_rather_than_changed:
       'The exemption is the specified rule ("a case the policy force-refuses is a rubric ' +
       'FAILURE, not a pass - unless refusing is the case\'s expected answer"). Narrowing it ' +
@@ -115,6 +117,29 @@ const BASELINE_LIMITATIONS = [
     closed_by:
       'separate work: record per case which layer refused - model, classifier or policy - and ' +
       'decide deliberately whether a model that had to be caught should still score PASS.',
+  },
+  {
+    id: 'domain-guard-refuses-a-labelled-in-domain-case',
+    what:
+      'car-front-tire-overheating-hot-day is in domain, labelled should_refuse:false with two ' +
+      'expected sources, and classifyRaceEngineerQuestion refuses it as out_of_domain before ' +
+      'anything is embedded. Every MOTORSPORT_PATTERNS entry is a word-boundary-anchored ' +
+      'singular and the question is plural throughout - fronts, laps, pressures - so it scores ' +
+      'zero motorsport signals and is refused rather than answered.',
+    second_half:
+      'The supporting-text arm that would otherwise rescue it is dead for symptom chips: an ' +
+      'underscore is a word character, so the tire pattern cannot match inside an id like ' +
+      'overheating_tire and no chip can ever contribute a motorsport signal.',
+    effect_on_these_numbers:
+      'It is the single case behind three of the movements in correction_record below - recall ' +
+      '21/27 -> 21/26, MRR 19.75/27 -> 19.75/26, component 11/14 -> 11/13. Excluding a case the ' +
+      'classifier refused is correct scoring AND it absorbs the defect, because the recall 0 it ' +
+      'no longer scores was the only figure in this file that showed the classifier was wrong.',
+    closed_by:
+      'tt-domain-guard-plurals-and-chips, already queued, which covers both halves. Fixing the ' +
+      'guard is out of scope here by the brief - do not fix the model, the prompts, the ' +
+      'knowledge base or the retrieval parameters, record what was found - and the harness is ' +
+      'not wrong here: running the real pipeline is what found this.',
   },
 ];
 
@@ -191,6 +216,18 @@ const BASELINE_CORRECTION_RECORD = {
     'change at all, because the bugs were in which cases counted rather than in how a case scored. ' +
     'The one numerator that did move, direction 5 -> 7, is two responses that said `lower` where ' +
     'the label said `decrease`.',
+  the_excluded_case:
+    'Three of the six movements below are ONE case, car-front-tire-overheating-hot-day, and it ' +
+    'is excluded because THE PRODUCTION CLASSIFIER WRONGLY REFUSES IT. The question is in ' +
+    'domain and the label is right; classifyRaceEngineerQuestion returns out_of_domain because ' +
+    'every MOTORSPORT_PATTERNS entry is a word-boundary-anchored singular and the question is ' +
+    'phrased in the plural - fronts, laps, pressures. So the refusal is a DEFECT, not a ' +
+    'property of the case. Not scoring it recall 0 is correct, because that 0 measured the ' +
+    'classifier rather than the retriever - but it also ABSORBED THE DEFECT, since that 0 was ' +
+    'the only figure here that showed the classifier was wrong. Said plainly so that recall ' +
+    '21/27 -> 21/26, MRR 19.75/27 -> 19.75/26 and component 11/14 -> 11/13 cannot be read as ' +
+    'routine hygiene. The case carries a note saying the same thing, and the guard fix is ' +
+    'queued as tt-domain-guard-plurals-and-chips.',
   metrics: [
     {
       metric: 'rubric_pass_rate',
@@ -212,8 +249,9 @@ const BASELINE_CORRECTION_RECORD = {
       corrected_to: 0.8076923076923077,
       fraction: '21/27 -> 21/26',
       cause:
-        'A labelled case the classifier refused before anything was embedded was being scored ' +
-        'recall 0. The retriever never ran for it, so that 0 measured the classifier and not ' +
+        'car-front-tire-overheating-hot-day, which the classifier WRONGLY refuses before ' +
+        'anything is embedded (see the_excluded_case above), was being scored recall 0. The ' +
+        'retriever never ran for it, so that 0 measured the classifier and not ' +
         'retrieval; it is now not-applicable, which is what this file already claimed it was. ' +
         'A measurement bug rather than a judgement: the same case still fails the rubric and ' +
         'still counts against refusal accuracy. The numerator did not change - only which cases ' +
@@ -225,7 +263,8 @@ const BASELINE_CORRECTION_RECORD = {
       b115aaf: 0.7314814814814815,
       corrected_to: 0.7596153846153846,
       fraction: '19.75/27 -> 19.75/26',
-      cause: 'Same case, same correction, same untouched numerator.',
+      cause:
+        'Same case, same wrong refusal behind it, same correction, same untouched numerator.',
     },
     {
       metric: 'component_accuracy',
@@ -233,8 +272,9 @@ const BASELINE_CORRECTION_RECORD = {
       corrected_to: 0.8461538461538461,
       fraction: '11/14 -> 11/13',
       cause:
-        'The same misattribution one stage further on: a case the model was never asked, because ' +
-        'a classifier refused it first, was counted as a model miss. "Did the model reach the ' +
+        'The same misattribution one stage further on: the same case, which the model was never ' +
+        'asked because the classifier wrongly refused it first, was counted as a model miss. ' +
+        '"Did the model reach the ' +
         "human's answer\" is only a question about a case the model was asked. A model that WAS " +
         'asked and recommended nothing still counts as a miss. Numerator unchanged.',
     },

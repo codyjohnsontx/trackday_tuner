@@ -997,8 +997,8 @@ changes before shipping. Regressions gate in offline mode only; `--live`
 re-samples the model, so gating there would fail on sampling variance.
 
 **A GATE THAT CANNOT FAIL IS THE DEFECT THIS HARNESS EXISTS TO CURE, AND IT GREW
-THREE OF ITS OWN.** All three were found by the Codex second-opinion review after
-the pipeline's own review had passed, and all three are now proven by fault
+FOUR OF ITS OWN.** All four were found by the Codex second-opinion review after
+the pipeline's own review had passed, and all four are now proven by fault
 injection rather than argued for. Each shipped as a check that reported success
 while measuring nothing:
 
@@ -1014,6 +1014,13 @@ while measuring nothing:
   file that cannot answer. What a baseline must carry is derived from the same
   `METRICS` table the gate reads, so a metric added as gated is required in the
   baseline automatically instead of silently ungating itself
+- **A missing or trimmed `per_case` map ungated the case-level comparison the
+  same way.** The composition check reads `baseline.per_case?.[id]`, so a
+  baseline without that map answered "nothing to compare" for every case, and
+  one with entries deleted did it silently for exactly the cases removed.
+  `describeUnusableBaseline` now requires the map AND requires its entry count to
+  equal `coverage.scored_cases` - the writer emits one entry per scored case, so
+  a disagreement means the file was edited rather than measured
 - **Recall's denominator is labels, and only cases were counted.** Deleting an
   `expected_sources` entry a case was missing raises that case's recall while the
   case is still there and `retrieval_cases` never moves - so the cheapest route
@@ -1026,7 +1033,7 @@ while measuring nothing:
   exactly this and the comparison was already being computed - then thrown away
   at a `console.log`. It is a regression now
 
-`tests/unit/rag-eval-harness.test.ts` covers all three, and the path-alias
+`tests/unit/rag-eval-harness.test.ts` covers all four, and the path-alias
 containment fixed alongside them (`@/../outside` resolved outside the repo, which
 the loader's own comment claimed it could not).
 
@@ -1036,7 +1043,7 @@ the loader's own comment claimed it could not).
 refused" and "the model produced something dangerous and `evaluateAdvicePolicy`
 caught it" both score PASS - and all six passing `should_refuse` cases carry
 `policy=force_refusal`. It is not a safety gap, because production refuses on the
-same input and three of the six never reach the model at all. It is left because
+same input and five of the six never reach the model at all. It is left because
 narrowing it moves `refusal_accuracy`, and re-opening scoring semantics right
 after publishing `correction_record` is the exact hazard that record answers.
 

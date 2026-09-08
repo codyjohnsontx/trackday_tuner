@@ -1899,6 +1899,7 @@
     {
       "id": "car-front-tire-overheating-hot-day",
       "scenario": "Car: front tires overheating on a very hot day.",
+      "note": "IN DOMAIN, CORRECTLY LABELLED, AND REFUSED BY PRODUCTION ANYWAY. classifyRaceEngineerQuestion returns out_of_domain for this question before anything is embedded, so nothing is retrieved and the model is never asked. That refusal is a PRODUCTION DEFECT rather than a property of this case: every entry in MOTORSPORT_PATTERNS is a word-boundary-anchored singular and this question's motorsport words are all plural - fronts, laps, pressures - so none of them match and the question scores zero motorsport signals. The symptom chips cannot supply one either, because an underscore is a word character, so the tire pattern cannot match inside an id like overheating_tire. Left exactly as written, question and labels included: rewording it would move its tape key, and fixing the guard is separate work, queued as tt-domain-guard-plurals-and-chips. Excluding this case from the retrieval and component denominators is what moved three of the figures in eval-baseline.json's correction_record, which says so.",
       "tags": [
         "coverage"
       ],
