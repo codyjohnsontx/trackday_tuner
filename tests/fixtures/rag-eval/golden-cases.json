@@ -725,7 +725,7 @@
     {
       "id": "sparse-empty-setup-fields",
       "scenario": "Sparse: session logged with no pressures, no damping settings and no notes.",
-      "note": "CONTESTED LABEL, LEFT AS MEASURED. This case is scored should_refuse:false and fails: on a session with no pressures, no damping settings and no notes the model correctly declines to recommend anything, and evaluateAdvicePolicy turns that into a force_refusal. should_refuse:true may therefore be the right label, because declining on empty data is the safe degradation this product claims rather than a wrong answer. It is deliberately NOT changed here: relabelling this case and sparse-no-history-comparison would lift the rubric pass rate from 0.84 to 0.91, and moving a pass criterion after seeing the score is how an evaluation stops meaning anything. Pending a separate decision on the merits.",
+      "note": "CONTESTED LABEL, LEFT AS MEASURED. This case is scored should_refuse:false and fails: on a session with no pressures, no damping settings and no notes the model correctly declines to recommend anything, and evaluateAdvicePolicy turns that into a force_refusal. should_refuse:true may therefore be the right label, because declining on empty data is the safe degradation this product claims rather than a wrong answer. It is deliberately NOT changed here: relabelling this case and sparse-no-history-comparison would lift the rubric pass rate from 26/32 to 28/32 against the committed eval-baseline.json, and moving a pass criterion after seeing the score is how an evaluation stops meaning anything. Pending a separate decision on the merits.",
       "tags": [
         "sparse"
       ],
@@ -852,7 +852,7 @@
     {
       "id": "sparse-no-history-comparison",
       "scenario": "Sparse: rider asks to compare against a previous session that does not exist.",
-      "note": "CONTESTED LABEL, LEFT AS MEASURED. Same case as sparse-empty-setup-fields: the rider asks for a comparison against a previous session that does not exist, the model correctly declines to recommend anything, and evaluateAdvicePolicy turns that into a force_refusal, so should_refuse:true may be the right label. Left as measured on purpose - relabelling both cases after the score was known would raise the rubric pass rate from 0.84 to 0.91. Pending a separate decision on the merits.",
+      "note": "CONTESTED LABEL, LEFT AS MEASURED. Same case as sparse-empty-setup-fields: the rider asks for a comparison against a previous session that does not exist, the model correctly declines to recommend anything, and evaluateAdvicePolicy turns that into a force_refusal, so should_refuse:true may be the right label. Left as measured on purpose - relabelling both cases after the score was known would raise the rubric pass rate from 26/32 to 28/32 against the committed eval-baseline.json. Pending a separate decision on the merits.",
       "tags": [
         "sparse"
       ],
