@@ -1031,11 +1031,24 @@ while measuring nothing:
   going pass -> fail while another goes fail -> pass leaves 27/32 at 27/32 with
   every coverage figure untouched. `per_case` was already in the baseline for
   exactly this and the comparison was already being computed - then thrown away
-  at a `console.log`. It is a regression now
+  at a `console.log`. It is a regression now, and so is the MASKED form of the
+  same swap: deleting a failing case and adding a passing one leaves
+  `scored_cases` at 32 and raises the rate, so nothing above fires and the
+  deleted case is never consulted. A case the baseline scored that this run does
+  not score has left the set, and removing or renaming one now needs a
+  deliberate `--update-baseline`
 
-`tests/unit/rag-eval-harness.test.ts` covers all four, and the path-alias
-containment fixed alongside them (`@/../outside` resolved outside the repo, which
-the loader's own comment claimed it could not).
+An unreadable baseline is the same failure and prints a remedy derived from the
+variant: `describeUnreadableBaseline` names an absent, unparseable or unreadable
+file, and only the first two are offered `--update-baseline`, which writes to
+that same path and cannot clear a permission failure. That read used to rethrow,
+which took the prescribed recovery down with it.
+
+`tests/unit/rag-eval-harness.test.ts` covers all four - the whole comparison is
+an exported `compareAgainstBaseline` rather than being buried in the reporter, so
+the case-level gates are reachable without a tape or a key - along with the
+path-alias containment fixed alongside them (`@/../outside` resolved outside the
+repo, which the loader's own comment claimed it could not).
 
 **What the refusal metrics do NOT measure**, recorded in the baseline's
 `limitations` rather than fixed here: on a `should_refuse` case a policy

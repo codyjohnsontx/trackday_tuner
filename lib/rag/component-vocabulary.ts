@@ -283,8 +283,10 @@ export function findComponentPolicy(component: string): ComponentPolicy | null {
  *
  * That list was assembled by grepping `\.component` across `app`, `components`,
  * `lib` and `scripts`, then tracing every consumer of `ai_recommendations`; the
- * CSV export carries no component field and `scripts/eval-rag.mjs` only checks
- * the shape, so neither is rider-facing. Repeat that sweep rather than adding a
+ * CSV export carries no component field, and the eval harness
+ * (`scripts/eval/scoring.mjs`) calls these two helpers as a TEST-SIDE fold,
+ * comparing the model's answer against a golden label rather than rendering
+ * anything, so neither is rider-facing. Repeat that sweep rather than adding a
  * third site by accident - this helper was added for the AI panels and the
  * outcome picker was found separately, afterwards.
  */

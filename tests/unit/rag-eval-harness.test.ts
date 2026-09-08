@@ -17,7 +17,7 @@ import { aggregateRetrieval, scoreRetrieval } from '@/scripts/eval/retrieval.mjs
 // @ts-expect-error - see above.
 import { OpenAiTape, UNKEYABLE_REQUEST_ERROR_TYPE } from '@/scripts/eval/openai-tape.mjs';
 // @ts-expect-error - see above.
-import { describeUnusableBaseline } from '@/scripts/eval/run.mjs';
+import { compareAgainstBaseline, describeUnreadableBaseline, describeUnusableBaseline } from '@/scripts/eval/run.mjs';
 // @ts-expect-error - see above.
 import { resolve as resolveAlias } from '@/scripts/eval/ts-loader.mjs';
 
@@ -379,6 +379,174 @@ describe('the baseline the gate compares against', () => {
     // requirement; a null value means the population was empty and was measured.
     const nulled = { ...usable, coverage: { ...usable.coverage, retrieval_k: null } };
     expect(describeUnusableBaseline(nulled)).toBeNull();
+  });
+});
+
+describe('a baseline that could not be read at all', () => {
+  // The read used to rethrow anything but ENOENT, which took the run down
+  // before the `--update-baseline` write block - so the recovery the failure
+  // message prescribes could not run until the file was deleted by hand.
+  it('names an absent file, and the write does fix that', () => {
+    const problem = describeUnreadableBaseline({ code: 'ENOENT' });
+    expect(problem.reason).toMatch(/no eval-baseline\.json/);
+    expect(problem.recoverable).toBe(true);
+  });
+
+  it('names an unparseable file, and the write does fix that', () => {
+    let thrown: unknown;
+    try {
+      // What a conflicted `recorded_at` or `per_case` block leaves behind.
+      JSON.parse('{"metrics": <<<<<<< HEAD');
+    } catch (err) {
+      thrown = err;
+    }
+    const problem = describeUnreadableBaseline(thrown);
+    expect(problem.reason).toMatch(/eval-baseline\.json is not valid JSON/);
+    expect(problem.recoverable).toBe(true);
+  });
+
+  it('refuses to promise that write for a file it could not read', () => {
+    // `--update-baseline` writes to the same path, so it cannot clear a
+    // permission or path failure and the message must not say it can.
+    for (const code of ['EACCES', 'EISDIR', 'EIO']) {
+      const problem = describeUnreadableBaseline({ code });
+      expect(problem.reason).toContain(`could not be read (${code})`);
+      expect(problem.recoverable).toBe(false);
+    }
+  });
+});
+
+describe('the comparison against the baseline', () => {
+  const METRICS = {
+    rubric_pass_rate: 0.5,
+    recall_at_k: 0.5,
+    mrr: 0.5,
+    refusal_accuracy: 0.5,
+    component_accuracy: 0.5,
+    direction_accuracy: 0.5,
+  };
+  const COVERAGE = {
+    scored_cases: 2,
+    retrieval_k: 4,
+    retrieval_cases: 2,
+    retrieval_expected_sources: 3,
+    component_cases: 2,
+    direction_cases: 2,
+  };
+  const baseline = {
+    metrics: METRICS,
+    coverage: COVERAGE,
+    per_case: { a: { passed: true }, b: { passed: false } },
+  };
+  const run = (cases: Array<[string, boolean]>) =>
+    cases.map(([id, passed]) => ({ id, scored: { passed } }));
+
+  it('finds nothing wrong in a run that reproduces the baseline', () => {
+    const { regressions, nowFailing, leftTheSet } = compareAgainstBaseline({
+      metrics: METRICS,
+      coverage: COVERAGE,
+      scoredResults: run([
+        ['a', true],
+        ['b', false],
+      ]),
+      baseline,
+    });
+    expect(regressions).toEqual([]);
+    expect(nowFailing).toEqual([]);
+    expect(leftTheSet).toEqual([]);
+  });
+
+  it('fails a gated metric that fell, and leaves an ungated one reported', () => {
+    const { regressions, rows } = compareAgainstBaseline({
+      metrics: { ...METRICS, rubric_pass_rate: 0.4, direction_accuracy: 0.1 },
+      coverage: COVERAGE,
+      scoredResults: run([
+        ['a', true],
+        ['b', false],
+      ]),
+      baseline,
+    });
+    expect(regressions).toEqual(['rubric pass rate 0.50 -> 0.40']);
+    const direction = rows.find((r: { label: string }) => r.label === 'direction accuracy');
+    expect(direction.gated).toBe(false);
+  });
+
+  it('fails a case that passed in the baseline and now fails, at an unmoved rate', () => {
+    // The composition case: `a` goes pass -> fail while `b` goes fail -> pass,
+    // so every rate and every coverage figure is identical.
+    const { regressions, nowFailing } = compareAgainstBaseline({
+      metrics: METRICS,
+      coverage: COVERAGE,
+      scoredResults: run([
+        ['a', false],
+        ['b', true],
+      ]),
+      baseline,
+    });
+    expect(nowFailing).toEqual(['a']);
+    expect(regressions.some((line: string) => line.includes('now fail: a'))).toBe(true);
+  });
+
+  it('fails a failing case swapped out for a passing one', () => {
+    // The masked form of the same swap. Failing `b` is deleted and passing `c`
+    // added, so `scored_cases` stays 2 and the rubric rate RISES from 1/2 to
+    // 2/2 - no coverage fall, no metric regression, and `nowFailing` never
+    // consults `b` because it iterates this run's results.
+    const { regressions, nowFailing, leftTheSet } = compareAgainstBaseline({
+      metrics: { ...METRICS, rubric_pass_rate: 1 },
+      coverage: COVERAGE,
+      scoredResults: run([
+        ['a', true],
+        ['c', true],
+      ]),
+      baseline,
+    });
+    expect(nowFailing).toEqual([]);
+    expect(leftTheSet).toEqual(['b']);
+    expect(regressions.some((line: string) => line.includes('no longer scored here: b'))).toBe(true);
+  });
+
+  it('does not flag a case the golden set gained', () => {
+    const { leftTheSet, regressions } = compareAgainstBaseline({
+      metrics: METRICS,
+      coverage: { ...COVERAGE, scored_cases: 3 },
+      scoredResults: run([
+        ['a', true],
+        ['b', false],
+        ['c', true],
+      ]),
+      baseline,
+    });
+    expect(leftTheSet).toEqual([]);
+    expect(regressions).toEqual([]);
+  });
+
+  it('fails a fall in the number of expected sources', () => {
+    // Recall's denominator is labels rather than cases, so deleting a label a
+    // case was missing raises that case's recall while `retrieval_cases` and
+    // `scored_cases` both stand still.
+    const { regressions } = compareAgainstBaseline({
+      metrics: METRICS,
+      coverage: { ...COVERAGE, retrieval_expected_sources: 2 },
+      scoredResults: run([
+        ['a', true],
+        ['b', false],
+      ]),
+      baseline,
+    });
+    expect(regressions.some((line: string) => line.includes('retrieval labels 3 -> 2'))).toBe(true);
+  });
+
+  it('gates nothing at all without a baseline, which is why the read is checked', () => {
+    const { regressions, nowFailing, leftTheSet } = compareAgainstBaseline({
+      metrics: METRICS,
+      coverage: COVERAGE,
+      scoredResults: run([['a', false]]),
+      baseline: null,
+    });
+    expect(regressions).toEqual([]);
+    expect(nowFailing).toEqual([]);
+    expect(leftTheSet).toEqual([]);
   });
 });
 

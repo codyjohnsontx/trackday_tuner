@@ -595,6 +595,151 @@ export function describeUnusableBaseline(baseline) {
   return null;
 }
 
+/**
+ * Why the baseline could not be READ at all, and whether the remedy the failure
+ * message prints is true for that variant.
+ *
+ * `describeUnusableBaseline` answers for a file that parsed; this answers for
+ * one that did not. Both feed the same failure, so absent, empty, malformed,
+ * shape-drifted and unreadable behave uniformly and every one of them exits 1.
+ * The read used to rethrow anything but ENOENT, which took the run down before
+ * the `--update-baseline` write block - so the recovery the message prescribed
+ * could not run until the operator deleted the file by hand, and the raw
+ * SyntaxError never printed that instruction. A conflicted `recorded_at` or
+ * `per_case` block is all it takes to get there.
+ *
+ * `recoverable` is what the message is allowed to promise. `--update-baseline`
+ * overwrites the path, so it genuinely fixes an absent, empty or malformed
+ * file; it writes to that same path, so it cannot fix a permission or I/O
+ * failure and must not claim to.
+ *
+ * @param {unknown} err  what the read threw
+ * @returns {{ reason: string, recoverable: boolean }}
+ */
+export function describeUnreadableBaseline(err) {
+  const name = path.basename(BASELINE_PATH);
+  if (err?.code === 'ENOENT') {
+    return { reason: `no ${name} to compare against`, recoverable: true };
+  }
+  if (err instanceof SyntaxError) {
+    return { reason: `${name} is not valid JSON (${err.message})`, recoverable: true };
+  }
+  return {
+    reason: `${name} could not be read (${err?.code ?? err?.message ?? 'unknown error'})`,
+    recoverable: false,
+  };
+}
+
+/**
+ * Every comparison the gate makes against the baseline, as data rather than as
+ * console output. `report` still does the printing; this exists so the checks
+ * are reachable from a unit test without a tape, a filesystem or an API key -
+ * the composition gate below had no automated coverage at all while it lived
+ * inside an unexported `report`.
+ *
+ * @returns {{ rows: object[], regressions: string[], nowFailing: string[], leftTheSet: string[] }}
+ */
+export function compareAgainstBaseline({ metrics, coverage, scoredResults, baseline }) {
+  const kLabel = coverage.retrieval_k ?? 'k';
+  const previousCoverage = baseline?.coverage ?? null;
+  const regressions = [];
+
+  const rows = METRICS.map(({ key, label: baseLabel, gated, coverageKey }) => {
+    const label = key === 'recall_at_k' ? `recall@${kLabel}` : baseLabel;
+    const previous = baseline?.metrics?.[key] ?? null;
+    const count = coverageKey == null ? null : coverage[coverageKey];
+    const previousCount = coverageKey == null ? null : (previousCoverage?.[coverageKey] ?? null);
+    if (gated && previous != null && metrics[key] != null && metrics[key] < previous - 1e-9) {
+      regressions.push(`${label} ${previous.toFixed(2)} -> ${metrics[key].toFixed(2)}`);
+    }
+    return { label, current: metrics[key], previous, count, previousCount, gated };
+  });
+
+  // A rate can rise because its denominator fell. `recall@k` and MRR are gated,
+  // so a case leaving their average - a classifier refusing a labelled case
+  // before anything is embedded, say - can raise both while nothing about
+  // retrieval improved, and the rate alone cannot say so. A changed k is worse
+  // than that: the metric is no longer the same measurement, so comparing it to
+  // the stored one is meaningless rather than merely flattering.
+  if (previousCoverage?.scored_cases != null && coverage.scored_cases < previousCoverage.scored_cases) {
+    regressions.push(
+      `scored coverage ${previousCoverage.scored_cases} -> ${coverage.scored_cases} cases ` +
+        '(a rise in the rubric pass rate or refusal accuracy may be a case that left the set rather than one that started passing)',
+    );
+  }
+  if (previousCoverage?.retrieval_cases != null && coverage.retrieval_cases < previousCoverage.retrieval_cases) {
+    regressions.push(
+      `retrieval coverage ${previousCoverage.retrieval_cases} -> ${coverage.retrieval_cases} labelled cases ` +
+        `(a rise in recall@${kLabel} or MRR may be the smaller denominator rather than better retrieval)`,
+    );
+  }
+  if (
+    previousCoverage?.retrieval_k != null &&
+    coverage.retrieval_k != null &&
+    coverage.retrieval_k !== previousCoverage.retrieval_k
+  ) {
+    regressions.push(
+      `retrieval k ${previousCoverage.retrieval_k} -> ${coverage.retrieval_k}, so recall is not the metric the baseline recorded`,
+    );
+  }
+  // The label-level twin of the case-count check above. Recall's denominator is
+  // the number of EXPECTED SOURCES, not the number of cases, so deleting a label
+  // a case was missing raises that case's recall while the case is still there
+  // and `retrieval_cases` never moves. Without this, the cheapest way to a
+  // greener number is to edit `golden-cases.json` rather than the retriever.
+  if (
+    previousCoverage?.retrieval_expected_sources != null &&
+    coverage.retrieval_expected_sources < previousCoverage.retrieval_expected_sources
+  ) {
+    regressions.push(
+      `retrieval labels ${previousCoverage.retrieval_expected_sources} -> ${coverage.retrieval_expected_sources} expected sources ` +
+        `(a rise in recall@${kLabel} or MRR may be a deleted label rather than better retrieval)`,
+    );
+  }
+
+  const nowFailing = [];
+  const leftTheSet = [];
+  if (baseline) {
+    // GATED, not merely printed. The four gated metrics are RATES, and a rate
+    // is blind to composition: one case going pass -> fail while another goes
+    // fail -> pass leaves 27/32 at 27/32, leaves every coverage figure
+    // untouched, and exits 0 while a case a rider depends on has started
+    // failing. `per_case` is in the baseline precisely so this is answerable,
+    // and it was being computed and then thrown away at a console.log.
+    const perCase = baseline.per_case ?? {};
+    for (const r of scoredResults) {
+      if (!r.scored.passed && perCase[r.id]?.passed === true) nowFailing.push(r.id);
+    }
+    if (nowFailing.length > 0) {
+      regressions.push(
+        `${nowFailing.length} case(s) that passed in the baseline now fail: ${nowFailing.join(', ')}`,
+      );
+    }
+
+    // The MASKED form of the same swap, which every check above misses. Delete
+    // a failing case and add a passing one: `scored_cases` stays 32 so the
+    // coverage fall never fires, `rubric_pass_rate` RISES so no metric
+    // regresses, and `nowFailing` iterates THIS run's results so the deleted
+    // case - the only evidence anything left - is never consulted. A case the
+    // baseline scored and this run did not is one the gate can no longer vouch
+    // for. Removing or renaming a case therefore needs a deliberate
+    // `--update-baseline`, like every other coverage change here. ADDED cases
+    // are not flagged: a new case legitimately has no baseline row.
+    const present = new Set(scoredResults.map((r) => r.id));
+    for (const id of Object.keys(perCase)) {
+      if (!present.has(id)) leftTheSet.push(id);
+    }
+    if (leftTheSet.length > 0) {
+      regressions.push(
+        `${leftTheSet.length} case(s) the baseline scored are no longer scored here: ${leftTheSet.join(', ')} ` +
+          '(a rise in a gated rate may be a failing case swapped out rather than one that started passing)',
+      );
+    }
+  }
+
+  return { rows, regressions, nowFailing, leftTheSet };
+}
+
 export async function main(argv) {
   const args = new Set(argv);
   const live = args.has('--live');
@@ -829,16 +974,15 @@ async function report(ctx) {
   console.log(`  direction accuracy   ${fmt(metrics.direction_accuracy)}  over ${coverage.direction_cases} answered cases`);
 
   let baseline = null;
+  let readProblem = null;
   try {
     baseline = await readJson(BASELINE_PATH);
   } catch (err) {
-    // ENOENT alone is tolerated HERE so the run still prints its scores - which
-    // is what `--update-baseline` needs in order to bootstrap the first file.
-    // It is not tolerated as an OUTCOME: `baselineProblem` below turns it into a
-    // failure for any run that was supposed to be gated. A malformed or
-    // unreadable file is not caught at all and takes the run down through the
-    // top-level handler in `scripts/eval-rag.mjs`, which is already loud.
-    if (err?.code !== 'ENOENT') throw err;
+    // Caught rather than rethrown so the run still prints its scores and
+    // `--update-baseline` can still overwrite the file - which is the recovery
+    // the failure below prescribes. It is not tolerated as an OUTCOME:
+    // `baselineProblem` turns any of these into a failure for a gated run.
+    readProblem = describeUnreadableBaseline(err);
   }
   // Gated exactly where the regression check below is gated, and for the same
   // reason: `--live` re-samples the model, so nothing there is compared against
@@ -846,86 +990,30 @@ async function report(ctx) {
   // bootstrap that WRITES it. Every other run - which is every CI run - is
   // asserting that these numbers did not fall, and cannot assert it without a
   // baseline to fall from.
-  const baselineProblem = live || updateBaseline ? null : describeUnusableBaseline(baseline);
+  const shapeProblem = readProblem ? null : describeUnusableBaseline(baseline);
+  const baselineProblem =
+    live || updateBaseline
+      ? null
+      : (readProblem ?? (shapeProblem == null ? null : { reason: shapeProblem, recoverable: true }));
 
   console.log('\nAgainst baseline');
-  const regressions = [];
-  const previousCoverage = baseline?.coverage ?? null;
-  for (const { key, label: baseLabel, gated, coverageKey } of METRICS) {
-    const label = key === 'recall_at_k' ? `recall@${kLabel}` : baseLabel;
-    const previous = baseline?.metrics?.[key] ?? null;
-    const count = coverageKey == null ? null : coverage[coverageKey];
-    const previousCount = coverageKey == null ? null : (previousCoverage?.[coverageKey] ?? null);
+  const { rows, regressions, nowFailing, leftTheSet } = compareAgainstBaseline({
+    metrics,
+    coverage,
+    scoredResults,
+    baseline,
+  });
+  for (const { label, current, previous, count, previousCount, gated } of rows) {
     const over =
       count == null
         ? ''
         : previousCount == null || previousCount === count
           ? `  over ${count} cases`
           : `  over ${count} cases, was ${previousCount}`;
-    console.log(`${diffLine(label, metrics[key], previous)}${over}${gated ? '' : '  reported, not gated'}`);
-    if (gated && previous != null && metrics[key] != null && metrics[key] < previous - 1e-9) {
-      regressions.push(`${label} ${previous.toFixed(2)} -> ${metrics[key].toFixed(2)}`);
-    }
+    console.log(`${diffLine(label, current, previous)}${over}${gated ? '' : '  reported, not gated'}`);
   }
-
-  // A rate can rise because its denominator fell. `recall@k` and MRR are gated,
-  // so a case leaving their average - a classifier refusing a labelled case
-  // before anything is embedded, say - can raise both while nothing about
-  // retrieval improved, and the rate alone cannot say so. A changed k is worse
-  // than that: the metric is no longer the same measurement, so comparing it to
-  // the stored one is meaningless rather than merely flattering.
-  if (previousCoverage?.scored_cases != null && coverage.scored_cases < previousCoverage.scored_cases) {
-    regressions.push(
-      `scored coverage ${previousCoverage.scored_cases} -> ${coverage.scored_cases} cases ` +
-        '(a rise in the rubric pass rate or refusal accuracy may be a case that left the set rather than one that started passing)',
-    );
-  }
-  if (previousCoverage?.retrieval_cases != null && coverage.retrieval_cases < previousCoverage.retrieval_cases) {
-    regressions.push(
-      `retrieval coverage ${previousCoverage.retrieval_cases} -> ${coverage.retrieval_cases} labelled cases ` +
-        `(a rise in recall@${kLabel} or MRR may be the smaller denominator rather than better retrieval)`,
-    );
-  }
-  if (
-    previousCoverage?.retrieval_k != null &&
-    coverage.retrieval_k != null &&
-    coverage.retrieval_k !== previousCoverage.retrieval_k
-  ) {
-    regressions.push(
-      `retrieval k ${previousCoverage.retrieval_k} -> ${coverage.retrieval_k}, so recall is not the metric the baseline recorded`,
-    );
-  }
-  // The label-level twin of the case-count check above. Recall's denominator is
-  // the number of EXPECTED SOURCES, not the number of cases, so deleting a label
-  // a case was missing raises that case's recall while the case is still there
-  // and `retrieval_cases` never moves. Without this, the cheapest way to a
-  // greener number is to edit `golden-cases.json` rather than the retriever.
-  if (
-    previousCoverage?.retrieval_expected_sources != null &&
-    coverage.retrieval_expected_sources < previousCoverage.retrieval_expected_sources
-  ) {
-    regressions.push(
-      `retrieval labels ${previousCoverage.retrieval_expected_sources} -> ${coverage.retrieval_expected_sources} expected sources ` +
-        `(a rise in recall@${kLabel} or MRR may be a deleted label rather than better retrieval)`,
-    );
-  }
-  if (baseline) {
-    // GATED, not merely printed. The four gated metrics are RATES, and a rate
-    // is blind to composition: one case going pass -> fail while another goes
-    // fail -> pass leaves 27/32 at 27/32, leaves every coverage figure
-    // untouched, and exits 0 while a case a rider depends on has started
-    // failing. `per_case` is in the baseline precisely so this is answerable,
-    // and it was being computed and then thrown away at a console.log.
-    const nowFailing = scoredResults
-      .filter((r) => !r.scored.passed && baseline.per_case?.[r.id]?.passed === true)
-      .map((r) => r.id);
-    if (nowFailing.length > 0) {
-      console.log(`  cases newly failing: ${nowFailing.join(', ')}`);
-      regressions.push(
-        `${nowFailing.length} case(s) that passed in the baseline now fail: ${nowFailing.join(', ')}`,
-      );
-    }
-  }
+  if (nowFailing.length > 0) console.log(`  cases newly failing: ${nowFailing.join(', ')}`);
+  if (leftTheSet.length > 0) console.log(`  cases no longer scored: ${leftTheSet.join(', ')}`);
 
   const errors = results.filter((r) => r.error);
   const unsound = [];
@@ -1010,9 +1098,13 @@ async function report(ctx) {
   }
   if (baselineProblem) {
     console.error(
-      `\n[rag:eval] FAIL: ${baselineProblem}. This run is gated against ` +
-        `${path.basename(BASELINE_PATH)} and that file cannot gate it. Restore the committed ` +
-        'file, or write one deliberately with `npm run rag:eval -- --update-baseline`.',
+      `\n[rag:eval] FAIL: ${baselineProblem.reason}. This run is gated against ` +
+        `${path.basename(BASELINE_PATH)} and that file cannot gate it. ` +
+        (baselineProblem.recoverable
+          ? 'Restore the committed file, or write one deliberately with ' +
+            '`npm run rag:eval -- --update-baseline`.'
+          : '`npm run rag:eval -- --update-baseline` writes to that same path, so it cannot ' +
+            'help until the permission or the path is fixed.'),
     );
     exitCode = 1;
   }
