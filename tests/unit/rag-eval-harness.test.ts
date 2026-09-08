@@ -65,12 +65,12 @@ const golden = readJson('tests/fixtures/rag-eval/golden-cases.json') as { cases:
  * knowledge-base file that has never existed - and every one scored a perfect
  * 4/4 PASS. The eval was strictly weaker than the guard it was evaluating.
  *
- * These assertions are the transition. They are here rather than only in the
- * harness because `rag:eval` failing is not the same as `test:unit` failing:
- * both are required steps now, but the harness reaches this property only
- * through the tape, so a re-record or a tape miss takes the run down before the
- * scorer is ever asked. These call the scorer directly and nothing else can
- * stop them.
+ * These assertions are the transition. The harness runs its own self-check over
+ * the same three fixtures before it opens the tape, but that check asks one
+ * question - did each one fail - and a scorer rejecting all three for the wrong
+ * reason satisfies it. These pin which fixtures the set holds, the specific
+ * failure REASON each is rejected for, and that `evaluateAdvicePolicy` is what
+ * rejects two of the three rather than a check written for the harness.
  */
 describe('adversarial responses the old harness passed', () => {
   it('has all three of the audit fixtures', () => {
