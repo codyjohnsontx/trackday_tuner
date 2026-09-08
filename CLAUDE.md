@@ -1182,13 +1182,23 @@ doubled the file before this was added. `save({ prune })` keeps only the keys th
 run replayed or recorded, which is safe ONLY after a run that reached every case:
 a partial run has not touched the keys it never got to, and that objection is why
 the prune was removed once rather than guarded. `describeUnsoundRun` is the guard
-it pointed at - zero tape misses, zero case errors, a passing self-check, at least
-one case scored - and it is the SAME function `--update-baseline` reads, because
-both writes are destructive and safe under exactly the same condition. The exit
-code is its third reader, so a run that cannot be trusted to have measured what it
-claims fails whatever the flags, and adding a condition covers all three at once.
-An unsound run still saves what it recorded; it just keeps the stale keys until a
-clean run retires them.
+it pointed at - zero tape misses, zero broken self-check fixtures, a self-check
+that had fixtures at all, at least one case scored, and `scored + errored` equal
+to the size of the golden set - and it is the SAME function `--update-baseline`
+reads, because both writes are destructive and safe under exactly the same
+condition. The exit code is its third reader, so a run that cannot be trusted to
+have measured what it claims fails whatever the flags, and adding a condition
+covers all three at once. **That last count is the one doing the work here**, and
+it is arithmetic rather than a list of guarded call sites: a case that threw still
+produces a row, so a shortfall means the loop EXITED, and any exit added to it
+later is caught without anybody remembering to wrap the next call. It replaced
+"at least one case scored", which a partial run satisfies - the cases it never
+reached are simply absent from `results`, so it looked complete and pruned away
+recordings it had never replayed. A case error no longer causes one: the whole
+loop body is inside the per-case `try`, because scoring reads the case's own
+labels and a mistyped one in `golden-cases.json` throws in the vocabulary
+formatters rather than in `runCase`. An unsound run still saves what it recorded;
+it just keeps the stale keys until a clean run retires them.
 
 Retiring stale keys costs nothing. `--live` replays a matching entry BEFORE the
 mode is consulted, so a `--live` run on an unchanged prompt makes no API call at

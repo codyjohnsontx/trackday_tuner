@@ -718,32 +718,57 @@ describe('the comparison against the baseline', () => {
 });
 
 describe('whether a run may write or prune', () => {
-  // ONE definition with two destructive readers: `--update-baseline` writing a
-  // baseline, and `--live` pruning the tape. Both are safe exactly when the run
-  // reached every case, so they read the same function rather than each keeping
-  // a copy that agrees today and drifts later.
+  // ONE definition with three readers: `--update-baseline` writing a baseline,
+  // `--live` pruning the tape, and the exit code. All three are safe exactly
+  // when the run reached every case, so they read the same function rather than
+  // each keeping a copy that agrees today and drifts later.
+  //
+  // What this suite reaches is the DEFINITION. That a throw while scoring a case
+  // is now recorded as a case error rather than unwinding the loop is a property
+  // of the loop inside the unexported `main`, which needs a tape, a knowledge
+  // index and the resolve hook to run; there is no cheap honest way to drive it
+  // from here, and the count check below is what makes such an exit visible to
+  // the guard however it happens.
   const sound = {
     selfCheckCount: 3,
     selfCheckBrokenCount: 0,
     scoredCount: 32,
-    tapeMissCount: 0,
     errorCount: 0,
+    expectedCount: 32,
+    tapeMissCount: 0,
   };
 
   it('permits a run that reached every case', () => {
     expect(describeUnsoundRun(sound)).toEqual([]);
   });
 
+  it('permits a run that reached every case with one of them throwing', () => {
+    // A case that threw is unsound on its own account, but it did produce a
+    // verdict, so it must not ALSO read as a run that stopped early.
+    const reasons = describeUnsoundRun({ ...sound, scoredCount: 31, errorCount: 1 });
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]).toMatch(/case\(s\) threw/);
+  });
+
   it.each([
-    ['selfCheckCount', 0, /self-check had no fixtures/],
-    ['scoredCount', 0, /no cases were scored/],
-    ['selfCheckBrokenCount', 1, /force-refuses/],
-    ['tapeMissCount', 1, /had no recording/],
-    ['errorCount', 1, /case\(s\) threw/],
-  ])('refuses a run where %s is %s', (field, value, pattern) => {
-    const reasons = describeUnsoundRun({ ...sound, [field as string]: value });
+    ['the self-check had no fixtures', { selfCheckCount: 0 }, /self-check had no fixtures/],
+    ['the golden set was empty', { scoredCount: 0, expectedCount: 0 }, /no cases were scored/],
+    ['the scorer passed a refused response', { selfCheckBrokenCount: 1 }, /force-refuses/],
+    ['a request had no recording', { tapeMissCount: 1 }, /had no recording/],
+    ['a case threw', { scoredCount: 31, errorCount: 1 }, /case\(s\) threw/],
+    ['the loop exited early', { scoredCount: 20 }, /stopped after 20 of 32 cases/],
+  ])('refuses a run where %s', (_label, overrides, pattern) => {
+    const reasons = describeUnsoundRun({ ...sound, ...(overrides as object) });
     expect(reasons).toHaveLength(1);
     expect(reasons[0]).toMatch(pattern as RegExp);
+  });
+
+  it('refuses a run cut short even when every case it reached scored cleanly', () => {
+    // The defect this closes: a throw after `runCase` used to leave the loop
+    // with no case error and no tape miss, so the prune saw a sound run and
+    // deleted the committed recordings of every case it never reached.
+    const reasons = describeUnsoundRun({ ...sound, scoredCount: 12, errorCount: 0 });
+    expect(reasons).toEqual(['the run stopped after 12 of 32 cases']);
   });
 
   it('names every reason at once rather than only the first', () => {
@@ -753,10 +778,11 @@ describe('whether a run may write or prune', () => {
         selfCheckCount: 0,
         selfCheckBrokenCount: 2,
         scoredCount: 0,
-        tapeMissCount: 4,
         errorCount: 1,
+        expectedCount: 32,
+        tapeMissCount: 4,
       }),
-    ).toHaveLength(5);
+    ).toHaveLength(6);
   });
 });
 

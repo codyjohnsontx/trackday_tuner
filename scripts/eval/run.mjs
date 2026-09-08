@@ -966,20 +966,34 @@ export function compareAgainstBaseline({ metrics, coverage, scoredResults, basel
  * and diverge afterwards - the messages below each condition stay, because they
  * carry the detail an operator acts on, but none of them decides the exit code.
  *
+ * REACHING EVERY CASE IS COUNTED, not inferred from "at least one was scored".
+ * The prune's whole premise is that a run touched every key it is about to
+ * retire, and `scoredCount === 0` does not say that: a loop that exits early
+ * leaves the cases it never got to out of `results` entirely, so a partial run
+ * looked identical to a complete one and pruned away recordings it had not
+ * replayed. `scoredCount + errorCount` is how many cases produced a verdict of
+ * either kind, and it has to equal the golden set. That is arithmetic rather
+ * than a list of guarded call sites, so an exit added anywhere in that loop
+ * later is caught without anybody remembering to wrap it.
+ *
  * @param {{ selfCheckCount: number, selfCheckBrokenCount: number, scoredCount: number,
- *          tapeMissCount: number, errorCount: number }} counts
+ *          errorCount: number, expectedCount: number, tapeMissCount: number }} counts
  * @returns {string[]}
  */
 export function describeUnsoundRun({
   selfCheckCount,
   selfCheckBrokenCount,
   scoredCount,
-  tapeMissCount,
   errorCount,
+  expectedCount,
+  tapeMissCount,
 }) {
   const unsound = [];
   if (selfCheckCount === 0) unsound.push('the scorer self-check had no fixtures');
   if (scoredCount === 0) unsound.push('no cases were scored');
+  if (scoredCount + errorCount !== expectedCount) {
+    unsound.push(`the run stopped after ${scoredCount + errorCount} of ${expectedCount} cases`);
+  }
   if (selfCheckBrokenCount > 0) {
     unsound.push(`the scorer passed ${selfCheckBrokenCount} response(s) production force-refuses`);
   }
@@ -1064,14 +1078,64 @@ export async function main(argv) {
   const results = [];
   try {
     for (const [indexInCase, testCase] of golden.cases.entries()) {
-      let outcome;
+      // THE WHOLE BODY IS GUARDED, not just `runCase`. Scoring a case reads the
+      // case's own labels - `matchesExpectedComponent` and
+      // `matchesExpectedDirection` hand `expected` to the vocabulary formatters,
+      // which `.trim()` it - so a mistyped label in `golden-cases.json` throws
+      // here rather than inside `runCase`. Outside this `try` that unwound the
+      // loop straight into the `finally` below, where a `--live` run saw no case
+      // error, pruned the tape to the keys it had reached, and deleted the
+      // committed recordings of every case after the throw. Inside it, the same
+      // mistake is one reported failing case and the run still prints a table.
       try {
-        outcome = await runCase({ ...testCase, index: indexInCase }, {
+        const outcome = await runCase({ ...testCase, index: indexInCase }, {
           ...guardModule,
           ...promptModule,
           ...adviceModule,
           buildDayTrend: contextModule.buildDayTrend,
           hasManualSessionData: contextModule.hasManualSessionData,
+        });
+
+        const scored = scoreAdviceResponse({
+          response: outcome.response,
+          knowledgeBaseSources,
+          evaluateAdvicePolicy,
+          fallbackDataUsed: outcome.fallbackDataUsed,
+          validSessionIds: outcome.validSessionIds,
+          shouldRefuse: testCase.should_refuse === true,
+        });
+
+        const retrieval = scoreRetrieval(outcome.retrievedSources, testCase.expected_sources ?? []);
+        // Whether the MODEL reached the human's answer is only a question about a
+        // case the model was asked. A classifier refusal returns before
+        // `generateTuningAdvice`, so there is no answer to compare and the case is
+        // not applicable - the same distinction `scoreRetrieval` draws one line
+        // above. A model that WAS asked and recommended nothing is a miss, not a
+        // skip.
+        const modelAnswered = outcome.stage === 'model';
+        const primary = outcome.response.recommended_changes?.[0] ?? null;
+
+        results.push({
+          id: testCase.id,
+          tags: testCase.tags ?? [],
+          stage: outcome.stage,
+          model: outcome.model ?? null,
+          error: null,
+          scored,
+          retrieval,
+          confidence: outcome.response.confidence,
+          componentMatch: modelAnswered
+            ? matchesExpectedComponent(primary?.component, testCase.expected_component, vocabulary)
+            : null,
+          directionMatch: modelAnswered
+            ? matchesExpectedDirection(
+                primary?.direction,
+                testCase.expected_direction,
+                testCase.expected_component ?? primary?.component,
+                vocabulary,
+              )
+            : null,
+          refusalMatch: (testCase.should_refuse === true) === scored.refused,
         });
       } catch (err) {
         results.push({
@@ -1088,50 +1152,7 @@ export async function main(argv) {
             retrieved: null,
           },
         });
-        continue;
       }
-
-      const scored = scoreAdviceResponse({
-        response: outcome.response,
-        knowledgeBaseSources,
-        evaluateAdvicePolicy,
-        fallbackDataUsed: outcome.fallbackDataUsed,
-        validSessionIds: outcome.validSessionIds,
-        shouldRefuse: testCase.should_refuse === true,
-      });
-
-      const retrieval = scoreRetrieval(outcome.retrievedSources, testCase.expected_sources ?? []);
-      // Whether the MODEL reached the human's answer is only a question about a
-      // case the model was asked. A classifier refusal returns before
-      // `generateTuningAdvice`, so there is no answer to compare and the case is
-      // not applicable - the same distinction `scoreRetrieval` draws one line
-      // above. A model that WAS asked and recommended nothing is a miss, not a
-      // skip.
-      const modelAnswered = outcome.stage === 'model';
-      const primary = outcome.response.recommended_changes?.[0] ?? null;
-
-      results.push({
-        id: testCase.id,
-        tags: testCase.tags ?? [],
-        stage: outcome.stage,
-        model: outcome.model ?? null,
-        error: null,
-        scored,
-        retrieval,
-        confidence: outcome.response.confidence,
-        componentMatch: modelAnswered
-          ? matchesExpectedComponent(primary?.component, testCase.expected_component, vocabulary)
-          : null,
-        directionMatch: modelAnswered
-          ? matchesExpectedDirection(
-              primary?.direction,
-              testCase.expected_direction,
-              testCase.expected_component ?? primary?.component,
-              vocabulary,
-            )
-          : null,
-        refusalMatch: (testCase.should_refuse === true) === scored.refused,
-      });
     }
   } finally {
     restoreFetch();
@@ -1147,8 +1168,9 @@ export async function main(argv) {
         selfCheckCount: selfCheck.length,
         selfCheckBrokenCount: selfCheckBroken.length,
         scoredCount: results.filter((r) => !r.error).length,
-        tapeMissCount: tape.stats.misses.length,
         errorCount: results.filter((r) => r.error).length,
+        expectedCount: golden.cases.length,
+        tapeMissCount: tape.stats.misses.length,
       });
       if (unsound.length > 0) {
         console.warn(
@@ -1163,6 +1185,7 @@ export async function main(argv) {
     results,
     selfCheck,
     selfCheckBroken,
+    expectedCount: golden.cases.length,
     tape,
     mode,
     live,
@@ -1172,7 +1195,7 @@ export async function main(argv) {
 }
 
 async function report(ctx) {
-  const { results, selfCheck, selfCheckBroken, tape, mode, live, updateBaseline } = ctx;
+  const { results, selfCheck, selfCheckBroken, expectedCount, tape, mode, live, updateBaseline } = ctx;
 
   const ID_WIDTH = Math.max(20, ...results.map((r) => r.id.length));
 
@@ -1300,8 +1323,9 @@ async function report(ctx) {
     selfCheckCount: selfCheck.length,
     selfCheckBrokenCount: selfCheckBroken.length,
     scoredCount: scoredResults.length,
-    tapeMissCount: tape.stats.misses.length,
     errorCount: errors.length,
+    expectedCount,
+    tapeMissCount: tape.stats.misses.length,
   });
 
   if (updateBaseline && unsound.length > 0) {
