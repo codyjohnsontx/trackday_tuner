@@ -66,8 +66,11 @@ const golden = readJson('tests/fixtures/rag-eval/golden-cases.json') as { cases:
  * 4/4 PASS. The eval was strictly weaker than the guard it was evaluating.
  *
  * These assertions are the transition. They are here rather than only in the
- * harness because `npm run rag:eval` is not a required check and `npm run
- * test:unit` is: without this, the property could be lost without CI noticing.
+ * harness because `rag:eval` failing is not the same as `test:unit` failing:
+ * both are required steps now, but the harness reaches this property only
+ * through the tape, so a re-record or a tape miss takes the run down before the
+ * scorer is ever asked. These call the scorer directly and nothing else can
+ * stop them.
  */
 describe('adversarial responses the old harness passed', () => {
   it('has all three of the audit fixtures', () => {

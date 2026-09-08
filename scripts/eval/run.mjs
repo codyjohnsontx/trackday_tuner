@@ -470,10 +470,15 @@ const METRICS = [
  * The coverage figures the gate compares, so a rate that rose because its
  * denominator shrank is caught. A baseline missing any of them cannot answer
  * that question, which is the same silence as having no baseline at all.
+ *
+ * Every gated metric's denominator is derived from `METRICS` for the same
+ * reason the metric keys are: a hand-kept copy lets a metric added later ungate
+ * its own coverage comparison against every baseline written before it. Only
+ * the two figures that back checks of their own rather than a metric's
+ * denominator - `retrieval_k` and `retrieval_expected_sources` - are named here.
  */
 const REQUIRED_COVERAGE_KEYS = [
-  'scored_cases',
-  'retrieval_cases',
+  ...new Set(METRICS.filter((m) => m.gated && m.coverageKey != null).map((m) => m.coverageKey)),
   'retrieval_k',
   'retrieval_expected_sources',
 ];
