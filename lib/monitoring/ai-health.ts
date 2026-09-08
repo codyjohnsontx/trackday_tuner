@@ -28,21 +28,33 @@ export const AI_HEALTH_WINDOW_MINUTES = 60;
  */
 export const PENDING_STALE_MS = 5 * 60 * 1000;
 
-/** Fires on a proportion of failures once there is enough traffic to have one. */
-export const ERROR_RATE_THRESHOLD = 0.2;
-export const MIN_REQUESTS_FOR_RATE = 5;
-
 /**
- * Fires on an absolute count regardless of traffic, and this is the rule that
- * would have caught R3. Error *rate* alone would not have: riders stopped
- * calling a feature that never worked, so the window that mattered held one or
- * two requests and would have been suppressed by `MIN_REQUESTS_FOR_RATE` every
- * time. At this product's volume a single 500 is worth an alert.
+ * Fires on an absolute count regardless of traffic, and this is the only rule
+ * that decides whether a failure alerts. Error *rate* would not have caught R3:
+ * riders stopped calling a feature that never worked, so the window that
+ * mattered held one or two requests, and any rule demanding a minimum number of
+ * them before it would speak would have been suppressed every single time. At
+ * this product's volume one 500 is worth an alert, so `error_rate` is reported
+ * for context and never gates anything.
  */
 export const ERROR_COUNT_THRESHOLD = 1;
 
 /** The model itself is the slow part; past this something is wrong upstream. */
 export const P95_LATENCY_THRESHOLD_MS = 15_000;
+
+/**
+ * How many latencies a window needs before its p95 may alert.
+ *
+ * Below this a "95th percentile" is just the slowest request. Three successes
+ * at 4.2s, 6.1s and 15.3s put the nearest-rank p95 on the last one, and that is
+ * inside the app's own 30s upstream budget on a request the rider got an answer
+ * from - so alerting there is crying wolf, and a channel that does so from the
+ * day it merges is one nobody reads by the time it matters. Latency is counted
+ * rather than requests because only a success carries one: every catch path
+ * writes none, so a window of five refusals and one slow success is still a
+ * single sample.
+ */
+export const MIN_SAMPLES_FOR_P95 = 5;
 
 export type RequestOutcome = 'success' | 'expected' | 'failure' | 'in_flight';
 
@@ -109,6 +121,8 @@ export interface AiHealthSummary {
   /** failure / terminal, or 0 when nothing terminated. */
   error_rate: number;
   p95_latency_ms: number | null;
+  /** How many rows carried a latency, which is the p95's sample size. */
+  latency_samples: number;
   /** Counts per status, failures only, so an alert can name what broke. */
   failures_by_status: Record<string, number>;
 }
@@ -163,6 +177,7 @@ export function summarizeAiRequests(
     in_flight: counts.in_flight,
     error_rate: terminal === 0 ? 0 : counts.failure / terminal,
     p95_latency_ms: percentile(latencies, 0.95),
+    latency_samples: latencies.length,
     failures_by_status: failuresByStatus,
   };
 }
@@ -170,10 +185,6 @@ export function summarizeAiRequests(
 export interface AiHealthAlert {
   firing: boolean;
   reasons: string[];
-}
-
-function formatRate(rate: number): string {
-  return `${(rate * 100).toFixed(1)}%`;
 }
 
 function describeFailures(summary: AiHealthSummary): string {
@@ -193,14 +204,11 @@ export function evaluateAiHealth(summary: AiHealthSummary): AiHealthAlert {
     );
   }
 
-  if (summary.terminal >= MIN_REQUESTS_FOR_RATE && summary.error_rate >= ERROR_RATE_THRESHOLD) {
-    reasons.push(
-      `error rate ${formatRate(summary.error_rate)} over ${summary.terminal} requests is at or ` +
-        `above the ${formatRate(ERROR_RATE_THRESHOLD)} threshold`,
-    );
-  }
-
-  if (summary.p95_latency_ms !== null && summary.p95_latency_ms >= P95_LATENCY_THRESHOLD_MS) {
+  if (
+    summary.latency_samples >= MIN_SAMPLES_FOR_P95 &&
+    summary.p95_latency_ms !== null &&
+    summary.p95_latency_ms >= P95_LATENCY_THRESHOLD_MS
+  ) {
     reasons.push(
       `p95 latency ${summary.p95_latency_ms}ms is at or above the ` +
         `${P95_LATENCY_THRESHOLD_MS}ms threshold`,

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ERROR_RATE_THRESHOLD,
-  MIN_REQUESTS_FOR_RATE,
+  MIN_SAMPLES_FOR_P95,
   P95_LATENCY_THRESHOLD_MS,
   PENDING_STALE_MS,
   classifyRequest,
@@ -149,23 +148,46 @@ describe('evaluateAiHealth', () => {
     expect(evaluate(rows).firing).toBe(false);
   });
 
-  it('fires on the error rate once there is enough traffic', () => {
-    const rows = [
-      ...Array.from({ length: MIN_REQUESTS_FOR_RATE }, () => row('ok')),
-      ...Array.from({ length: MIN_REQUESTS_FOR_RATE }, () => row('upstream_timeout')),
-    ];
-    const alert = evaluate(rows);
-    expect(alert.firing).toBe(true);
-    expect(alert.reasons.some((reason) => reason.includes('error rate'))).toBe(true);
+  // Three riders, three answers, and the slowest took 15.3s - inside the app's
+  // own 30s upstream budget. Nothing is broken, so nobody should be emailed.
+  it('does not fire on one slow success in a window too small to have a p95', () => {
+    const rows = [4_200, 6_100, 15_300].map((latency) => row('ok', { latency_ms: latency }));
+    const summary = summarizeAiRequests(rows, NOW);
+
+    expect(summary.failure).toBe(0);
+    expect(summary.latency_samples).toBeLessThan(MIN_SAMPLES_FOR_P95);
+    expect(summary.p95_latency_ms).toBeGreaterThanOrEqual(P95_LATENCY_THRESHOLD_MS);
+    expect(evaluateAiHealth(summary).firing).toBe(false);
   });
 
-  it('suppresses only the rate rule below the minimum sample, never the count rule', () => {
-    const summary = summarizeAiRequests([row('ok'), row('error')], NOW);
-    expect(summary.terminal).toBeLessThan(MIN_REQUESTS_FOR_RATE);
-    expect(summary.error_rate).toBeGreaterThanOrEqual(ERROR_RATE_THRESHOLD);
+  // ...and the gate suppresses only a window too small to mean anything: the
+  // same p95 over a real sample still alerts.
+  it('fires on the same p95 once the window carries enough samples', () => {
+    const rows = [
+      ...Array.from({ length: MIN_SAMPLES_FOR_P95 - 1 }, () => row('ok', { latency_ms: 4_200 })),
+      row('ok', { latency_ms: 15_300 }),
+    ];
+    const summary = summarizeAiRequests(rows, NOW);
     const alert = evaluateAiHealth(summary);
-    expect(alert.reasons.some((reason) => reason.includes('error rate'))).toBe(false);
+
+    expect(summary.latency_samples).toBeGreaterThanOrEqual(MIN_SAMPLES_FOR_P95);
+    expect(summary.p95_latency_ms).toBe(15_300);
     expect(alert.firing).toBe(true);
+    expect(alert.reasons[0]).toContain('p95 latency');
+  });
+
+  // Only a success carries a latency, so a window can hold plenty of requests
+  // and still have almost no sample to take a percentile over.
+  it('counts latency samples rather than requests', () => {
+    const rows = [
+      ...Array.from({ length: MIN_SAMPLES_FOR_P95 }, () => row('completed_refusal_no_safe_answer')),
+      row('ok', { latency_ms: 15_300 }),
+    ];
+    const summary = summarizeAiRequests(rows, NOW);
+
+    expect(summary.terminal).toBeGreaterThan(MIN_SAMPLES_FOR_P95);
+    expect(summary.latency_samples).toBe(1);
+    expect(evaluateAiHealth(summary).firing).toBe(false);
   });
 
   it('fires on p95 latency with no errors at all', () => {

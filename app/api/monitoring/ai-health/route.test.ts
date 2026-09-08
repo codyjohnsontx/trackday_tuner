@@ -96,6 +96,20 @@ describe('GET /api/monitoring/ai-health', () => {
       expect(response.status).toBe(200);
     });
 
+    // Reporting is a resource. This route's path is public and the unconfigured
+    // state below is the documented one until the secret reaches Vercel, so a
+    // caller with no credential must not be able to mint a report per request.
+    it('reports nothing for a caller who presented no credential', async () => {
+      getMonitoringCronSecret.mockImplementation(() => {
+        throw new Error('Missing environment variable: MONITORING_CRON_SECRET');
+      });
+
+      const response = await GET(request());
+
+      expect(response.status).toBe(401);
+      expect(consoleError).not.toHaveBeenCalled();
+    });
+
     // Fail closed: without the secret there is no way to tell the scheduler
     // from anyone else, and these numbers are not public.
     it('refuses everyone when the secret is not configured', async () => {
@@ -105,6 +119,8 @@ describe('GET /api/monitoring/ai-health', () => {
       const response = await GET(authorized());
       expect(response.status).toBe(503);
       expect(createAdminClient).not.toHaveBeenCalled();
+      // The operator still gets the diagnostic, and it is still reported.
+      expect(consoleError).toHaveBeenCalled();
     });
   });
 

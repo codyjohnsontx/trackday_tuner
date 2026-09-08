@@ -54,6 +54,14 @@ function secretMatches(presented: string, expected: string): boolean {
 }
 
 export async function GET(request: NextRequest) {
+  // A credential is demanded before anything is reported, because reporting is
+  // itself a resource: this route's path is public, the missing-secret branch
+  // below is the documented state until the secret reaches Vercel, and an
+  // uncredentialed caller who could reach `reportError` could mint a Sentry
+  // event and a log line per request.
+  const presented = presentedSecret(request);
+  if (!presented) return unauthorized();
+
   let expected: string;
   try {
     expected = getMonitoringCronSecret();
@@ -64,8 +72,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Monitoring is not configured.' }, { status: 503 });
   }
 
-  const presented = presentedSecret(request);
-  if (!presented || !secretMatches(presented, expected)) return unauthorized();
+  if (!secretMatches(presented, expected)) return unauthorized();
 
   const now = new Date();
   const since = new Date(now.getTime() - AI_HEALTH_WINDOW_MINUTES * 60 * 1000);

@@ -82,14 +82,17 @@ jobs:
           CRON_SECRET: ${{ secrets.MONITORING_CRON_SECRET }}
         run: |
           set -uo pipefail
-          body=$(mktemp)
+          # The body is discarded rather than printed: this repository is public,
+          # so its Actions logs are too, and this endpoint is bearer-gated
+          # precisely because its numbers are not. A status and a pass/fail is
+          # all a stranger may read. The full summary still reaches the operator
+          # through the webhook payload.
           code=$(curl --silent --show-error --location --max-time 30 \
             --header "Authorization: Bearer ${CRON_SECRET}" \
-            --output "$body" --write-out '%{http_code}' \
+            --output /dev/null --write-out '%{http_code}' \
             "${APP_URL%/}/api/monitoring/ai-health") || code=000
           echo "HTTP $code"
-          cat "$body"; echo
           if [ "$code" != "200" ]; then
-            echo "::error::/api/monitoring/ai-health answered $code. The body above says which requests failed and why."
+            echo "::error::/api/monitoring/ai-health answered $code. The body is deliberately not printed here - run the curl under \"Verify it worked\" in step 2 of docs/monitoring.md to see which requests failed and why."
             exit 1
           fi
