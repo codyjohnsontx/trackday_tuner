@@ -384,10 +384,15 @@ describe('the baseline the gate compares against', () => {
   it('refuses a baseline that scored no cases, which gates nothing', () => {
     // The writer could produce this from an emptied golden set: every key
     // present, every metric null, `per_case` empty and `scored_cases` 0, so it
-    // satisfies every other rule here while no comparison can ever fire. The
-    // write end refuses it too - that path needs the fixtures, the tapes and
-    // the index on disk, so it is proven by fault injection against the real
-    // harness rather than from here.
+    // satisfies every other rule here while no comparison can ever fire.
+    //
+    // The run-level twins of this rule - an emptied golden set and an emptied
+    // adversarial set, each of which fails the run whatever flags it was given
+    // - live inside `main` and need the fixtures, the tapes and the index on
+    // disk, so they are proven by fault injection against the real harness
+    // rather than covered here. The substance of the self-check is covered
+    // above, where the three fixtures are pinned by id and each is asserted to
+    // fail for its own recorded reason.
     const empty = {
       metrics: {
         rubric_pass_rate: null,

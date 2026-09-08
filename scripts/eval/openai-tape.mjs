@@ -55,6 +55,12 @@ function tapeKind(url) {
   return null;
 }
 
+/**
+ * An absent tape reads as an empty one, and that empty collection cannot yield
+ * a pass: with no entries every request misses, `stats.misses` fills, and the
+ * run exits 1 naming each key. So the degenerate case fails by construction
+ * here rather than by a guard - which is why there is none.
+ */
 async function readTape(filePath) {
   try {
     return JSON.parse(await fs.readFile(filePath, 'utf8'));

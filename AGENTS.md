@@ -978,6 +978,20 @@ that reports a pass rate has also just proved it can report a failure.
 `tests/unit/rag-eval-harness.test.ts` locks that in the required checks, because
 `rag:eval` failing is not the same as `test:unit` failing.
 
+**The general rule behind that, and the one to apply to anything added here: a
+conclusion drawn from a collection has to say what the EMPTY collection
+reports.** Three gates were found one at a time whose empty case was the passing
+answer - zero golden cases wrote an all-null baseline, zero adversarial fixtures
+passed the self-check, an absent baseline value gated nothing. Both fixture sets
+now fail the run when empty, whatever the flags, and a baseline that scored no
+cases is refused on read. Where empty is instead a real answer it is now written
+down beside the code and must stay: `ratio` returns `null` over an empty
+population rather than 0, `scoreRetrieval` returns `applicable: false` for an
+unlabelled case, `aggregateRetrieval` reports a null `k` when nothing retrieved,
+and an absent tape fails by construction because every request then misses. The
+one unguarded case is the `METRICS` table itself, deliberately: emptying it is
+deleting the gate, and no guard in the same file survives that edit.
+
 **Offline replays committed tapes; the tape key is the request.** The intercept
 is `globalThis.fetch` (`scripts/eval/openai-tape.mjs`), not a mock of
 `generateTuningAdvice` - that function builds its own client with no injection

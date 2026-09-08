@@ -462,6 +462,15 @@ async function runCase(testCase, deps) {
   };
 }
 
+/**
+ * EMPTY IS A REAL ANSWER HERE, and deliberately so. A rate over an empty
+ * population is unmeasurable rather than zero, and scoring it 0 would drag an
+ * aggregate down for behaving correctly - `component_accuracy` over a run where
+ * no case carried a label, say. The null is not a silent pass: a GATED metric
+ * that had a baseline value and comes back null is pushed into `regressions` by
+ * `compareAgainstBaseline`, and a run whose whole golden set was empty fails
+ * outright below.
+ */
 function ratio(hits, total) {
   return total === 0 ? null : hits / total;
 }
@@ -505,6 +514,14 @@ export function diffLine(label, current, previous) {
  * declaration the gate reads. A metric added as gated is then required in the
  * baseline automatically, instead of silently ungating itself against every
  * baseline written before it existed.
+ *
+ * This is the one collection in the harness whose empty case yields a pass and
+ * is NOT guarded: with no `gated` entry, nothing is required of a baseline and
+ * nothing can regress. It is left that way on purpose, because this is a source
+ * declaration rather than data - emptying it IS deleting the gate, and a guard
+ * written beside it in the same file would be deleted by the same edit. The
+ * fixture sets are the opposite case and are guarded, because a data file goes
+ * empty by hand, by merge and by an older writer.
  */
 const METRICS = [
   { key: 'rubric_pass_rate', label: 'rubric pass rate', gated: true, coverageKey: 'scored_cases' },
@@ -809,6 +826,15 @@ export async function main(argv) {
   // Self-check. Runs before anything that can cost money, needs no key in
   // either mode, and gates the whole run: a harness that cannot fail these
   // three cannot be trusted about the thirty-two below it.
+  //
+  // So an EMPTY fixture set is not a pass, it is the absence of one - the same
+  // rule the golden set gets below, and the emptiest possible form of the
+  // defect this harness exists to remove, because this check is its ONLY
+  // evidence that it can report a failure at all.
+  // `tests/unit/rag-eval-harness.test.ts` also pins the three ids, and that is
+  // deliberately not relied on here: it is a different required check in a
+  // different file, and the harness must not depend on another suite to know
+  // its own proof ran.
   // ------------------------------------------------------------------
   const selfCheck = adversarial.cases.map((c) => {
     const scored = scoreAdviceResponse({
@@ -923,7 +949,7 @@ export async function main(argv) {
 }
 
 async function report(ctx) {
-  const { results, selfCheckBroken, tape, mode, live, updateBaseline } = ctx;
+  const { results, selfCheck, selfCheckBroken, tape, mode, live, updateBaseline } = ctx;
 
   const ID_WIDTH = Math.max(20, ...results.map((r) => r.id.length));
 
@@ -1047,6 +1073,9 @@ async function report(ctx) {
 
   const errors = results.filter((r) => r.error);
   const unsound = [];
+  if (selfCheck.length === 0) {
+    unsound.push('the scorer self-check had no fixtures');
+  }
   if (scoredResults.length === 0) {
     unsound.push('no cases were scored');
   }
@@ -1101,11 +1130,18 @@ async function report(ctx) {
 
   let exitCode = 0;
 
+  // These two are the same rule over the two fixture sets, and both fail
+  // whatever the flags: an empty collection here is the absence of a result
+  // rather than a passing one.
+  if (selfCheck.length === 0) {
+    console.error(
+      '\n[rag:eval] FAIL: the scorer self-check had no fixtures, so this run never ' +
+        'demonstrated that it can reject a response production force-refuses. ' +
+        `Check ${path.relative(REPO_ROOT, ADVERSARIAL_PATH)}.`,
+    );
+    exitCode = 1;
+  }
   if (scoredResults.length === 0) {
-    // Whatever the flags. "No cases scored" is the absence of a result rather
-    // than a passing one, and a run that measured nothing is the same defect
-    // this harness exists to close - reached through an emptied golden set
-    // instead of through a deleted baseline.
     console.error(
       '\n[rag:eval] FAIL: no cases were scored, so this run measured nothing. ' +
         `Check ${path.relative(REPO_ROOT, GOLDEN_PATH)}.`,
