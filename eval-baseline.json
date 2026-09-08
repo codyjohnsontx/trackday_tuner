@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "recorded_at": "2026-09-08T07:40:04.079Z",
+  "recorded_at": "2026-09-08T08:27:18.516Z",
   "mode": "offline",
   "model": "gpt-4o-mini",
   "embedding_model": "text-embedding-3-small",
@@ -8,11 +8,11 @@
   "cases": 32,
   "metrics": {
     "rubric_pass_rate": 0.84375,
-    "recall_at_4": 0.7777777777777778,
-    "mrr": 0.7314814814814815,
+    "recall_at_4": 0.8076923076923077,
+    "mrr": 0.7596153846153846,
     "refusal_accuracy": 0.84375,
     "component_accuracy": 0.7857142857142857,
-    "direction_accuracy": 0.35714285714285715
+    "direction_accuracy": 0.5
   },
   "per_case": {
     "mc-front-push-pressure": {
@@ -191,8 +191,8 @@
     },
     "car-front-tire-overheating-hot-day": {
       "passed": false,
-      "recall": 0,
-      "reciprocal_rank": 0,
+      "recall": null,
+      "reciprocal_rank": null,
       "policy": "force_refusal"
     },
     "mc-cold-first-session-low-grip": {

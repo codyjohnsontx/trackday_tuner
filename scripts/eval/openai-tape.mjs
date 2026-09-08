@@ -73,7 +73,6 @@ export class OpenAiTape {
     this.mode = mode;
     this.tapes = { embeddings: null, completions: null };
     this.stats = { hits: 0, recorded: 0, misses: [] };
-    this.used = { embeddings: new Set(), completions: new Set() };
     this.realFetch = null;
   }
 
@@ -87,12 +86,7 @@ export class OpenAiTape {
     }
   }
 
-  /**
-   * @param {{ prune?: boolean }} [options] `prune` keeps only the entries this
-   *   run replayed or recorded, so it is correct only after a run that reached
-   *   every case. A partial run has not touched the keys it never got to.
-   */
-  async save({ prune = false } = {}) {
+  async save() {
     await fs.mkdir(this.dir, { recursive: true });
     for (const kind of ['embeddings', 'completions']) {
       const tape = this.tapes[kind];
@@ -100,7 +94,6 @@ export class OpenAiTape {
       // wholesale reordering of the file.
       const entries = Object.fromEntries(
         Object.keys(tape.entries)
-          .filter((key) => !prune || this.used[kind].has(key))
           .sort()
           .map((key) => [key, tape.entries[key]]),
       );
@@ -147,7 +140,6 @@ export class OpenAiTape {
 
     if (entry) {
       this.stats.hits += 1;
-      this.used[kind].add(key);
       return new Response(JSON.stringify(entry.response), {
         status: entry.status,
         headers: { 'content-type': 'application/json' },
@@ -186,7 +178,6 @@ export class OpenAiTape {
         response: parsed,
       };
       this.stats.recorded += 1;
-      this.used[kind].add(key);
     }
 
     return new Response(text, {
@@ -204,10 +195,10 @@ export function unkeyableRequestMessage(kind) {
   return (
     `A ${kind} request arrived with no string body, so it cannot be keyed. ` +
     'A request is identified by its canonicalized body, so keying one without a body ' +
-    'would collide every request onto a single entry: offline mode would score all ' +
-    'cases against one recording, and a live run would record under that same key and ' +
-    'then prune the real recordings away. The OpenAI SDK sends a string body today; an ' +
-    'SDK that sends a Request object or a stream is what this catches.'
+    'would collide every request onto a single entry: offline mode would score every ' +
+    'case against one recording, and a live run would overwrite that one entry with ' +
+    'each response in turn. The OpenAI SDK sends a string body today; an SDK that ' +
+    'sends a Request object or a stream is what this catches.'
   );
 }
 

@@ -23,15 +23,19 @@
 export const RETRIEVAL_K = 4;
 
 /**
- * @param {string[]} retrievedSources  source path per retrieved chunk, in rank order
+ * @param {string[] | null} retrievedSources  source path per retrieved chunk in
+ *   rank order, or `null` when the retriever never ran
  * @param {string[]} expectedSources   the sources this case should surface
  * @param {number} k
  */
 export function scoreRetrieval(retrievedSources, expectedSources, k = RETRIEVAL_K) {
-  if (expectedSources.length === 0) {
-    // Cases with nothing to retrieve - a refusal that never reaches the
-    // retriever - are not scored rather than scored zero, which would drag the
-    // aggregate down for behaving correctly.
+  // Two different things are unscoreable and neither may be scored zero, which
+  // would drag the aggregate down for behaving correctly. A case with no label
+  // has nothing to compare against. A case refused before anything was embedded
+  // never reached the retriever at all, so the number would be measuring the
+  // classifier - `null` is that case, and an empty ARRAY still scores, because a
+  // retriever that ran and returned nothing genuinely recalled nothing.
+  if (retrievedSources == null || expectedSources.length === 0) {
     return { applicable: false, recall: null, reciprocalRank: null, hits: [], missed: [] };
   }
 

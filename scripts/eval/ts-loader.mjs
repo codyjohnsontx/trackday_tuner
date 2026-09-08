@@ -23,8 +23,11 @@ import { pathToFileURL } from 'node:url';
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const SERVER_ONLY_STUB = pathToFileURL(path.join(import.meta.dirname, 'server-only-stub.mjs')).href;
 
-// Ordered: a directory's index file only wins when no sibling file matches.
-const CANDIDATE_SUFFIXES = ['.ts', '.tsx', '.mjs', '.js', '/index.ts', '/index.tsx'];
+// Every spelling an aliased import in this repository actually resolves to, and
+// no more. Ordered: a directory's index file only wins when no sibling file
+// matches. The resolver always APPENDS, so a specifier that already carries an
+// extension is not served by adding that extension here.
+const CANDIDATE_SUFFIXES = ['.ts', '.tsx', '/index.ts'];
 
 function tsFormatFor(filePath) {
   return filePath.endsWith('.ts') || filePath.endsWith('.tsx') ? 'module-typescript' : undefined;

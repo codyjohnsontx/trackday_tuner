@@ -3,10 +3,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
+import * as vocabulary from '@/lib/rag/component-vocabulary';
 // @ts-expect-error - the harness is plain JS on purpose; it runs under node with
 // no build step so that `npm run rag:eval` needs neither a bundler nor a new
 // dependency. There are no types to import.
-import { scoreAdviceResponse } from '@/scripts/eval/scoring.mjs';
+import {
+  matchesExpectedComponent,
+  matchesExpectedDirection,
+  scoreAdviceResponse,
+} from '@/scripts/eval/scoring.mjs';
 // @ts-expect-error - see above.
 import { aggregateRetrieval, scoreRetrieval } from '@/scripts/eval/retrieval.mjs';
 // @ts-expect-error - see above.
@@ -229,6 +234,21 @@ describe('retrieval metrics', () => {
     expect(aggregateRetrieval([result])).toEqual({ cases: 0, recall: null, mrr: null });
   });
 
+  it('does not score a labelled case whose retriever never ran', () => {
+    // A case refused by the classifier is embedded by nothing, so scoring it
+    // zero would charge a classifier defect to the retrieval metric.
+    const result = scoreRetrieval(null, expected);
+    expect(result.applicable).toBe(false);
+    expect(result.recall).toBeNull();
+  });
+
+  it('still scores a retriever that ran and returned nothing', () => {
+    const result = scoreRetrieval([], expected);
+    expect(result.applicable).toBe(true);
+    expect(result.recall).toBe(0);
+    expect(result.reciprocalRank).toBe(0);
+  });
+
   it('averages only the labelled cases', () => {
     const agg = aggregateRetrieval([
       scoreRetrieval(['a.md', 'b.md'], expected),
@@ -312,5 +332,62 @@ describe('tape request keying', () => {
 
     expect(tape.stats.misses).toHaveLength(1);
     expect(tape.stats.misses[0].kind).toBe('embeddings');
+  });
+});
+
+describe('reaching the human\'s answer', () => {
+  const component = (actual: unknown, expectedComponent: string | null) =>
+    matchesExpectedComponent(actual, expectedComponent, vocabulary);
+  const direction = (actual: unknown, expectedDirection: string | null, on: string | null) =>
+    matchesExpectedDirection(actual, expectedDirection, on, vocabulary);
+
+  it('reports no verdict for an unlabelled case', () => {
+    expect(component('front_tire_pressure', null)).toBeNull();
+    expect(direction('lower', null, 'front_tire_pressure')).toBeNull();
+  });
+
+  it('counts the aliases of one component as that component', () => {
+    // COMPONENT_POLICIES lists both spellings for the same thing, so a model
+    // that picks the other one reached the same answer.
+    expect(component('front tire pressure', 'front_tire_pressure')).toBe(true);
+    expect(component('FRONT_TIRE_PRESSURE', 'front tire pressure')).toBe(true);
+  });
+
+  it('keeps a different component a miss', () => {
+    expect(component('front_and_rear_cold_pressure', 'front tire pressure')).toBe(false);
+    expect(component('rear_tire_pressure', 'front_tire_pressure')).toBe(false);
+    expect(component(undefined, 'front_tire_pressure')).toBe(false);
+  });
+
+  it('counts two accepted spellings of one instruction as a match', () => {
+    // tire_pressure accepts increase, decrease, raise and lower, and lower IS
+    // decrease - the recorded misses this closes.
+    expect(direction('lower', 'decrease', 'front_tire_pressure')).toBe(true);
+    expect(direction('raise', 'increase', 'front_tire_pressure')).toBe(true);
+    expect(direction('Lower', 'decrease', 'front_tire_pressure')).toBe(true);
+    expect(direction('toe_in', 'toe-in', 'front_toe')).toBe(true);
+  });
+
+  it('keeps the opposite instruction a miss', () => {
+    expect(direction('lower', 'increase', 'fork_height')).toBe(false);
+    expect(direction('stiffen', 'soften', 'front_rebound')).toBe(false);
+    expect(direction('shorter gearing', 'decrease', 'rear_sprocket')).toBe(false);
+  });
+
+  it('does not widen past what the component itself accepts', () => {
+    // sprocket offers increase and decrease but neither raise nor lower, so
+    // lower is not another way of saying decrease there.
+    expect(vocabulary.findComponentPolicy('rear_sprocket')?.directions).not.toContain('lower');
+    expect(direction('lower', 'decrease', 'rear_sprocket')).toBe(false);
+    expect(direction('lower', 'decrease', 'not_a_component')).toBe(false);
+  });
+
+  it('does not equate a domain claim the policy never made', () => {
+    // rebound accepts stiffen and increase, but "more clicks is stiffer" is a
+    // claim about an adjuster rather than about English.
+    expect(vocabulary.findComponentPolicy('front_rebound')?.directions).toEqual(
+      expect.arrayContaining(['stiffen', 'increase']),
+    );
+    expect(direction('increase', 'stiffen', 'front_rebound')).toBe(false);
   });
 });

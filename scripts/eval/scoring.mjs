@@ -165,3 +165,90 @@ export function scoreAdviceResponse(params) {
     passed: failures.length === 0,
   };
 }
+
+/**
+ * Did the model reach the human's answer? Two axes, and both are reported
+ * rather than gated, so what matters is that a value means what the label
+ * means - not that it is spelled the way the label spells it.
+ *
+ * The vocabulary is passed in rather than imported so this module keeps the
+ * one dependency shape it already had (`evaluateAdvicePolicy` above), and so
+ * the harness and the unit suite score through the SAME
+ * `lib/rag/component-vocabulary.ts` the policy enforces.
+ */
+
+/**
+ * The only synonymy this table asserts, and the line it draws is deliberate.
+ *
+ * `COMPONENT_POLICIES` lists the spellings a component ACCEPTS; it does not say
+ * which of them mean the same instruction, and that is a separate claim. These
+ * four are pure quantity-direction synonyms in English - `raise` is `increase`
+ * and `lower` is `decrease` whatever is being adjusted - so equating them
+ * commits to nothing about motorsport.
+ *
+ * Everything else stays distinct even where a domain argument could be made.
+ * `stiffen` is NOT equated with `increase` on rebound: that would rest on "more
+ * clicks is stiffer", which is a claim about a specific adjuster rather than
+ * about English, and an evaluation that quietly assumes it would report a match
+ * the policy never authorised.
+ */
+const DIRECTION_INSTRUCTIONS = new Map([
+  ['increase', 'more'],
+  ['raise', 'more'],
+  ['decrease', 'less'],
+  ['lower', 'less'],
+]);
+
+function canonicalDirection(direction, vocabulary) {
+  return vocabulary.formatDirectionLabel(direction).toLowerCase();
+}
+
+function directionInstruction(direction, vocabulary) {
+  const canonical = canonicalDirection(direction, vocabulary);
+  return DIRECTION_INSTRUCTIONS.get(canonical) ?? canonical;
+}
+
+/**
+ * `null` when the case carries no label, otherwise whether the model named the
+ * same component. `formatComponentLabel` supplies the fold, so `front tire
+ * pressure` and `front_tire_pressure` are one component while
+ * `front_and_rear_cold_pressure` stays a different one.
+ *
+ * @param {unknown} actual
+ * @param {string | null | undefined} expected
+ * @param {object} vocabulary  the lib/rag/component-vocabulary module
+ */
+export function matchesExpectedComponent(actual, expected, vocabulary) {
+  if (expected == null) return null;
+  if (typeof actual !== 'string' || actual.length === 0) return false;
+  return vocabulary.formatComponentLabel(actual) === vocabulary.formatComponentLabel(expected);
+}
+
+/**
+ * The same for `direction`, widened only as far as the policy itself allows.
+ *
+ * A spelling difference counts as a match ONLY when the component's policy
+ * accepts both values and they carry the same instruction, so `lower` matches
+ * `decrease` on `front_tire_pressure` - where the policy lists both - and does
+ * not match it on `rear_sprocket`, where `lower` is not offered at all.
+ *
+ * @param {unknown} actual
+ * @param {string | null | undefined} expected
+ * @param {string | null | undefined} component  the labelled component, else the model's
+ * @param {object} vocabulary  the lib/rag/component-vocabulary module
+ */
+export function matchesExpectedDirection(actual, expected, component, vocabulary) {
+  if (expected == null) return null;
+  if (typeof actual !== 'string' || actual.length === 0) return false;
+  if (canonicalDirection(actual, vocabulary) === canonicalDirection(expected, vocabulary)) {
+    return true;
+  }
+
+  const policy = typeof component === 'string' ? vocabulary.findComponentPolicy(component) : null;
+  if (!policy) return false;
+  return (
+    vocabulary.directionAllowed(policy, actual) &&
+    vocabulary.directionAllowed(policy, expected) &&
+    directionInstruction(actual, vocabulary) === directionInstruction(expected, vocabulary)
+  );
+}

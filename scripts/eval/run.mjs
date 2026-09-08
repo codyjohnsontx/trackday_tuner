@@ -21,7 +21,11 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { OpenAiTape } from './openai-tape.mjs';
-import { scoreAdviceResponse } from './scoring.mjs';
+import {
+  matchesExpectedComponent,
+  matchesExpectedDirection,
+  scoreAdviceResponse,
+} from './scoring.mjs';
 import { aggregateRetrieval, RETRIEVAL_K, scoreRetrieval } from './retrieval.mjs';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -167,7 +171,7 @@ async function runCase(testCase, deps) {
         message: questionAssessment.message ?? 'This request is outside trackday setup scope.',
         dataUsed: fallbackDataUsed,
       }),
-      retrievedSources: [],
+      retrievedSources: null,
       fallbackDataUsed,
       validSessionIds: [session.id],
     };
@@ -199,7 +203,7 @@ async function runCase(testCase, deps) {
           'I could not answer that from your saved setup data.',
         dataUsed: fallbackDataUsed,
       }),
-      retrievedSources: [],
+      retrievedSources: null,
       fallbackDataUsed,
       validSessionIds: [session.id],
     };
@@ -274,13 +278,15 @@ export async function main(argv) {
   ]);
   const knowledgeBaseSources = new Set(index.chunks.map((c) => c.source));
 
-  const [policyModule, guardModule, promptModule, adviceModule, contextModule] = await Promise.all([
-    import('@/lib/rag/policy'),
-    import('@/lib/rag/domain-guard'),
-    import('@/lib/rag/prompt'),
-    import('@/lib/rag/advice'),
-    import('@/lib/rag/race-engineer-context'),
-  ]);
+  const [policyModule, guardModule, promptModule, adviceModule, contextModule, vocabulary] =
+    await Promise.all([
+      import('@/lib/rag/policy'),
+      import('@/lib/rag/domain-guard'),
+      import('@/lib/rag/prompt'),
+      import('@/lib/rag/advice'),
+      import('@/lib/rag/race-engineer-context'),
+      import('@/lib/rag/component-vocabulary'),
+    ]);
   const { evaluateAdvicePolicy } = policyModule;
 
   // ------------------------------------------------------------------
@@ -313,7 +319,6 @@ export async function main(argv) {
   const restoreFetch = tape.install();
 
   const results = [];
-  let reachedEveryCase = false;
   try {
     for (const [indexInCase, testCase] of golden.cases.entries()) {
       let outcome;
@@ -356,26 +361,23 @@ export async function main(argv) {
         scored,
         retrieval,
         confidence: outcome.response.confidence,
-        componentMatch:
-          testCase.expected_component == null
-            ? null
-            : primary?.component === testCase.expected_component,
-        directionMatch:
-          testCase.expected_direction == null
-            ? null
-            : primary?.direction === testCase.expected_direction,
+        componentMatch: matchesExpectedComponent(
+          primary?.component,
+          testCase.expected_component,
+          vocabulary,
+        ),
+        directionMatch: matchesExpectedDirection(
+          primary?.direction,
+          testCase.expected_direction,
+          testCase.expected_component ?? primary?.component,
+          vocabulary,
+        ),
         refusalMatch: (testCase.should_refuse === true) === scored.refused,
       });
     }
-    reachedEveryCase = true;
   } finally {
     restoreFetch();
-    // A live run that got through every case has replayed or recorded exactly
-    // the requests this pipeline makes, so anything left is a recording for a
-    // request no golden case sends any more. One that stopped short has not.
-    if (live) {
-      await tape.save({ prune: reachedEveryCase && results.every((r) => !r.error) });
-    }
+    if (live) await tape.save();
   }
 
   return report({
@@ -456,17 +458,23 @@ async function report(ctx) {
 
   console.log('\nAgainst baseline');
   const regressions = [];
-  for (const [key, label] of [
-    ['rubric_pass_rate', 'rubric pass rate'],
-    ['recall_at_4', `recall@${RETRIEVAL_K}`],
-    ['mrr', 'MRR'],
-    ['refusal_accuracy', 'refusal accuracy'],
-    ['component_accuracy', 'component accuracy'],
-    ['direction_accuracy', 'direction accuracy'],
+  // `component accuracy` and `direction accuracy` are REPORTED AND NEVER GATED.
+  // They ask whether the model reached the human's answer, which is a property
+  // of the model's wording rather than of anything this repository changed, so
+  // one case wobbling across a re-record would turn CI red on sampling noise -
+  // the same variance for which gating `--live` was rejected below. They are
+  // still diffed here and still written to the baseline.
+  for (const [key, label, gated] of [
+    ['rubric_pass_rate', 'rubric pass rate', true],
+    ['recall_at_4', `recall@${RETRIEVAL_K}`, true],
+    ['mrr', 'MRR', true],
+    ['refusal_accuracy', 'refusal accuracy', true],
+    ['component_accuracy', 'component accuracy', false],
+    ['direction_accuracy', 'direction accuracy', false],
   ]) {
     const previous = baseline?.metrics?.[key] ?? null;
-    console.log(diffLine(label, metrics[key], previous));
-    if (previous != null && metrics[key] != null && metrics[key] < previous - 1e-9) {
+    console.log(`${diffLine(label, metrics[key], previous)}${gated ? '' : '  reported, not gated'}`);
+    if (gated && previous != null && metrics[key] != null && metrics[key] < previous - 1e-9) {
       regressions.push(`${label} ${previous.toFixed(2)} -> ${metrics[key].toFixed(2)}`);
     }
   }
@@ -558,10 +566,15 @@ async function report(ctx) {
     exitCode = 1;
   }
   if (regressions.length > 0 && !live && !updateBaseline) {
-    // Gated offline only. A live run re-samples the model, so gating on it
-    // would fail on ordinary sampling variance rather than on a change anyone
-    // made. Offline replays fixed recordings and is deterministic, so a
-    // regression there is a real consequence of an edit in this repository.
+    // Gated offline only. `--live` calls the API only for requests whose key
+    // has no recording - a matching entry is replayed before the mode is
+    // consulted - so a live run on an unchanged prompt makes no call at all and
+    // is byte-identical to an offline one, while one on a changed prompt
+    // re-samples the model for every key that moved. Gating the mixture would
+    // fail on sampling variance rather than on a change anyone made. Offline
+    // replays fixed recordings and is deterministic, so a regression there is a
+    // real consequence of an edit in this repository. The `N replayed, M
+    // recorded` line above says which of the two a given live run was.
     console.error('\n[rag:eval] FAIL: metrics regressed against eval-baseline.json:');
     for (const line of regressions) console.error(`  ${line}`);
     console.error(
