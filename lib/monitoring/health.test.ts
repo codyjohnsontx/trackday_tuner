@@ -1,18 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 
-const { createAdminClient } = vi.hoisted(() => ({ createAdminClient: vi.fn() }));
-
-vi.mock('@/lib/supabase/admin', () => ({ createAdminClient }));
-// Mocked wholesale rather than spied: the real module imports `server-only`,
-// which does not resolve in the node-environment unit suite. Nothing here
-// exercises the RAG check.
-vi.mock('@/lib/rag/retriever', () => ({
+const { createAdminClient, loadKnowledgeIndex, isKnowledgeIndexLoaded } = vi.hoisted(() => ({
+  createAdminClient: vi.fn(),
   loadKnowledgeIndex: vi.fn(),
   isKnowledgeIndexLoaded: vi.fn(),
 }));
 
-import { checkSupabase } from '@/lib/monitoring/health';
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient }));
+// Mocked wholesale rather than spied: the real module imports `server-only`,
+// which does not resolve in the node-environment unit suite.
+vi.mock('@/lib/rag/retriever', () => ({ loadKnowledgeIndex, isKnowledgeIndexLoaded }));
+
+import { HEALTH_CHECK_TIMEOUT_MS, checkRagIndex, checkSupabase } from '@/lib/monitoring/health';
 
 /**
  * A stub PostgREST, driven through the real `@supabase/supabase-js` client so
@@ -120,5 +120,63 @@ describe('checkSupabase', () => {
 
     expect(JSON.stringify(check)).not.toContain('permission denied');
     expect(console.error).toHaveBeenCalled();
+  });
+});
+
+describe('a check that misses its deadline', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    isKnowledgeIndexLoaded.mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * A degraded dependency can blow the deadline and only *then* reject - a
+   * Supabase call that takes 7s and comes back with a `42501`. The report is
+   * already written and returned by that point, so the late rejection has
+   * nowhere to go.
+   *
+   * It must not escape as an `unhandledRejection`. This whole branch turns on
+   * the handled/unhandled distinction: Sentry's Node SDK captures an unhandled
+   * one on its own, so an escape would manufacture a second, spurious issue
+   * during exactly the outage `/api/health` exists to report cleanly, and would
+   * contradict this module's `runHealthChecks never throws` contract.
+   */
+  it('absorbs a rejection arriving after the timeout already answered', async () => {
+    const escaped: unknown[] = [];
+    const onUnhandled = (err: unknown) => escaped.push(err);
+    process.on('unhandledRejection', onUnhandled);
+
+    try {
+      let rejectLate: (err: Error) => void = () => {};
+      loadKnowledgeIndex.mockReturnValue(
+        new Promise((_resolve, reject) => {
+          rejectLate = reject;
+        }),
+      );
+
+      vi.useFakeTimers();
+      const pending = checkRagIndex();
+      await vi.advanceTimersByTimeAsync(HEALTH_CHECK_TIMEOUT_MS + 1);
+      const check = await pending;
+      vi.useRealTimers();
+
+      expect(check.status).toBe('fail');
+      expect(check.detail).toBe('HealthCheckTimeoutError');
+
+      rejectLate(new Error('the dependency finally answered, badly'));
+      // Node decides a rejection is unhandled at the end of a turn, so give it
+      // two before concluding that nothing escaped.
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(escaped).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 });

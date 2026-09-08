@@ -143,8 +143,11 @@ have a free tier that covers this volume; **neither was chosen for you.** It
 makes the ~50 `console.error` calls across `app/`, `lib/` and `components/`
 searchable and keeps them past Vercel's own short retention.
 
-**Verify it worked:** trigger any request, then search the drain for
-`[monitoring]` or `[health]`.
+**Verify it worked:** `curl https://<your-app>/api/health`, then find Vercel's
+own request log line for `/api/health` in the drain. Do not search for
+`[health]` or `[monitoring]` to check this - those tags are written only when
+something has actually failed, so on a working deployment they are absent, and
+their absence is good news rather than a broken drain.
 
 ### Optional - a webhook, and an external uptime monitor
 
@@ -208,7 +211,11 @@ one should be a diff somebody reviews. Two rules matter most:
 - **Any failure at all in the window alerts.** Error *rate* alone would not have
   caught R3 - riders stopped calling a feature that never worked, so the windows
   that mattered held one or two requests and any minimum-sample rule would have
-  suppressed them every time.
+  suppressed them every time. That argument is about failures, and the failure
+  rule is ungated because of it. **Latency is the one exception**: p95 needs at
+  least five timed successes (`MIN_SAMPLES_FOR_P95`) before it can fire, because
+  below that the "95th percentile" is just the slowest request. A slow hour
+  holding four requests will not alert.
 - **An unrecognised status counts as a failure.** A monitor that treats what it
   does not understand as healthy reproduces the exact defect it exists to catch.
   If a new status starts alerting, the alert names it; classify it in

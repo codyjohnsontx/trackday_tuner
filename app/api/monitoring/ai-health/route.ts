@@ -54,21 +54,23 @@ function secretMatches(presented: string, expected: string): boolean {
 }
 
 export async function GET(request: NextRequest) {
-  // A credential is demanded before anything is reported, because reporting is
-  // itself a resource: this route's path is public, the missing-secret branch
-  // below is the documented state until the secret reaches Vercel, and an
-  // uncredentialed caller who could reach `reportError` could mint a Sentry
-  // event and a log line per request.
   const presented = presentedSecret(request);
   if (!presented) return unauthorized();
 
   let expected: string;
   try {
     expected = getMonitoringCronSecret();
-  } catch (err) {
+  } catch {
     // Fail closed. Without the secret there is no way to tell the scheduler
     // from anyone else, and these numbers are not public.
-    reportError('monitoring', err, { reason: 'MONITORING_CRON_SECRET is not configured' });
+    //
+    // Nothing is reported here, and that is not an oversight. An unset
+    // `MONITORING_CRON_SECRET` is a documented configuration state rather than
+    // a fault - `docs/monitoring.md` lists this exact 503 as the answer until
+    // the operator finishes step 2 - and the scheduled workflow already fails
+    // every 15 minutes on the non-200. Reporting is reachable before any
+    // credential is verified, since any `Bearer x` gets this far, so a report
+    // here is one Sentry event and one log line per unauthenticated request.
     return NextResponse.json({ error: 'Monitoring is not configured.' }, { status: 503 });
   }
 

@@ -71,6 +71,12 @@ describe('GET /api/monitoring/ai-health', () => {
     vi.unstubAllGlobals();
   });
 
+  function unconfigured(): void {
+    getMonitoringCronSecret.mockImplementation(() => {
+      throw new Error('Missing environment variable: MONITORING_CRON_SECRET');
+    });
+  }
+
   describe('authorization', () => {
     it('refuses a caller with no bearer token', async () => {
       const response = await GET(request());
@@ -96,31 +102,35 @@ describe('GET /api/monitoring/ai-health', () => {
       expect(response.status).toBe(200);
     });
 
-    // Reporting is a resource. This route's path is public and the unconfigured
-    // state below is the documented one until the secret reaches Vercel, so a
-    // caller with no credential must not be able to mint a report per request.
-    it('reports nothing for a caller who presented no credential', async () => {
-      getMonitoringCronSecret.mockImplementation(() => {
-        throw new Error('Missing environment variable: MONITORING_CRON_SECRET');
-      });
-
-      const response = await GET(request());
-
-      expect(response.status).toBe(401);
-      expect(consoleError).not.toHaveBeenCalled();
-    });
-
     // Fail closed: without the secret there is no way to tell the scheduler
     // from anyone else, and these numbers are not public.
     it('refuses everyone when the secret is not configured', async () => {
-      getMonitoringCronSecret.mockImplementation(() => {
-        throw new Error('Missing environment variable: MONITORING_CRON_SECRET');
-      });
+      unconfigured();
       const response = await GET(authorized());
       expect(response.status).toBe(503);
       expect(createAdminClient).not.toHaveBeenCalled();
-      // The operator still gets the diagnostic, and it is still reported.
-      expect(consoleError).toHaveBeenCalled();
+    });
+
+    // Reporting is a resource, and this endpoint is named in a public
+    // repository. The unconfigured state is documented and expected until the
+    // operator finishes step 2, so no caller may turn it into a Sentry event
+    // and a log line per request.
+    //
+    // `Bearer x` is the case that matters: any bearer value at all gets past
+    // the header check and reaches the unconfigured branch, so covering only a
+    // header-less request would leave the whole hole open.
+    it.each([
+      ['no authorization header', () => request()],
+      ['an arbitrary bearer value', () => request({ authorization: 'Bearer x' })],
+      ['a well-formed but wrong secret', () => request({ authorization: 'Bearer wrong-secret-value' })],
+    ])('reports nothing to a caller presenting %s', async (_label, build) => {
+      unconfigured();
+
+      const response = await GET(build());
+
+      expect([401, 503]).toContain(response.status);
+      expect(consoleError).not.toHaveBeenCalled();
+      expect(createAdminClient).not.toHaveBeenCalled();
     });
   });
 
