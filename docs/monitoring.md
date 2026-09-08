@@ -186,7 +186,9 @@ their absence is good news rather than a broken drain.
 | `MONITORING_ALERT_WEBHOOK_URL` | Vercel env, Production | No | Alerts reach you through the failed workflow run instead. The route reports `notified: "none"`, which is not a failure |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` | Vercel **build** env | No | The build skips the source map upload. Sentry stack traces point at minified code |
 
-`.env.example` carries all of them for local work.
+`.env.example` carries the app-side ones for local work. `MONITORING_APP_URL`
+is deliberately not among them: nothing in the app reads it, only
+`.github/workflows/monitoring.yml` does.
 
 ## What each piece actually checks
 
