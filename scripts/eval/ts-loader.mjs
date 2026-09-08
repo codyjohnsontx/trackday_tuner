@@ -40,6 +40,15 @@ export function resolve(specifier, context, nextResolve) {
 
   if (specifier.startsWith('@/')) {
     const base = path.join(REPO_ROOT, specifier.slice(2));
+    // `path.join` normalizes, so `@/../thing` resolves OUTSIDE the repository.
+    // Nothing here today writes one and the specifier would have to be authored
+    // in this repository to matter, but the alias is documented above as
+    // resolving what an import in this repository resolves to "and no more",
+    // and tsconfig's `@/*` does not reach outside the root either. A claim that
+    // is only true by convention is one this check makes true.
+    if (base !== REPO_ROOT && !base.startsWith(REPO_ROOT + path.sep)) {
+      throw new Error(`[rag:eval] Path alias "${specifier}" resolves outside ${REPO_ROOT}`);
+    }
     for (const suffix of CANDIDATE_SUFFIXES) {
       const candidate = base + suffix;
       if (existsSync(candidate)) {

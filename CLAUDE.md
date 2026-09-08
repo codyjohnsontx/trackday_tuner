@@ -996,6 +996,50 @@ which is also the thing the claim is about - comparing prompt and retrieval
 changes before shipping. Regressions gate in offline mode only; `--live`
 re-samples the model, so gating there would fail on sampling variance.
 
+**A GATE THAT CANNOT FAIL IS THE DEFECT THIS HARNESS EXISTS TO CURE, AND IT GREW
+THREE OF ITS OWN.** All three were found by the Codex second-opinion review after
+the pipeline's own review had passed, and all three are now proven by fault
+injection rather than argued for. Each shipped as a check that reported success
+while measuring nothing:
+
+- **An unusable baseline was a printed note, not a failure.** Every read of the
+  file is optionally chained, so absent, `{}`, malformed-shape and
+  written-by-an-older-writer all answered "nothing to compare" exactly as
+  "nothing changed" does: `(no baseline)` six times and exit 0, in the required
+  CI step. `describeUnusableBaseline` (`scripts/eval/run.mjs`) now refuses any
+  run that was supposed to be gated - which is every run except `--live` (never
+  gated) and `--update-baseline` (the bootstrap that writes it). It requires the
+  KEY to be present, not a number: `retrieval_k` is legitimately `null` on a run
+  that retrieved nothing, and a null is a measurement while a missing key is a
+  file that cannot answer. What a baseline must carry is derived from the same
+  `METRICS` table the gate reads, so a metric added as gated is required in the
+  baseline automatically instead of silently ungating itself
+- **Recall's denominator is labels, and only cases were counted.** Deleting an
+  `expected_sources` entry a case was missing raises that case's recall while the
+  case is still there and `retrieval_cases` never moves - so the cheapest route
+  to a greener number was editing `golden-cases.json`. `coverage` now carries
+  `retrieval_expected_sources` and a fall in it is a regression, the label-level
+  twin of the case-count check beside it
+- **The gated metrics are RATES, and a rate is blind to composition.** One case
+  going pass -> fail while another goes fail -> pass leaves 27/32 at 27/32 with
+  every coverage figure untouched. `per_case` was already in the baseline for
+  exactly this and the comparison was already being computed - then thrown away
+  at a `console.log`. It is a regression now
+
+`tests/unit/rag-eval-harness.test.ts` covers all three, and the path-alias
+containment fixed alongside them (`@/../outside` resolved outside the repo, which
+the loader's own comment claimed it could not).
+
+**What the refusal metrics do NOT measure**, recorded in the baseline's
+`limitations` rather than fixed here: on a `should_refuse` case a policy
+`force_refusal` satisfies the rubric whatever the model said, so "the model
+refused" and "the model produced something dangerous and `evaluateAdvicePolicy`
+caught it" both score PASS - and all six passing `should_refuse` cases carry
+`policy=force_refusal`. It is not a safety gap, because production refuses on the
+same input and three of the six never reach the model at all. It is left because
+narrowing it moves `refusal_accuracy`, and re-opening scoring semantics right
+after publishing `correction_record` is the exact hazard that record answers.
+
 `expected_component` / `expected_direction` are REPORTED, never gated - they
 track whether the model reaches a human's answer, which belongs in the baseline
 rather than in a pass condition. `expected_sources` is what recall@4 and MRR
@@ -1031,19 +1075,31 @@ were in which cases counted and not in how a case scored - the one that did,
 direction 5 -> 7, is two responses that said `lower` where the label said
 `decrease`.
 
-**One recorded prompt is one boolean off production, and the baseline says so
-itself.** `buildContext` in `scripts/eval/run.mjs` reports `data_used.weather`
-as `temperature_c != null` while supplying no `session_environment` row, a pair
-`loadRaceEngineerContext` cannot produce - it sets `weather:
-Boolean(sessionEnvironment)`, so the route prints `weather=false` there.
-`recall@4` and MRR are unaffected and production-faithful, because the query
-text `embedQuery` sees carries no `data_used`; the answer-quality metrics were
-produced under that prompt and stay valid for REGRESSION DETECTION, since both
-sides of any comparison are built by the same code, without stating what
-production quality is. Correcting it moves every completion tape key, so the
-next `--live` re-record closes it. The caveat is emitted into
-`eval-baseline.json` by the writer rather than typed into the file, because a
-hand-added one dies at the next `--update-baseline`.
+**TWO of the recorded prompts' `data_used` booleans are off production, and the
+baseline says so itself.** `buildContext` in `scripts/eval/run.mjs` reports
+`data_used.weather` as `temperature_c != null` while supplying no
+`session_environment` row, a pair `loadRaceEngineerContext` cannot produce - it
+sets `weather: Boolean(sessionEnvironment)`, so the route prints `weather=false`
+there. It also hard-codes `manual: true`, where production derives it through
+`hasManualSessionData(session)`; that is false for a session with no notes, no
+tire pressures and no rebound, which is one golden case
+(`sparse-empty-setup-fields`).
+
+`recall@4` and MRR are unaffected and production-faithful in both cases, because
+the query text `embedQuery` sees carries no `data_used`; the answer-quality
+metrics were produced under those prompts and stay valid for REGRESSION
+DETECTION, since both sides of any comparison are built by the same code,
+without stating what production quality is. Correcting either moves the
+completion tape keys it touches, so the next `--live` re-record closes both. The
+caveats are emitted into `eval-baseline.json` by the writer rather than typed
+into the file, because a hand-added one dies at the next `--update-baseline`.
+
+**The `limitations` array is the list, and it is the list because it was wrong
+once.** This section previously said the weather flag was the only prompt
+divergence; the `manual` one had been there all along and was found by a
+second-opinion review reading `buildContext` against
+`loadRaceEngineerContext` field by field. Before claiming the set is complete
+again, do that comparison rather than trusting this paragraph.
 
 **No build step and no dependency.** `scripts/eval/ts-loader.mjs` is a resolve
 hook that maps `@/`, adds the missing extension and stubs `server-only` (a

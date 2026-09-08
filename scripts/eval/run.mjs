@@ -73,6 +73,49 @@ const BASELINE_LIMITATIONS = [
       'the next `npm run rag:eval -- --live` re-record, once an API key exists. Correcting ' +
       'the flag moves every completion tape key, so it cannot be done without one.',
   },
+  {
+    id: 'harness-context-manual-flag',
+    what:
+      'buildContext hard-codes data_used.manual as true. Production derives it - ' +
+      'loadRaceEngineerContext calls hasManualSessionData(session), which is false when the ' +
+      'session carries no notes, no front or rear tire pressure and no front or rear rebound. ' +
+      'One golden case is in that state, sparse-empty-setup-fields, so its recorded prompt ' +
+      'tells the model manual data was used when the route would have said it was not.',
+    scope:
+      'Exactly one of the 32 cases. The other 31 carry at least one of those fields, so the ' +
+      'hard-coded true is what production would have printed for them anyway.',
+    retrieval_unaffected:
+      'As with the weather flag: the query text embedQuery sees does not carry data_used, so ' +
+      'recall_at_k and MRR are production-faithful for this case too.',
+    closed_by:
+      'the same `npm run rag:eval -- --live` re-record that closes ' +
+      'harness-context-weather-flag. Deriving the flag moves that case\'s completion tape ' +
+      'key, so it cannot be corrected offline.',
+  },
+  {
+    id: 'refusal-accuracy-scores-the-pipeline-not-the-model',
+    what:
+      'On a should_refuse case, a policy force_refusal satisfies the rubric whatever the ' +
+      'model said. So "the model correctly refused" and "the model produced something ' +
+      'dangerous and evaluateAdvicePolicy caught it" score identically as PASS. All six ' +
+      'passing should_refuse cases in this baseline carry policy=force_refusal, so ' +
+      'refusal_accuracy currently measures the PIPELINE refusing, not the model refusing.',
+    why_it_is_not_a_safety_gap:
+      'Production refuses in exactly these cases - that is the same evaluateAdvicePolicy on ' +
+      'the same input - so no unsafe advice reaches a rider. Three of the six are refused by ' +
+      'the domain-guard classifier before the model is called at all, where "did the model ' +
+      'refuse" is not a question that has an answer.',
+    why_it_is_recorded_rather_than_changed:
+      'The exemption is the specified rule ("a case the policy force-refuses is a rubric ' +
+      'FAILURE, not a pass - unless refusing is the case\'s expected answer"). Narrowing it ' +
+      'would move refusal_accuracy, which means re-opening scoring semantics immediately ' +
+      'after publishing correction_record below - the precise "correcting your own scoring ' +
+      'after seeing the score" hazard that record exists to answer. It belongs in its own ' +
+      'change, decided before the number moves rather than after.',
+    closed_by:
+      'separate work: record per case which layer refused - model, classifier or policy - and ' +
+      'decide deliberately whether a model that had to be caught should still score PASS.',
+  },
 ];
 
 const readJson = async (p) => JSON.parse(await fs.readFile(p, 'utf8'));
@@ -396,6 +439,117 @@ function diffLine(label, current, previous) {
   return `  ${label.padEnd(20)} ${previous.toFixed(2)} -> ${current.toFixed(2)} (${sign}${Math.abs(delta).toFixed(2)})`;
 }
 
+/**
+ * Every metric this run reports, and whether a fall in it fails the build.
+ *
+ * `component accuracy` and `direction accuracy` are REPORTED AND NEVER GATED.
+ * They ask whether the model reached the human's answer, which is a property of
+ * the model's wording rather than of anything this repository changed, so one
+ * case wobbling across a re-record would turn CI red on sampling noise - the
+ * same variance for which gating `--live` was rejected. They are still diffed
+ * and still written to the baseline.
+ *
+ * It is one table rather than a literal inside the reporting loop so that
+ * `describeUnusableBaseline` derives what a baseline MUST carry from the same
+ * declaration the gate reads. A metric added as gated is then required in the
+ * baseline automatically, instead of silently ungating itself against every
+ * baseline written before it existed.
+ */
+const METRICS = [
+  { key: 'rubric_pass_rate', label: 'rubric pass rate', gated: true, coverageKey: 'scored_cases' },
+  // The label carries a literal `k` so it still reads correctly on its own; the
+  // reporting loop substitutes the k this run actually retrieved at.
+  { key: 'recall_at_k', label: 'recall@k', gated: true, coverageKey: 'retrieval_cases' },
+  { key: 'mrr', label: 'MRR', gated: true, coverageKey: 'retrieval_cases' },
+  { key: 'refusal_accuracy', label: 'refusal accuracy', gated: true, coverageKey: 'scored_cases' },
+  { key: 'component_accuracy', label: 'component accuracy', gated: false, coverageKey: 'component_cases' },
+  { key: 'direction_accuracy', label: 'direction accuracy', gated: false, coverageKey: 'direction_cases' },
+];
+
+/**
+ * The coverage figures the gate compares, so a rate that rose because its
+ * denominator shrank is caught. A baseline missing any of them cannot answer
+ * that question, which is the same silence as having no baseline at all.
+ */
+const REQUIRED_COVERAGE_KEYS = [
+  'scored_cases',
+  'retrieval_cases',
+  'retrieval_k',
+  'retrieval_expected_sources',
+];
+
+/**
+ * `null` when `baseline` can actually gate this run, otherwise one line saying
+ * what is missing.
+ *
+ * THIS EXISTS BECAUSE THE GATE READS THE BASELINE THROUGH OPTIONAL CHAINING,
+ * AND EVERY SUCH READ ANSWERS "NOTHING TO COMPARE" IDENTICALLY TO "NOTHING
+ * CHANGED". A file that is absent, empty, `{}`, or shaped from an older writer
+ * therefore left `previous` null on every metric, pushed nothing into
+ * `regressions`, printed `(no baseline)` six times and exited 0 - a required CI
+ * step reporting success while measuring nothing. That is the exact defect this
+ * whole harness replaced, one level up: the old `eval-rag.mjs` could not fail
+ * because it never called the model; this could not fail because it never had
+ * anything to compare against. A check that passes without checking is worse
+ * than no check, because the green tick is believed.
+ *
+ * Presence is what is required, not a number: the writer emits every metric and
+ * every coverage key on every run, and any of them is legitimately `null` when
+ * its population was empty (`retrieval_k` on a run that retrieved nothing, say).
+ * So a null value is a real measurement and passes; an ABSENT key means this
+ * file cannot answer the question and fails.
+ *
+ * @param {unknown} baseline  the parsed `eval-baseline.json`, or `null` if absent
+ * @returns {string | null}
+ */
+export function describeUnusableBaseline(baseline) {
+  if (baseline == null) return `no ${path.basename(BASELINE_PATH)} to compare against`;
+  if (typeof baseline !== 'object' || Array.isArray(baseline)) {
+    return `${path.basename(BASELINE_PATH)} is not an object`;
+  }
+
+  const metrics = baseline.metrics;
+  if (metrics == null || typeof metrics !== 'object' || Array.isArray(metrics)) {
+    return `${path.basename(BASELINE_PATH)} has no "metrics" object`;
+  }
+  const missingMetrics = METRICS.filter((m) => m.gated && !Object.hasOwn(metrics, m.key)).map((m) => m.key);
+  if (missingMetrics.length > 0) {
+    return `${path.basename(BASELINE_PATH)} is missing gated metric(s): ${missingMetrics.join(', ')}`;
+  }
+
+  const coverage = baseline.coverage;
+  if (coverage == null || typeof coverage !== 'object' || Array.isArray(coverage)) {
+    return `${path.basename(BASELINE_PATH)} has no "coverage" object`;
+  }
+  const missingCoverage = REQUIRED_COVERAGE_KEYS.filter((key) => !Object.hasOwn(coverage, key));
+  if (missingCoverage.length > 0) {
+    return `${path.basename(BASELINE_PATH)} is missing coverage key(s): ${missingCoverage.join(', ')}`;
+  }
+
+  // `per_case` is the ONLY thing the composition gate reads, and it reads it
+  // through `baseline.per_case?.[id]`, so a baseline without it ungates that
+  // check exactly as an absent file ungates the rates - the same swallow one
+  // level in. Requiring the key alone is not enough either: a TRIMMED map still
+  // lets every dropped case through silently. The writer emits one entry per
+  // scored case, so `per_case` and `coverage.scored_cases` agree in any baseline
+  // this harness produced, and a disagreement means the file was edited rather
+  // than measured. Cases ADDED to the golden set since are fine - they raise
+  // this run's count, not the stored one.
+  const perCase = baseline.per_case;
+  if (perCase == null || typeof perCase !== 'object' || Array.isArray(perCase)) {
+    return `${path.basename(BASELINE_PATH)} has no "per_case" map`;
+  }
+  const entries = Object.keys(perCase).length;
+  if (entries !== coverage.scored_cases) {
+    return (
+      `${path.basename(BASELINE_PATH)} records ${coverage.scored_cases} scored cases but ` +
+      `${entries} per_case entr${entries === 1 ? 'y' : 'ies'}`
+    );
+  }
+
+  return null;
+}
+
 export async function main(argv) {
   const args = new Set(argv);
   const live = args.has('--live');
@@ -588,6 +742,7 @@ async function report(ctx) {
     scored_cases: scoredResults.length,
     retrieval_k: retrievalAgg.k,
     retrieval_cases: retrievalAgg.cases,
+    retrieval_expected_sources: retrievalAgg.expectedSources,
     component_cases: componentCases.length,
     direction_cases: directionCases.length,
   };
@@ -632,26 +787,27 @@ async function report(ctx) {
   try {
     baseline = await readJson(BASELINE_PATH);
   } catch (err) {
+    // ENOENT alone is tolerated HERE so the run still prints its scores - which
+    // is what `--update-baseline` needs in order to bootstrap the first file.
+    // It is not tolerated as an OUTCOME: `baselineProblem` below turns it into a
+    // failure for any run that was supposed to be gated. A malformed or
+    // unreadable file is not caught at all and takes the run down through the
+    // top-level handler in `scripts/eval-rag.mjs`, which is already loud.
     if (err?.code !== 'ENOENT') throw err;
   }
+  // Gated exactly where the regression check below is gated, and for the same
+  // reason: `--live` re-samples the model, so nothing there is compared against
+  // the baseline and a missing one costs nothing; `--update-baseline` is the
+  // bootstrap that WRITES it. Every other run - which is every CI run - is
+  // asserting that these numbers did not fall, and cannot assert it without a
+  // baseline to fall from.
+  const baselineProblem = live || updateBaseline ? null : describeUnusableBaseline(baseline);
 
   console.log('\nAgainst baseline');
   const regressions = [];
-  // `component accuracy` and `direction accuracy` are REPORTED AND NEVER GATED.
-  // They ask whether the model reached the human's answer, which is a property
-  // of the model's wording rather than of anything this repository changed, so
-  // one case wobbling across a re-record would turn CI red on sampling noise -
-  // the same variance for which gating `--live` was rejected below. They are
-  // still diffed here and still written to the baseline.
   const previousCoverage = baseline?.coverage ?? null;
-  for (const [key, label, gated, coverageKey] of [
-    ['rubric_pass_rate', 'rubric pass rate', true, 'scored_cases'],
-    ['recall_at_k', `recall@${kLabel}`, true, 'retrieval_cases'],
-    ['mrr', 'MRR', true, 'retrieval_cases'],
-    ['refusal_accuracy', 'refusal accuracy', true, 'scored_cases'],
-    ['component_accuracy', 'component accuracy', false, 'component_cases'],
-    ['direction_accuracy', 'direction accuracy', false, 'direction_cases'],
-  ]) {
+  for (const { key, label: baseLabel, gated, coverageKey } of METRICS) {
+    const label = key === 'recall_at_k' ? `recall@${kLabel}` : baseLabel;
     const previous = baseline?.metrics?.[key] ?? null;
     const count = coverageKey == null ? null : coverage[coverageKey];
     const previousCount = coverageKey == null ? null : (previousCoverage?.[coverageKey] ?? null);
@@ -694,12 +850,35 @@ async function report(ctx) {
       `retrieval k ${previousCoverage.retrieval_k} -> ${coverage.retrieval_k}, so recall is not the metric the baseline recorded`,
     );
   }
+  // The label-level twin of the case-count check above. Recall's denominator is
+  // the number of EXPECTED SOURCES, not the number of cases, so deleting a label
+  // a case was missing raises that case's recall while the case is still there
+  // and `retrieval_cases` never moves. Without this, the cheapest way to a
+  // greener number is to edit `golden-cases.json` rather than the retriever.
+  if (
+    previousCoverage?.retrieval_expected_sources != null &&
+    coverage.retrieval_expected_sources < previousCoverage.retrieval_expected_sources
+  ) {
+    regressions.push(
+      `retrieval labels ${previousCoverage.retrieval_expected_sources} -> ${coverage.retrieval_expected_sources} expected sources ` +
+        `(a rise in recall@${kLabel} or MRR may be a deleted label rather than better retrieval)`,
+    );
+  }
   if (baseline) {
+    // GATED, not merely printed. The four gated metrics are RATES, and a rate
+    // is blind to composition: one case going pass -> fail while another goes
+    // fail -> pass leaves 27/32 at 27/32, leaves every coverage figure
+    // untouched, and exits 0 while a case a rider depends on has started
+    // failing. `per_case` is in the baseline precisely so this is answerable,
+    // and it was being computed and then thrown away at a console.log.
     const nowFailing = scoredResults
       .filter((r) => !r.scored.passed && baseline.per_case?.[r.id]?.passed === true)
       .map((r) => r.id);
     if (nowFailing.length > 0) {
       console.log(`  cases newly failing: ${nowFailing.join(', ')}`);
+      regressions.push(
+        `${nowFailing.length} case(s) that passed in the baseline now fail: ${nowFailing.join(', ')}`,
+      );
     }
   }
 
@@ -782,6 +961,14 @@ async function report(ctx) {
   }
   if (errors.length > 0) {
     console.error(`\n[rag:eval] FAIL: ${errors.length} case(s) threw: ${errors.map((e) => e.id).join(', ')}`);
+    exitCode = 1;
+  }
+  if (baselineProblem) {
+    console.error(
+      `\n[rag:eval] FAIL: ${baselineProblem}. This run is gated against ` +
+        `${path.basename(BASELINE_PATH)} and that file cannot gate it. Restore the committed ` +
+        'file, or write one deliberately with `npm run rag:eval -- --update-baseline`.',
+    );
     exitCode = 1;
   }
   if (regressions.length > 0 && !live && !updateBaseline) {

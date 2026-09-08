@@ -54,6 +54,7 @@ export function scoreRetrieval(retrievedSources, expectedSources) {
       reciprocalRank: null,
       hits: [],
       missed: [],
+      expected: 0,
       retrieved: retrievedSources?.length ?? null,
     };
   }
@@ -71,6 +72,11 @@ export function scoreRetrieval(retrievedSources, expectedSources) {
     reciprocalRank,
     hits,
     missed,
+    // Recall's own denominator, carried up so the gate can see it. A case's
+    // recall rises when the retriever improves - and equally when a label it
+    // was missing is deleted from `golden-cases.json`. The case count cannot
+    // tell those apart, because the case is still there.
+    expected: expected.size,
     retrieved: retrievedSources.length,
   };
 }
@@ -86,12 +92,17 @@ export function aggregateRetrieval(perCase) {
   const ran = perCase.filter((entry) => entry.retrieved != null);
   const k = ran.length === 0 ? null : Math.max(...ran.map((entry) => entry.retrieved));
   const scored = perCase.filter((entry) => entry.applicable);
-  if (scored.length === 0) return { cases: 0, recall: null, mrr: null, k };
+  const expectedSources = scored.reduce((sum, entry) => sum + (entry.expected ?? 0), 0);
+  if (scored.length === 0) return { cases: 0, recall: null, mrr: null, k, expectedSources: 0 };
   const mean = (values) => values.reduce((sum, v) => sum + v, 0) / values.length;
   return {
     cases: scored.length,
     recall: mean(scored.map((entry) => entry.recall)),
     mrr: mean(scored.map((entry) => entry.reciprocalRank)),
     k,
+    // The total number of labels recall was measured against. Reported so the
+    // gate can refuse a rise bought by deleting labels rather than by
+    // retrieving better - the label-level twin of the case-count check.
+    expectedSources,
   };
 }

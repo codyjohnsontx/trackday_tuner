@@ -16,6 +16,10 @@ import { matchesExpectedComponent, matchesExpectedDirection, scoreAdviceResponse
 import { aggregateRetrieval, scoreRetrieval } from '@/scripts/eval/retrieval.mjs';
 // @ts-expect-error - see above.
 import { OpenAiTape, UNKEYABLE_REQUEST_ERROR_TYPE } from '@/scripts/eval/openai-tape.mjs';
+// @ts-expect-error - see above.
+import { describeUnusableBaseline } from '@/scripts/eval/run.mjs';
+// @ts-expect-error - see above.
+import { resolve as resolveAlias } from '@/scripts/eval/ts-loader.mjs';
 
 const repoRoot = process.cwd();
 const readJson = (relative: string) =>
@@ -245,7 +249,7 @@ describe('retrieval metrics', () => {
   it('marks an unlabelled case as not applicable rather than scoring it zero', () => {
     const result = scoreRetrieval(['a.md'], []);
     expect(result.applicable).toBe(false);
-    expect(aggregateRetrieval([result])).toEqual({ cases: 0, recall: null, mrr: null, k: 1 });
+    expect(aggregateRetrieval([result])).toEqual({ cases: 0, recall: null, mrr: null, k: 1, expectedSources: 0 });
   });
 
   it('does not score a labelled case whose retriever never ran', () => {
@@ -255,7 +259,7 @@ describe('retrieval metrics', () => {
     expect(result.applicable).toBe(false);
     expect(result.recall).toBeNull();
     expect(result.retrieved).toBeNull();
-    expect(aggregateRetrieval([result])).toEqual({ cases: 0, recall: null, mrr: null, k: null });
+    expect(aggregateRetrieval([result])).toEqual({ cases: 0, recall: null, mrr: null, k: null, expectedSources: 0 });
   });
 
   it('still scores a retriever that ran and returned nothing', () => {
@@ -274,6 +278,119 @@ describe('retrieval metrics', () => {
     expect(agg.cases).toBe(2);
     expect(agg.recall).toBe(0.5);
     expect(agg.mrr).toBe(0.5);
+  });
+
+  it("carries recall's own denominator up, so a deleted label is visible", () => {
+    // Recall is hits over EXPECTED SOURCES, and the case count cannot see that
+    // denominator: dropping a label a case was missing raises its recall while
+    // the case stays in the set. The aggregate reports the label total so the
+    // gate can refuse a rise bought by editing `golden-cases.json`.
+    const before = aggregateRetrieval([scoreRetrieval(['a.md'], ['a.md', 'b.md'])]);
+    const after = aggregateRetrieval([scoreRetrieval(['a.md'], ['a.md'])]);
+
+    expect(before.recall).toBe(0.5);
+    expect(after.recall).toBe(1);
+    expect(before.cases).toBe(after.cases);
+    expect(before.expectedSources).toBe(2);
+    expect(after.expectedSources).toBe(1);
+  });
+
+  it('counts no labels for a case it did not score', () => {
+    const agg = aggregateRetrieval([scoreRetrieval(null, ['a.md', 'b.md'])]);
+    expect(agg.cases).toBe(0);
+    expect(agg.expectedSources).toBe(0);
+  });
+});
+
+describe('the baseline the gate compares against', () => {
+  // Every read of the baseline in `run.mjs` is optionally chained, so an absent
+  // file, an empty one, or one written by an older shape all answer "nothing to
+  // compare" exactly as "nothing changed" does: no metric gates, `(no baseline)`
+  // prints six times and the run exits 0. That is a required CI step reporting
+  // success while measuring nothing - the same defect this harness replaced,
+  // one level up. These cases are why it now refuses instead.
+  const usable = readJson('eval-baseline.json');
+
+  it('accepts the committed baseline', () => {
+    expect(describeUnusableBaseline(usable)).toBeNull();
+  });
+
+  it('refuses an absent baseline', () => {
+    expect(describeUnusableBaseline(null)).toMatch(/no eval-baseline\.json/);
+  });
+
+  it('refuses a baseline that is not an object', () => {
+    expect(describeUnusableBaseline([])).toMatch(/not an object/);
+    expect(describeUnusableBaseline('{}')).toMatch(/not an object/);
+  });
+
+  it('refuses a baseline carrying no metrics', () => {
+    expect(describeUnusableBaseline({})).toMatch(/no "metrics" object/);
+  });
+
+  it('refuses a baseline missing any gated metric', () => {
+    for (const key of ['rubric_pass_rate', 'recall_at_k', 'mrr', 'refusal_accuracy']) {
+      const dropped = { ...usable, metrics: { ...usable.metrics } };
+      delete dropped.metrics[key];
+      expect(describeUnusableBaseline(dropped)).toBe(
+        `eval-baseline.json is missing gated metric(s): ${key}`,
+      );
+    }
+  });
+
+  it('refuses a baseline missing any coverage figure the gate reads', () => {
+    for (const key of [
+      'scored_cases',
+      'retrieval_cases',
+      'retrieval_k',
+      'retrieval_expected_sources',
+    ]) {
+      const dropped = { ...usable, coverage: { ...usable.coverage } };
+      delete dropped.coverage[key];
+      expect(describeUnusableBaseline(dropped)).toBe(
+        `eval-baseline.json is missing coverage key(s): ${key}`,
+      );
+    }
+  });
+
+  it('refuses a baseline with no per_case map', () => {
+    // The composition gate reads `baseline.per_case?.[id]`, so a baseline
+    // without it ungates every case-level comparison exactly as an absent file
+    // ungates the rates - the same swallow one level in.
+    const withoutPerCase = { ...usable };
+    delete withoutPerCase.per_case;
+    expect(describeUnusableBaseline(withoutPerCase)).toMatch(/no "per_case" map/);
+  });
+
+  it('refuses a per_case map that has been trimmed', () => {
+    // Requiring the key alone is not enough: a trimmed map lets every dropped
+    // case through silently. The writer emits one entry per scored case, so a
+    // disagreement with `coverage.scored_cases` means the file was edited.
+    const trimmed = { ...usable, per_case: { ...usable.per_case } };
+    delete trimmed.per_case[Object.keys(trimmed.per_case)[0]];
+    expect(describeUnusableBaseline(trimmed)).toMatch(/records 32 scored cases but 31 per_case entries/);
+  });
+
+  it('accepts a null measurement, which is a real answer rather than an absence', () => {
+    // `retrieval_k` is null on a run that retrieved nothing. Presence is the
+    // requirement; a null value means the population was empty and was measured.
+    const nulled = { ...usable, coverage: { ...usable.coverage, retrieval_k: null } };
+    expect(describeUnusableBaseline(nulled)).toBeNull();
+  });
+});
+
+describe('the path alias the harness resolves', () => {
+  const never = () => {
+    throw new Error('should not reach the default resolver');
+  };
+
+  it('refuses an alias that escapes the repository root', () => {
+    expect(() => resolveAlias('@/../outside.ts', {}, never)).toThrow(/resolves outside/);
+  });
+
+  it('still resolves an ordinary aliased module', () => {
+    const resolved = resolveAlias('@/lib/rag/policy', {}, never) as { url: string };
+    expect(resolved.url).toContain('/lib/rag/policy.ts');
   });
 });
 
