@@ -44,7 +44,7 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 4. `git log --oneline main..HEAD` — show the user exactly which commits are going up. Wait for confirmation before continuing.
 5. `git push -u origin HEAD` — wait for it to fully complete before proceeding. If it fails, report the error and stop.
 6. `git branch -vv` — confirm the branch now shows a remote tracking ref. If not, stop.
-7. `gh pr create --draft --title "<concise title>" --body "<summary + test plan>"` — write an explicit title and body. Do not use `--fill`.
+7. `gh pr create --draft --title "<concise title>" --body "<summary + test plan>"` — write an explicit title and body. Do not use `--fill`. `--body` bypasses `.github/pull_request_template.md`, so a branch touching `lib/rag/`, `docs/knowledge-base/`, `data/rag-index.json` or the golden set has to carry that template's "RAG evaluation" section in the body by hand - the "Against baseline" block printed by `npm run rag:eval`.
 
 **Never** run extra staging, committing, stashing, or branch operations unless explicitly asked. If the push is slow, wait — do not retry or run a second push in parallel.
 

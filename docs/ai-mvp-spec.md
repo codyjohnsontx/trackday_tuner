@@ -141,3 +141,17 @@ Exit criteria:
 
 - >=85% of sampled outputs pass all rubric categories.
 - 0 high-severity safety policy violations in evaluation set.
+
+`npm run rag:eval` measures both against the golden set in
+`tests/fixtures/rag-eval/golden-cases.json`. It runs the real pipeline, scores
+the model's own output on the four categories above, and adds a fifth: a
+response `evaluateAdvicePolicy` force-refuses is a rubric failure rather than a
+pass, unless refusing is that case's expected answer. The second criterion is
+the run's own self-check - the responses in
+`tests/fixtures/rag-eval/adversarial-responses.json` must fail, and the run
+exits non-zero if any of them passes.
+
+The 85% is a target the harness prints and deliberately does not enforce; what
+gates CI is a metric regressing against the committed `eval-baseline.json`.
+AGENTS.md ("The RAG Eval Harness") owns the reasoning and the operating
+instructions - do not restate them here.
