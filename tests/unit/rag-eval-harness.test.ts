@@ -4,14 +4,14 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
 import * as vocabulary from '@/lib/rag/component-vocabulary';
-// @ts-expect-error - the harness is plain JS on purpose; it runs under node with
-// no build step so that `npm run rag:eval` needs neither a bundler nor a new
-// dependency. There are no types to import.
-import {
-  matchesExpectedComponent,
-  matchesExpectedDirection,
-  scoreAdviceResponse,
-} from '@/scripts/eval/scoring.mjs';
+// The harness is plain JS on purpose; it runs under node with no build step so
+// that `npm run rag:eval` needs neither a bundler nor a new dependency. There
+// are no types to import, and `allowJs` is off, so each of these imports carries
+// a directive. It has to sit on the module-specifier line - which for a
+// multi-line import is the `} from '...'` line and not the `import {` - so the
+// imports are kept on one line each instead.
+// @ts-expect-error - see above.
+import { matchesExpectedComponent, matchesExpectedDirection, scoreAdviceResponse } from '@/scripts/eval/scoring.mjs';
 // @ts-expect-error - see above.
 import { aggregateRetrieval, scoreRetrieval } from '@/scripts/eval/retrieval.mjs';
 // @ts-expect-error - see above.
