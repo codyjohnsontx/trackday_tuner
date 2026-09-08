@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "recorded_at": "2026-09-08T08:43:44.032Z",
+  "recorded_at": "2026-09-08T09:00:17.587Z",
   "mode": "offline",
   "model": "gpt-4o-mini",
   "embedding_model": "text-embedding-3-small",
@@ -15,11 +15,21 @@
     "direction_accuracy": 0.5384615384615384
   },
   "coverage": {
+    "scored_cases": 32,
     "retrieval_k": 4,
     "retrieval_cases": 26,
     "component_cases": 13,
     "direction_cases": 13
   },
+  "limitations": [
+    {
+      "id": "harness-context-weather-flag",
+      "what": "buildContext reports data_used.weather as `temperature_c != null` while supplying no session_environment row. Production cannot produce that pair: loadRaceEngineerContext sets `weather: Boolean(sessionEnvironment)`, so with no row it prints weather=false. Every recorded prompt for a golden case carrying temperature_c is therefore one boolean away from what the route would have sent.",
+      "retrieval_unaffected": "recall_at_k and MRR stand unconditionally. The query text embedQuery sees does not carry data_used, so retrieval ran on exactly the input production would have embedded and these two are production-faithful.",
+      "answer_quality_qualified": "rubric_pass_rate, refusal_accuracy, component_accuracy and direction_accuracy were produced under that prompt. They remain VALID for regression detection, because both sides of any future comparison are built by this same code - they simply do not state what production answer quality is.",
+      "closed_by": "the next `npm run rag:eval -- --live` re-record, once an API key exists. Correcting the flag moves every completion tape key, so it cannot be done without one."
+    }
+  ],
   "per_case": {
     "mc-front-push-pressure": {
       "passed": true,

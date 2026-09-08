@@ -178,19 +178,35 @@ export function scoreAdviceResponse(params) {
  */
 
 /**
- * The only synonymy this table asserts, and the line it draws is deliberate.
+ * A TEST-SIDE EQUIVALENCE. Production asserts nothing of the kind and this table
+ * does not change it: `COMPONENT_POLICIES` lists all four of `increase`,
+ * `decrease`, `raise` and `lower` as distinct accepted strings for
+ * `tire_pressure`, `evaluateAdvicePolicy` accepts any of them, and no rider-facing
+ * render is touched here. The comparison string is an implementation detail of
+ * the TEST, not of the product.
  *
- * `COMPONENT_POLICIES` lists the spellings a component ACCEPTS; it does not say
- * which of them mean the same instruction, and that is a separate claim. These
- * four are pure quantity-direction synonyms in English - `raise` is `increase`
- * and `lower` is `decrease` whatever is being adjusted - so equating them
- * commits to nothing about motorsport.
+ * It exists because `direction_accuracy` asks whether the model advised in the
+ * right DIRECTION. A metric that answers "no" because the model wrote `lower`
+ * where the label says `decrease` is measuring spelling, not the model, so
+ * making the comparison synonym-aware is fixing the test rather than moving the
+ * bar. The claim is about English - `raise` IS `increase` and `lower` IS
+ * `decrease` whatever is being adjusted - which is why it would be equally
+ * correct had the artifact been costing the model points it deserved rather
+ * than, as it happened, denying it two.
  *
- * Everything else stays distinct even where a domain argument could be made.
- * `stiffen` is NOT equated with `increase` on rebound: that would rest on "more
- * clicks is stiffer", which is a claim about a specific adjuster rather than
- * about English, and an evaluation that quietly assumes it would report a match
- * the policy never authorised.
+ * WHAT IT DELIBERATELY DOES NOT ASSERT, WHICH IS THE WHOLE ARGUMENT.
+ * `stiffen` is not equated with `increase`, nor `soften` with `decrease`. That
+ * equivalence would rest on "more clicks is stiffer" - a claim about how a
+ * particular adjuster behaves, which is motorsport rather than English, and
+ * exactly the kind of claim a test may not quietly make on production's behalf.
+ * So `stiffen` vs `soften` on rebound, `lower` vs `increase` on `fork_height`
+ * and `shorter gearing` vs `decrease` on `rear_sprocket` all remain misses, and
+ * correctly so.
+ *
+ * That boundary is the evidence the table was not reverse-engineered from the
+ * score. It was written before the score was consulted for anything beyond the
+ * two flips it produces; a table built backwards from the result would have
+ * swept those other misses in too, because each of them would have paid.
  */
 const DIRECTION_INSTRUCTIONS = new Map([
   ['increase', 'more'],

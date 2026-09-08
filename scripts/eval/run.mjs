@@ -44,6 +44,37 @@ const INDEX_PATH = path.join(REPO_ROOT, 'data', 'rag-index.json');
  */
 const RUBRIC_TARGET = 0.85;
 
+/**
+ * What the committed numbers do NOT cover, emitted INTO `eval-baseline.json` by
+ * the writer below rather than hand-added to it. A caveat typed into that file
+ * survives exactly until the next `--update-baseline` overwrites it, and a
+ * limitation that disappears the moment somebody re-baselines is worse than one
+ * nobody wrote down: the reader after that has no way to know it ever existed.
+ */
+const BASELINE_LIMITATIONS = [
+  {
+    id: 'harness-context-weather-flag',
+    what:
+      'buildContext reports data_used.weather as `temperature_c != null` while supplying ' +
+      'no session_environment row. Production cannot produce that pair: ' +
+      'loadRaceEngineerContext sets `weather: Boolean(sessionEnvironment)`, so with no row ' +
+      'it prints weather=false. Every recorded prompt for a golden case carrying ' +
+      'temperature_c is therefore one boolean away from what the route would have sent.',
+    retrieval_unaffected:
+      'recall_at_k and MRR stand unconditionally. The query text embedQuery sees does not ' +
+      'carry data_used, so retrieval ran on exactly the input production would have ' +
+      'embedded and these two are production-faithful.',
+    answer_quality_qualified:
+      'rubric_pass_rate, refusal_accuracy, component_accuracy and direction_accuracy were ' +
+      'produced under that prompt. They remain VALID for regression detection, because both ' +
+      'sides of any future comparison are built by this same code - they simply do not state ' +
+      'what production answer quality is.',
+    closed_by:
+      'the next `npm run rag:eval -- --live` re-record, once an API key exists. Correcting ' +
+      'the flag moves every completion tape key, so it cannot be done without one.',
+  },
+];
+
 const readJson = async (p) => JSON.parse(await fs.readFile(p, 'utf8'));
 
 /** A `sessions` row shaped like the database returns one. */
@@ -98,6 +129,23 @@ function buildVehicle(caseInput, ids) {
  * database up to supply them would be measuring the fake. What history changes
  * on this path is which optional blocks the prompt prints; what it does not
  * change is the pipeline under test.
+ *
+ * ONE FIELD HERE IS NOT FAITHFUL, AND IT SHIPS THAT WAY DELIBERATELY.
+ * `dataUsed.weather` is `temperatureC != null` beside `sessionEnvironment: null`,
+ * and production cannot produce that pair - `loadRaceEngineerContext` sets
+ * `weather: Boolean(sessionEnvironment)`, so with no environment row the route
+ * prints `weather=false` into the same `data_used` line
+ * (`formatRaceEngineerContext`). Scoring is unaffected either way, because the
+ * policy fallback the route uses is `temperature_c != null || dataUsed.weather`
+ * and `runCase` mirrors it. Retrieval is unaffected too: the query text
+ * `embedQuery` sees carries no `data_used`, so recall and MRR are
+ * production-faithful. What it does touch is the recorded PROMPT, and therefore
+ * the answer-quality numbers - which stay valid for regression detection, since
+ * both sides of any comparison are built here, without stating what production
+ * quality is. It is not corrected because the correction moves every completion
+ * tape key and re-recording needs an API key that has been revoked. The next
+ * `--live` re-record closes it. `BASELINE_LIMITATIONS` above is the same note,
+ * emitted into the baseline so it reaches whoever reads the numbers.
  */
 function buildContext({ session, temperatureC, buildDayTrend }) {
   return {
@@ -430,16 +478,20 @@ async function report(ctx) {
     ),
   };
   /**
-   * How much was measured, beside what was measured. Every rate above has a
-   * variable denominator - a case leaves the retrieval average when a
-   * classifier refuses it before anything is embedded, and leaves the accuracy
-   * averages when the model is never asked - so a rate can rise because
-   * coverage fell rather than because anything improved. `retrieval_k` is the
-   * same property for the metric's shape rather than its population. All of it
-   * goes into the baseline, because a gated number whose denominator is not
-   * recorded cannot be compared against later.
+   * How much was measured, beside what was measured. EVERY rate above has a
+   * variable denominator, including the two whose denominator is the whole
+   * golden set: a case leaves the retrieval average when a classifier refuses
+   * it before anything is embedded, leaves the accuracy averages when the model
+   * is never asked, and leaves `scored_cases` when it is deleted from
+   * `golden-cases.json` outright. So a rate can rise because coverage fell
+   * rather than because anything improved - deleting one failing case lifts the
+   * rubric pass rate from 27/32 to 27/31 while no metric regresses.
+   * `retrieval_k` is the same property for the metric's shape rather than its
+   * population. All of it goes into the baseline, because a gated number whose
+   * denominator is not recorded cannot be compared against later.
    */
   const coverage = {
+    scored_cases: scoredResults.length,
     retrieval_k: retrievalAgg.k,
     retrieval_cases: retrievalAgg.cases,
     component_cases: componentCases.length,
@@ -499,10 +551,10 @@ async function report(ctx) {
   // still diffed here and still written to the baseline.
   const previousCoverage = baseline?.coverage ?? null;
   for (const [key, label, gated, coverageKey] of [
-    ['rubric_pass_rate', 'rubric pass rate', true, null],
+    ['rubric_pass_rate', 'rubric pass rate', true, 'scored_cases'],
     ['recall_at_k', `recall@${kLabel}`, true, 'retrieval_cases'],
     ['mrr', 'MRR', true, 'retrieval_cases'],
-    ['refusal_accuracy', 'refusal accuracy', true, null],
+    ['refusal_accuracy', 'refusal accuracy', true, 'scored_cases'],
     ['component_accuracy', 'component accuracy', false, 'component_cases'],
     ['direction_accuracy', 'direction accuracy', false, 'direction_cases'],
   ]) {
@@ -527,6 +579,12 @@ async function report(ctx) {
   // retrieval improved, and the rate alone cannot say so. A changed k is worse
   // than that: the metric is no longer the same measurement, so comparing it to
   // the stored one is meaningless rather than merely flattering.
+  if (previousCoverage?.scored_cases != null && coverage.scored_cases < previousCoverage.scored_cases) {
+    regressions.push(
+      `scored coverage ${previousCoverage.scored_cases} -> ${coverage.scored_cases} cases ` +
+        '(a rise in the rubric pass rate or refusal accuracy may be a case that left the set rather than one that started passing)',
+    );
+  }
   if (previousCoverage?.retrieval_cases != null && coverage.retrieval_cases < previousCoverage.retrieval_cases) {
     regressions.push(
       `retrieval coverage ${previousCoverage.retrieval_cases} -> ${coverage.retrieval_cases} labelled cases ` +
@@ -580,6 +638,7 @@ async function report(ctx) {
       cases: results.length,
       metrics,
       coverage,
+      limitations: BASELINE_LIMITATIONS,
       per_case: Object.fromEntries(
         scoredResults.map((r) => [
           r.id,

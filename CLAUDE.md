@@ -1004,6 +1004,20 @@ file, so three chunks of one file is one document found). An empty list means th
 case is not retrieval-scored, which is forced anyway when a classifier refuses
 before anything is embedded.
 
+**One recorded prompt is one boolean off production, and the baseline says so
+itself.** `buildContext` in `scripts/eval/run.mjs` reports `data_used.weather`
+as `temperature_c != null` while supplying no `session_environment` row, a pair
+`loadRaceEngineerContext` cannot produce - it sets `weather:
+Boolean(sessionEnvironment)`, so the route prints `weather=false` there.
+`recall@4` and MRR are unaffected and production-faithful, because the query
+text `embedQuery` sees carries no `data_used`; the answer-quality metrics were
+produced under that prompt and stay valid for REGRESSION DETECTION, since both
+sides of any comparison are built by the same code, without stating what
+production quality is. Correcting it moves every completion tape key, so the
+next `--live` re-record closes it. The caveat is emitted into
+`eval-baseline.json` by the writer rather than typed into the file, because a
+hand-added one dies at the next `--update-baseline`.
+
 **No build step and no dependency.** `scripts/eval/ts-loader.mjs` is a resolve
 hook that maps `@/`, adds the missing extension and stubs `server-only` (a
 webpack alias Next resolves at build time, not an installed package). Node >=
