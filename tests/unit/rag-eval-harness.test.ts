@@ -492,7 +492,29 @@ describe('the comparison against the baseline', () => {
     per_case: { a: { passed: true }, b: { passed: false } },
   };
   const run = (cases: Array<[string, boolean]>) =>
-    cases.map(([id, passed]) => ({ id, scored: { passed } }));
+    cases.map(([id, passed]) => ({
+      id,
+      scored: { passed },
+      retrieval: { recall: null, reciprocalRank: null },
+    }));
+
+  // The retrieval half of the same composition question. `a` and `b` above
+  // carry no per-case recall, so the pass/fail cases exercise the pass/fail
+  // gate alone; these carry one.
+  const retrievalBaseline = {
+    metrics: METRICS,
+    coverage: COVERAGE,
+    per_case: {
+      a: { passed: true, recall: 1, reciprocal_rank: 1 },
+      b: { passed: true, recall: 0.5, reciprocal_rank: 0.5 },
+    },
+  };
+  const retrievalRun = (cases: Array<[string, number | null, number | null]>) =>
+    cases.map(([id, recall, reciprocalRank]) => ({
+      id,
+      scored: { passed: true },
+      retrieval: { recall, reciprocalRank },
+    }));
 
   it('finds nothing wrong in a run that reproduces the baseline', () => {
     const { regressions, nowFailing, leftTheSet } = compareAgainstBaseline({
@@ -572,6 +594,68 @@ describe('the comparison against the baseline', () => {
     });
     expect(leftTheSet).toEqual([]);
     expect(regressions).toEqual([]);
+  });
+
+  it('fails a swap that leaves recall@k and MRR exactly where they were', () => {
+    // The case the gate exists for, and the one that passed before it. `a`
+    // halves while `b` doubles, so both means are identical, every coverage
+    // figure is identical and both cases still pass - `scoreGrounding` resolves
+    // a citation against the whole index, never against `expected_sources`.
+    const { regressions, retrievalFell } = compareAgainstBaseline({
+      metrics: METRICS,
+      coverage: COVERAGE,
+      scoredResults: retrievalRun([
+        ['a', 0.5, 0.5],
+        ['b', 1, 1],
+      ]),
+      baseline: retrievalBaseline,
+    });
+    expect(retrievalFell).toEqual(['a recall 1.00 -> 0.50', 'a MRR 1.00 -> 0.50']);
+    expect(regressions.some((line: string) => line.includes('a recall 1.00 -> 0.50'))).toBe(true);
+  });
+
+  it('does not fail a case that retrieved better', () => {
+    const { regressions, retrievalFell } = compareAgainstBaseline({
+      metrics: METRICS,
+      coverage: COVERAGE,
+      scoredResults: retrievalRun([
+        ['a', 1, 1],
+        ['b', 1, 1],
+      ]),
+      baseline: retrievalBaseline,
+    });
+    expect(retrievalFell).toEqual([]);
+    expect(regressions).toEqual([]);
+  });
+
+  it('does not fail a case the baseline has no row for', () => {
+    const { retrievalFell } = compareAgainstBaseline({
+      metrics: METRICS,
+      coverage: { ...COVERAGE, scored_cases: 3 },
+      scoredResults: retrievalRun([
+        ['a', 1, 1],
+        ['b', 0.5, 0.5],
+        ['c', 0, 0],
+      ]),
+      baseline: retrievalBaseline,
+    });
+    expect(retrievalFell).toEqual([]);
+  });
+
+  it('fails a case that stopped being retrieval-scored, and names it', () => {
+    // Not redundant with the `retrieval_cases` coverage fall: that fires only
+    // when the TOTAL drops, so one case losing its labels while another gains
+    // some holds the count still and names neither.
+    const { retrievalFell } = compareAgainstBaseline({
+      metrics: METRICS,
+      coverage: COVERAGE,
+      scoredResults: retrievalRun([
+        ['a', null, null],
+        ['b', 0.5, 0.5],
+      ]),
+      baseline: retrievalBaseline,
+    });
+    expect(retrievalFell).toEqual(['a recall 1.00 -> not scored', 'a MRR 1.00 -> not scored']);
   });
 
   it('fails a gated metric that had a baseline value and is no longer measurable', () => {

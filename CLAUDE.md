@@ -1054,7 +1054,15 @@ while measuring nothing:
   `scored_cases` at 32 and raises the rate, so nothing above fires and the
   deleted case is never consulted. A case the baseline scored that this run does
   not score has left the set, and removing or renaming one now needs a
-  deliberate `--update-baseline`
+  deliberate `--update-baseline`. **`recall@k` and MRR are MEANS over the same
+  cases, so they are blind the same way**, and `passed` does not cover them -
+  `scoreGrounding` resolves a citation against the whole index, never against
+  `expected_sources`. One labelled case falling 1.0 -> 0.5 while another rises
+  0.5 -> 1.0 moves neither mean and no coverage figure, so `per_case[].recall`
+  and `per_case[].reciprocal_rank` are gated per case too, and a current `null`
+  where the baseline held a number counts as a fall: the `retrieval_cases`
+  check fires only when the TOTAL drops, so a case losing its labels while
+  another gains some names neither
 
 An unreadable baseline is the same failure and prints a remedy derived from the
 variant: `describeUnreadableBaseline` names an absent, unparseable or unreadable
