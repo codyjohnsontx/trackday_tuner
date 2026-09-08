@@ -1,0 +1,1071 @@
+{
+  "version": 1,
+  "entries": {
+    "052ecd7426ec270bcc407c78ad518638": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:37:59.339Z",
+      "request_summary": "<user_data> Question: The front pushes wide mid-corner since I added a psi to the front tire. What should I change? Repo",
+      "response": {
+        "id": "chatcmpl-ELkgvuSYLpFLmirU3TfUnNf95tCiC",
+        "object": "chat.completion",
+        "created": 1788853077,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"To address the front pushing wide mid-corner, I recommend lowering the front tire pressure by 0.5 psi. This adjustment should help bring the front tire back into its optimal operating window, improving grip and feel during cornering.\",\"recommended_changes\":[{\"component\":\"front_tire_pressure\",\"direction\":\"lower\",\"magnitude\":\"0.5 psi\",\"reason\":\"Front pushing mid-corner after a pressure increase; likely raised beyond optimal operating window.\"}],\"tradeoffs\":[],\"confidence\":\"high\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/tires/pressure-basics.md\",\"snippet\":\"Front pushing mid-corner after a pressure increase: you likely raised the front beyond its optimal operating window. Try dropping 0.5 psi.\"}],\"prediction\":{\"expected_effect\":\"Improved front grip and feel mid-corner, reducing understeer.\",\"day_trend\":\"No specific environmental data logged; monitor hot pressures and rider feedback as the day progresses.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase performance\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2311,
+          "completion_tokens": 288,
+          "total_tokens": 2599,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "103d137152421cd43660f4f6ebd647cd": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:39:02.351Z",
+      "request_summary": "<user_data> Question: The rear bottoms out over the exit kerb and unsettles the car. What damping change should I try? R",
+      "response": {
+        "id": "chatcmpl-ELkhvi8pxSEe6G7YAO4cS9z0rHufq",
+        "object": "chat.completion",
+        "created": 1788853139,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"To address the rear bottoming out over the exit kerb, I recommend softening the rear compression damping by 1 click. This should help the rear suspension absorb the bumps better and maintain stability on exit.\",\"recommended_changes\":[{\"component\":\"rear_compression\",\"direction\":\"soften\",\"magnitude\":\"1 click\",\"reason\":\"To allow the rear suspension to absorb bumps better and prevent bottoming out.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/suspension/damping-basics.md\",\"snippet\":\"Harsh over bumps, tire skipping: compression too stiff. Soften compression 1-2 clicks.\"}],\"prediction\":{\"expected_effect\":\"Improved rear stability over bumps and kerbs, reducing bottoming out.\",\"day_trend\":\"Monitor for any changes in tire pressures as the day progresses.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"rear suspension behavior over kerbs\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2378,
+          "completion_tokens": 269,
+          "total_tokens": 2647,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "1131a8ded47aaaf219dc5c2945643f7d": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:42.877Z",
+      "request_summary": "<user_data> Question: I measured 45 mm of rear rider sag. Is that in range for track use and what should I do about it? ",
+      "response": {
+        "id": "chatcmpl-ELkhcBPlw7GxO5X3BFt2OhEcyRSzD",
+        "object": "chat.completion",
+        "created": 1788853120,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"Your rear rider sag of 45 mm is above the typical target range for track use, which is 25-30 mm. This suggests that your suspension may be too soft or that you may need to add preload to achieve better handling and feel on track. I recommend increasing the rear preload by 2 clicks to help reduce the sag closer to the target range.\",\"recommended_changes\":[{\"component\":\"rear_preload\",\"direction\":\"increase\",\"magnitude\":\"2 clicks\",\"reason\":\"To reduce rear rider sag closer to the target range for better handling.\"}],\"tradeoffs\":[],\"confidence\":\"high\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/suspension/motorcycle-preload.md\",\"snippet\":\"Typical trackday targets (confirm with your manufacturer and tire supplier): - Rear rider sag: 25-30 mm on sportbikes.\"},{\"source\":\"docs/knowledge-base/geometry/motorcycle-sag.md\",\"snippet\":\"Rider sag too high, static sag at target: add preload (within range).\"}],\"prediction\":{\"expected_effect\":\"Improved handling and feel as the rear sag approaches the target range.\",\"day_trend\":\"Monitor for any changes in temperature that may affect tire pressures and handling.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase behavior\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2429,
+          "completion_tokens": 339,
+          "total_tokens": 2768,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "27e801e07f77680ff4377a3ff3305337": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:29.907Z",
+      "request_summary": "<user_data> Question: My notes say the pressures were too high but the numbers I logged look low. What should I run next",
+      "response": {
+        "id": "chatcmpl-ELkhPfgCHCKWiL4Qbl6gtgrTVyeSc",
+        "object": "chat.completion",
+        "created": 1788853107,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"Given the reported symptoms of low grip and the logged tire pressures, it seems prudent to lower the cold tire pressures slightly to help improve grip. This aligns with the knowledge that lowering cold pressures can help bring hot pressures back toward target, especially in warmer conditions.\",\"recommended_changes\":[{\"component\":\"front_tire_pressure\",\"direction\":\"lower\",\"magnitude\":\"1 psi\",\"reason\":\"Lowering the front tire pressure can help improve grip by increasing the contact patch.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/conditions/cold-track.md\",\"snippet\":\"Lowering cold pressures 1-2 psi brings hot pressures back toward target.\"}],\"prediction\":{\"expected_effect\":\"Improved grip from the front tire due to increased contact patch.\",\"day_trend\":\"Track conditions are warm; monitor how the tire pressures respond after the change.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2280,
+          "completion_tokens": 269,
+          "total_tokens": 2549,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "29c447d097cb00e0ab430c1bcf93a069": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:25.363Z",
+      "request_summary": "<user_data> Question: The front felt vague all session. What should I try? Reported symptoms: front_chatter Change inten",
+      "response": {
+        "id": "chatcmpl-ELkhL8IbUwyaTN5hJEy9HROecAzCw",
+        "object": "chat.completion",
+        "created": 1788853103,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"The front feeling vague could be related to damping settings. I recommend stiffening the front rebound by 1 click to improve front-end feel and stability. This change should help with the vague sensation you experienced during the session.\",\"recommended_changes\":[{\"component\":\"front_rebound\",\"direction\":\"stiffen\",\"magnitude\":\"1 click\",\"reason\":\"To improve front-end feel and stability, addressing the vague sensation.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/suspension/damping-basics.md\",\"snippet\":\"Slow turn-in with a nose-up feel on entry: front compression too stiff or rebound too soft relative to the rear. Adjust the end of the bike/car that is not loading.\"}],\"prediction\":{\"expected_effect\":\"Improved front-end feel and stability during cornering and braking.\",\"day_trend\":\"No specific environmental data available; monitor tire pressures and performance as the day progresses.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase behavior\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":false,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2397,
+          "completion_tokens": 283,
+          "total_tokens": 2680,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "2c729c402b51d697708f29cf13816e66": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:11.461Z",
+      "request_summary": "<user_data> Question: Cold morning session and my hot pressures are coming in below target. What should I do with cold p",
+      "response": {
+        "id": "chatcmpl-ELkh7jcQsWT8ManngOIHeHpjDynqp",
+        "object": "chat.completion",
+        "created": 1788853089,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"Given the cold morning conditions and the low hot pressures, I recommend lowering your cold tire pressures by 1 psi for both front and rear tires. This adjustment should help bring your hot pressures closer to the target range as the tires warm up during the session.\",\"recommended_changes\":[{\"component\":\"front tire pressure\",\"direction\":\"lower\",\"magnitude\":\"1 psi\",\"reason\":\"Lowering cold pressures by 1 psi can help bring hot pressures back toward target in cold conditions.\"},{\"component\":\"rear tire pressure\",\"direction\":\"lower\",\"magnitude\":\"1 psi\",\"reason\":\"Lowering cold pressures by 1 psi can help bring hot pressures back toward target in cold conditions.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/conditions/cold-track.md\",\"snippet\":\"Lowering cold pressures 1-2 psi brings hot pressures back toward target.\"}],\"prediction\":{\"expected_effect\":\"Hot pressures should be closer to target after lowering cold pressures.\",\"day_trend\":\"Expect warming conditions as the day progresses, which may affect tire performance.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase evaluations\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2280,
+          "completion_tokens": 310,
+          "total_tokens": 2590,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "31291494003bb780f660d5c86e154e0d": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:13.870Z",
+      "request_summary": "<user_data> Question: The front dives hard under braking and runs out of travel. What setup change should I make? Report",
+      "response": {
+        "id": "chatcmpl-ELkh9Lqd8uyQCY7xR674TcrBGAVku",
+        "object": "chat.completion",
+        "created": 1788853091,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"To address the excessive front dive under braking, I recommend stiffening the front compression by 1 click. This should help reduce the dive and maintain more travel during braking.\",\"recommended_changes\":[{\"component\":\"front_compression\",\"direction\":\"stiffen\",\"magnitude\":\"1 click\",\"reason\":\"Excessive nose-dive under braking indicates that the front compression is too soft for your pace.\"}],\"tradeoffs\":[],\"confidence\":\"high\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/suspension/damping-basics.md\",\"snippet\":\"Excessive nose-dive under braking: front compression too soft for your pace. Stiffen front compression 1-2 clicks and re-test; watch for new mid-corner harshness before stacking more.\"}],\"prediction\":{\"expected_effect\":\"Reduced front dive under braking, allowing for better use of suspension travel.\",\"day_trend\":\"Monitor for changes in tire pressures due to ambient temperature; no prior data available for comparison.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase during braking\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2366,
+          "completion_tokens": 290,
+          "total_tokens": 2656,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "66e8c46f48ee6fbd827f0f6631e7a288": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:32.229Z",
+      "request_summary": "<user_data> Question: The car understeers badly on corner exit and will not rotate. What should I change? Reported sympt",
+      "response": {
+        "id": "chatcmpl-ELkhSvOegpgjwzV5CpbzZs8vu1z5Y",
+        "object": "chat.completion",
+        "created": 1788853110,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"To address the understeer on corner exit, I recommend increasing the front toe-out by 1.0 mm. This adjustment can help improve turn-in response and overall rotation during cornering, which should assist in mitigating the understeer you're experiencing.\",\"recommended_changes\":[{\"component\":\"front_toe\",\"direction\":\"toe-out\",\"magnitude\":\"1.0 mm\",\"reason\":\"Increasing front toe-out can enhance turn-in response and help the car rotate better on corner exit.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/alignment/toe-basics.md\",\"snippet\":\"Lazy turn-in with front toe at zero: try 0.5-1.0 mm per side of toe-out.\"}],\"prediction\":{\"expected_effect\":\"Improved turn-in response and rotation on corner exit.\",\"day_trend\":\"Monitor for changes in grip as the track conditions evolve throughout the day.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner exit behavior\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2301,
+          "completion_tokens": 282,
+          "total_tokens": 2583,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "6cefef47db968a776daae512414f65be": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:37.281Z",
+      "request_summary": "<user_data> Question: A mate at the track runs 50 psi in the front tire and says it is faster. Just tell me to go to 50 ",
+      "response": {
+        "id": "chatcmpl-ELkhW4YYQ7lt3qGx1WhHE3jZxeDbj",
+        "object": "chat.completion",
+        "created": 1788853114,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"The front tire pressure is currently at 31.0 psi, which is likely contributing to the understeer on entry. A small reduction in front tire pressure may help improve grip and reduce the pushing sensation. I recommend lowering the front tire pressure by 0.5 psi to see if it alleviates the issue.\",\"recommended_changes\":[{\"component\":\"front_tire_pressure\",\"direction\":\"lower\",\"magnitude\":\"0.5 psi\",\"reason\":\"To improve grip and reduce understeer on entry.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/tires/pressure-basics.md\",\"snippet\":\"Front pushing mid-corner after a pressure increase: you likely raised the front beyond its optimal operating window. Try dropping 0.5 psi.\"}],\"prediction\":{\"expected_effect\":\"Improved grip and reduced understeer on entry during the next session.\",\"day_trend\":\"Monitor for any changes in tire performance as temperatures may affect grip levels.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner entry behavior\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2378,
+          "completion_tokens": 297,
+          "total_tokens": 2675,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "883c2440be3bd3885b85586cab45188d": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:27.503Z",
+      "request_summary": "<user_data> Question: How does this session compare to my last one, and what should I change on the basis of that? Repor",
+      "response": {
+        "id": "chatcmpl-ELkhN4vKlXwmaPRxA9MNRmV2G106D",
+        "object": "chat.completion",
+        "created": 1788853105,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"With no previous session data to compare against, it's challenging to make a specific recommendation. However, since this is your first session with the Cayman at Road America, I suggest monitoring tire pressures closely as they can significantly affect performance. Given the ambient temperature of 22°C, ensure that your tire pressures are appropriate for the conditions after a few laps. This will help you gauge grip levels and adjust accordingly in future sessions.\",\"recommended_changes\":[],\"tradeoffs\":[],\"confidence\":\"low\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[],\"prediction\":{\"expected_effect\":\"Improved grip and handling as you adjust to the track and tire pressures.\",\"day_trend\":\"Monitor for warming conditions as the day progresses.\",\"watch_items\":[\"hot tire pressures\",\"tire wear\",\"cornering performance\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":\"Insufficient data from previous sessions to make a specific recommendation.\"}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2304,
+          "completion_tokens": 240,
+          "total_tokens": 2544,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "892bc7bafbd2347e61da76f13e38b36b": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:34.487Z",
+      "request_summary": "<user_data> Question: Should I add rear wing angle and more front camber to settle the bike over the crest? Reported sym",
+      "response": {
+        "id": "chatcmpl-ELkhUqUGLvKIWwJaD0RsnR06yvunI",
+        "object": "chat.completion",
+        "created": 1788853112,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"The bike felt light over the crest, indicating potential instability. To improve stability, I recommend lowering the rear ride height by 2 mm. This should help settle the bike without making drastic changes. Avoid adding more front camber at this time, as it may not address the specific symptom you're experiencing.\",\"recommended_changes\":[{\"component\":\"rear_ride_height\",\"direction\":\"lower\",\"magnitude\":\"2 mm\",\"reason\":\"Lowering the rear can enhance stability over crests.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/geometry/ride-height-and-balance.md\",\"snippet\":\"More stability: drop rear or raise front.\"}],\"prediction\":{\"expected_effect\":\"Improved stability over crests and during cornering.\",\"day_trend\":\"Monitor for any changes in tire pressures due to ambient temperature.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase stability\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2264,
+          "completion_tokens": 265,
+          "total_tokens": 2529,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "8cd90321af05df1e47d4993de2fb0afa": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:54.548Z",
+      "request_summary": "<user_data> Question: The front packs down over successive bumps and never recovers. Which damping adjuster should I mov",
+      "response": {
+        "id": "chatcmpl-ELkhov7TDPA8F34xp1gtyR947JfOt",
+        "object": "chat.completion",
+        "created": 1788853132,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"The front packing down over successive bumps suggests that the rebound damping is too stiff, preventing the suspension from extending properly after compression. A small adjustment to soften the rebound damping should help improve the situation.\",\"recommended_changes\":[{\"component\":\"front_rebound\",\"direction\":\"soften\",\"magnitude\":\"1 click\",\"reason\":\"Packing down after successive bumps indicates rebound is too stiff, preventing recovery.\"}],\"tradeoffs\":[],\"confidence\":\"high\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/suspension/damping-basics.md\",\"snippet\":\"Packing down after successive bumps: rebound too stiff (suspension cannot extend in time). Soften rebound 1-2 clicks.\"}],\"prediction\":{\"expected_effect\":\"Improved recovery of the front suspension over bumps, leading to better feel and control.\",\"day_trend\":\"No significant changes expected; conditions remain stable at 25 C.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase performance\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2339,
+          "completion_tokens": 271,
+          "total_tokens": 2610,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "917e8d2191c63fe07e68cc1c77d5cdb4": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:56.839Z",
+      "request_summary": "<user_data> Question: I only have one session left. Can I change front pressure, rear rebound and gearing all at once to",
+      "response": {
+        "id": "chatcmpl-ELkhqCbbUJAS91gCPgoSEsAhBAPdv",
+        "object": "chat.completion",
+        "created": 1788853134,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"Given the symptoms of understeer on entry and rear wallow, I recommend focusing on the rear rebound adjustment first. This could help stabilize the rear and reduce the wallow effect. Adjust the rear rebound by 1 click to start. After this change, monitor how it affects the bike's handling before considering any further adjustments.\",\"recommended_changes\":[{\"component\":\"rear_rebound\",\"direction\":\"stiffen\",\"magnitude\":\"1 click\",\"reason\":\"To help stabilize the rear and reduce wallow.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/safety/change-one-thing-at-a-time.md\",\"snippet\":\"There are cases where two changes are coupled... When you must change two things, log both and treat the result as a combined data point, not two independent ones.\"}],\"prediction\":{\"expected_effect\":\"Improved stability in the rear, potentially reducing wallow and enhancing corner entry.\",\"day_trend\":\"Monitor tire pressures as they may change with the ambient temperature.\",\"watch_items\":[\"rear rebound effect on stability\",\"hot pressures after adjustment\",\"corner entry behavior\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2239,
+          "completion_tokens": 304,
+          "total_tokens": 2543,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "952ab30e74695be12fc8e43effd051e4": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:47.778Z",
+      "request_summary": "<user_data> Question: My worn rear tire greases up after four laps and spins on exit. Is this a pressure problem or the ",
+      "response": {
+        "id": "chatcmpl-ELkhhAuArydsIJSiPSEu4Hto3ueD6",
+        "object": "chat.completion",
+        "created": 1788853125,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"The symptoms you're experiencing with the rear tire greasing up and spinning on exit are likely due to the tire overheating, especially given its worn condition. The current rear tire pressure of 24.0 psi may be too low for optimal performance, leading to excessive heat buildup. A small increase in cold pressure could help manage the thermal issues better.\",\"recommended_changes\":[{\"component\":\"rear_tire_pressure\",\"direction\":\"increase\",\"magnitude\":\"0.5 psi\",\"reason\":\"To help manage overheating and improve grip as the tire is worn.\"}],\"tradeoffs\":[\"Increasing tire pressure may slightly reduce overall grip but can help prevent overheating.\"],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/tires/pressure-basics.md\",\"snippet\":\"Rear spinning on exit with low hot pressure: tire is overheating; add 0.5-1.0 psi or let it cool between sessions.\"},{\"source\":\"docs/knowledge-base/tires/compound-and-wear.md\",\"snippet\":\"A worn tire is heat-sensitive and should be pressure-managed carefully.\"}],\"prediction\":{\"expected_effect\":\"Improved grip and reduced overheating of the rear tire during the session.\",\"day_trend\":\"Watch for tire performance as temperatures are high; ensure pressures are monitored closely.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner exit behavior\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2277,
+          "completion_tokens": 349,
+          "total_tokens": 2626,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "975ac565b4be99a7f56a62c02294d405": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:17.968Z",
+      "request_summary": "<user_data> Question: The inside edge of my front tires is hottest and wearing fastest. What camber change should I make",
+      "response": {
+        "id": "chatcmpl-ELkhE8OfmhMWyjReDjavMon9yKpa7",
+        "object": "chat.completion",
+        "created": 1788853096,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"The inside edge of your front tires is overheating and wearing faster, indicating too much negative camber. A small adjustment to reduce the front camber by 0.5 degrees should help distribute tire wear more evenly.\",\"recommended_changes\":[{\"component\":\"front_camber\",\"direction\":\"increase\",\"magnitude\":\"0.5 degrees\",\"reason\":\"To reduce excessive wear on the inside edge of the front tires.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/alignment/camber-basics.md\",\"snippet\":\"A hot inside edge with a cool outside edge suggests too much negative camber.\"}],\"prediction\":{\"expected_effect\":\"More even tire wear and improved temperature distribution across the tread.\",\"day_trend\":\"The day is warm, and tire pressures may increase; monitor hot pressures closely.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"cornering performance\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2310,
+          "completion_tokens": 261,
+          "total_tokens": 2571,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "aad898384aa8b8d22bc776f148ff1e72": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:15.797Z",
+      "request_summary": "<user_data> Question: My left fork seal is leaking oil down the leg. Can I keep riding if I stiffen the compression to c",
+      "response": {
+        "id": "chatcmpl-ELkhCcEDQZLAzOk23jWqvI3Yq9VpV",
+        "object": "chat.completion",
+        "created": 1788853094,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"Given the leaking fork seal, it's not advisable to continue riding as it poses a safety risk. Stiffening the compression may not effectively compensate for the loss of damping due to the leak and could lead to further handling issues. It's best to address the mechanical fault before making any adjustments to the suspension settings.\",\"recommended_changes\":[],\"tradeoffs\":[],\"confidence\":\"high\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[],\"prediction\":{\"expected_effect\":\"Handling may worsen due to the leaking fork seal, leading to potential safety issues.\",\"day_trend\":\"No environmental data is available to assess temperature effects on tire performance.\",\"watch_items\":[\"Monitor the fork seal for further leakage\",\"Check front tire wear and pressure after each session\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":\"Riding with a leaking fork seal is unsafe and could lead to further mechanical issues. It's essential to repair the seal before making any suspension adjustments.\"}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2340,
+          "completion_tokens": 246,
+          "total_tokens": 2586,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "b3f211a22dad8db449c54ab610474953": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:50.274Z",
+      "request_summary": "<user_data> Question: The bike is stable but lazy changing direction through the esses. What geometry change should I tr",
+      "response": {
+        "id": "chatcmpl-ELkhkcGSoSLuFcBtzGbxh9x3HElqi",
+        "object": "chat.completion",
+        "created": 1788853128,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"To improve your bike's turn-in response, I recommend lowering the front fork height by 2 mm. This change should help quicken the steering and address the lazy feeling when changing direction through the esses.\",\"recommended_changes\":[{\"component\":\"fork_height\",\"direction\":\"lower\",\"magnitude\":\"2 mm\",\"reason\":\"Bike feels lazy on turn-in but stable at speed; lowering the front will quicken steering.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/geometry/ride-height-and-balance.md\",\"snippet\":\"Bike feels lazy on turn-in but stable at speed: geometry is biased too stable. Try dropping the front 2 mm or raising the rear.\"}],\"prediction\":{\"expected_effect\":\"Improved turn-in response and quicker direction changes through the esses.\",\"day_trend\":\"No environmental data logged; monitor tire pressures and performance as the day progresses.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase performance\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2262,
+          "completion_tokens": 277,
+          "total_tokens": 2539,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "b4dd17505cd5cce3625c9f0f0d453083": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:39.584Z",
+      "request_summary": "<user_data> Question: Would removing the front brake caliper and disc cut enough unsprung weight to fix my heavy turn-in",
+      "response": {
+        "id": "chatcmpl-ELkhZOpwvoRUjU8vsXmYtgKX8avr5",
+        "object": "chat.completion",
+        "created": 1788853117,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"To improve your turn-in feel, consider lowering the front ride height by 2 mm. This adjustment can help quicken the steering response without compromising stability too much. It's a small, reversible change that aligns with the symptoms you're experiencing.\",\"recommended_changes\":[{\"component\":\"fork_height\",\"direction\":\"lower\",\"magnitude\":\"2 mm\",\"reason\":\"Lowering the front can help quicken the steering response, addressing the heavy turn-in feel.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/geometry/ride-height-and-balance.md\",\"snippet\":\"Bike feels lazy on turn-in but stable at speed: geometry is biased too stable. Try dropping the front 2 mm or raising the rear.\"}],\"prediction\":{\"expected_effect\":\"Improved turn-in response and reduced heavy feel at the front end.\",\"day_trend\":\"Monitor for any changes in track temperature and adjust tire pressures accordingly.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase during turn-in\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2273,
+          "completion_tokens": 284,
+          "total_tokens": 2557,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "bfb5ef2b02701b5873dc2aa18d64fa46": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:45.230Z",
+      "request_summary": "<user_data> Question: It is properly wet with standing water and I have no grip. What setup change helps most? Reported ",
+      "response": {
+        "id": "chatcmpl-ELkhfWWHhDPdKeikPgvgMEpHMcRei",
+        "object": "chat.completion",
+        "created": 1788853123,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"In wet conditions, it's crucial to adjust your setup to improve grip. I recommend softening the front compression by 1 click to help the tires conform better to the wet surface, which may enhance mechanical grip. This change is small and reversible, allowing you to assess its impact effectively.\",\"recommended_changes\":[{\"component\":\"front_compression\",\"direction\":\"soften\",\"magnitude\":\"1 click\",\"reason\":\"To help the tires conform to the wet surface and improve grip.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/conditions/wet-setup.md\",\"snippet\":\"Soften compression slightly (1-2 clicks) to help the tires conform to the wet surface and find mechanical grip.\"}],\"prediction\":{\"expected_effect\":\"Improved grip and feel during turn-in due to better tire contact with the wet surface.\",\"day_trend\":\"Conditions remain wet; monitor tire pressures and performance as the track may change.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase performance\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2270,
+          "completion_tokens": 287,
+          "total_tokens": 2557,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "c353733ac208adc081f623d9bc1191ca": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:52.453Z",
+      "request_summary": "<user_data> Question: The rear feels unstable under heavy braking with almost no rear toe. What alignment change should ",
+      "response": {
+        "id": "chatcmpl-ELkhmrFcI49ojTFoXz2xTyP7ofu0f",
+        "object": "chat.completion",
+        "created": 1788853130,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"To improve rear stability under heavy braking, I recommend increasing the rear toe-in by 1 mm. This should help reduce oversteer and enhance stability during braking.\",\"recommended_changes\":[{\"component\":\"rear_toe\",\"direction\":\"toe-in\",\"magnitude\":\"1 mm\",\"reason\":\"Increasing rear toe-in will provide more stability under braking, reducing oversteer.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/alignment/toe-basics.md\",\"snippet\":\"Rear toe-in (0.5-1.5 mm per side, i.e. 1-3 mm total): stable under throttle and braking, reduces oversteer.\"}],\"prediction\":{\"expected_effect\":\"Improved rear stability under braking, reducing oversteer during entry.\",\"day_trend\":\"No environment snapshot is logged for this session; use hot pressures and rider feel as the main signal.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase evaluation\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2357,
+          "completion_tokens": 279,
+          "total_tokens": 2636,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "c87b0702c020b2b9c31f34480628a425": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:59.230Z",
+      "request_summary": "<user_data> Question: Cold first session on new tires with no warmers and no grip for four laps. How should I approach i",
+      "response": {
+        "id": "chatcmpl-ELkhtYgl65iv3Xrf7Wa0sVM57ukVa",
+        "object": "chat.completion",
+        "created": 1788853137,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"Given the cold conditions and new tires, it's crucial to approach the next session with a focus on gradually building grip. Consider lowering the cold tire pressures slightly to help the tires warm up more effectively. This can improve grip as the session progresses.\",\"recommended_changes\":[{\"component\":\"front_tire_pressure\",\"direction\":\"lower\",\"magnitude\":\"1 psi\",\"reason\":\"Lowering the front tire pressure can help increase the contact patch and improve grip as the tires warm up.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/conditions/cold-track.md\",\"snippet\":\"Lowering cold pressures 1-2 psi brings hot pressures back toward target.\"}],\"prediction\":{\"expected_effect\":\"Improved grip as the tires warm up more effectively during the session.\",\"day_trend\":\"Expect continued cold conditions; monitor how the tires perform as they heat up.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase performance\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2259,
+          "completion_tokens": 273,
+          "total_tokens": 2532,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "d0254d76fd8751b0195c43472bd7750a": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:09.150Z",
+      "request_summary": "<user_data> Question: The car is stable in slow corners but the rear goes loose at high speed. What should I change? Rep",
+      "response": {
+        "id": "chatcmpl-ELkh5es3umAXIWKF8DkW2FYV3MAQQ",
+        "object": "chat.completion",
+        "created": 1788853087,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"The rear of your Cayman is likely experiencing instability at high speeds due to insufficient rear downforce. To address this, I recommend increasing the rear wing angle by 1 position to enhance rear stability. This change should help maintain better control during high-speed sections of the track.\",\"recommended_changes\":[{\"component\":\"rear_wing_angle\",\"direction\":\"increase\",\"magnitude\":\"1 position\",\"reason\":\"To improve rear stability at high speeds.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/aero/downforce-basics.md\",\"snippet\":\"Stable through slow corners, loose at speed: rear aero too low. Add wing angle or rake.\"}],\"prediction\":{\"expected_effect\":\"Improved rear stability during high-speed sections of the track.\",\"day_trend\":\"Track conditions may warm up, affecting tire performance; monitor hot pressures closely.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"rear stability in fast corners\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2319,
+          "completion_tokens": 271,
+          "total_tokens": 2590,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "e7d6a7fd46a9bd06f518fd7ed7169991": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:22.905Z",
+      "request_summary": "<user_data> Question: What setup change should I make for the next session? Reported symptoms: (none reported) Change in",
+      "response": {
+        "id": "chatcmpl-ELkhJbg0kuo0FbQZWxKDyCpoZuCB1",
+        "object": "chat.completion",
+        "created": 1788853101,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"No specific symptoms or change intent were reported, and there is insufficient session data to recommend a setup change. Focus on gathering more feedback or data in the next session to identify areas for improvement.\",\"recommended_changes\":[],\"tradeoffs\":[],\"confidence\":\"low\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[],\"prediction\":{\"expected_effect\":\"Improved clarity on vehicle behavior and setup needs based on rider feedback and data collection.\",\"day_trend\":\"Missing environment data may affect tire performance; monitor closely.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase evaluations\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":false,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":\"Insufficient data to recommend a setup change.\"}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2170,
+          "completion_tokens": 195,
+          "total_tokens": 2365,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "efe33b5a1243dfbc211e2c8f52289a6c": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:06.440Z",
+      "request_summary": "<user_data> Question: The rear wallows and never settles through long corners. What should I adjust? Reported symptoms: ",
+      "response": {
+        "id": "chatcmpl-ELkh2g1YprpSsJtROkNe1wR6tbvjG",
+        "object": "chat.completion",
+        "created": 1788853084,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"To address the rear wallowing, I recommend softening the rear compression damping by 1 click. This should help the rear settle better through long corners by allowing it to conform more effectively to the track surface.\",\"recommended_changes\":[{\"component\":\"rear_compression\",\"direction\":\"soften\",\"magnitude\":\"1 click\",\"reason\":\"To help the rear settle better through long corners.\"}],\"tradeoffs\":[],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/suspension/damping-basics.md\",\"snippet\":\"Softer rear compression lets the rear squat more on throttle (more traction, less stability).\"}],\"prediction\":{\"expected_effect\":\"Improved stability and settling of the rear through long corners.\",\"day_trend\":\"Monitor for any changes in track temperature or conditions that may affect grip.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase behavior\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2253,
+          "completion_tokens": 258,
+          "total_tokens": 2511,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "f62f7e404a0cc23cc12bddd8733e2869": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:20.714Z",
+      "request_summary": "<user_data> Question: I keep dropping out of the powerband exiting a second-gear corner. What gearing change should I tr",
+      "response": {
+        "id": "chatcmpl-ELkhGTmsuZ8mYuPCm6YjlcKpDETN2",
+        "object": "chat.completion",
+        "created": 1788853098,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"To address the issue of dropping out of the powerband exiting the second-gear corner, I recommend shortening the gearing. This will help keep the engine RPM within the powerband during acceleration out of the corner.\",\"recommended_changes\":[{\"component\":\"rear_sprocket\",\"direction\":\"decrease\",\"magnitude\":\"1 tooth\",\"reason\":\"Shortening the gearing will help maintain RPM in the powerband exiting the corner.\"}],\"tradeoffs\":[],\"confidence\":\"high\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/drivetrain/gearing-basics.md\",\"snippet\":\"Second gear corner that drops RPM below the powerband: shorten gearing.\"}],\"prediction\":{\"expected_effect\":\"Improved acceleration out of the second-gear corner as the engine stays within the powerband.\",\"day_trend\":\"Monitor tire pressures and performance as temperatures may affect grip.\",\"watch_items\":[\"hot tire pressures\",\"tire wear\",\"corner exit speed\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2220,
+          "completion_tokens": 265,
+          "total_tokens": 2485,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "fb58a703aa6c0b18a361ae90e5012792": {
+      "status": 200,
+      "recorded_at": "2026-09-08T07:38:03.977Z",
+      "request_summary": "<user_data> Question: Turn-in is lazy on entry with zero front toe. What alignment change should I try? Reported symptom",
+      "response": {
+        "id": "chatcmpl-ELkgzvb866jy0XtcXcTxmo5nZM9a0",
+        "object": "chat.completion",
+        "created": 1788853081,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"To improve your turn-in response, I recommend adjusting the front toe to a slight toe-out. This should help sharpen the turn-in feel and address the lazy entry you are experiencing.\",\"recommended_changes\":[{\"component\":\"front_toe\",\"direction\":\"toe-out\",\"magnitude\":\"0.5 mm\",\"reason\":\"Increasing front toe-out will enhance turn-in response and make the car feel more eager to bite into corners.\"}],\"tradeoffs\":[\"Slightly less stability on straights due to increased toe-out.\"],\"confidence\":\"high\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/alignment/toe-basics.md\",\"snippet\":\"Lazy turn-in with front toe at zero: try 0.5-1.0 mm per side of toe-out.\"},{\"source\":\"docs/knowledge-base/alignment/toe-basics.md\",\"snippet\":\"Front toe-out (0.5-1.5 mm per side, i.e. 1-3 mm total): sharper turn-in, more responsive feel, slightly less stability on straights, slightly more tire scrub.\"}],\"prediction\":{\"expected_effect\":\"Improved turn-in response and sharper handling in corners.\",\"day_trend\":\"Watch for tire pressures as they may change with track conditions; no prior environment data available.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase evaluation\"]},\"personal_evidence\":[],\"data_used\":{\"manual\":true,\"weather\":true,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2359,
+          "completion_tokens": 349,
+          "total_tokens": 2708,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    }
+  }
+}
