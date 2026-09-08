@@ -20,6 +20,7 @@ close the gap.
 | `/api/health` | Is Postgres reachable, and does the RAG index load *in this bundle*? | Yes, on the first deploy |
 | `/api/monitoring/ai-health` | Has anything failed in the last hour? Error rate, p95 latency | Yes, on the first rider call |
 | `.github/workflows/monitoring.yml` | Runs both every 15 minutes and fails the run when either says no | This is what makes them alerts |
+| Sentry | The stack trace behind an individual failure | Yes - but only because handled errors are reported explicitly, see below |
 
 ### `/api/health`
 
@@ -66,6 +67,52 @@ Refusals, rate limiting and duplicate suppression are *not* failures. Each is a
 guard working, and counting them would make the alert fire hardest when the
 product is behaving best.
 
+### Sentry
+
+`@sentry/nextjs`, initialised from `lib/sentry-options.ts` in three places:
+`sentry.server.config.ts`, `sentry.edge.config.ts` and
+`instrumentation-client.ts`. With no `NEXT_PUBLIC_SENTRY_DSN` nothing is
+initialised at all, so CI, `next dev` and anyone's checkout run with error
+tracking simply off rather than with an SDK reaching for a project that does not
+exist.
+
+**Next's `onRequestError` hook only sees *unhandled* errors, and almost nothing
+in this app is unhandled.** Both AI routes catch, write an `ai_requests` audit
+row and return a shaped JSON 500; the health checks catch so the probe can name
+which one broke. Installing Sentry and stopping there would have left R3 exactly
+as invisible as it was without it, because `MissingKnowledgeIndexError` was
+caught on the way to that 500. `reportError` in
+`lib/monitoring/report-error.ts` is what closes that, and it is the call to add
+to any new catch block that swallows a failure. It logs first - `console.error`
+is the only channel that works with no DSN, and it is what a log drain indexes.
+
+Two deliberate settings:
+
+- **No tracing.** `bundleSizeOptimizations.excludeTracing` in `next.config.ts`
+  strips it from the bundle, which is the difference between +82 kB and +33 kB
+  of shared JS on a mobile-first app. The performance question tracing would
+  answer - how slow is the AI path - is already answered from `ai_requests` by
+  `/api/monitoring/ai-health`.
+- **No session replay and `sendDefaultPii: false`.** Replay records what a rider
+  types, and the session form carries the free text the prompt pipeline already
+  treats as untrusted (`lib/rag/prompt.ts`).
+
+Wiring it up: create a project at sentry.io (free tier), copy the DSN, and set
+`NEXT_PUBLIC_SENTRY_DSN` in Vercel for Production and Preview. Source maps are
+optional and separate: `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` and `SENTRY_PROJECT` in
+the Vercel build environment. With no token the build skips the upload and the
+release, silently and on purpose.
+
+Then set an alert rule in Sentry - "a new issue is created" is the one that
+matters, and it is on by default.
+
+### Log drain
+
+Not code. Vercel → project → Settings → Log Drains → add Better Stack or Axiom
+(both free at this volume). It makes the ~50 `console.error` calls in `app/`, `lib/` and `components/` searchable and
+keeps them past Vercel's own short retention. It is the fourth line of defence,
+not one of the three that answer "is it broken" - those are above.
+
 ## Where an alert goes
 
 Three channels, in order of how little setup they need:
@@ -95,6 +142,9 @@ Three channels, in order of how little setup they need:
    output. Until steps 2-3 are done it exits clean with a warning rather than
    failing every 15 minutes, because an alert channel that cries wolf from the
    day it merges is one nobody reads by the time it matters.
+6. Separately, set `NEXT_PUBLIC_SENTRY_DSN` (see Sentry above) and add the log
+   drain. Neither is needed for the probe to work; both make a failure it
+   reports faster to diagnose.
 
 Verify by hand:
 

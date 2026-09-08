@@ -1,5 +1,6 @@
 import type { NextConfig } from 'next';
 import withBundleAnalyzer from '@next/bundle-analyzer';
+import { withSentryConfig } from '@sentry/nextjs/config';
 import { supabaseStorageRemotePatterns } from './lib/supabase-storage-remote-patterns';
 
 const nextConfig: NextConfig = {
@@ -27,4 +28,57 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withBundleAnalyzer({ enabled: process.env.ANALYZE === 'true' })(nextConfig);
+/**
+ * Everything the build plugin does beyond rewriting the bundle needs a Sentry
+ * auth token: uploading source maps, and creating a release to attach them to.
+ * CI and every local checkout have none, and asking anyway prints a warning on
+ * every build - which is how a log stops being read.
+ */
+const sentryUploadEnabled = Boolean(process.env.SENTRY_AUTH_TOKEN);
+
+/**
+ * Sentry wraps the config in every environment, including CI and a local
+ * checkout with no credentials, so the build that ships is the build that was
+ * tested. Without `NEXT_PUBLIC_SENTRY_DSN` the SDK is never initialised at all
+ * (lib/sentry-options.ts), so this costs an unconfigured deployment nothing but
+ * the bundle.
+ */
+export default withSentryConfig(
+  withBundleAnalyzer({ enabled: process.env.ANALYZE === 'true' })(nextConfig),
+  {
+    org: process.env.SENTRY_ORG,
+    project: process.env.SENTRY_PROJECT,
+    // Loud only when there is something to be loud about: with a token, a
+    // failed source-map upload matters and the log is the only place it shows.
+    // Without one the plugin otherwise warns on every build about a release it
+    // was never asked to create.
+    silent: !sentryUploadEnabled,
+    sourcemaps: { disable: !sentryUploadEnabled },
+    release: { create: sentryUploadEnabled },
+    // Sentry's build plugin phones home about the build by default. There is no
+    // Sentry project to correlate it with until a DSN is set, so it is off.
+    telemetry: false,
+    // The client SDK lands in the bundle every rider downloads, so the parts
+    // this project does not use are excluded. Session Replay is never
+    // initialised (lib/sentry-options.ts explains why), and without these its
+    // shadow-DOM, iframe and worker support ships anyway.
+    bundleSizeOptimizations: {
+      excludeDebugStatements: true,
+      // Tracing is excluded rather than sampled. This is a mobile-first app and
+      // the client SDK is downloaded by every rider on track-side 4G; the
+      // performance question it would answer - how slow is the AI path - is
+      // already answered from `ai_requests` by /api/monitoring/ai-health, on a
+      // schema this project owns. Errors come from Sentry, latency from the
+      // audit table.
+      excludeTracing: true,
+      excludeReplayShadowDom: true,
+      excludeReplayIframe: true,
+      excludeReplayWorker: true,
+    },
+    webpack: {
+      // The cron monitors this would create belong to Vercel Cron, which this
+      // project does not use - the schedule is .github/workflows/monitoring.yml.
+      automaticVercelMonitors: false,
+    },
+  },
+);

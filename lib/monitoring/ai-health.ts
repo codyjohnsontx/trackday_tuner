@@ -13,9 +13,11 @@
  * threshold needs a deploy anyway.
  */
 
-/** How far back a run looks. The scheduled probe runs every 15 minutes, so a
+/**
+ * How far back a run looks. The scheduled probe runs every 15 minutes, so a
  * 60-minute window means a short outage is still reported four times before it
- * ages out. */
+ * ages out.
+ */
 export const AI_HEALTH_WINDOW_MINUTES = 60;
 
 /**

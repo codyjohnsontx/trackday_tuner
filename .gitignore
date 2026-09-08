@@ -23,5 +23,10 @@ tsconfig.tsbuildinfo
 # editing docs/knowledge-base/; `npm run rag:check` runs on prebuild and fails the
 # build if it is missing or stale.
 
+# Sentry CLI credentials. `SENTRY_AUTH_TOKEN` is the only Sentry value that is
+# a secret; the DSN is public by design and lives in .env.example.
+.sentryclirc
+.env.sentry-build-plugin
+
 # Cursor / local agent settings (optional)
 .claude/

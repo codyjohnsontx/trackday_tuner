@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getMonitoringCronSecret } from '@/lib/env.server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { deliverAlert } from '@/lib/monitoring/alert';
+import { reportError } from '@/lib/monitoring/report-error';
 import {
   AI_HEALTH_WINDOW_MINUTES,
   describeAiHealth,
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     // Fail closed. Without the secret there is no way to tell the scheduler
     // from anyone else, and these numbers are not public.
-    console.error('[monitoring] MONITORING_CRON_SECRET is not configured', err);
+    reportError('monitoring', err, { reason: 'MONITORING_CRON_SECRET is not configured' });
     return NextResponse.json({ error: 'Monitoring is not configured.' }, { status: 503 });
   }
 
@@ -83,7 +84,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     // The read that answers "is anything broken" being broken is itself an
     // alert, and the caller has to see it as one.
-    console.error('[monitoring] ai_requests read failed', err);
+    reportError('monitoring', err, { reason: 'ai_requests read failed' });
     const text = 'Trackday Tuner AI alert - the monitoring query itself failed.';
     const notified = await deliverAlert(text, { error: 'ai_requests_read_failed' });
     return NextResponse.json(

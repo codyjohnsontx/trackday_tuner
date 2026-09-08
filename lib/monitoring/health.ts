@@ -21,6 +21,7 @@
  * what to go and fix.
  */
 import { createAdminClient } from '@/lib/supabase/admin';
+import { reportError } from '@/lib/monitoring/report-error';
 import { isKnowledgeIndexLoaded, loadKnowledgeIndex } from '@/lib/rag/retriever';
 
 export type HealthCheckStatus = 'ok' | 'fail';
@@ -91,9 +92,10 @@ async function timed(
     if (detail !== undefined) check.detail = detail;
     return check;
   } catch (err) {
-    // The only place the real error survives. Sentry picks this up from the
-    // console breadcrumb; the response body deliberately does not carry it.
-    console.error(`[health] check "${name}" failed`, err);
+    // The only place the real error survives - the response body deliberately
+    // does not carry it. This is a caught error, so it reaches Sentry only
+    // because `reportError` sends it: `onRequestError` sees unhandled ones.
+    reportError('health', err, { check: name });
     return { name, status: 'fail', duration_ms: Date.now() - startedAt, detail: errorName(err) };
   }
 }

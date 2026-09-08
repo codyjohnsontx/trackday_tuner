@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { getRealUser } from '@/lib/auth';
 import { assertNotDemoRoute } from '@/lib/demo/mode';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { reportError } from '@/lib/monitoring/report-error';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import {
@@ -572,6 +573,11 @@ export async function POST(request: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error.';
     const isRetriable = err instanceof UpstreamTimeoutError;
+    // The R3 outage (053c545) ran through this catch on every call for three
+    // months and wrote nothing anywhere but the audit row. A handled error
+    // never reaches Next's `onRequestError`, so without this Sentry would not
+    // see it either - see lib/monitoring/report-error.ts.
+    reportError(LOG_TAG, err, { requestId, sessionId: session.id, retriable: isRetriable });
     await updateRequestLog({
       logTag: LOG_TAG,
       requestId,
