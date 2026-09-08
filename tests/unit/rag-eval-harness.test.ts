@@ -222,16 +222,30 @@ describe('retrieval metrics', () => {
     expect(result.recall).toBe(0.5);
   });
 
-  it('ignores anything past k', () => {
+  it('scores the whole list production retrieved rather than a k of its own', () => {
+    // The harness declares no k. The list handed back IS the top-k, so a
+    // pipeline that retrieved five is measured over five - it cannot silently
+    // score the first four and still call the result recall@4.
     const result = scoreRetrieval(['c.md', 'd.md', 'e.md', 'f.md', 'a.md'], expected);
-    expect(result.recall).toBe(0);
-    expect(result.reciprocalRank).toBe(0);
+    expect(result.recall).toBe(0.5);
+    expect(result.reciprocalRank).toBeCloseTo(1 / 5, 10);
+    expect(result.retrieved).toBe(5);
+  });
+
+  it('reports the k it observed, over every case the retriever ran for', () => {
+    const agg = aggregateRetrieval([
+      scoreRetrieval(['a.md', 'b.md', 'c.md', 'd.md'], expected),
+      scoreRetrieval(['a.md', 'b.md'], expected),
+      scoreRetrieval(null, expected),
+    ]);
+    expect(agg.k).toBe(4);
+    expect(agg.cases).toBe(2);
   });
 
   it('marks an unlabelled case as not applicable rather than scoring it zero', () => {
     const result = scoreRetrieval(['a.md'], []);
     expect(result.applicable).toBe(false);
-    expect(aggregateRetrieval([result])).toEqual({ cases: 0, recall: null, mrr: null });
+    expect(aggregateRetrieval([result])).toEqual({ cases: 0, recall: null, mrr: null, k: 1 });
   });
 
   it('does not score a labelled case whose retriever never ran', () => {
@@ -240,6 +254,8 @@ describe('retrieval metrics', () => {
     const result = scoreRetrieval(null, expected);
     expect(result.applicable).toBe(false);
     expect(result.recall).toBeNull();
+    expect(result.retrieved).toBeNull();
+    expect(aggregateRetrieval([result])).toEqual({ cases: 0, recall: null, mrr: null, k: null });
   });
 
   it('still scores a retriever that ran and returned nothing', () => {
@@ -356,7 +372,16 @@ describe('reaching the human\'s answer', () => {
   it('keeps a different component a miss', () => {
     expect(component('front_and_rear_cold_pressure', 'front tire pressure')).toBe(false);
     expect(component('rear_tire_pressure', 'front_tire_pressure')).toBe(false);
+  });
+
+  it('counts a model that answered with no change as a miss, not a skip', () => {
+    // The caller withholds the label when the model was never asked. Reaching
+    // here means it WAS asked, so recommending nothing against a label is a
+    // wrong answer rather than an unscoreable one.
     expect(component(undefined, 'front_tire_pressure')).toBe(false);
+    expect(direction(undefined, 'decrease', 'front_tire_pressure')).toBe(false);
+    expect(component('', 'front_tire_pressure')).toBe(false);
+    expect(direction('', 'decrease', 'front_tire_pressure')).toBe(false);
   });
 
   it('counts two accepted spellings of one instruction as a match', () => {

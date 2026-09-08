@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "recorded_at": "2026-09-08T08:27:18.516Z",
+  "recorded_at": "2026-09-08T08:43:44.032Z",
   "mode": "offline",
   "model": "gpt-4o-mini",
   "embedding_model": "text-embedding-3-small",
@@ -8,11 +8,17 @@
   "cases": 32,
   "metrics": {
     "rubric_pass_rate": 0.84375,
-    "recall_at_4": 0.8076923076923077,
+    "recall_at_k": 0.8076923076923077,
     "mrr": 0.7596153846153846,
     "refusal_accuracy": 0.84375,
-    "component_accuracy": 0.7857142857142857,
-    "direction_accuracy": 0.5
+    "component_accuracy": 0.8461538461538461,
+    "direction_accuracy": 0.5384615384615384
+  },
+  "coverage": {
+    "retrieval_k": 4,
+    "retrieval_cases": 26,
+    "component_cases": 13,
+    "direction_cases": 13
   },
   "per_case": {
     "mc-front-push-pressure": {

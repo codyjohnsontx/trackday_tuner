@@ -26,7 +26,7 @@ import {
   matchesExpectedDirection,
   scoreAdviceResponse,
 } from './scoring.mjs';
-import { aggregateRetrieval, RETRIEVAL_K, scoreRetrieval } from './retrieval.mjs';
+import { aggregateRetrieval, scoreRetrieval } from './retrieval.mjs';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const GOLDEN_PATH = path.join(REPO_ROOT, 'tests', 'fixtures', 'rag-eval', 'golden-cases.json');
@@ -335,7 +335,14 @@ export async function main(argv) {
           tags: testCase.tags ?? [],
           error: err?.message ?? String(err),
           scored: null,
-          retrieval: { applicable: false, recall: null, reciprocalRank: null, hits: [], missed: [] },
+          retrieval: {
+            applicable: false,
+            recall: null,
+            reciprocalRank: null,
+            hits: [],
+            missed: [],
+            retrieved: null,
+          },
         });
         continue;
       }
@@ -350,6 +357,13 @@ export async function main(argv) {
       });
 
       const retrieval = scoreRetrieval(outcome.retrievedSources, testCase.expected_sources ?? []);
+      // Whether the MODEL reached the human's answer is only a question about a
+      // case the model was asked. A classifier refusal returns before
+      // `generateTuningAdvice`, so there is no answer to compare and the case is
+      // not applicable - the same distinction `scoreRetrieval` draws one line
+      // above. A model that WAS asked and recommended nothing is a miss, not a
+      // skip.
+      const modelAnswered = outcome.stage === 'model';
       const primary = outcome.response.recommended_changes?.[0] ?? null;
 
       results.push({
@@ -361,17 +375,17 @@ export async function main(argv) {
         scored,
         retrieval,
         confidence: outcome.response.confidence,
-        componentMatch: matchesExpectedComponent(
-          primary?.component,
-          testCase.expected_component,
-          vocabulary,
-        ),
-        directionMatch: matchesExpectedDirection(
-          primary?.direction,
-          testCase.expected_direction,
-          testCase.expected_component ?? primary?.component,
-          vocabulary,
-        ),
+        componentMatch: modelAnswered
+          ? matchesExpectedComponent(primary?.component, testCase.expected_component, vocabulary)
+          : null,
+        directionMatch: modelAnswered
+          ? matchesExpectedDirection(
+              primary?.direction,
+              testCase.expected_direction,
+              testCase.expected_component ?? primary?.component,
+              vocabulary,
+            )
+          : null,
         refusalMatch: (testCase.should_refuse === true) === scored.refused,
       });
     }
@@ -397,8 +411,44 @@ async function report(ctx) {
 
   const ID_WIDTH = Math.max(20, ...results.map((r) => r.id.length));
 
+  const scoredResults = results.filter((r) => !r.error);
+  const retrievalAgg = aggregateRetrieval(scoredResults.map((r) => r.retrieval));
+  const componentCases = scoredResults.filter((r) => r.componentMatch !== null);
+  const directionCases = scoredResults.filter((r) => r.directionMatch !== null);
+  const metrics = {
+    rubric_pass_rate: ratio(scoredResults.filter((r) => r.scored.passed).length, scoredResults.length),
+    recall_at_k: retrievalAgg.recall,
+    mrr: retrievalAgg.mrr,
+    refusal_accuracy: ratio(scoredResults.filter((r) => r.refusalMatch).length, scoredResults.length),
+    component_accuracy: ratio(
+      componentCases.filter((r) => r.componentMatch === true).length,
+      componentCases.length,
+    ),
+    direction_accuracy: ratio(
+      directionCases.filter((r) => r.directionMatch === true).length,
+      directionCases.length,
+    ),
+  };
+  /**
+   * How much was measured, beside what was measured. Every rate above has a
+   * variable denominator - a case leaves the retrieval average when a
+   * classifier refuses it before anything is embedded, and leaves the accuracy
+   * averages when the model is never asked - so a rate can rise because
+   * coverage fell rather than because anything improved. `retrieval_k` is the
+   * same property for the metric's shape rather than its population. All of it
+   * goes into the baseline, because a gated number whose denominator is not
+   * recorded cannot be compared against later.
+   */
+  const coverage = {
+    retrieval_k: retrievalAgg.k,
+    retrieval_cases: retrievalAgg.cases,
+    component_cases: componentCases.length,
+    direction_cases: directionCases.length,
+  };
+  const kLabel = coverage.retrieval_k ?? 'k';
+
   console.log(`\n[rag:eval] ${results.length} golden cases, ${mode} mode\n`);
-  const header = `${'id'.padEnd(ID_WIDTH)} act safe gnd trn pol  rec@${RETRIEVAL_K}  rr   conf    result`;
+  const header = `${'id'.padEnd(ID_WIDTH)} act safe gnd trn pol  rec@${kLabel}  rr   conf    result`;
   console.log(header);
   console.log('-'.repeat(header.length));
 
@@ -424,30 +474,13 @@ async function report(ctx) {
   }
   console.log('-'.repeat(header.length));
 
-  const scoredResults = results.filter((r) => !r.error);
-  const retrievalAgg = aggregateRetrieval(scoredResults.map((r) => r.retrieval));
-  const metrics = {
-    rubric_pass_rate: ratio(scoredResults.filter((r) => r.scored.passed).length, scoredResults.length),
-    recall_at_4: retrievalAgg.recall,
-    mrr: retrievalAgg.mrr,
-    refusal_accuracy: ratio(scoredResults.filter((r) => r.refusalMatch).length, scoredResults.length),
-    component_accuracy: ratio(
-      scoredResults.filter((r) => r.componentMatch === true).length,
-      scoredResults.filter((r) => r.componentMatch !== null).length,
-    ),
-    direction_accuracy: ratio(
-      scoredResults.filter((r) => r.directionMatch === true).length,
-      scoredResults.filter((r) => r.directionMatch !== null).length,
-    ),
-  };
-
   console.log('\nAggregate');
   console.log(`  rubric pass rate     ${fmt(metrics.rubric_pass_rate)}  (spec target ${RUBRIC_TARGET.toFixed(2)}, reported not gated)`);
-  console.log(`  recall@${RETRIEVAL_K}             ${fmt(metrics.recall_at_4)}  over ${retrievalAgg.cases} labelled cases`);
+  console.log(`  recall@${kLabel}             ${fmt(metrics.recall_at_k)}  over ${coverage.retrieval_cases} labelled cases`);
   console.log(`  MRR                  ${fmt(metrics.mrr)}`);
   console.log(`  refusal accuracy     ${fmt(metrics.refusal_accuracy)}`);
-  console.log(`  component accuracy   ${fmt(metrics.component_accuracy)}`);
-  console.log(`  direction accuracy   ${fmt(metrics.direction_accuracy)}`);
+  console.log(`  component accuracy   ${fmt(metrics.component_accuracy)}  over ${coverage.component_cases} answered cases`);
+  console.log(`  direction accuracy   ${fmt(metrics.direction_accuracy)}  over ${coverage.direction_cases} answered cases`);
 
   let baseline = null;
   try {
@@ -464,19 +497,50 @@ async function report(ctx) {
   // one case wobbling across a re-record would turn CI red on sampling noise -
   // the same variance for which gating `--live` was rejected below. They are
   // still diffed here and still written to the baseline.
-  for (const [key, label, gated] of [
-    ['rubric_pass_rate', 'rubric pass rate', true],
-    ['recall_at_4', `recall@${RETRIEVAL_K}`, true],
-    ['mrr', 'MRR', true],
-    ['refusal_accuracy', 'refusal accuracy', true],
-    ['component_accuracy', 'component accuracy', false],
-    ['direction_accuracy', 'direction accuracy', false],
+  const previousCoverage = baseline?.coverage ?? null;
+  for (const [key, label, gated, coverageKey] of [
+    ['rubric_pass_rate', 'rubric pass rate', true, null],
+    ['recall_at_k', `recall@${kLabel}`, true, 'retrieval_cases'],
+    ['mrr', 'MRR', true, 'retrieval_cases'],
+    ['refusal_accuracy', 'refusal accuracy', true, null],
+    ['component_accuracy', 'component accuracy', false, 'component_cases'],
+    ['direction_accuracy', 'direction accuracy', false, 'direction_cases'],
   ]) {
     const previous = baseline?.metrics?.[key] ?? null;
-    console.log(`${diffLine(label, metrics[key], previous)}${gated ? '' : '  reported, not gated'}`);
+    const count = coverageKey == null ? null : coverage[coverageKey];
+    const previousCount = coverageKey == null ? null : (previousCoverage?.[coverageKey] ?? null);
+    const over =
+      count == null
+        ? ''
+        : previousCount == null || previousCount === count
+          ? `  over ${count} cases`
+          : `  over ${count} cases, was ${previousCount}`;
+    console.log(`${diffLine(label, metrics[key], previous)}${over}${gated ? '' : '  reported, not gated'}`);
     if (gated && previous != null && metrics[key] != null && metrics[key] < previous - 1e-9) {
       regressions.push(`${label} ${previous.toFixed(2)} -> ${metrics[key].toFixed(2)}`);
     }
+  }
+
+  // A rate can rise because its denominator fell. `recall@k` and MRR are gated,
+  // so a case leaving their average - a classifier refusing a labelled case
+  // before anything is embedded, say - can raise both while nothing about
+  // retrieval improved, and the rate alone cannot say so. A changed k is worse
+  // than that: the metric is no longer the same measurement, so comparing it to
+  // the stored one is meaningless rather than merely flattering.
+  if (previousCoverage?.retrieval_cases != null && coverage.retrieval_cases < previousCoverage.retrieval_cases) {
+    regressions.push(
+      `retrieval coverage ${previousCoverage.retrieval_cases} -> ${coverage.retrieval_cases} labelled cases ` +
+        `(a rise in recall@${kLabel} or MRR may be the smaller denominator rather than better retrieval)`,
+    );
+  }
+  if (
+    previousCoverage?.retrieval_k != null &&
+    coverage.retrieval_k != null &&
+    coverage.retrieval_k !== previousCoverage.retrieval_k
+  ) {
+    regressions.push(
+      `retrieval k ${previousCoverage.retrieval_k} -> ${coverage.retrieval_k}, so recall is not the metric the baseline recorded`,
+    );
   }
   if (baseline) {
     const nowFailing = scoredResults
@@ -515,6 +579,7 @@ async function report(ctx) {
       knowledge_index_generated_at: ctx.index.generated_at,
       cases: results.length,
       metrics,
+      coverage,
       per_case: Object.fromEntries(
         scoredResults.map((r) => [
           r.id,
@@ -575,7 +640,7 @@ async function report(ctx) {
     // replays fixed recordings and is deterministic, so a regression there is a
     // real consequence of an edit in this repository. The `N replayed, M
     // recorded` line above says which of the two a given live run was.
-    console.error('\n[rag:eval] FAIL: metrics regressed against eval-baseline.json:');
+    console.error('\n[rag:eval] FAIL: gated metrics or their coverage moved against eval-baseline.json:');
     for (const line of regressions) console.error(`  ${line}`);
     console.error(
       '  Investigate, or re-baseline deliberately with `npm run rag:eval -- --update-baseline`.',
