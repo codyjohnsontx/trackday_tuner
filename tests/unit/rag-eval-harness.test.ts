@@ -17,7 +17,7 @@ import { aggregateRetrieval, scoreRetrieval } from '@/scripts/eval/retrieval.mjs
 // @ts-expect-error - see above.
 import { OpenAiTape, UNKEYABLE_REQUEST_ERROR_TYPE } from '@/scripts/eval/openai-tape.mjs';
 // @ts-expect-error - see above.
-import { compareAgainstBaseline, describeUnreadableBaseline, describeUnusableBaseline } from '@/scripts/eval/run.mjs';
+import { compareAgainstBaseline, describeUnreadableBaseline, describeUnusableBaseline, diffLine } from '@/scripts/eval/run.mjs';
 // @ts-expect-error - see above.
 import { resolve as resolveAlias } from '@/scripts/eval/ts-loader.mjs';
 
@@ -380,6 +380,54 @@ describe('the baseline the gate compares against', () => {
     const nulled = { ...usable, coverage: { ...usable.coverage, retrieval_k: null } };
     expect(describeUnusableBaseline(nulled)).toBeNull();
   });
+
+  it('refuses a baseline that scored no cases, which gates nothing', () => {
+    // The writer could produce this from an emptied golden set: every key
+    // present, every metric null, `per_case` empty and `scored_cases` 0, so it
+    // satisfies every other rule here while no comparison can ever fire. The
+    // write end refuses it too - that path needs the fixtures, the tapes and
+    // the index on disk, so it is proven by fault injection against the real
+    // harness rather than from here.
+    const empty = {
+      metrics: {
+        rubric_pass_rate: null,
+        recall_at_k: null,
+        mrr: null,
+        refusal_accuracy: null,
+        component_accuracy: null,
+        direction_accuracy: null,
+      },
+      coverage: {
+        scored_cases: 0,
+        retrieval_k: null,
+        retrieval_cases: 0,
+        retrieval_expected_sources: 0,
+        component_cases: 0,
+        direction_cases: 0,
+      },
+      per_case: {},
+    };
+    expect(describeUnusableBaseline(empty)).toBe('eval-baseline.json scored no cases, so it gates nothing');
+  });
+});
+
+describe('the line printed under "Against baseline"', () => {
+  it('says there is no baseline only when the baseline has no value', () => {
+    expect(diffLine('recall@4', 0.81, null)).toContain('(no baseline)');
+    expect(diffLine('recall@4', null, null)).toContain('(no baseline)');
+  });
+
+  it('keeps the stored figure when this run could not measure the metric', () => {
+    // The file is present and readable; the metric stopped being measurable.
+    // Calling that "(no baseline)" is a claim about the file and is false.
+    const line = diffLine('recall@4', null, 0.8077);
+    expect(line).toContain('not measured this run, was 0.81');
+    expect(line).not.toContain('(no baseline)');
+  });
+
+  it('prints the delta when both are measured', () => {
+    expect(diffLine('recall@4', 0.85, 0.8077)).toContain('0.81 -> 0.85 (+0.04)');
+  });
 });
 
 describe('a baseline that could not be read at all', () => {
@@ -518,6 +566,36 @@ describe('the comparison against the baseline', () => {
       baseline,
     });
     expect(leftTheSet).toEqual([]);
+    expect(regressions).toEqual([]);
+  });
+
+  it('fails a gated metric that had a baseline value and is no longer measurable', () => {
+    // Stated directly rather than left to the coverage checks: a metric that
+    // used to be measurable and now is not has fallen, and `previous != null &&
+    // current != null` silently passed it.
+    const { regressions } = compareAgainstBaseline({
+      metrics: { ...METRICS, recall_at_k: null, mrr: null },
+      coverage: COVERAGE,
+      scoredResults: run([
+        ['a', true],
+        ['b', false],
+      ]),
+      baseline,
+    });
+    expect(regressions).toContain('recall@4 0.50 -> not measured this run');
+    expect(regressions).toContain('MRR 0.50 -> not measured this run');
+  });
+
+  it('does not fail an ungated metric that is no longer measurable', () => {
+    const { regressions } = compareAgainstBaseline({
+      metrics: { ...METRICS, direction_accuracy: null },
+      coverage: COVERAGE,
+      scoredResults: run([
+        ['a', true],
+        ['b', false],
+      ]),
+      baseline,
+    });
     expect(regressions).toEqual([]);
   });
 

@@ -470,9 +470,20 @@ function fmt(value) {
   return value == null ? '  n/a' : value.toFixed(2);
 }
 
-function diffLine(label, current, previous) {
-  if (previous == null || current == null) {
+/**
+ * Three states, not two. `(no baseline)` is a claim about the FILE, so printing
+ * it when the file is present and readable and this run simply could not
+ * measure the metric is false output under a heading that says "Against
+ * baseline" - and it is the first thing an operator acts on. The stored figure
+ * stays on the line in that case, because "used to be measurable and now is
+ * not" is the whole finding.
+ */
+export function diffLine(label, current, previous) {
+  if (previous == null) {
     return `  ${label.padEnd(20)} ${fmt(current)}   (no baseline)`;
+  }
+  if (current == null) {
+    return `  ${label.padEnd(20)} ${fmt(current)}   (not measured this run, was ${previous.toFixed(2)})`;
   }
   const delta = current - previous;
   const sign = delta >= 0 ? '+' : '-';
@@ -544,6 +555,14 @@ const REQUIRED_COVERAGE_KEYS = [
  * So a null value is a real measurement and passes; an ABSENT key means this
  * file cannot answer the question and fails.
  *
+ * That is per METRIC, and it is a different question from whether the file
+ * measured ANYTHING. A baseline scored over zero cases carries every key, every
+ * metric `null` and an empty `per_case`, so it satisfies every rule above while
+ * gating nothing at all - every rate comparison skips on a null `previous`,
+ * every coverage figure is 0 so nothing can fall below it, and `per_case` names
+ * no case to have left. That one is refused here, and refused at the write end
+ * too, because it is reachable by hand, by merge and by an older writer.
+ *
  * @param {unknown} baseline  the parsed `eval-baseline.json`, or `null` if absent
  * @returns {string | null}
  */
@@ -590,6 +609,9 @@ export function describeUnusableBaseline(baseline) {
       `${path.basename(BASELINE_PATH)} records ${coverage.scored_cases} scored cases but ` +
       `${entries} per_case entr${entries === 1 ? 'y' : 'ies'}`
     );
+  }
+  if (coverage.scored_cases === 0 || entries === 0) {
+    return `${path.basename(BASELINE_PATH)} scored no cases, so it gates nothing`;
   }
 
   return null;
@@ -649,8 +671,16 @@ export function compareAgainstBaseline({ metrics, coverage, scoredResults, basel
     const previous = baseline?.metrics?.[key] ?? null;
     const count = coverageKey == null ? null : coverage[coverageKey];
     const previousCount = coverageKey == null ? null : (previousCoverage?.[coverageKey] ?? null);
-    if (gated && previous != null && metrics[key] != null && metrics[key] < previous - 1e-9) {
-      regressions.push(`${label} ${previous.toFixed(2)} -> ${metrics[key].toFixed(2)}`);
+    if (gated && previous != null) {
+      // A metric that HAD a value and comes back null has stopped being
+      // measurable, which is a fall to the floor rather than a non-event. The
+      // coverage checks below would usually catch the same edit, but a gate
+      // that is only correct via a second gate's reasoning is not stated.
+      if (metrics[key] == null) {
+        regressions.push(`${label} ${previous.toFixed(2)} -> not measured this run`);
+      } else if (metrics[key] < previous - 1e-9) {
+        regressions.push(`${label} ${previous.toFixed(2)} -> ${metrics[key].toFixed(2)}`);
+      }
     }
     return { label, current: metrics[key], previous, count, previousCount, gated };
   });
@@ -1017,6 +1047,9 @@ async function report(ctx) {
 
   const errors = results.filter((r) => r.error);
   const unsound = [];
+  if (scoredResults.length === 0) {
+    unsound.push('no cases were scored');
+  }
   if (selfCheckBroken.length > 0) {
     unsound.push(`the scorer passed ${selfCheckBroken.length} response(s) production force-refuses`);
   }
@@ -1068,6 +1101,17 @@ async function report(ctx) {
 
   let exitCode = 0;
 
+  if (scoredResults.length === 0) {
+    // Whatever the flags. "No cases scored" is the absence of a result rather
+    // than a passing one, and a run that measured nothing is the same defect
+    // this harness exists to close - reached through an emptied golden set
+    // instead of through a deleted baseline.
+    console.error(
+      '\n[rag:eval] FAIL: no cases were scored, so this run measured nothing. ' +
+        `Check ${path.relative(REPO_ROOT, GOLDEN_PATH)}.`,
+    );
+    exitCode = 1;
+  }
   if (selfCheckBroken.length > 0) {
     console.error(
       `\n[rag:eval] FAIL: the scorer accepted ${selfCheckBroken.length} response(s) production force-refuses ` +

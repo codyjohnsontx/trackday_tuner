@@ -1013,7 +1013,11 @@ while measuring nothing:
   that retrieved nothing, and a null is a measurement while a missing key is a
   file that cannot answer. What a baseline must carry is derived from the same
   `METRICS` table the gate reads, so a metric added as gated is required in the
-  baseline automatically instead of silently ungating itself
+  baseline automatically instead of silently ungating itself. That is per
+  metric; a baseline scored over ZERO cases satisfies every one of those rules
+  and still gates nothing, so it is refused on read and never written - an
+  emptied `golden-cases.json` reaches it through the writer, and a run that
+  scored no cases now fails whatever flags it was given
 - **A missing or trimmed `per_case` map ungated the case-level comparison the
   same way.** The composition check reads `baseline.per_case?.[id]`, so a
   baseline without that map answered "nothing to compare" for every case, and
