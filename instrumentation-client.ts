@@ -7,5 +7,11 @@ if (sentryEnabled) {
   Sentry.init(sharedSentryOptions);
 }
 
-// Lets Sentry tie a client-side navigation to the spans it produces.
+// Sentry's App Router navigation hook, which Next calls on every client-side
+// navigation. It is inert in this configuration: `captureRouterTransitionStart`
+// does nothing unless a router transition handler has been registered, and only
+// the browser-tracing integration registers one - tracing is excluded from the
+// bundle (`bundleSizeOptimizations.excludeTracing` in next.config.ts). It is
+// kept deliberately so that turning tracing on later is a change there and not
+// also here.
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
