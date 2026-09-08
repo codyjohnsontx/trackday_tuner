@@ -87,7 +87,17 @@ jobs:
           # precisely because its numbers are not. A status and a pass/fail is
           # all a stranger may read. The full summary still reaches the operator
           # through the webhook payload.
-          code=$(curl --silent --show-error --location --max-time 30 \
+          #
+          # No --location here, unlike the uptime step above, and it must not be
+          # added back. curl drops the Authorization header on a redirect to a
+          # different host (the CVE-2018-1000007 fix), so a MONITORING_APP_URL
+          # that redirects - a Vercel apex going to www, or a non-primary alias -
+          # would follow it as an UNAUTHENTICATED request and read as a 401,
+          # sending the operator off to re-check two secrets that already agree.
+          # Without it the same misconfiguration surfaces as `HTTP 308`, which
+          # names itself. --location-trusted is not the answer: it would hand the
+          # secret to whatever host the redirect names.
+          code=$(curl --silent --show-error --max-time 30 \
             --header "Authorization: Bearer ${CRON_SECRET}" \
             --output /dev/null --write-out '%{http_code}' \
             "${APP_URL%/}/api/monitoring/ai-health") || code=000

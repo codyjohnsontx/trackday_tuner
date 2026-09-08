@@ -93,16 +93,26 @@ check is named.
 **Verify it worked**, in this order:
 
 ```bash
-# Should be 200 and a JSON summary. 401 = the secrets disagree.
-# 503 "Monitoring is not configured." = Vercel has no secret, or you did not redeploy.
+# 200 + a JSON summary       = wired up, and nothing is wrong.
+# 503 {"status":"alerting"}  = wired up, and the alert is doing its job. Read the
+#                              reasons it lists; the wiring is not the problem.
+# 503 {"error":"Monitoring is not configured."} = Vercel has no secret, or you
+#                              did not redeploy.
+# 401                        = the secrets disagree.
+# any 3xx                    = MONITORING_APP_URL is not the canonical host. Use
+#                              the host Vercel serves directly, not an apex or
+#                              alias that redirects to it.
 curl -i -H "Authorization: Bearer <the secret>" \
   https://<your-app>/api/monitoring/ai-health
 ```
 
 Then GitHub → Actions → **Monitoring** → Run workflow. A configured run shows
-two probe steps that both print `HTTP 200`. An unconfigured one shows a yellow
-`::warning::` saying monitoring is not wired up yet and does nothing else - if
-you see that, step 3 above did not take.
+two probe steps that both print `HTTP 200` while nothing is wrong. If the AI
+alert is genuinely firing, that step prints `HTTP 503` and fails the run on
+purpose - that is the alert working, not the setup failing, and the curl above
+says what failed. An unconfigured one shows a yellow `::warning::` saying
+monitoring is not wired up yet and does nothing else - if you see that, step 3
+above did not take.
 
 From then on it runs every 15 minutes and a failure emails you.
 
