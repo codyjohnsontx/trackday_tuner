@@ -957,11 +957,14 @@ export function compareAgainstBaseline({ metrics, coverage, scoredResults, basel
 /**
  * Why a run cannot be trusted to have measured what it claims, or an empty list.
  *
- * ONE DEFINITION, TWO READERS, deliberately. It decides whether `--update-baseline`
- * may write a baseline AND whether `--live` may prune the tape, and those two must
- * not drift: both are destructive, both are safe exactly when the run reached every
- * case, and a second copy of the rule would agree on the day it was written and
- * diverge afterwards.
+ * ONE DEFINITION, THREE READERS, deliberately. It decides whether
+ * `--update-baseline` may write a baseline, whether `--live` may prune the tape,
+ * and whether the run exits non-zero, and those three must not drift: the two
+ * writes are destructive and safe exactly when the run reached every case, and a
+ * run that could not be trusted to have measured what it claims is not a passing
+ * result either. A second copy of the rule would agree on the day it was written
+ * and diverge afterwards - the messages below each condition stay, because they
+ * carry the detail an operator acts on, but none of them decides the exit code.
  *
  * @param {{ selfCheckCount: number, selfCheckBrokenCount: number, scoredCount: number,
  *          tapeMissCount: number, errorCount: number }} counts
@@ -1352,21 +1355,18 @@ async function report(ctx) {
         'demonstrated that it can reject a response production force-refuses. ' +
         `Check ${path.relative(REPO_ROOT, ADVERSARIAL_PATH)}.`,
     );
-    exitCode = 1;
   }
   if (scoredResults.length === 0) {
     console.error(
       '\n[rag:eval] FAIL: no cases were scored, so this run measured nothing. ' +
         `Check ${path.relative(REPO_ROOT, GOLDEN_PATH)}.`,
     );
-    exitCode = 1;
   }
   if (selfCheckBroken.length > 0) {
     console.error(
       `\n[rag:eval] FAIL: the scorer accepted ${selfCheckBroken.length} response(s) production force-refuses ` +
         `(${selfCheckBroken.map((e) => e.id).join(', ')}). The harness cannot report a failure it does not detect.`,
     );
-    exitCode = 1;
   }
   if (tape.stats.misses.length > 0) {
     console.error(`\n[rag:eval] FAIL: ${tape.stats.misses.length} request(s) had no recording:`);
@@ -1383,12 +1383,11 @@ async function report(ctx) {
       '  Re-record with `OPENAI_API_KEY=... npm run rag:eval -- --live` and commit\n' +
         '  tests/fixtures/rag-eval/recordings/ with the change that moved the prompt.',
     );
-    exitCode = 1;
   }
   if (errors.length > 0) {
     console.error(`\n[rag:eval] FAIL: ${errors.length} case(s) threw: ${errors.map((e) => e.id).join(', ')}`);
-    exitCode = 1;
   }
+  if (unsound.length > 0) exitCode = 1;
   if (baselineProblem) {
     console.error(
       `\n[rag:eval] FAIL: ${baselineProblem.reason}. This run is gated against ` +

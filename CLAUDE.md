@@ -1184,9 +1184,11 @@ a partial run has not touched the keys it never got to, and that objection is wh
 the prune was removed once rather than guarded. `describeUnsoundRun` is the guard
 it pointed at - zero tape misses, zero case errors, a passing self-check, at least
 one case scored - and it is the SAME function `--update-baseline` reads, because
-both writes are destructive and safe under exactly the same condition. An unsound
-run still saves what it recorded; it just keeps the stale keys until a clean run
-retires them.
+both writes are destructive and safe under exactly the same condition. The exit
+code is its third reader, so a run that cannot be trusted to have measured what it
+claims fails whatever the flags, and adding a condition covers all three at once.
+An unsound run still saves what it recorded; it just keeps the stale keys until a
+clean run retires them.
 
 Retiring stale keys costs nothing. `--live` replays a matching entry BEFORE the
 mode is consulted, so a `--live` run on an unchanged prompt makes no API call at
