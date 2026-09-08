@@ -72,8 +72,11 @@ jobs:
             exit 1
           fi
 
+      # The two probes answer independent questions, so a failing /api/health must
+      # not skip this one: in the R3 shape the uptime check is exactly what fails,
+      # and skipping here would withhold the webhook and the AI summary with it.
       - name: Alert - AI error rate and p95 latency over the last hour
-        if: steps.config.outputs.configured == 'true'
+        if: ${{ !cancelled() && steps.config.outputs.configured == 'true' }}
         env:
           APP_URL: ${{ vars.MONITORING_APP_URL }}
           CRON_SECRET: ${{ secrets.MONITORING_CRON_SECRET }}

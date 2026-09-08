@@ -103,16 +103,23 @@ async function timed(
 /**
  * A round trip to Postgres through PostgREST.
  *
- * `head: true` means no row is transferred, so this reaches the database, the
- * grants and the service-role key without putting a single rider's data in a
- * public response. `profiles` is the table every other feature is built on.
+ * `profiles` is the table every other feature is built on, so one query reaches
+ * the database, the grants and the service-role key. The single `id` it selects
+ * never leaves this process: a check carries a name, a duration and - on a
+ * failure - an error name, so no rider's data can reach the public response.
+ *
+ * It is deliberately a GET. Over HEAD, PostgREST answers with no body at all,
+ * which leaves `postgrest-js` unable to parse the error payload: it reports a
+ * `404` as a bodyless `204` with no error, so a dropped table or a stale schema
+ * cache (`PGRST205`) would read as a healthy deployment, and every other
+ * rejection would lose its code.
  */
 export async function checkSupabase(): Promise<HealthCheck> {
   return timed('supabase', async () => {
     const admin = createAdminClient();
     const { error } = await admin
       .from('profiles')
-      .select('id', { head: true })
+      .select('id')
       .limit(1);
     if (error) {
       const wrapped = new Error(error.message);
