@@ -13,7 +13,164 @@ a rider as guided only on a success status.
 The product had instrumentation and no monitoring. These are the pieces that
 close the gap.
 
-## What is checked, and what each piece would have caught
+## Read this first: what is live, and what is dark until you act
+
+Merging this branch does not switch monitoring on by itself. Two pieces start
+working on the next deploy, one needs fifteen minutes of your time and **no
+external account at all**, and two need an account you have to create.
+
+| Piece | Live on merge? | What it needs from you |
+| --- | --- | --- |
+| `/api/health` | **Yes.** Public, no variable, no account | Nothing |
+| `/api/monitoring/ai-health` | No - answers `503 Monitoring is not configured.` | `MONITORING_CRON_SECRET` in Vercel |
+| The 15-minute probe + alert | No - the workflow runs but exits clean with a warning | Two GitHub settings. **No external account** |
+| Sentry | No - the SDK is not initialised at all | A sentry.io account (free tier) you create |
+| Log drain | No - there is no code for it | A Better Stack or Axiom account you create |
+
+**The most useful line on this page:** the alert that catches an R3-shaped
+outage is the GitHub Actions one, and it costs you nothing but the two settings
+in step 2 below. A failed scheduled workflow run emails the repository owner, so
+that is a working alert channel with no vendor, no plan and no card. Sentry adds
+the stack trace behind a failure; it does not add the alarm. Do step 1 and step
+2 and the claim is true. Steps 3 and 4 make a failure faster to diagnose.
+
+## Set it up
+
+Everything below is a copy-paste step with a way to check it worked. Nothing
+here needs any context from the branch that added it.
+
+### Step 1 - `/api/health` (nothing to do, but verify it)
+
+After the next production deploy:
+
+```bash
+curl -i https://<your-app>/api/health
+```
+
+Expect `HTTP/2 200` and a body naming two checks:
+
+```json
+{"status":"ok","checked_at":"...","checks":[
+  {"name":"supabase","status":"ok","duration_ms":10},
+  {"name":"rag_index","status":"ok","duration_ms":8,"detail":"75 chunks"}]}
+```
+
+If `rag_index` says `error`, that is R3 happening again and the deployment
+cannot answer a Race Engineer question. The response is `503` and the failing
+check is named.
+
+### Step 2 - the 15-minute alert (no external account)
+
+1. Make a secret. Any random string; this one is fine:
+
+   ```bash
+   openssl rand -hex 32
+   ```
+
+2. **Vercel** → your project → Settings → Environment Variables → Add:
+
+   - Key: `MONITORING_CRON_SECRET`
+   - Value: the string from step 1
+   - Environments: **Production**
+
+3. **GitHub** → the repo → Settings → Secrets and variables → **Actions**:
+
+   - **Variables** tab → New repository variable
+     - Name: `MONITORING_APP_URL`
+     - Value: the production URL, no trailing path - e.g.
+       `https://trackdaytuner.vercel.app`
+   - **Secrets** tab → New repository secret
+     - Name: `MONITORING_CRON_SECRET`
+     - Value: **the same string as step 2.** They have to match exactly; a
+       mismatch is a `401` every fifteen minutes.
+
+4. **Redeploy.** A Vercel environment variable only reaches a deployment built
+   after it was set, so the running deployment still has no secret until you
+   redeploy (Deployments → the latest one → ⋯ → Redeploy).
+
+**Verify it worked**, in this order:
+
+```bash
+# Should be 200 and a JSON summary. 401 = the secrets disagree.
+# 503 "Monitoring is not configured." = Vercel has no secret, or you did not redeploy.
+curl -i -H "Authorization: Bearer <the secret>" \
+  https://<your-app>/api/monitoring/ai-health
+```
+
+Then GitHub → Actions → **Monitoring** → Run workflow. A configured run shows
+two probe steps that both print `HTTP 200`. An unconfigured one shows a yellow
+`::warning::` saying monitoring is not wired up yet and does nothing else - if
+you see that, step 3 above did not take.
+
+From then on it runs every 15 minutes and a failure emails you.
+
+### Step 3 - Sentry (needs an account you create)
+
+Free tier is enough. No plan was chosen for you.
+
+1. sentry.io → create a project → platform **Next.js** → copy the DSN. It looks
+   like `https://abc123@o12345.ingest.sentry.io/678901`. A DSN is not a secret;
+   it ships in the client bundle by design.
+2. **Vercel** → Settings → Environment Variables → Add:
+   - Key: `NEXT_PUBLIC_SENTRY_DSN`
+   - Value: the DSN
+   - Environments: **Production** and **Preview**
+3. Redeploy.
+4. In Sentry → Alerts, confirm the default **"a new issue is created"** rule is
+   on. It is on by default for a new project. Without a rule, Sentry collects
+   issues and tells nobody.
+
+**Verify it worked:** open the deployed site, open the browser console and type
+`window.__SENTRY__`. An object means the DSN reached the client bundle and the
+SDK initialised; `undefined` means the variable did not reach the build. The
+server side is proven the first time something actually throws - `reportError`
+writes a `console.error` line at the same moment it sends, so the Vercel log
+line and the Sentry issue should appear together.
+
+Optional, and separate: source maps. Set `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` and
+`SENTRY_PROJECT` in the Vercel **build** environment and stack traces point at
+real filenames instead of minified ones. With no token the build skips the
+upload silently and on purpose, so leaving these unset costs you readability and
+nothing else.
+
+### Step 4 - log drain (needs an account you create)
+
+There is no code for this; it is dashboard configuration only, which is why the
+branch could not do it.
+
+Vercel → project → Settings → Log Drains → Add. Better Stack and Axiom both
+have a free tier that covers this volume; **neither was chosen for you.** It
+makes the ~50 `console.error` calls across `app/`, `lib/` and `components/`
+searchable and keeps them past Vercel's own short retention.
+
+**Verify it worked:** trigger any request, then search the drain for
+`[monitoring]` or `[health]`.
+
+### Optional - a webhook, and an external uptime monitor
+
+- `MONITORING_ALERT_WEBHOOK_URL` in Vercel (Production), set to a Slack or
+  Discord incoming webhook, gets you the alert text in chat instead of in email.
+  The payload carries `text` and `content` with the same string so it renders in
+  either. **Verify** by posting to the URL yourself first
+  (`curl -X POST -H 'content-type: application/json' -d '{"text":"test","content":"test"}' <url>`),
+  because the route only calls it when an alert is actually firing.
+- An external uptime monitor pointed at `/api/health` (Better Stack and
+  UptimeRobot both cover a 5-minute interval free). This is the only channel
+  that still works when GitHub Actions is down.
+
+## Every variable, in one table
+
+| Variable | Where it goes | Required? | What breaks without it |
+| --- | --- | --- | --- |
+| `MONITORING_APP_URL` | GitHub repo **variable** (Actions) | For the alert | The workflow exits clean with a warning. No probe ever runs, and nothing tells you that except the warning |
+| `MONITORING_CRON_SECRET` | GitHub repo **secret** (Actions) **and** Vercel env (Production) - identical in both | For the alert | Missing in GitHub: same clean-exit warning. Missing in Vercel: the route answers `503` to everyone, so the workflow fails every 15 minutes. Mismatched: `401` every 15 minutes |
+| `NEXT_PUBLIC_SENTRY_DSN` | Vercel env, Production + Preview | No | The Sentry SDK is never initialised. Errors still reach `console.error` in Vercel logs - which is exactly what R3 had |
+| `MONITORING_ALERT_WEBHOOK_URL` | Vercel env, Production | No | Alerts reach you through the failed workflow run instead. The route reports `notified: "none"`, which is not a failure |
+| `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` | Vercel **build** env | No | The build skips the source map upload. Sentry stack traces point at minified code |
+
+`.env.example` carries all of them for local work.
+
+## What each piece actually checks
 
 | Piece | Answers | Catches R3? |
 | --- | --- | --- |
@@ -29,12 +186,6 @@ cannot. Public, uncached, and excluded from the middleware matcher so it depends
 on as little as possible. The body carries an error *name* and never a message,
 because `MissingKnowledgeIndexError`'s own message embeds the absolute index
 path.
-
-```json
-{"status":"ok","checked_at":"...","checks":[
-  {"name":"supabase","status":"ok","duration_ms":10},
-  {"name":"rag_index","status":"ok","duration_ms":8,"detail":"75 chunks"}]}
-```
 
 The RAG check has to run in a route that carries the index, and each serverless
 function is its own bundle - so `/api/health` has its own
@@ -97,22 +248,6 @@ Two deliberate settings:
   types, and the session form carries the free text the prompt pipeline already
   treats as untrusted (`lib/rag/prompt.ts`).
 
-Wiring it up: create a project at sentry.io (free tier), copy the DSN, and set
-`NEXT_PUBLIC_SENTRY_DSN` in Vercel for Production and Preview. Source maps are
-optional and separate: `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` and `SENTRY_PROJECT` in
-the Vercel build environment. With no token the build skips the upload and the
-release, silently and on purpose.
-
-Then set an alert rule in Sentry - "a new issue is created" is the one that
-matters, and it is on by default.
-
-### Log drain
-
-Not code. Vercel → project → Settings → Log Drains → add Better Stack or Axiom
-(both free at this volume). It makes the ~50 `console.error` calls in `app/`, `lib/` and `components/` searchable and
-keeps them past Vercel's own short retention. It is the fourth line of defence,
-not one of the three that answer "is it broken" - those are above.
-
 ## Where an alert goes
 
 Three channels, in order of how little setup they need:
@@ -120,39 +255,22 @@ Three channels, in order of how little setup they need:
 1. **A failed scheduled workflow run.** `monitoring.yml` fails when either probe
    is not `200`, and GitHub emails the repository owner on a failed scheduled
    run. This needs no external account.
-2. **A webhook.** Set `MONITORING_ALERT_WEBHOOK_URL` on the deployment to a
-   Slack or Discord incoming webhook. The payload carries `text` and `content`
-   with the same string, so it renders in either.
-3. **An external uptime monitor** pointed at `/api/health`. Better Stack and
-   UptimeRobot both have a free tier that covers a 5-minute interval; this is the
-   only channel that survives GitHub Actions being down.
+2. **A webhook.** `MONITORING_ALERT_WEBHOOK_URL`, above.
+3. **An external uptime monitor** pointed at `/api/health`, above.
 
-## Wiring it up
+## Why a GitHub Actions schedule and not Vercel Cron
 
-1. Pick a secret: `openssl rand -hex 32`.
-2. Vercel → project → Settings → Environment Variables: add
-   `MONITORING_CRON_SECRET` with that value, for Production. Optionally add
-   `MONITORING_ALERT_WEBHOOK_URL`.
-3. GitHub → repo → Settings → Secrets and variables → Actions:
-   - **Variables** tab: `MONITORING_APP_URL` = the production URL, e.g.
-     `https://trackdaytuner.vercel.app`
-   - **Secrets** tab: `MONITORING_CRON_SECRET` = the same value as step 2
-4. Redeploy so the deployment picks up the new environment variables.
-5. Run the workflow by hand (Actions → Monitoring → Run workflow) and read the
-   output. Until steps 2-3 are done it exits clean with a warning rather than
-   failing every 15 minutes, because an alert channel that cries wolf from the
-   day it merges is one nobody reads by the time it matters.
-6. Separately, set `NEXT_PUBLIC_SENTRY_DSN` (see Sentry above) and add the log
-   drain. Neither is needed for the probe to work; both make a failure it
-   reports faster to diagnose.
+Vercel Cron is the obvious home for this - it is one `vercel.json` entry, it
+runs inside the deployment, and the route already accepts the exact
+`Authorization: Bearer` header it sends. It was not used because **a `*/15`
+schedule requires a Vercel Pro subscription**: the Hobby plan allows cron jobs
+but caps them at two, triggered once a day, which is not a monitor. A GitHub
+Actions schedule runs every 15 minutes on a free account, and a failed run
+already emails the owner, so the alert channel comes with it.
 
-Verify by hand:
-
-```bash
-curl -i https://<app>/api/health
-curl -i -H "Authorization: Bearer $MONITORING_CRON_SECRET" \
-  https://<app>/api/monitoring/ai-health
-```
+The route is deliberately written so this is reversible with no code change:
+add the `crons` entry to `vercel.json`, set `MONITORING_CRON_SECRET` in Vercel
+(it is already there), and delete the workflow.
 
 ## Known limits
 
