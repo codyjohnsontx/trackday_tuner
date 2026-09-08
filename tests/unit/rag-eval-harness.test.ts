@@ -17,7 +17,7 @@ import { aggregateRetrieval, scoreRetrieval } from '@/scripts/eval/retrieval.mjs
 // @ts-expect-error - see above.
 import { OpenAiTape, UNKEYABLE_REQUEST_ERROR_TYPE } from '@/scripts/eval/openai-tape.mjs';
 // @ts-expect-error - see above.
-import { compareAgainstBaseline, describeUnreadableBaseline, describeUnusableBaseline, diffLine } from '@/scripts/eval/run.mjs';
+import { compareAgainstBaseline, describeUnreadableBaseline, describeUnsoundRun, describeUnusableBaseline, diffLine } from '@/scripts/eval/run.mjs';
 // @ts-expect-error - see above.
 import { resolve as resolveAlias } from '@/scripts/eval/ts-loader.mjs';
 
@@ -630,6 +630,49 @@ describe('the comparison against the baseline', () => {
     expect(regressions).toEqual([]);
     expect(nowFailing).toEqual([]);
     expect(leftTheSet).toEqual([]);
+  });
+});
+
+describe('whether a run may write or prune', () => {
+  // ONE definition with two destructive readers: `--update-baseline` writing a
+  // baseline, and `--live` pruning the tape. Both are safe exactly when the run
+  // reached every case, so they read the same function rather than each keeping
+  // a copy that agrees today and drifts later.
+  const sound = {
+    selfCheckCount: 3,
+    selfCheckBrokenCount: 0,
+    scoredCount: 32,
+    tapeMissCount: 0,
+    errorCount: 0,
+  };
+
+  it('permits a run that reached every case', () => {
+    expect(describeUnsoundRun(sound)).toEqual([]);
+  });
+
+  it.each([
+    ['selfCheckCount', 0, /self-check had no fixtures/],
+    ['scoredCount', 0, /no cases were scored/],
+    ['selfCheckBrokenCount', 1, /force-refuses/],
+    ['tapeMissCount', 1, /had no recording/],
+    ['errorCount', 1, /case\(s\) threw/],
+  ])('refuses a run where %s is %s', (field, value, pattern) => {
+    const reasons = describeUnsoundRun({ ...sound, [field as string]: value });
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]).toMatch(pattern as RegExp);
+  });
+
+  it('names every reason at once rather than only the first', () => {
+    // The operator fixes what it lists, so a partial list costs a whole re-run.
+    expect(
+      describeUnsoundRun({
+        selfCheckCount: 0,
+        selfCheckBrokenCount: 2,
+        scoredCount: 0,
+        tapeMissCount: 4,
+        errorCount: 1,
+      }),
+    ).toHaveLength(5);
   });
 });
 

@@ -1113,31 +1113,77 @@ were in which cases counted and not in how a case scored - the one that did,
 direction 5 -> 7, is two responses that said `lower` where the label said
 `decrease`.
 
-**TWO of the recorded prompts' `data_used` booleans are off production, and the
-baseline says so itself.** `buildContext` in `scripts/eval/run.mjs` reports
-`data_used.weather` as `temperature_c != null` while supplying no
-`session_environment` row, a pair `loadRaceEngineerContext` cannot produce - it
-sets `weather: Boolean(sessionEnvironment)`, so the route prints `weather=false`
-there. It also hard-codes `manual: true`, where production derives it through
-`hasManualSessionData(session)`; that is false for a session with no notes, no
-tire pressures and no rebound, which is one golden case
-(`sparse-empty-setup-fields`).
+**THE PROMPT IS PRODUCTION-FAITHFUL NOW, AND THE FIX WAS PAID FOR WITH A
+RE-RECORD.** `buildContext` in `scripts/eval/run.mjs` once reported
+`data_used.weather` as `temperature_c != null` beside `sessionEnvironment: null`
+- a pair `loadRaceEngineerContext` cannot produce, since it sets
+`weather: Boolean(sessionEnvironment)` - and hard-coded `manual: true` where
+production calls `hasManualSessionData(session)`. Both printed into the recorded
+prompt, so those completions were scored against a prompt no rider would have
+seen. Both are corrected: every flag is now derived the way
+`loadRaceEngineerContext` derives it, and `hasManualSessionData` is CALLED rather
+than restated, because a second copy of that rule would agree on the day it was
+written and drift afterwards.
 
-`recall@4` and MRR are unaffected and production-faithful in both cases, because
-the query text `embedQuery` sees carries no `data_used`; the answer-quality
-metrics were produced under those prompts and stay valid for REGRESSION
-DETECTION, since both sides of any comparison are built by the same code,
-without stating what production quality is. Correcting either moves the
-completion tape keys it touches, so the next `--live` re-record closes both. The
-caveats are emitted into `eval-baseline.json` by the writer rather than typed
-into the file, because a hand-added one dies at the next `--update-baseline`.
+**`runCase`'s `fallbackDataUsed` deliberately still hard-codes those same two,
+and that is correct.** It mirrors the ROUTE's own `buildFallbackDataUsed`
+(`app/api/ai/tuning-advice/route.ts`), which hard-codes `manual: true` and
+`weather: temperature_c != null`. The context and the fallback are two different
+production expressions; the harness copies each from its own source, and
+"fixing" the fallback would have introduced a divergence rather than removed one.
+
+Correcting the two flags moved 25 of the 26 completion tape keys, so the
+recordings were refreshed with one `npm run rag:eval -- --live`. **All 26
+EMBEDDING keys replayed untouched**, which is the standing claim about retrieval
+demonstrated rather than asserted: the query text `embedQuery` sees carries no
+`data_used`, so `recall@k` and MRR could not move and did not. The one completion
+that did not move is the case with no `temperature_c` and manual data present,
+where both flags already read what production would have printed.
+
+**The live numbers are the baseline, including the two that fell.**
+`rubric_pass_rate` and `refusal_accuracy` both went 27/32 -> 26/32. The whole
+difference is one case, `mc-gearing-slow-corner`, where the re-sampled model
+returned a `personal_evidence` entry whose `source_session_id` is the STRING
+`"null"`; `evaluateAdvicePolicy` force-refuses the response as
+`invalid_personal_evidence`, correctly, and the rider gets a refusal instead of
+advice. That is sampling rather than a trend - the same case passed on the
+previous recording, where the model returned an empty array - and it is recorded
+as the limitation `model-emits-a-string-null-source-session-id`. Keeping the
+older, higher tape because it flattered the harness would rebuild the exact
+defect this harness exists to remove: a number chosen for how it reads rather
+than for being true. `live_rerecord` in `eval-baseline.json` carries the movement
+with a cause per metric, kept SEPARATE from `correction_record` because that one
+was an offline re-score of fixed tapes where "no metric moved" was verifiable
+byte-for-byte, and this one re-sampled the model, where new numbers are expected
+by construction.
 
 **The `limitations` array is the list, and it is the list because it was wrong
 once.** This section previously said the weather flag was the only prompt
 divergence; the `manual` one had been there all along and was found by a
-second-opinion review reading `buildContext` against
-`loadRaceEngineerContext` field by field. Before claiming the set is complete
-again, do that comparison rather than trusting this paragraph.
+second-opinion review reading `buildContext` against `loadRaceEngineerContext`
+field by field. Before claiming the set is complete again, do that comparison
+rather than trusting this paragraph.
+
+**The tape is PRUNED by a run that reached every case, and only by one.**
+Correcting a prompt moves the keys it touches and the old ones stay, so without
+this the committed fixture grows on every re-record until a reader cannot tell a
+live entry from a dead one - the same "cannot tell whether it is checking
+anything" defect as the gates above, wearing a fixture. The live re-record that
+made the prompt production-faithful left 25 dead completions behind and nearly
+doubled the file before this was added. `save({ prune })` keeps only the keys the
+run replayed or recorded, which is safe ONLY after a run that reached every case:
+a partial run has not touched the keys it never got to, and that objection is why
+the prune was removed once rather than guarded. `describeUnsoundRun` is the guard
+it pointed at - zero tape misses, zero case errors, a passing self-check, at least
+one case scored - and it is the SAME function `--update-baseline` reads, because
+both writes are destructive and safe under exactly the same condition. An unsound
+run still saves what it recorded; it just keeps the stale keys until a clean run
+retires them.
+
+Retiring stale keys costs nothing. `--live` replays a matching entry BEFORE the
+mode is consulted, so a `--live` run on an unchanged prompt makes no API call at
+all - the cleanup above ran as `52 replayed, 0 recorded, 0 missed`. Re-recording
+is only ever paid for by a prompt that actually moved.
 
 **No build step and no dependency.** `scripts/eval/ts-loader.mjs` is a resolve
 hook that maps `@/`, adds the missing extension and stubs `server-only` (a

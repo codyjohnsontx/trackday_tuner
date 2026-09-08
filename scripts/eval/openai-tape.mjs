@@ -79,6 +79,10 @@ export class OpenAiTape {
     this.mode = mode;
     this.tapes = { embeddings: null, completions: null };
     this.stats = { hits: 0, recorded: 0, misses: [] };
+    // The keys this run actually replayed or recorded. `save({ prune: true })`
+    // keeps only these, so it is correct ONLY after a run that reached every
+    // case - see the soundness gate at its call site.
+    this.used = { embeddings: new Set(), completions: new Set() };
     this.realFetch = null;
   }
 
@@ -92,7 +96,21 @@ export class OpenAiTape {
     }
   }
 
-  async save() {
+  /**
+   * @param {{ prune?: boolean }} [options] `prune` drops every entry this run
+   *   did not replay or record. A partial run has not touched the keys it never
+   *   got to, so this is safe ONLY when the run is known to have reached every
+   *   case - zero tape misses, zero case errors, a passing self-check and at
+   *   least one case scored. That is the same soundness the baseline write
+   *   requires, and the caller checks it; the flag alone promises nothing.
+   *
+   *   Without it the tape grows without bound: correcting a prompt moves the
+   *   keys, and the old ones stay forever, so a committed fixture ends up
+   *   holding entries no run will ever request and a reader cannot tell live
+   *   from dead. That is the same "cannot tell whether it is checking anything"
+   *   defect as the gates above, wearing a fixture.
+   */
+  async save({ prune = false } = {}) {
     await fs.mkdir(this.dir, { recursive: true });
     for (const kind of ['embeddings', 'completions']) {
       const tape = this.tapes[kind];
@@ -100,6 +118,7 @@ export class OpenAiTape {
       // wholesale reordering of the file.
       const entries = Object.fromEntries(
         Object.keys(tape.entries)
+          .filter((key) => !prune || this.used[kind].has(key))
           .sort()
           .map((key) => [key, tape.entries[key]]),
       );
@@ -146,6 +165,7 @@ export class OpenAiTape {
 
     if (entry) {
       this.stats.hits += 1;
+      this.used[kind].add(key);
       return new Response(JSON.stringify(entry.response), {
         status: entry.status,
         headers: { 'content-type': 'application/json' },
@@ -184,6 +204,7 @@ export class OpenAiTape {
         response: parsed,
       };
       this.stats.recorded += 1;
+      this.used[kind].add(key);
     }
 
     return new Response(text, {

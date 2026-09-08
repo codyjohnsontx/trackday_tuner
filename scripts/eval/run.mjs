@@ -53,44 +53,28 @@ const RUBRIC_TARGET = 0.85;
  */
 const BASELINE_LIMITATIONS = [
   {
-    id: 'harness-context-weather-flag',
+    id: 'model-emits-a-string-null-source-session-id',
     what:
-      'buildContext reports data_used.weather as `temperature_c != null` while supplying ' +
-      'no session_environment row. Production cannot produce that pair: ' +
-      'loadRaceEngineerContext sets `weather: Boolean(sessionEnvironment)`, so with no row ' +
-      'it prints weather=false. Every recorded prompt for a golden case carrying ' +
-      'temperature_c is therefore one boolean away from what the route would have sent.',
-    retrieval_unaffected:
-      'recall_at_k and MRR stand unconditionally. The query text embedQuery sees does not ' +
-      'carry data_used, so retrieval ran on exactly the input production would have ' +
-      'embedded and these two are production-faithful.',
-    answer_quality_qualified:
-      'rubric_pass_rate, refusal_accuracy, component_accuracy and direction_accuracy were ' +
-      'produced under that prompt. They remain VALID for regression detection, because both ' +
-      'sides of any future comparison are built by this same code - they simply do not state ' +
-      'what production answer quality is.',
-    closed_by:
-      'the next `npm run rag:eval -- --live` re-record, once an API key exists. Correcting ' +
-      'the flag moves every completion tape key, so it cannot be done without one.',
-  },
-  {
-    id: 'harness-context-manual-flag',
-    what:
-      'buildContext hard-codes data_used.manual as true. Production derives it - ' +
-      'loadRaceEngineerContext calls hasManualSessionData(session), which is false when the ' +
-      'session carries no notes, no front or rear tire pressure and no front or rear rebound. ' +
-      'One golden case is in that state, sparse-empty-setup-fields, so its recorded prompt ' +
-      'tells the model manual data was used when the route would have said it was not.',
+      'On the live re-record, mc-gearing-slow-corner came back with a personal_evidence entry ' +
+      'whose source_session_id is the STRING "null" rather than a real id or a JSON null. ' +
+      'validSessionIds is non-empty for that case, so hasInvalidPersonalEvidence finds an id ' +
+      'that is not in the allowed set and evaluateAdvicePolicy force-refuses the whole ' +
+      'response as invalid_personal_evidence. The rider gets a refusal instead of advice.',
+    the_guard_is_behaving_correctly:
+      'This is not a harness defect and not a policy defect. An unverifiable session reference ' +
+      'is exactly what that rule exists to catch, and refusing is the fail-safe direction. It ' +
+      'is recorded because it is a REAL PRODUCTION BEHAVIOUR the harness surfaced: on this ' +
+      'prompt the model sometimes emits a string "null" into a field typed as a nullable id, ' +
+      'and every such response is discarded whole.',
     scope:
-      'Exactly one of the 32 cases. The other 31 carry at least one of those fields, so the ' +
-      'hard-coded true is what production would have printed for them anyway.',
-    retrieval_unaffected:
-      'As with the weather flag: the query text embedQuery sees does not carry data_used, so ' +
-      'recall_at_k and MRR are production-faithful for this case too.',
-    closed_by:
-      'the same `npm run rag:eval -- --live` re-record that closes ' +
-      'harness-context-weather-flag. Deriving the flag moves that case\'s completion tape ' +
-      'key, so it cannot be corrected offline.',
+      'One of the 32 cases on this sample, and it is the entire difference between the ' +
+      'pre-re-record rubric_pass_rate and refusal_accuracy of 27/32 and the committed 26/32. ' +
+      'It is sampling, not a trend: the same case passed on the previous recording, where the ' +
+      'model returned an empty personal_evidence array.',
+    out_of_scope_here:
+      'Fixing it would mean changing the prompt or the schema handling, which this task ' +
+      'excludes ("do not fix the model, the prompts, the knowledge base, or the retrieval ' +
+      'parameters - record what was found and it becomes separate work").',
   },
   {
     id: 'refusal-accuracy-scores-the-pipeline-not-the-model',
@@ -196,6 +180,95 @@ function buildVehicle(caseInput, ids) {
  * the first measurement legible. `git show b115aaf:eval-baseline.json` is the
  * primary source and this is derived from it.
  */
+/**
+ * The SECOND movement in this baseline's history, and a different KIND from the
+ * one in BASELINE_CORRECTION_RECORD below. That one was an offline re-score of
+ * fixed tapes, where "no metric moved" was verifiable byte-for-byte. This one
+ * re-sampled the model, so new numbers are expected by construction and the two
+ * are kept apart rather than folded into one table that would imply more
+ * precision than either has.
+ */
+const BASELINE_LIVE_RERECORD = {
+  what_this_is:
+    'The two data_used divergences recorded as harness-context-weather-flag and ' +
+    'harness-context-manual-flag were corrected in buildContext, which derives every flag the ' +
+    'way loadRaceEngineerContext derives it. Correcting them moves the completion tape keys, ' +
+    'so the recordings were refreshed with one `npm run rag:eval -- --live` and the model was ' +
+    're-sampled. Both limitations are closed and removed from `limitations` above; this record ' +
+    'is what replaced them.',
+  what_was_corrected:
+    'weather was `temperature_c != null` beside no session_environment row, a pair production ' +
+    'cannot produce; manual was hard-coded true where production calls hasManualSessionData. ' +
+    'runCase\'s fallbackDataUsed was deliberately NOT changed - it mirrors the route\'s own ' +
+    'buildFallbackDataUsed, which hard-codes those same two, so deriving it there would have ' +
+    'introduced a divergence rather than removed one.',
+  blast_radius:
+    '25 of the 26 completion keys moved. All 26 EMBEDDING keys replayed untouched, which is ' +
+    'the documented claim about retrieval holding up under test: the query text embedQuery ' +
+    'sees carries no data_used. The one completion that did not move is a case with no ' +
+    'temperature_c and manual data present, where both flags already read what production ' +
+    'would have printed.',
+  these_numbers_are_the_baseline_whatever_they_say:
+    'Two gated metrics fell and were committed as measured. Keeping the older, higher tape ' +
+    'because it flattered the harness would rebuild the exact defect this harness was built ' +
+    'to remove - a number chosen for how it reads rather than for being true.',
+  metrics: [
+    {
+      metric: 'rubric_pass_rate',
+      before: 0.84375,
+      after: 0.8125,
+      fraction: '27/32 -> 26/32',
+      cause:
+        'ONE case, mc-gearing-slow-corner, and it is model sampling rather than a trend. On ' +
+        'the re-sampled prompt the model returned a personal_evidence entry whose ' +
+        'source_session_id is the string "null"; evaluateAdvicePolicy force-refuses the ' +
+        'response as invalid_personal_evidence, correctly. It passed on the previous ' +
+        'recording, where the model returned an empty personal_evidence array. Recorded as ' +
+        'the limitation model-emits-a-string-null-source-session-id.',
+    },
+    {
+      metric: 'refusal_accuracy',
+      before: 0.84375,
+      after: 0.8125,
+      fraction: '27/32 -> 26/32',
+      cause: 'The same single case. These two rates share a numerator over the same 32 cases.',
+    },
+    {
+      metric: 'recall_at_k',
+      before: 0.8076923076923077,
+      after: 0.8076923076923077,
+      fraction: '21/26 -> 21/26',
+      cause:
+        'DID NOT MOVE, and could not have: every embedding key replayed, so retrieval ran on ' +
+        'byte-identical input. This is the evidence for the claim the old limitations made ' +
+        'rather than a restatement of it.',
+    },
+    {
+      metric: 'mrr',
+      before: 0.7596153846153846,
+      after: 0.7596153846153846,
+      fraction: '19.75/26 -> 19.75/26',
+      cause: 'DID NOT MOVE, for the same reason.',
+    },
+    {
+      metric: 'component_accuracy',
+      before: 0.8461538461538461,
+      after: 0.8461538461538461,
+      fraction: '11/13 -> 11/13',
+      cause:
+        'DID NOT MOVE. The refused case carries no component label, so it is not in this ' +
+        'denominator - the case that changed and the cases this measures do not overlap.',
+    },
+    {
+      metric: 'direction_accuracy',
+      before: 0.5384615384615384,
+      after: 0.5384615384615384,
+      fraction: '7/13 -> 7/13',
+      cause: 'DID NOT MOVE, for the same reason.',
+    },
+  ],
+};
+
 const BASELINE_CORRECTION_RECORD = {
   what_this_is:
     'The first baseline, committed at b115aaf, was measured by a harness carrying three ' +
@@ -307,39 +380,61 @@ const BASELINE_CORRECTION_RECORD = {
  * on this path is which optional blocks the prompt prints; what it does not
  * change is the pipeline under test.
  *
- * ONE FIELD HERE IS NOT FAITHFUL, AND IT SHIPS THAT WAY DELIBERATELY.
- * `dataUsed.weather` is `temperatureC != null` beside `sessionEnvironment: null`,
- * and production cannot produce that pair - `loadRaceEngineerContext` sets
- * `weather: Boolean(sessionEnvironment)`, so with no environment row the route
- * prints `weather=false` into the same `data_used` line
- * (`formatRaceEngineerContext`). Scoring is unaffected either way, because the
- * policy fallback the route uses is `temperature_c != null || dataUsed.weather`
- * and `runCase` mirrors it. Retrieval is unaffected too: the query text
- * `embedQuery` sees carries no `data_used`, so recall and MRR are
- * production-faithful. What it does touch is the recorded PROMPT, and therefore
- * the answer-quality numbers - which stay valid for regression detection, since
- * both sides of any comparison are built here, without stating what production
- * quality is. It is not corrected because the correction moves every completion
- * tape key and re-recording needs an API key that has been revoked. The next
- * `--live` re-record closes it. `BASELINE_LIMITATIONS` above is the same note,
- * emitted into the baseline so it reaches whoever reads the numbers.
+ * EVERY `dataUsed` FLAG HERE IS DERIVED THE WAY `loadRaceEngineerContext`
+ * DERIVES IT, and two of them did not used to be. `weather` was
+ * `temperatureC != null` beside `sessionEnvironment: null`, a pair production
+ * cannot produce because it sets `weather: Boolean(sessionEnvironment)`; and
+ * `manual` was hard-coded `true` where production calls
+ * `hasManualSessionData(session)`, which is false for a session carrying no
+ * notes, no tire pressures and no rebound. Both printed into the recorded
+ * PROMPT through the same `data_used` line, so both were recorded against a
+ * prompt no rider would have seen. They are corrected together, because
+ * correcting either moves the completion tape keys and a re-record pays for
+ * both at once.
+ *
+ * `hasManualSessionData` is CALLED rather than restated. A second copy of that
+ * rule here would agree with production on the day it was written and drift
+ * afterwards, which is the whole failure mode this harness exists to detect.
+ *
+ * The other four are derived from the inputs above and always were: no similar
+ * sessions is `history: false`, no feedback and no stored recommendations is
+ * `feedback: false`, no laps is `lap_data: false`, no telemetry summary is
+ * `telemetry: false` - each the same expression production evaluates against
+ * the same empty input.
+ *
+ * NOTE WHAT IS DELIBERATELY NOT CHANGED. `runCase`'s `fallbackDataUsed` and the
+ * `weather` it folds onto the model result still read `manual: true` and
+ * `temperatureC != null`, and that is correct: they mirror the ROUTE's own
+ * `buildFallbackDataUsed`, which hard-codes exactly those two
+ * (`app/api/ai/tuning-advice/route.ts`). Deriving them there would introduce a
+ * divergence rather than remove one. The context and the fallback are two
+ * different production expressions and the harness copies each from its own
+ * source.
  */
-function buildContext({ session, temperatureC, buildDayTrend }) {
+function buildContext({ session, buildDayTrend, hasManualSessionData }) {
+  const similarSessions = [];
+  const sessionEnvironment = null;
+  const recentFeedback = [];
+  const recentRecommendations = [];
+  const telemetrySummary = null;
+  const lapData = [];
+
   return {
-    similarSessions: [],
-    sessionEnvironment: null,
-    recentFeedback: [],
-    recentRecommendations: [],
+    similarSessions,
+    sessionEnvironment,
+    recentFeedback,
+    recentRecommendations,
     memory: null,
-    telemetrySummary: null,
+    telemetrySummary,
     dayTrend: buildDayTrend(session, null, []),
     dataUsed: {
-      manual: true,
-      weather: temperatureC != null,
-      history: false,
-      feedback: false,
-      lap_data: false,
-      telemetry: false,
+      manual: hasManualSessionData(session),
+      weather: Boolean(sessionEnvironment),
+      history: similarSessions.length > 0,
+      feedback:
+        recentFeedback.length > 0 || recentRecommendations.some((r) => r.status !== 'proposed'),
+      lap_data: lapData.length > 0,
+      telemetry: Boolean(telemetrySummary && telemetrySummary.source !== 'manual'),
     },
   };
 }
@@ -360,6 +455,7 @@ async function runCase(testCase, deps) {
     dropScreenedSources,
     generateTuningAdvice,
     buildDayTrend,
+    hasManualSessionData,
   } = deps;
 
   const ids = {
@@ -402,7 +498,7 @@ async function runCase(testCase, deps) {
     };
   }
 
-  const context = buildContext({ session, temperatureC, buildDayTrend });
+  const context = buildContext({ session, buildDayTrend, hasManualSessionData });
 
   const storedAssessment = classifyStoredRiderText({
     unableMessage: 'I could not answer that from your saved setup data.',
@@ -787,6 +883,37 @@ export function compareAgainstBaseline({ metrics, coverage, scoredResults, basel
   return { rows, regressions, nowFailing, leftTheSet };
 }
 
+/**
+ * Why a run cannot be trusted to have measured what it claims, or an empty list.
+ *
+ * ONE DEFINITION, TWO READERS, deliberately. It decides whether `--update-baseline`
+ * may write a baseline AND whether `--live` may prune the tape, and those two must
+ * not drift: both are destructive, both are safe exactly when the run reached every
+ * case, and a second copy of the rule would agree on the day it was written and
+ * diverge afterwards.
+ *
+ * @param {{ selfCheckCount: number, selfCheckBrokenCount: number, scoredCount: number,
+ *          tapeMissCount: number, errorCount: number }} counts
+ * @returns {string[]}
+ */
+export function describeUnsoundRun({
+  selfCheckCount,
+  selfCheckBrokenCount,
+  scoredCount,
+  tapeMissCount,
+  errorCount,
+}) {
+  const unsound = [];
+  if (selfCheckCount === 0) unsound.push('the scorer self-check had no fixtures');
+  if (scoredCount === 0) unsound.push('no cases were scored');
+  if (selfCheckBrokenCount > 0) {
+    unsound.push(`the scorer passed ${selfCheckBrokenCount} response(s) production force-refuses`);
+  }
+  if (tapeMissCount > 0) unsound.push(`${tapeMissCount} request(s) had no recording`);
+  if (errorCount > 0) unsound.push(`${errorCount} case(s) threw`);
+  return unsound;
+}
+
 export async function main(argv) {
   const args = new Set(argv);
   const live = args.has('--live');
@@ -870,6 +997,7 @@ export async function main(argv) {
           ...promptModule,
           ...adviceModule,
           buildDayTrend: contextModule.buildDayTrend,
+          hasManualSessionData: contextModule.hasManualSessionData,
         });
       } catch (err) {
         results.push({
@@ -933,7 +1061,28 @@ export async function main(argv) {
     }
   } finally {
     restoreFetch();
-    if (live) await tape.save();
+    if (live) {
+      // PRUNE ONLY A RUN THAT REACHED EVERY CASE. A partial run has not touched
+      // the keys it never got to, and dropping those would delete recordings the
+      // next run needs - which is why the prune was removed once rather than
+      // guarded. This is the guard the removal pointed at, and it is the SAME
+      // soundness `--update-baseline` requires, read through one function so the
+      // two cannot drift. An unsound run still SAVES, so nothing just recorded is
+      // lost; it simply keeps the stale keys until a clean run retires them.
+      const unsound = describeUnsoundRun({
+        selfCheckCount: selfCheck.length,
+        selfCheckBrokenCount: selfCheckBroken.length,
+        scoredCount: results.filter((r) => !r.error).length,
+        tapeMissCount: tape.stats.misses.length,
+        errorCount: results.filter((r) => r.error).length,
+      });
+      if (unsound.length > 0) {
+        console.warn(
+          `\n[rag:eval] Tape kept unpruned: ${unsound.join('; ')}. Stale entries stay until a run that reaches every case retires them.`,
+        );
+      }
+      await tape.save({ prune: unsound.length === 0 });
+    }
   }
 
   return report({
@@ -1072,22 +1221,13 @@ async function report(ctx) {
   if (leftTheSet.length > 0) console.log(`  cases no longer scored: ${leftTheSet.join(', ')}`);
 
   const errors = results.filter((r) => r.error);
-  const unsound = [];
-  if (selfCheck.length === 0) {
-    unsound.push('the scorer self-check had no fixtures');
-  }
-  if (scoredResults.length === 0) {
-    unsound.push('no cases were scored');
-  }
-  if (selfCheckBroken.length > 0) {
-    unsound.push(`the scorer passed ${selfCheckBroken.length} response(s) production force-refuses`);
-  }
-  if (tape.stats.misses.length > 0) {
-    unsound.push(`${tape.stats.misses.length} request(s) had no recording`);
-  }
-  if (errors.length > 0) {
-    unsound.push(`${errors.length} case(s) threw`);
-  }
+  const unsound = describeUnsoundRun({
+    selfCheckCount: selfCheck.length,
+    selfCheckBrokenCount: selfCheckBroken.length,
+    scoredCount: scoredResults.length,
+    tapeMissCount: tape.stats.misses.length,
+    errorCount: errors.length,
+  });
 
   if (updateBaseline && unsound.length > 0) {
     console.error(
@@ -1107,6 +1247,7 @@ async function report(ctx) {
       metrics,
       coverage,
       limitations: BASELINE_LIMITATIONS,
+      live_rerecord: BASELINE_LIVE_RERECORD,
       correction_record: BASELINE_CORRECTION_RECORD,
       per_case: Object.fromEntries(
         scoredResults.map((r) => [
