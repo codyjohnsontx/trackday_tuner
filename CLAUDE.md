@@ -331,13 +331,14 @@ recorded.
 
 ```text
 app/(app)/           # authenticated routes (layout enforces auth)
-app/api/             # API routes (stripe checkout/portal/webhooks/AI)
+app/api/             # API routes (stripe checkout/portal/webhooks/AI, health, monitoring)
 components/ui/       # shadcn/ui-backed component wrappers
 components/layout/   # app shell, bottom nav
 components/auth/     # auth form, set-password form
 components/sessions/ # session form
 components/garage/   # vehicle form
 lib/actions/         # server actions (sessions, tracks, vehicles, sag)
+lib/monitoring/      # health checks, the ai_requests alert, reportError
 lib/rag/             # RAG retrieval, prompt, policy, and validation helpers
 lib/supabase/        # client, server, middleware, admin clients
 lib/auth/            # OAuth providers, next-path sanitizing, auth error copy

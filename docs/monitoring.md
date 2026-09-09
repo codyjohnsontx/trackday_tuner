@@ -108,6 +108,10 @@ check is named.
 # 200 + a JSON summary       = wired up, and nothing is wrong.
 # 503 {"status":"alerting"}  = wired up, and the alert is doing its job. Read the
 #                              reasons it lists; the wiring is not the problem.
+# 503 {"status":"unknown"}   = wired up, but the read of `ai_requests` itself
+#                              failed or timed out, so there are no numbers to
+#                              judge. That is Supabase rather than the wiring -
+#                              step 1's curl says whether it is reachable at all.
 # 503 {"error":"Monitoring is not configured."} = Vercel has no secret, or you
 #                              did not redeploy.
 # 401                        = the secrets disagree.
