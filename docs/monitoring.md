@@ -17,8 +17,8 @@ close the gap.
 
 ## Read this first: what is live, and what is dark until you act
 
-Merging this branch does not switch monitoring on by itself. Two pieces start
-working on the next deploy, one needs fifteen minutes of your time and **no
+Merging this branch does not switch monitoring on by itself. One piece starts
+working on the next deploy, two more need fifteen minutes of your time and **no
 external account at all**, and two need an account you have to create.
 
 | Piece | Live on merge? | What it needs from you |

@@ -89,7 +89,7 @@ export const sharedSentryOptions = {
   // not raising this number.
   maxBreadcrumbs: 0,
 
-  // `beforeSend` is what enforces the rest of it, and it drops all three:
+  // `beforeSend` is what enforces the rest of it, and it drops all four:
   //
   // - `headers` carries `cookie` and `authorization`. Under `@supabase/ssr` the
   //   `sb-<ref>-auth-token` cookie is base64 JSON holding the access token AND
