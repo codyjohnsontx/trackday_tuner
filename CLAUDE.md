@@ -1251,10 +1251,12 @@ the prune was removed once rather than guarded. `describeUnsoundRun` is the guar
 it pointed at, and it applies SIX conditions, all of them live: the self-check
 had fixtures at all, at least one case was scored, `scored + errored` equals the
 size of the golden set, no self-check fixture passed, no request missed the tape,
-and no case threw. It is the SAME function `--update-baseline` reads, because
-both writes are destructive and safe under exactly the same condition. The exit
-code is its third reader, so a run that cannot be trusted to have measured what
-it claims fails whatever the flags, and adding a condition covers all three at
+and no case threw - the first and fourth pre-empted at today's call sites by
+the self-check's own early return, so the run never reaches this function with
+either true. It is the SAME function `--update-baseline` reads, because both
+writes are destructive and safe under exactly the same condition. The exit code
+is its third reader, so a run that cannot be trusted to have measured what it
+claims fails whatever the flags, and adding a condition covers all three at
 once.
 
 **The count is what catches a partial run**, and it is arithmetic rather than a
