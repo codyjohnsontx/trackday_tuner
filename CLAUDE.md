@@ -1172,6 +1172,41 @@ second-opinion review reading `buildContext` against `loadRaceEngineerContext`
 field by field. Before claiming the set is complete again, do that comparison
 rather than trusting this paragraph.
 
+**RELABELLING A GOLDEN CASE IS A REGRESSION, because it was the last way a
+number could rise without the pipeline improving.** No label is in the prompt, so
+editing one moves no tape key; and the baseline stored a case's OUTCOMES and the
+coverage COUNTS, never the labels those outcomes were judged against, so every
+other check stayed silent. Measured, not hypothesised: flipping one
+`should_refuse` from false to true on a force-refused case took
+`rubric_pass_rate` and `refusal_accuracy` from 0.81 to 0.84 with 52 replayed, 0
+missed and exit 0.
+
+It is the same act the `retrieval_expected_sources` check already refused -
+deleting a label a case was missing - with the COUNT preserved so that check
+cannot see it. Gating the deletion and not the substitution would enforce the
+principle in one direction only, and a half-enforced principle is worse than an
+absent one because the next reader concludes it means more than it does. So
+`per_case` stores `labels` - `should_refuse`, `expected_component`,
+`expected_direction` and the SORTED `expected_sources` - and any change is a
+regression rather than a fall, since a label edit makes the stored score an
+answer to a different question and comparing the two is meaningless in either
+direction. Re-labelling on purpose is legitimate and needs `--update-baseline`.
+Reordering `expected_sources` is not a change: the set is what recall measures.
+A baseline whose `per_case` rows carry no `labels` is UNUSABLE rather than
+partially usable, because a comparison with no left-hand side would skip in
+silence.
+
+**One of those four paths was demonstrated and the others were not, and the
+baseline says which.** `should_refuse` is the measured one above. The retrieval
+half - substituting a missed `expected_sources` entry for a retrieved one at
+constant count, to raise a case's recall - was attempted on
+`mc-brake-dive-compression` and recall did NOT move, because the substituted
+source is not retrieved for that case either. The substitution passed silently
+before the gate, which is the shared mechanism, but no recall rise was ever
+observed and none is claimed. It is gated anyway because the mechanism is the one
+that was proven; `relabelling-a-retrieval-case-is-gated-but-was-not-demonstrated`
+in `limitations` records exactly that distinction.
+
 **The tape is PRUNED by a run that reached every case, and only by one.**
 Correcting a prompt moves the keys it touches and the old ones stay, so without
 this the committed fixture grows on every re-record until a reader cannot tell a

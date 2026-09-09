@@ -17,7 +17,7 @@ import { aggregateRetrieval, scoreRetrieval } from '@/scripts/eval/retrieval.mjs
 // @ts-expect-error - see above.
 import { OpenAiTape, UNKEYABLE_REQUEST_ERROR_TYPE } from '@/scripts/eval/openai-tape.mjs';
 // @ts-expect-error - see above.
-import { compareAgainstBaseline, describeUnreadableBaseline, describeUnsoundRun, describeUnusableBaseline, diffLine } from '@/scripts/eval/run.mjs';
+import { compareAgainstBaseline, describeCaseLabels, describeUnreadableBaseline, describeUnsoundRun, describeUnusableBaseline, diffLine } from '@/scripts/eval/run.mjs';
 // @ts-expect-error - see above.
 import { resolve as resolveAlias } from '@/scripts/eval/ts-loader.mjs';
 
@@ -783,6 +783,111 @@ describe('whether a run may write or prune', () => {
         tapeMissCount: 4,
       }),
     ).toHaveLength(6);
+  });
+});
+
+describe('a golden label change', () => {
+  // MEASURED, not hypothesised: flipping one `should_refuse` from false to true
+  // on a force-refused case took rubric_pass_rate and refusal_accuracy from 0.81
+  // to 0.84 with 52 tape entries replayed, 0 missed and exit 0. No label is in
+  // the prompt, so no tape key moves and every count check stays silent. The
+  // number rose because the test got weaker, which is the defect this harness
+  // exists to remove - and it is the same act as deleting a label, which was
+  // already gated, with the count preserved so that gate cannot see it.
+  const LABELS = {
+    should_refuse: false,
+    expected_component: 'front_tire_pressure',
+    expected_direction: 'decrease',
+    expected_sources: ['a.md', 'b.md'],
+  };
+  const METRICS_ = {
+    rubric_pass_rate: 1,
+    recall_at_k: 1,
+    mrr: 1,
+    refusal_accuracy: 1,
+    component_accuracy: 1,
+    direction_accuracy: 1,
+  };
+  const COVERAGE_ = {
+    scored_cases: 1,
+    retrieval_k: 4,
+    retrieval_cases: 1,
+    retrieval_expected_sources: 2,
+    component_cases: 1,
+    direction_cases: 1,
+  };
+  const baselineWith = (labels: unknown) => ({
+    metrics: METRICS_,
+    coverage: COVERAGE_,
+    per_case: { a: { passed: true, recall: 1, reciprocal_rank: 1, labels } },
+  });
+  const runWith = (labels: unknown) => [
+    { id: 'a', scored: { passed: true }, retrieval: { recall: 1, reciprocalRank: 1 }, labels },
+  ];
+  const compare = (baselineLabels: unknown, runLabels: unknown) =>
+    compareAgainstBaseline({
+      metrics: METRICS_,
+      coverage: COVERAGE_,
+      scoredResults: runWith(runLabels),
+      baseline: baselineWith(baselineLabels),
+    });
+
+  it('is not reported when nothing changed', () => {
+    const { regressions, relabelled } = compare(LABELS, LABELS);
+    expect(relabelled).toEqual([]);
+    expect(regressions).toEqual([]);
+  });
+
+  it.each([
+    ['should_refuse', { ...LABELS, should_refuse: true }],
+    ['expected_component', { ...LABELS, expected_component: 'rear_tire_pressure' }],
+    ['expected_direction', { ...LABELS, expected_direction: 'increase' }],
+    ['expected_sources', { ...LABELS, expected_sources: ['a.md', 'c.md'] }],
+  ])('is a regression when %s changes', (field, changed) => {
+    // All four, not only the one that was proven: a gate covering one label and
+    // not its siblings enforces the principle in one direction only.
+    const { regressions, relabelled } = compare(LABELS, changed);
+    expect(relabelled).toHaveLength(1);
+    expect(relabelled[0]).toContain(field as string);
+    expect(regressions.some((r: string) => r.includes('golden label change'))).toBe(true);
+  });
+
+  it('is not a regression when expected_sources is only reordered', () => {
+    // The SET is what recall measures; the order it is written in is not a fact
+    // about the case, so reordering must not cost a re-baseline.
+    const { relabelled, regressions } = compare(LABELS, {
+      ...LABELS,
+      expected_sources: ['b.md', 'a.md'],
+    });
+    expect(relabelled).toEqual([]);
+    expect(regressions).toEqual([]);
+  });
+
+  it('sorts sources and normalises absent labels when describing a case', () => {
+    expect(describeCaseLabels({ expected_sources: ['b.md', 'a.md'] })).toEqual({
+      should_refuse: false,
+      expected_component: null,
+      expected_direction: null,
+      expected_sources: ['a.md', 'b.md'],
+    });
+  });
+
+  it('refuses a baseline whose per_case rows carry no labels', () => {
+    // Otherwise the comparison has no left-hand side and skips silently, which
+    // is the defect this file spends most of its length closing.
+    const usable = readJson('eval-baseline.json');
+    const stripped = {
+      ...usable,
+      per_case: Object.fromEntries(
+        Object.entries(usable.per_case as Record<string, Record<string, unknown>>).map(
+          ([id, row]) => {
+            const { labels: _labels, ...rest } = row;
+            return [id, rest];
+          },
+        ),
+      ),
+    };
+    expect(describeUnusableBaseline(stripped)).toMatch(/per_case row\(s\) with no "labels"/);
   });
 });
 

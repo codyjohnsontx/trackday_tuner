@@ -77,6 +77,30 @@ const BASELINE_LIMITATIONS = [
       'parameters - record what was found and it becomes separate work").',
   },
   {
+    id: 'relabelling-a-retrieval-case-is-gated-but-was-not-demonstrated',
+    what:
+      'The golden-label gate refuses a change to should_refuse, expected_component, ' +
+      'expected_direction or expected_sources, because a label edit moves no tape key and no ' +
+      'coverage count and so escaped every other check. ONE of those paths was demonstrated ' +
+      'end to end and the others were not.',
+    demonstrated:
+      'should_refuse. Flipping it false -> true on sparse-empty-setup-fields, with nothing ' +
+      'else touched, took rubric_pass_rate and refusal_accuracy from 0.81 to 0.84 with 52 ' +
+      'replayed, 0 missed and exit 0 - a measured improvement bought by relabelling. After ' +
+      'the gate the same edit fails, and each of the four labels was watched failing.',
+    reasoned_but_not_demonstrated:
+      'The retrieval half. Substituting a MISSED expected_sources entry for a retrieved one ' +
+      'at constant count should raise that case\'s recall while retrieval_expected_sources ' +
+      'holds still. It was attempted on mc-brake-dive-compression and recall did NOT move, ' +
+      'because the substituted source is not retrieved for that case either. The substitution ' +
+      'did pass silently before the gate, which is the shared mechanism, but no recall RISE ' +
+      'was ever observed and none is claimed here.',
+    why_it_is_gated_anyway:
+      'The mechanism is the same one that was proven, and deleting a label was already a ' +
+      'regression via retrieval_expected_sources. Gating the deletion and not the ' +
+      'substitution would enforce the principle in one direction only.',
+  },
+  {
     id: 'refusal-accuracy-scores-the-pipeline-not-the-model',
     what:
       'On a should_refuse case, a policy force_refusal satisfies the rubric whatever the ' +
@@ -747,6 +771,19 @@ export function describeUnusableBaseline(baseline) {
   if (perCase == null || typeof perCase !== 'object' || Array.isArray(perCase)) {
     return `${path.basename(BASELINE_PATH)} has no "per_case" map`;
   }
+  // A row without `labels` cannot answer the relabelling comparison, and a gate
+  // that skips silently when its input is absent is the defect this file spends
+  // most of its length closing. A baseline written before labels were stored is
+  // therefore unusable rather than partially usable.
+  const unlabelled = Object.entries(perCase)
+    .filter(([, row]) => row == null || typeof row !== 'object' || row.labels == null)
+    .map(([id]) => id);
+  if (unlabelled.length > 0) {
+    return (
+      `${path.basename(BASELINE_PATH)} has ${unlabelled.length} per_case row(s) with no "labels", ` +
+      `so a golden label change would not be gated (first: ${unlabelled[0]})`
+    );
+  }
   const entries = Object.keys(perCase).length;
   if (entries !== coverage.scored_cases) {
     return (
@@ -805,6 +842,42 @@ export function describeUnreadableBaseline(err) {
  *
  * @returns {{ rows: object[], regressions: string[], nowFailing: string[], leftTheSet: string[], retrievalFell: string[] }}
  */
+/**
+ * THE LABELS THAT DEFINE A CASE'S SCORE, in a stable shape the baseline stores
+ * and the gate compares.
+ *
+ * WHY THIS IS STORED AT ALL. The baseline recorded a case's OUTCOMES and the
+ * coverage COUNTS, never the labels those outcomes were judged against - and no
+ * label is in the prompt, so editing one moves no tape key. Flipping a single
+ * `should_refuse` from false to true on a force-refused case was measured
+ * turning `rubric_pass_rate` and `refusal_accuracy` from 0.81 to 0.84, with 52
+ * replayed, 0 missed and exit 0. The number rose because the test got weaker,
+ * which is the defect this whole harness exists to remove.
+ *
+ * It is the same act the `retrieval_expected_sources` check already refuses -
+ * deleting a label a case was missing - with the COUNT preserved so that check
+ * cannot see it. Gating the deletion and not the substitution would enforce the
+ * principle in one direction only, and a half-enforced principle is worse than
+ * an absent one because the next reader concludes it means more than it does.
+ *
+ * All four labels, not just the one that was proven: `expected_component` and
+ * `expected_direction` decide `component_accuracy` and `direction_accuracy`, and
+ * `expected_sources` decides recall and MRR. A gate covering one label and not
+ * its siblings is the same half-enforcement.
+ *
+ * `expected_sources` is SORTED, because the set is what recall measures and the
+ * order it is written in is not a fact about the case. Reordering the array is
+ * therefore not a change; substituting a member is.
+ */
+export function describeCaseLabels(testCase) {
+  return {
+    should_refuse: testCase.should_refuse === true,
+    expected_component: testCase.expected_component ?? null,
+    expected_direction: testCase.expected_direction ?? null,
+    expected_sources: [...(testCase.expected_sources ?? [])].sort(),
+  };
+}
+
 export function compareAgainstBaseline({ metrics, coverage, scoredResults, baseline }) {
   const kLabel = coverage.retrieval_k ?? 'k';
   const previousCoverage = baseline?.coverage ?? null;
@@ -874,6 +947,7 @@ export function compareAgainstBaseline({ metrics, coverage, scoredResults, basel
   const nowFailing = [];
   const leftTheSet = [];
   const retrievalFell = [];
+  const relabelled = [];
   if (baseline) {
     // GATED, not merely printed. The four gated metrics are RATES, and a rate
     // is blind to composition: one case going pass -> fail while another goes
@@ -949,9 +1023,51 @@ export function compareAgainstBaseline({ metrics, coverage, scoredResults, basel
         `${retrievalFell.length} per-case retrieval fall(s) the means cannot show: ${retrievalFell.join(', ')}`,
       );
     }
+
+    // RELABELLING IS THE LAST WAY A NUMBER CAN RISE WITHOUT THE PIPELINE
+    // IMPROVING. No label is in the prompt, so editing one moves no tape key,
+    // changes no coverage count, and every check above stays silent. Measured:
+    // one `should_refuse` flipped false -> true took rubric and refusal from
+    // 0.81 to 0.84 with 52 replayed, 0 missed, exit 0.
+    //
+    // A change is a regression rather than a fall, because a label edit is not
+    // on a scale - it makes the stored score an answer to a different question,
+    // so comparing the two is meaningless in either direction. Re-labelling on
+    // purpose is legitimate and needs `--update-baseline`, the same judgement
+    // `nowFailing` and `retrievalFell` already require.
+    for (const r of scoredResults) {
+      const was = perCase[r.id]?.labels;
+      // No baseline row, or one written before labels were stored, is handled
+      // by `describeUnusableBaseline` rather than skipped silently here.
+      if (was == null) continue;
+      const now = r.labels;
+      for (const field of ['should_refuse', 'expected_component', 'expected_direction']) {
+        if (was[field] !== now[field]) {
+          relabelled.push(`${r.id} ${field} ${JSON.stringify(was[field])} -> ${JSON.stringify(now[field])}`);
+        }
+      }
+      // BOTH sides are sorted here rather than trusting either. `describeCaseLabels`
+      // sorts what it produces, so the run side is already ordered in production -
+      // but this function is exported and compared directly, and a contract that
+      // holds only because today's one caller happens to satisfy it is the kind of
+      // implicit dependency the rest of this file exists to remove. The stored side
+      // needs it regardless: a baseline is a file a human can edit.
+      const wasSources = [...(was.expected_sources ?? [])].sort();
+      const nowSources = [...(now.expected_sources ?? [])].sort();
+      if (JSON.stringify(wasSources) !== JSON.stringify(nowSources)) {
+        relabelled.push(
+          `${r.id} expected_sources ${JSON.stringify(wasSources)} -> ${JSON.stringify(nowSources)}`,
+        );
+      }
+    }
+    if (relabelled.length > 0) {
+      regressions.push(
+        `${relabelled.length} golden label change(s), so the stored score answers a different question: ${relabelled.join('; ')}`,
+      );
+    }
   }
 
-  return { rows, regressions, nowFailing, leftTheSet, retrievalFell };
+  return { rows, regressions, nowFailing, leftTheSet, retrievalFell, relabelled };
 }
 
 /**
@@ -1136,6 +1252,7 @@ export async function main(argv) {
               )
             : null,
           refusalMatch: (testCase.should_refuse === true) === scored.refused,
+          labels: describeCaseLabels(testCase),
         });
       } catch (err) {
         results.push({
@@ -1356,6 +1473,7 @@ async function report(ctx) {
             recall: r.retrieval.recall,
             reciprocal_rank: r.retrieval.reciprocalRank,
             policy: r.scored.policy.decision,
+            labels: r.labels,
           },
         ]),
       ),
