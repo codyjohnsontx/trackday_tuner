@@ -9,6 +9,7 @@ const {
   createAdminClient,
   generateDayPlan,
   collectDayPlanRiderText,
+  reportError,
   promptModule,
 } = vi.hoisted(() => ({
   getRealUser: vi.fn(),
@@ -19,6 +20,7 @@ const {
   // Spied, not stubbed: it delegates to the real collector for every test but
   // one, which needs a skippable field this route cannot currently produce.
   collectDayPlanRiderText: vi.fn(),
+  reportError: vi.fn(),
   promptModule: { current: null as null | typeof import('@/lib/rag/prompt') },
 }));
 
@@ -26,6 +28,7 @@ vi.mock('@/lib/auth', () => ({ getRealUser }));
 vi.mock('@/lib/actions/vehicles', () => ({ getUserProfile }));
 vi.mock('@/lib/supabase/server', () => ({ createClient }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient }));
+vi.mock('@/lib/monitoring/report-error', () => ({ reportError }));
 vi.mock('@/lib/env.server', () => ({
   getAiRateLimitPerHour: vi.fn(() => 20),
   getAiRateLimitPerMinute: vi.fn(() => 3),
@@ -628,6 +631,15 @@ describe('POST /api/ai/day-plan audit and rate limiting', () => {
     const row = aiRequests.find((entry) => entry.request_id === body.request_id);
     expect(row?.status).toBe('error');
     expect(aiRequests.some((entry) => entry.status === 'pending')).toBe(false);
+
+    // The route catches, so Next's `onRequestError` never sees this and Sentry
+    // would not either. R3 (053c545) is what that costs: three months of 500s
+    // recorded in the audit table and nowhere a human was looking.
+    expect(reportError).toHaveBeenCalledWith(
+      'ai/day-plan',
+      expect.anything(),
+      expect.objectContaining({ requestId: body.request_id, retriable: false }),
+    );
   });
 
   it('records an upstream timeout against the audit row', async () => {
@@ -641,6 +653,14 @@ describe('POST /api/ai/day-plan audit and rate limiting', () => {
     expect(
       aiRequests.find((entry) => entry.request_id === body.request_id)?.status,
     ).toBe('upstream_timeout');
+    // Reported too, tagged retriable so a Sentry rule can treat it differently
+    // from an outright failure. This branch used to return without logging at
+    // all.
+    expect(reportError).toHaveBeenCalledWith(
+      'ai/day-plan',
+      expect.anything(),
+      expect.objectContaining({ requestId: body.request_id, retriable: true }),
+    );
   });
 });
 

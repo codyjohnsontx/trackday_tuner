@@ -331,13 +331,14 @@ recorded.
 
 ```text
 app/(app)/           # authenticated routes (layout enforces auth)
-app/api/             # API routes (stripe checkout/portal/webhooks/AI)
+app/api/             # API routes (stripe checkout/portal/webhooks/AI, health, monitoring)
 components/ui/       # shadcn/ui-backed component wrappers
 components/layout/   # app shell, bottom nav
 components/auth/     # auth form, set-password form
 components/sessions/ # session form
 components/garage/   # vehicle form
 lib/actions/         # server actions (sessions, tracks, vehicles, sag)
+lib/monitoring/      # health checks, the ai_requests alert, reportError
 lib/rag/             # RAG retrieval, prompt, policy, and validation helpers
 lib/supabase/        # client, server, middleware, admin clients
 lib/auth/            # OAuth providers, next-path sanitizing, auth error copy
@@ -1294,6 +1295,37 @@ one script would have been the larger change.
 There is no `--retrieval-only` mode. It would have to rebuild the query text
 `generateTuningAdvice` composes, and a second copy of that would drift; offline
 replay is free and complete, so the cost argument for a cheaper half is moot.
+
+## Production Monitoring
+
+`docs/monitoring.md` is the runbook: what each piece catches, the three alert
+channels, the wiring checklist, and the known limits. Three facts belong here
+because they change how ordinary code is written.
+
+**A handled error never reaches Sentry on its own.** Next's `onRequestError`
+(`instrumentation.ts`) sees only *unhandled* errors, and almost nothing in this
+app is unhandled - both AI routes catch, write the `ai_requests` audit row and
+return a shaped JSON 500, and the health checks catch so the probe can name the
+failing one. R3 (053c545) ran through `tuning-advice`'s catch on every call for
+three months and that catch logged nothing at all, so installing the SDK alone
+would have watched the whole outage and reported nothing. **A catch block that
+swallows a failure calls `reportError` (`lib/monitoring/report-error.ts`)**,
+which logs first - `console.error` is the only channel that works with no DSN,
+and it is what a log drain indexes.
+
+**A new route that can reach `lib/rag/retriever` needs its own
+`outputFileTracingIncludes` entry in `next.config.ts`.** Each serverless
+function is its own bundle, so an entry for one route says nothing about
+another's copy of `data/rag-index.json`.
+`tests/unit/rag-index-bundling.test.ts` walks the first-party import graph of
+every API route and names any that is missing one.
+
+**`/api/monitoring/ai-health` reads `ai_requests` and every status has to be
+classified.** Refusals, rate limiting and duplicate suppression are not
+failures; an unrecognised status is treated as one, deliberately, because a
+monitor that reads what it does not understand as healthy is the defect it
+exists to catch. Adding a status to `updateRequestLog` means classifying it in
+`lib/monitoring/ai-health.ts`.
 
 ## Maintaining this file
 

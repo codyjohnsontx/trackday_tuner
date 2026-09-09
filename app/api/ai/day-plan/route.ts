@@ -5,6 +5,7 @@ import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import { assertNotDemoRoute } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
+import { reportError } from '@/lib/monitoring/report-error';
 import { generateDayPlan, UpstreamTimeoutError } from '@/lib/rag/advice';
 import {
   recordRefusedRequest,
@@ -602,17 +603,19 @@ export async function POST(request: Request) {
   ]);
 
   if (sessionsResult.error) {
-    console.error('[ai/day-plan] sessions query failed', {
+    reportError(LOG_TAG, sessionsResult.error, {
+      requestId,
       userId: user.id,
       vehicleId: vehicle.id,
-      error: sessionsResult.error.message,
+      query: 'sessions',
     });
   }
   if (feedbackResult.error) {
-    console.error('[ai/day-plan] feedback query failed', {
+    reportError(LOG_TAG, feedbackResult.error, {
+      requestId,
       userId: user.id,
       vehicleId: vehicle.id,
-      error: feedbackResult.error.message,
+      query: 'session_feedback',
     });
   }
 
@@ -634,10 +637,11 @@ export async function POST(request: Request) {
     }),
   ]);
   if (environmentsResult.error) {
-    console.error('[ai/day-plan] environments query failed', {
+    reportError(LOG_TAG, environmentsResult.error, {
+      requestId,
       userId: user.id,
       vehicleId: vehicle.id,
-      error: environmentsResult.error.message,
+      query: 'session_environment',
     });
   }
   if (sessionsResult.error || feedbackResult.error || environmentsResult.error) {
@@ -800,6 +804,10 @@ export async function POST(request: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error.';
     const isRetriable = err instanceof UpstreamTimeoutError;
+    // Reported before the audit write and on both exits: the timeout branch
+    // used to return without logging anything at all. A handled error never
+    // reaches Next's `onRequestError` - see lib/monitoring/report-error.ts.
+    reportError(LOG_TAG, err, { requestId, retriable: isRetriable });
     await updateRequestLog({
       logTag: LOG_TAG,
       requestId,
@@ -814,7 +822,6 @@ export async function POST(request: Request) {
         { 'retry-after': '5' },
       );
     }
-    console.error('[ai/day-plan]', err);
     return errorResponse(500, 'Unable to generate a day plan right now.', requestId);
   }
 }
