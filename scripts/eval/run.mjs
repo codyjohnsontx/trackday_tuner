@@ -834,15 +834,6 @@ export function describeUnreadableBaseline(err) {
 }
 
 /**
- * Every comparison the gate makes against the baseline, as data rather than as
- * console output. `report` still does the printing; this exists so the checks
- * are reachable from a unit test without a tape, a filesystem or an API key -
- * the composition gate below had no automated coverage at all while it lived
- * inside an unexported `report`.
- *
- * @returns {{ rows: object[], regressions: string[], nowFailing: string[], leftTheSet: string[], retrievalFell: string[] }}
- */
-/**
  * THE LABELS THAT DEFINE A CASE'S SCORE, in a stable shape the baseline stores
  * and the gate compares.
  *
@@ -878,6 +869,15 @@ export function describeCaseLabels(testCase) {
   };
 }
 
+/**
+ * Every comparison the gate makes against the baseline, as data rather than as
+ * console output. `report` still does the printing; this exists so the checks
+ * are reachable from a unit test without a tape, a filesystem or an API key -
+ * the composition gate below had no automated coverage at all while it lived
+ * inside an unexported `report`.
+ *
+ * @returns {{ rows: object[], regressions: string[], nowFailing: string[], leftTheSet: string[], retrievalFell: string[], relabelled: string[] }}
+ */
 export function compareAgainstBaseline({ metrics, coverage, scoredResults, baseline }) {
   const kLabel = coverage.retrieval_k ?? 'k';
   const previousCoverage = baseline?.coverage ?? null;
@@ -1416,12 +1416,13 @@ async function report(ctx) {
       : (readProblem ?? (shapeProblem == null ? null : { reason: shapeProblem, recoverable: true }));
 
   console.log('\nAgainst baseline');
-  const { rows, regressions, nowFailing, leftTheSet, retrievalFell } = compareAgainstBaseline({
-    metrics,
-    coverage,
-    scoredResults,
-    baseline,
-  });
+  const { rows, regressions, nowFailing, leftTheSet, retrievalFell, relabelled } =
+    compareAgainstBaseline({
+      metrics,
+      coverage,
+      scoredResults,
+      baseline,
+    });
   for (const { label, current, previous, count, previousCount, gated } of rows) {
     const over =
       count == null
@@ -1434,6 +1435,7 @@ async function report(ctx) {
   if (nowFailing.length > 0) console.log(`  cases newly failing: ${nowFailing.join(', ')}`);
   if (leftTheSet.length > 0) console.log(`  cases no longer scored: ${leftTheSet.join(', ')}`);
   if (retrievalFell.length > 0) console.log(`  cases retrieving worse: ${retrievalFell.join(', ')}`);
+  if (relabelled.length > 0) console.log(`  cases relabelled: ${relabelled.join('; ')}`);
 
   const errors = results.filter((r) => r.error);
   const unsound = describeUnsoundRun({
