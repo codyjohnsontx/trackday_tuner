@@ -33,6 +33,18 @@ export const dynamic = 'force-dynamic';
  */
 const MAX_ROWS = 10_000;
 
+/**
+ * How long the `ai_requests` read gets before it is abandoned.
+ *
+ * Without this the query can stay pending until the platform kills the function,
+ * which never reaches the `catch` below - so the probe would time out rather
+ * than answer, and a monitor that hangs is a monitor that does not alert. The
+ * catch turns a slow database into the `503` the workflow is watching for, which
+ * is the outcome this route exists to produce. `/api/health` protects its own
+ * checks the same way, with `HEALTH_CHECK_TIMEOUT_MS`.
+ */
+const AI_REQUESTS_READ_TIMEOUT_MS = 10_000;
+
 function unauthorized(): NextResponse {
   return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
 }
@@ -87,7 +99,8 @@ export async function GET(request: NextRequest) {
       .select('status, latency_ms, created_at')
       .gte('created_at', since.toISOString())
       .order('created_at', { ascending: false })
-      .limit(MAX_ROWS);
+      .limit(MAX_ROWS)
+      .abortSignal(AbortSignal.timeout(AI_REQUESTS_READ_TIMEOUT_MS));
     if (error) throw new Error(error.message);
     rows = data ?? [];
   } catch (err) {

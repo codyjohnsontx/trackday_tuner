@@ -19,12 +19,16 @@ const SECRET = 'cron-secret-value';
 const WEBHOOK = 'https://hooks.example.test/services/abc';
 
 function supabaseReturning(result: { data: AiRequestRow[] | null; error: { message: string } | null }) {
-  const limit = vi.fn().mockResolvedValue(result);
+  // `abortSignal` is the last link in the chain and the one that resolves: the
+  // read is bounded so a hanging database becomes the 503 the probe watches for
+  // rather than a function the platform kills before its own catch runs.
+  const abortSignal = vi.fn().mockResolvedValue(result);
+  const limit = vi.fn(() => ({ abortSignal }));
   const order = vi.fn(() => ({ limit }));
   const gte = vi.fn(() => ({ order }));
   const select = vi.fn(() => ({ gte }));
   const from = vi.fn(() => ({ select }));
-  return { from, select, gte, order, limit };
+  return { from, select, gte, order, limit, abortSignal };
 }
 
 function request(headers: Record<string, string> = {}): NextRequest {
