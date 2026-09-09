@@ -5,9 +5,11 @@ import { getMonitoringAlertWebhookUrl } from '@/lib/env.server';
  *
  * `none` is not a failure. The scheduled probe in
  * `.github/workflows/monitoring.yml` answers a firing alert with a non-2xx and
- * fails the workflow run, and GitHub notifies the repository owner on a failed
- * scheduled run - so the alert reaches somebody with no external account at
- * all. A webhook is the upgrade, not the mechanism.
+ * fails the workflow run, and GitHub notifies the user who created that
+ * workflow, or whoever last edited its `cron:` line, if that user has Actions
+ * email notifications enabled - so the alert reaches somebody with no external
+ * account at all, by commit authorship rather than by anything configured here.
+ * See docs/monitoring.md. A webhook is the upgrade, not the mechanism.
  */
 export type AlertDelivery = 'webhook' | 'none' | 'failed';
 
