@@ -84,7 +84,7 @@ check is named.
 2. **Vercel** → your project → Settings → Environment Variables → Add:
 
    - Key: `MONITORING_CRON_SECRET`
-   - Value: the string from step 1
+   - Value: the string from item 1 above
    - Environments: **Production**
 
 3. **GitHub** → the repo → Settings → Secrets and variables → **Actions**:
@@ -95,8 +95,8 @@ check is named.
        `https://trackdaytuner.vercel.app`
    - **Secrets** tab → New repository secret
      - Name: `MONITORING_CRON_SECRET`
-     - Value: **the same string as step 2.** They have to match exactly; a
-       mismatch is a `401` every fifteen minutes.
+     - Value: **the same string you put in Vercel in item 2 above.** They have
+       to match exactly; a mismatch is a `401` every fifteen minutes.
 
 4. **Redeploy.** A Vercel environment variable only reaches a deployment built
    after it was set, so the running deployment still has no secret until you
@@ -118,7 +118,7 @@ check is named.
 # The secret is typed at a prompt and fed to curl on stdin rather than written
 # into the command. Pasted inline it would land in your shell history and in
 # curl's argv, where any other process on the machine can read it.
-read -r -s -p 'Monitoring secret: ' SECRET </dev/tty; printf '\n'
+printf 'Monitoring secret: '; read -rs SECRET </dev/tty; printf '\n'
 printf 'header = "Authorization: Bearer %s"\nurl = "%s"\n' \
   "$SECRET" "https://<your-app>/api/monitoring/ai-health" | curl -i --config -
 unset SECRET
@@ -129,8 +129,8 @@ two probe steps that both print `HTTP 200` while nothing is wrong. If the AI
 alert is genuinely firing, that step prints `HTTP 503` and fails the run on
 purpose - that is the alert working, not the setup failing, and the curl above
 says what failed. An unconfigured one shows a yellow `::warning::` saying
-monitoring is not wired up yet and does nothing else - if you see that, step 3
-above did not take.
+monitoring is not wired up yet and does nothing else - if you see that, the
+GitHub variable and secret in item 3 above did not take.
 
 From then on it runs every 15 minutes.
 
@@ -190,7 +190,7 @@ its dashboard until one arrives, so that banner disappearing is your proof, at
 no risk to anybody. Leave it and get on with something else.
 
 If you want it proven now rather than eventually, force an error on a **preview
-deployment** - step 3 above sets `NEXT_PUBLIC_SENTRY_DSN` for Preview as well as
+deployment** - item 2 above sets `NEXT_PUBLIC_SENTRY_DSN` for Preview as well as
 Production, so a throw on a preview branch reaches the same Sentry project and
 costs no rider anything. Do **not** break production to test this: clearing the
 Supabase key or the RAG index takes the app down for everyone for as long as the
