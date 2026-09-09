@@ -49,7 +49,31 @@ export const sharedSentryOptions = {
   // SPANS, and this configuration emits none.
   sendDefaultPii: false,
 
-  // So `beforeSend` is what enforces the boundary, and it drops all three:
+  // Breadcrumbs are off entirely, and that is the second half of the boundary
+  // rather than a tidiness setting. The SDK collects them on a channel
+  // `beforeSend` never sees - `addBreadcrumb` writes them to the isolation
+  // scope and `applyScopeDataToEvent` merges them onto the event - and two of
+  // the default integrations feed it rider data:
+  //
+  // - `Console` records every `console.*` call, keeping the formatted message
+  //   AND the raw arguments. `reportError` logs its full context before it
+  //   captures, so an issue would carry the `userId`, `vehicleId`, `sessionId`
+  //   and `requestId` that `REPORTABLE_EXTRA_KEYS` in
+  //   lib/monitoring/report-error.ts exists to withhold - and every other
+  //   `console.error` in this app besides, including the rider's email address
+  //   from app/api/beta/signup/route.ts.
+  // - `Http` records outgoing requests with `http.query`, and a PostgREST read
+  //   carries `user_id=eq.<uuid>` there.
+  //
+  // Zero rather than a category filter: the channel is what leaks, so it is the
+  // channel that goes, and nothing has to be re-judged when the SDK grows a new
+  // breadcrumb source. `addBreadcrumb` returns before it builds one at all.
+  // Nothing is lost that this app relies on - `console.error` still writes the
+  // whole story, in order, to Vercel's logs and the log drain, which are
+  // first-party.
+  maxBreadcrumbs: 0,
+
+  // `beforeSend` is what enforces the rest of it, and it drops all three:
   //
   // - `headers` carries `cookie` and `authorization`. Under `@supabase/ssr` the
   //   `sb-<ref>-auth-token` cookie is base64 JSON holding the access token AND

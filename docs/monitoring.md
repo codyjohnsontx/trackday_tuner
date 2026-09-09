@@ -314,7 +314,8 @@ Two deliberate settings:
   of shared JS on a mobile-first app. The performance question tracing would
   answer - how slow is the AI path - is already answered from `ai_requests` by
   `/api/monitoring/ai-health`.
-- **No session replay, and no headers, cookies or request bodies on an issue.**
+- **No session replay, no breadcrumbs, and no headers, cookies or request bodies
+  on an issue.**
   Replay records what a rider types, and the session form carries the free text
   the prompt pipeline already treats as untrusted (`lib/rag/prompt.ts`).
   `sendDefaultPii: false` is set, but do not read it as more than it is: on the
@@ -323,8 +324,13 @@ Two deliberate settings:
   rider's `sb-<ref>-auth-token` cookie, which holds their access **and** refresh
   token, and the `Authorization: Bearer` header carrying
   `MONITORING_CRON_SECRET`. The `beforeSend` in `lib/sentry-options.ts` is what
-  drops all three, so an issue carries the error, the stack, the method and the
-  URL - and not the rider's credentials or what they wrote.
+  drops all three. `maxBreadcrumbs: 0` beside it closes a separate channel
+  `beforeSend` never sees: the SDK's `Console` integration keeps every
+  `console.*` call with its raw arguments, which would put back the identifiers
+  `reportError`'s allow list withholds, and the `Http` one keeps outgoing query
+  strings, where a PostgREST read carries `user_id=eq.<uuid>`. Between them an
+  issue carries the error, the stack, the method and the URL - and not the
+  rider's credentials or what they wrote.
 
 ## Where an alert goes
 
