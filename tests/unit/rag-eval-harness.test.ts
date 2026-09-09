@@ -374,6 +374,44 @@ describe('the baseline the gate compares against', () => {
     expect(describeUnusableBaseline(trimmed)).toMatch(/records 32 scored cases but 31 per_case entries/);
   });
 
+  it.each([
+    ['passed', (row: Record<string, unknown>) => delete row.passed],
+    ['recall', (row: Record<string, unknown>) => delete row.recall],
+    ['reciprocal_rank', (row: Record<string, unknown>) => delete row.reciprocal_rank],
+    ['labels', (row: Record<string, unknown>) => delete row.labels],
+    ['recall mistyped', (row: Record<string, unknown>) => { row.recall = '1'; }],
+    ['passed mistyped', (row: Record<string, unknown>) => { row.passed = 'true'; }],
+  ])('refuses a per_case row whose %s is missing or mistyped', (_name, damage) => {
+    // EVERY field the gate reads, not only `labels`. `compareAgainstBaseline`
+    // reads each through optional chaining or a typeof test, so a row that lost
+    // or mistyped one is treated as "no previous value" and that case is
+    // silently ungated - switching off the composition and per-case retrieval
+    // gates without anyone noticing.
+    const damaged = {
+      ...usable,
+      per_case: Object.fromEntries(
+        Object.entries(usable.per_case as Record<string, Record<string, unknown>>).map(
+          ([id, row]) => [id, { ...row }],
+        ),
+      ),
+    };
+    damage(Object.values(damaged.per_case)[0] as Record<string, unknown>);
+    expect(describeUnusableBaseline(damaged)).toMatch(/per_case field\(s\) missing or mistyped/);
+  });
+
+  it('accepts a null recall, which is a real answer for an unlabelled case', () => {
+    // Null is a measurement of an empty population; a wrong TYPE is not.
+    const nulled = {
+      ...usable,
+      per_case: Object.fromEntries(
+        Object.entries(usable.per_case as Record<string, Record<string, unknown>>).map(
+          ([id, row]) => [id, { ...row, recall: null, reciprocal_rank: null }],
+        ),
+      ),
+    };
+    expect(describeUnusableBaseline(nulled)).toBeNull();
+  });
+
   it('accepts a null measurement, which is a real answer rather than an absence', () => {
     // `retrieval_k` is null on a run that retrieved nothing. Presence is the
     // requirement; a null value means the population was empty and was measured.
@@ -888,7 +926,11 @@ describe('a golden label change', () => {
         ),
       ),
     };
-    expect(describeUnusableBaseline(stripped)).toMatch(/per_case row\(s\) with no "labels"/);
+    // The message is now the unified per-case field check, and it still names
+    // the labels field specifically, so the test keeps pinning the same fact.
+    const reason = describeUnusableBaseline(stripped);
+    expect(reason).toMatch(/per_case field\(s\) missing or mistyped/);
+    expect(reason).toContain('.labels');
   });
 });
 

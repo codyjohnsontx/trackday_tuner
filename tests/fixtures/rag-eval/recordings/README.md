@@ -5,8 +5,10 @@ whole pipeline - embed, retrieve, prompt, model, policy - runs in CI with no
 OpenAI key and no network. `embeddings.json` and `completions.json` are written
 by `npm run rag:eval -- --live` and are meant to be committed.
 
-Each entry is keyed by a SHA-256 of the request itself: method, path, and the
-canonicalized JSON body. **The prompt is therefore the key.** Change
+Each entry is keyed by the first 32 hexadecimal characters - 128 bits - of a
+SHA-256 over the request itself: method, path, and the canonicalized JSON body.
+**The request is therefore the key**, and the prompt is the part of it that
+usually moves. Change
 `SYSTEM_PROMPT`, the component vocabulary, the knowledge index or a golden case
 and the affected keys move, offline mode reports a miss by name, and CI goes red
 until the recordings are refreshed alongside the change. That is the point: the

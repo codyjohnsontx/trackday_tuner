@@ -16,8 +16,10 @@ Run `npm run rag:eval` and paste the "Against baseline" block below. That block
 is the evidence that a prompt or retrieval change was compared before shipping
 rather than after.
 
-If the run reports missing recordings, the change moved the prompt - that is the
-harness working. Re-record with `OPENAI_API_KEY=... npm run rag:eval -- --live`,
+If the run reports missing recordings, the change moved the REQUEST KEY - that is
+the harness working. The key is the method, the path and the canonicalized
+request body, so a changed prompt moves it, and so does a changed golden case, a
+changed retrieved context or a changed request option. Re-record with `OPENAI_API_KEY=... npm run rag:eval -- --live`,
 commit tests/fixtures/rag-eval/recordings/, and paste the diff.
 
 Re-baseline only deliberately, with `npm run rag:eval -- --update-baseline`, and

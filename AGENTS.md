@@ -1175,6 +1175,25 @@ second-opinion review reading `buildContext` against `loadRaceEngineerContext`
 field by field. Before claiming the set is complete again, do that comparison
 rather than trusting this paragraph.
 
+**The self-check STOPS the run, and that sentence is true because the code was
+moved rather than the sentence softened.** It used to claim it "gates the whole
+run" while execution fell through to the golden loop and set a non-zero exit only
+at the end - so `--live` spent real API calls across all 32 cases with the scorer
+already known unsound. Two independent reviewers found it. It now returns before
+the tape is opened, on a broken fixture OR an empty fixture set. When prose and
+behaviour disagree, the behaviour moves.
+
+**A `per_case` row must be COMPLETE, not merely present.**
+`compareAgainstBaseline` reads `passed` for the composition gate, `recall` and
+`reciprocal_rank` for the per-case retrieval gate, and `labels` for the
+relabelling gate - each through optional chaining or a `typeof` test, so a row
+that lost or mistyped one is read as "no previous value" and that case is
+silently ungated. Validating only `labels` left the two gates added to stop
+numbers moving for the wrong reasons switchable off without anyone noticing.
+`describeUnusableBaseline` checks every field the gate reads. `recall` and
+`reciprocal_rank` may be `null`, which is a real measurement of an empty
+population; a wrong TYPE is not.
+
 **RELABELLING A GOLDEN CASE IS A REGRESSION, because it was the last way a
 number could rise without the pipeline improving.** No label is in the prompt, so
 editing one moves no tape key; and the baseline stored a case's OUTCOMES and the

@@ -775,13 +775,42 @@ export function describeUnusableBaseline(baseline) {
   // that skips silently when its input is absent is the defect this file spends
   // most of its length closing. A baseline written before labels were stored is
   // therefore unusable rather than partially usable.
-  const unlabelled = Object.entries(perCase)
-    .filter(([, row]) => row == null || typeof row !== 'object' || row.labels == null)
-    .map(([id]) => id);
-  if (unlabelled.length > 0) {
+  // EVERY FIELD THE GATE READS, not only `labels`. `compareAgainstBaseline`
+  // reads `passed` for the composition gate, `recall` and `reciprocal_rank` for
+  // the per-case retrieval gate, and `labels` for the relabelling gate - and each
+  // reads its field through optional chaining or a `typeof` test, so a row that
+  // has LOST or MISTYPED one (a hand edit, a bad conflict resolution) is treated
+  // as "no previous value" and that case is silently ungated. Validating only
+  // `labels` left the two gates added tonight - the ones whose whole purpose is
+  // to stop a number moving for the wrong reason - switchable off without anyone
+  // noticing. That is this project's own defect reproduced inside its cure, so
+  // the row must be complete or the baseline is unusable.
+  //
+  // `recall` and `reciprocal_rank` are legitimately null for a case with no
+  // labels or one the retriever never ran for, so null is accepted and a wrong
+  // TYPE is not. `passed` and `labels` have no such case: every scored row has
+  // them.
+  const malformedRows = [];
+  for (const [id, row] of Object.entries(perCase)) {
+    if (row == null || typeof row !== 'object' || Array.isArray(row)) {
+      malformedRows.push(`${id} (not an object)`);
+      continue;
+    }
+    if (typeof row.passed !== 'boolean') malformedRows.push(`${id}.passed`);
+    if (row.labels == null || typeof row.labels !== 'object' || Array.isArray(row.labels)) {
+      malformedRows.push(`${id}.labels`);
+    }
+    for (const field of ['recall', 'reciprocal_rank']) {
+      if (!Object.hasOwn(row, field)) malformedRows.push(`${id}.${field} (absent)`);
+      else if (row[field] !== null && typeof row[field] !== 'number') {
+        malformedRows.push(`${id}.${field} (not a number or null)`);
+      }
+    }
+  }
+  if (malformedRows.length > 0) {
     return (
-      `${path.basename(BASELINE_PATH)} has ${unlabelled.length} per_case row(s) with no "labels", ` +
-      `so a golden label change would not be gated (first: ${unlabelled[0]})`
+      `${path.basename(BASELINE_PATH)} has ${malformedRows.length} per_case field(s) missing or ` +
+      `mistyped, so those cases would not be gated (first: ${malformedRows[0]})`
     );
   }
   const entries = Object.keys(perCase).length;
@@ -1186,6 +1215,29 @@ export async function main(argv) {
     );
   }
   const selfCheckBroken = selfCheck.filter((entry) => entry.passed);
+
+  // THE EARLY EXIT IS WHAT MAKES "gates the whole run" TRUE. It used to be a
+  // claim the code did not honour: execution fell through to the golden loop and
+  // only set a non-zero exit at the very end, so `--live` spent real API calls
+  // across all 32 cases while the scorer was ALREADY known unsound. Two
+  // independent reviewers found that, which is the strongest signal available.
+  //
+  // Fixed by moving the BEHAVIOUR rather than softening the sentence: when prose
+  // and behaviour disagree, the behaviour moves. The run stops here, before the
+  // tape is opened and before anything can cost money, because a harness that
+  // cannot fail its own three fixtures has nothing to say about the thirty-two
+  // below them - and continuing would buy an answer already known to be
+  // untrustworthy.
+  if (selfCheck.length === 0 || selfCheckBroken.length > 0) {
+    console.error(
+      selfCheck.length === 0
+        ? '\n[rag:eval] FAIL: the scorer self-check had no fixtures, so this run has no evidence it can report a failure at all.'
+        : `\n[rag:eval] FAIL: the scorer accepted ${selfCheckBroken.length} response(s) production force-refuses ` +
+            `(${selfCheckBroken.map((e) => e.id).join(', ')}). The harness cannot report a failure it does not detect.`,
+    );
+    console.error('  Stopping before the golden cases: no tape is opened and no API call is made.');
+    return 1;
+  }
 
   const tape = new OpenAiTape({ dir: RECORDINGS_DIR, mode });
   await tape.load();
