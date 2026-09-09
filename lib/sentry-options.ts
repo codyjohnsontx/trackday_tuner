@@ -9,7 +9,21 @@
  * anyone's local checkout run with error tracking simply off, rather than with
  * an SDK trying to reach a project that does not exist.
  */
+import type * as SentryTypes from '@sentry/nextjs';
 import type { ErrorEvent } from '@sentry/nextjs';
+
+/**
+ * Exactly what `Sentry.init` accepts - the union of the browser, Node and edge
+ * option contracts - so `satisfies` below checks these option NAMES against all
+ * three runtimes this object is passed to.
+ *
+ * `as const` alone narrows the values and validates nothing: a misspelled option
+ * would compile and be silently ignored by the SDK. That is not a style point
+ * here, because `beforeSend` is what keeps the rider's session cookie and free
+ * text out of Sentry - a typo in that key would be a privacy regression that
+ * looks exactly like working code.
+ */
+type SentryInitOptions = Parameters<typeof SentryTypes.init>[0];
 
 const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
@@ -69,4 +83,4 @@ export const sharedSentryOptions = {
     }
     return event;
   },
-} as const;
+} as const satisfies SentryInitOptions;
