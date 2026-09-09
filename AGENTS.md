@@ -1086,13 +1086,16 @@ same input and five of the six never reach the model at all. It is left because
 narrowing it moves `refusal_accuracy`, and re-opening scoring semantics right
 after publishing `correction_record` is the exact hazard that record answers.
 
-`expected_component` / `expected_direction` are REPORTED, never gated - they
+`component_accuracy` / `direction_accuracy` are REPORTED, never gated - they
 track whether the model reaches a human's answer, which belongs in the baseline
-rather than in a pass condition. `expected_sources` is what recall@4 and MRR
-measure against, over sources rather than chunks (the index holds 4-6 chunks per
-file, so three chunks of one file is one document found). An empty list means the
-case is not retrieval-scored, which is forced anyway when a classifier refuses
-before anything is embedded.
+rather than in a pass condition. That is the METRIC; the
+`expected_component` / `expected_direction` LABELS it is scored against are a
+different question, and editing one is a regression like any other label change
+(below). `expected_sources` is what recall@k and MRR measure against, over
+sources rather than chunks (the index holds 4-6 chunks per file, so three chunks
+of one file is one document found). An empty list means the case is not
+retrieval-scored, which is forced anyway when a classifier refuses before
+anything is embedded.
 
 **The committed numbers moved after the first baseline, and `correction_record`
 in `eval-baseline.json` is the record of it.** That first baseline (b115aaf) was
