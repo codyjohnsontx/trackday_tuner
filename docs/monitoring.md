@@ -177,13 +177,24 @@ stop and fix that. But an object is **not** proof - it is an internal carrier,
 and it tells you the SDK module loaded, not that it initialised with a working
 DSN and not that a single event was ever delivered.
 
-What proves delivery is a real error, and step 2's item 5 already produces one:
-breaking `/api/health` on purpose makes `reportError` fire, so run that check and
-watch for a `MissingKnowledgeIndexError` or `SupabaseUnreachableError` issue
-appearing in Sentry within a minute or so. Do the two together and one deliberate
-failure verifies both channels - the email and Sentry. If the workflow goes red
-and the Vercel log shows a `[health]` line but Sentry stays empty, the DSN is
-wrong or the alert rule is off.
+**This does not fold into step 2's item 5.** That item points
+`MONITORING_APP_URL` at `<app>/nope`, and the workflow then requests
+`<app>/nope/api/health` - a path no route matches, so Next answers `404` and
+`app/api/health/route.ts` never runs. No check fails, `reportError` is never
+called, and Sentry stays empty by construction. Item 5 proves the email and
+nothing else.
+
+What proves delivery is a real error, and the cheapest way to see one is to
+wait for it: a brand-new Sentry project shows **"waiting for first event"** on
+its dashboard until one arrives, so that banner disappearing is your proof, at
+no risk to anybody. Leave it and get on with something else.
+
+If you want it proven now rather than eventually, force an error on a **preview
+deployment** - step 3 above sets `NEXT_PUBLIC_SENTRY_DSN` for Preview as well as
+Production, so a throw on a preview branch reaches the same Sentry project and
+costs no rider anything. Do **not** break production to test this: clearing the
+Supabase key or the RAG index takes the app down for everyone for as long as the
+test runs.
 
 Optional, and separate: source maps. Set `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` and
 `SENTRY_PROJECT` in the Vercel **build** environment and stack traces point at
@@ -332,6 +343,19 @@ Two deliberate settings:
   issue carries the error, the stack, the method and the URL - and not the
   rider's credentials or what they wrote.
 
+  **What that costs, stated plainly.** Both of those producers are server-side,
+  but `lib/sentry-options.ts` is one options object shared by the server, edge
+  and browser initialisers, so the browser loses its breadcrumbs too. There the
+  loss is not covered by anything: a drain carries build, function and edge logs
+  (step 4), so a rider's browser writes nowhere and Sentry is the only channel
+  that sees a client-side failure. A React error in the app therefore reaches
+  you with its stack and **no** record of which route the rider came from or
+  which control they pressed. That is accepted, not overlooked - the blanket
+  setting is the safer default, and narrowing it means a second, client-only
+  code path with a privacy surface of its own. If the missing trail ever costs
+  more than it saves, the fix is a client `beforeBreadcrumb` keeping
+  `navigation` and `ui.click` while dropping `console` and `fetch`/`xhr`.
+
 ## Where an alert goes
 
 Three channels, in order of how little setup they need:
@@ -371,7 +395,21 @@ add the `crons` entry to `vercel.json`, set `MONITORING_CRON_SECRET` in Vercel
 - **No alert de-duplication.** A sustained outage fires every 15 minutes.
   Suppressing repeats needs somewhere to keep the last alert state, and the
   failure mode of getting that wrong - silence during a real outage - is worse
-  than the noise.
+  than the noise. This is about the schedule; the next bullet is a different
+  thing.
+- **`/api/health` reports every failing check, and it is public.** The endpoint
+  is unauthenticated by design, and each failing check writes one log line and
+  one Sentry event. So while a dependency is down, the volume is set by how
+  often the endpoint is *called* rather than by the outage: the documented
+  callers alone (the 15-minute workflow plus a 5-minute external monitor)
+  produce roughly 32 events an hour with both checks failing, and anyone can
+  raise that by looping the URL - during exactly the window Sentry's free tier
+  needs to still be accepting events. Accepted because a health check that
+  reports nothing defeats its own purpose, and it has to stay reachable by an
+  external monitor. `/api/monitoring/ai-health` decides the opposite one route
+  over, and the difference is real: its silent branch is reachable *before* any
+  credential is checked and describes a documented configuration state rather
+  than a fault, whereas this one only reports when a check genuinely fails.
 - **A failed reservation insert writes no row**, so a Supabase outage that stops
   `reservePendingSlot` is invisible to the `ai_requests` alert. `/api/health`'s
   Supabase check is what covers that case.

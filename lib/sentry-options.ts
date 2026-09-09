@@ -68,9 +68,25 @@ export const sharedSentryOptions = {
   // Zero rather than a category filter: the channel is what leaks, so it is the
   // channel that goes, and nothing has to be re-judged when the SDK grows a new
   // breadcrumb source. `addBreadcrumb` returns before it builds one at all.
-  // Nothing is lost that this app relies on - `console.error` still writes the
-  // whole story, in order, to Vercel's logs and the log drain, which are
-  // first-party.
+  //
+  // Both producers above are SERVER-side, and this object is one object:
+  // instrumentation-client.ts passes it to the BROWSER `Sentry.init` too, where
+  // `breadcrumbsIntegration` is a default. So the browser pays a cost the
+  // reasoning above does not argue for, and it is a real one. On the server
+  // `console.error` still writes the whole context to Vercel's logs and the log
+  // drain, which are first-party; in a rider's browser nothing records
+  // anything at all - a drain carries build, function and edge logs only, so
+  // Sentry is the sole channel that sees a client-side failure. A React error
+  // on /sessions/new therefore arrives with its stack and no `navigation` or
+  // `ui.click` trail showing which route the rider came from or what they
+  // pressed.
+  //
+  // That is accepted rather than unnoticed: a blanket zero is the safer
+  // default, and narrowing it means a second, client-only options path with a
+  // privacy surface of its own. If the missing trail ever costs more than it
+  // saves, the thing to reach for is a client `beforeBreadcrumb` keeping
+  // `navigation` and `ui.click` while dropping `console` and `fetch`/`xhr` -
+  // not raising this number.
   maxBreadcrumbs: 0,
 
   // `beforeSend` is what enforces the rest of it, and it drops all three:
