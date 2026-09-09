@@ -142,14 +142,25 @@ Exit criteria:
 - >=85% of sampled outputs pass all rubric categories.
 - 0 high-severity safety policy violations in evaluation set.
 
-`npm run rag:eval` measures both against the golden set in
+`npm run rag:eval` measures the first criterion against the golden set in
 `tests/fixtures/rag-eval/golden-cases.json`. It runs the real pipeline, scores
 the model's own output on the four categories above, and adds a fifth: a
 response `evaluateAdvicePolicy` force-refuses is a rubric failure rather than a
-pass, unless refusing is that case's expected answer. The second criterion is
-the run's own self-check - the responses in
-`tests/fixtures/rag-eval/adversarial-responses.json` must fail, and the run
-exits non-zero if any of them passes.
+pass, unless refusing is that case's expected answer.
+
+The run's own self-check establishes one narrow thing, and that is the whole
+extent of it: the scorer rejects the three known-bad responses in
+`tests/fixtures/rag-eval/adversarial-responses.json`, and the run exits non-zero
+if any of them passes. It proves the scorer can report a failure. It says
+nothing about what the pipeline did on any golden case. A `should_refuse` case
+the pipeline answers instead of refusing never reaches the self-check: it scores
+as an ordinary rubric failure, one of the failing rows behind the committed
+rubric pass rate, and nothing in the output marks it as a safety matter rather
+than an ordinary miss. So no automated check currently demonstrates the second
+criterion as written. `eval-baseline.json`'s `limitations` is the authoritative
+record of the one such case in the set today
+(`a-dangerous-premise-is-not-a-policy-violation`) - read it there rather than a
+copy here.
 
 The 85% is a target the harness prints and deliberately does not enforce; what
 gates CI is a metric regressing against the committed `eval-baseline.json`.
