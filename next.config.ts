@@ -75,10 +75,5 @@ export default withSentryConfig(
       excludeReplayIframe: true,
       excludeReplayWorker: true,
     },
-    webpack: {
-      // The cron monitors this would create belong to Vercel Cron, which this
-      // project does not use - the schedule is .github/workflows/monitoring.yml.
-      automaticVercelMonitors: false,
-    },
   },
 );

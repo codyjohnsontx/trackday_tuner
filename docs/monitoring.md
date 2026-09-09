@@ -25,14 +25,18 @@ external account at all**, and two need an account you have to create.
 | --- | --- | --- |
 | `/api/health` | **Yes.** Public, no monitoring-specific variable, no account | Nothing new. It does use the app's existing `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, and needs `data/rag-index.json` in the bundle - those are what it checks |
 | `/api/monitoring/ai-health` | No - answers `503 Monitoring is not configured.` | `MONITORING_CRON_SECRET` in Vercel |
-| The 15-minute probe + alert | No - the workflow runs but exits clean with a warning | Two GitHub settings. **No external account** |
+| The 15-minute probe + alert | No - the workflow runs but exits clean with a warning | Two GitHub settings plus the Vercel secret and a redeploy. **No external account** |
 | Sentry | No - the SDK is not initialised at all | A sentry.io account (free tier) you create |
 | Log drain | No - there is no code for it | A Better Stack or Axiom account you create |
 
 **The most useful line on this page:** the alert that catches an R3-shaped
-outage is the GitHub Actions one, and it costs you nothing but the two settings
-in step 2 below: a failed scheduled workflow run notifies you by email, with no
-vendor, no plan and no card. Sentry adds the stack trace behind a failure; it
+outage is the GitHub Actions one, and it costs you nothing but the three
+settings and a redeploy in step 2 below: a failed scheduled workflow run
+notifies you by email, with no vendor, no plan and no card. Do all of step 2,
+not just the GitHub half - the workflow's own configuration check reads only the
+two GitHub values, so setting those alone leaves it reporting itself configured
+while the AI probe answers `503 Monitoring is not configured.` and reddens the
+run every fifteen minutes. Sentry adds the stack trace behind a failure; it
 does not add the alarm. Do step 1 and step 2 and the claim is true. Steps 3 and
 4 make a failure faster to diagnose.
 
