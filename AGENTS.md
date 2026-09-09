@@ -1022,10 +1022,19 @@ while measuring nothing:
   "nothing changed" does: `(no baseline)` six times and exit 0, in the required
   CI step. `describeUnusableBaseline` (`scripts/eval/run.mjs`) now refuses any
   run that was supposed to be gated - which is every run except `--live` (never
-  gated) and `--update-baseline` (the bootstrap that writes it). It requires the
-  KEY to be present, not a number: `retrieval_k` is legitimately `null` on a run
-  that retrieved nothing, and a null is a measurement while a missing key is a
-  file that cannot answer. What a baseline must carry is derived from the same
+  gated) and `--update-baseline` (the bootstrap that writes it). Of a COVERAGE
+  figure it requires the KEY to be present, not a number: `retrieval_k` is
+  legitimately `null` on a run that retrieved nothing, and a null is a
+  measurement while a missing key is a file that cannot answer. A GATED METRIC'S
+  VALUE carries one condition more, because its own denominator settles whether
+  the population was empty - it must be a NUMBER when that denominator is
+  non-zero, and may be null only when it is 0. Presence alone there accepted a
+  file keeping every key, every coverage figure and all 32 `per_case` rows with
+  the four gated rates nulled, which printed `(no baseline)` against all four
+  and exited 0: the precise signature above, reproduced inside the fix for it,
+  and refusing a trimmed and a mistyped `per_case` row while accepting it
+  enforced the principle in one direction only. What a baseline must carry is
+  derived from the same
   `METRICS` table the gate reads, so a metric added as gated is required in the
   baseline automatically instead of silently ungating itself. That is per
   metric; a baseline scored over ZERO cases satisfies every one of those rules

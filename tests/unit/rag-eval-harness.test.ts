@@ -419,6 +419,40 @@ describe('the baseline the gate compares against', () => {
     expect(describeUnusableBaseline(nulled)).toBeNull();
   });
 
+  it('refuses a gated metric with no value over a population that was not empty', () => {
+    // Presence alone is the right rule for a coverage figure and not for a
+    // gated metric's value: a null `rubric_pass_rate` beside 32 scored cases
+    // leaves `previous` null, so all four rates print `(no baseline)` and the
+    // run exits 0 - the exact signature this function exists to stop, reached
+    // by a file that keeps every key, every coverage figure and all 32 rows.
+    const nulled = { ...usable, metrics: { ...usable.metrics } };
+    for (const key of ['rubric_pass_rate', 'recall_at_k', 'mrr', 'refusal_accuracy']) {
+      nulled.metrics[key] = null;
+    }
+    expect(describeUnusableBaseline(nulled)).toBe(
+      'eval-baseline.json has no number for gated metric(s) whose population was not empty: ' +
+        'rubric_pass_rate (over 32 scored_cases), recall_at_k (over 26 retrieval_cases), ' +
+        'mrr (over 26 retrieval_cases), refusal_accuracy (over 32 scored_cases)',
+    );
+  });
+
+  it('accepts a null gated metric whose own denominator is zero', () => {
+    // The other direction, and rejecting it would trade one wrong for another:
+    // a run that retrieved nothing measured `recall_at_k` over an empty
+    // population, so null there is the measurement rather than an absence.
+    const nulled = {
+      ...usable,
+      metrics: { ...usable.metrics, recall_at_k: null, mrr: null },
+      coverage: {
+        ...usable.coverage,
+        retrieval_cases: 0,
+        retrieval_k: null,
+        retrieval_expected_sources: 0,
+      },
+    };
+    expect(describeUnusableBaseline(nulled)).toBeNull();
+  });
+
   it('refuses a baseline that scored no cases, which gates nothing', () => {
     // The writer could produce this from an emptied golden set: every key
     // present, every metric null, `per_case` empty and `scored_cases` 0, so it

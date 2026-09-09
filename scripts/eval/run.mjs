@@ -717,11 +717,14 @@ const REQUIRED_COVERAGE_KEYS = [
  * anything to compare against. A check that passes without checking is worse
  * than no check, because the green tick is believed.
  *
- * Presence is what is required, not a number: the writer emits every metric and
- * every coverage key on every run, and any of them is legitimately `null` when
- * its population was empty (`retrieval_k` on a run that retrieved nothing, say).
- * So a null value is a real measurement and passes; an ABSENT key means this
- * file cannot answer the question and fails.
+ * Presence is what a COVERAGE figure requires, not a number: the writer emits
+ * every metric and every coverage key on every run, and any of them is
+ * legitimately `null` when its population was empty (`retrieval_k` on a run that
+ * retrieved nothing, say). So a null value there is a real measurement and
+ * passes; an ABSENT key means this file cannot answer the question and fails.
+ * A GATED METRIC'S VALUE carries one condition more, because its own denominator
+ * says whether the population was empty: it must be a number when that
+ * denominator is non-zero, and may be null only when it is 0.
  *
  * That is per METRIC, and it is a different question from whether the file
  * measured ANYTHING. A baseline scored over zero cases carries every key, every
@@ -756,6 +759,28 @@ export function describeUnusableBaseline(baseline) {
   const missingCoverage = REQUIRED_COVERAGE_KEYS.filter((key) => !Object.hasOwn(coverage, key));
   if (missingCoverage.length > 0) {
     return `${path.basename(BASELINE_PATH)} is missing coverage key(s): ${missingCoverage.join(', ')}`;
+  }
+  // Presence is the rule for a COVERAGE figure and not for a GATED METRIC's
+  // VALUE, and the difference is whether the file says its own population was
+  // empty. A null `rubric_pass_rate` beside 32 scored cases is a pairing the
+  // writer cannot emit, and it leaves `previous` null on that metric - so the
+  // run prints `(no baseline)` against all four gated rates and exits 0, which
+  // is the precise signature this function exists to stop. Refusing a trimmed
+  // and a mistyped `per_case` row while accepting this would enforce the
+  // principle in one direction only. So a gated metric must be a NUMBER exactly
+  // when its own denominator is non-zero, and stays legitimately null when that
+  // denominator is 0 (a run that retrieved nothing measured `recall_at_k` over
+  // an empty population). The pairing is derived from `METRICS` for the same
+  // reason the keys are: a metric added as gated is checked against its own
+  // denominator automatically rather than through a hand-kept copy.
+  const unmeasuredMetrics = METRICS.filter(
+    (m) => m.gated && m.coverageKey != null && coverage[m.coverageKey] > 0 && typeof metrics[m.key] !== 'number',
+  ).map((m) => `${m.key} (over ${coverage[m.coverageKey]} ${m.coverageKey})`);
+  if (unmeasuredMetrics.length > 0) {
+    return (
+      `${path.basename(BASELINE_PATH)} has no number for gated metric(s) whose population was ` +
+      `not empty: ${unmeasuredMetrics.join(', ')}`
+    );
   }
 
   // `per_case` is the ONLY thing the composition gate reads, and it reads it
