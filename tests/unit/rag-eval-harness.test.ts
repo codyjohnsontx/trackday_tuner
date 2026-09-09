@@ -881,8 +881,9 @@ describe('a golden label change', () => {
       per_case: Object.fromEntries(
         Object.entries(usable.per_case as Record<string, Record<string, unknown>>).map(
           ([id, row]) => {
-            const { labels: _labels, ...rest } = row;
-            return [id, rest];
+            const withoutLabels = { ...row };
+            delete withoutLabels.labels;
+            return [id, withoutLabels];
           },
         ),
       ),
