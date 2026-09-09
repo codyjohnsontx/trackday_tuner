@@ -342,14 +342,27 @@ Two deliberate settings:
   is IP-revealing header names only. Left alone, an issue would carry the
   rider's `sb-<ref>-auth-token` cookie, which holds their access **and** refresh
   token, and the `Authorization: Bearer` header carrying
-  `MONITORING_CRON_SECRET`. The `beforeSend` in `lib/sentry-options.ts` is what
-  drops all three. `maxBreadcrumbs: 0` beside it closes a separate channel
+  `MONITORING_CRON_SECRET`. It would also carry the query string and the full
+  URL, and that matters on exactly one route: `/auth/callback` receives `?code=`
+  and exchanges it for a session, for password recovery as much as for OAuth
+  sign-in, so an error there would hand a working account-takeover code to a
+  third party. The `beforeSend` in `lib/sentry-options.ts` is what drops all
+  four, keeping the URL's path so the failing route is still named.
+  `maxBreadcrumbs: 0` beside it closes a separate channel
   `beforeSend` never sees: the SDK's `Console` integration keeps every
   `console.*` call with its raw arguments, which would put back the identifiers
   `reportError`'s allow list withholds, and the `Http` one keeps outgoing query
   strings, where a PostgREST read carries `user_id=eq.<uuid>`. Between them an
-  issue carries the error, the stack, the method and the URL - and not the
-  rider's credentials or what they wrote.
+  issue carries the error, the stack, the method and the URL's path - and not
+  the rider's credentials or what they wrote.
+
+  **The rule to carry forward, because this took four goes to get right.** Each
+  of those channels was found separately, and each time the previous fix was
+  believed to have closed the problem: the body, then the headers and cookies,
+  then the breadcrumbs, then the query string. This SDK **collects by default**,
+  and the option named for privacy excludes almost none of it. So when you add a
+  field or upgrade the SDK, assume it is included until you have read the code
+  that excludes it - and do not treat `sendDefaultPii: false` as the boundary.
 
   **What that costs, stated plainly.** Both of those producers are server-side,
   but `lib/sentry-options.ts` is one options object shared by the server, edge

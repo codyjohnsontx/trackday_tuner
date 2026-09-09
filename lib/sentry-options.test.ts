@@ -10,7 +10,11 @@ type SentryClient = Parameters<typeof Sentry.setCurrentClient>[0];
 // `sendDefaultPii: false` gates none of this on the event path - its deny list
 // is IP-revealing header names only. Without `beforeSend` an issue would carry
 // the rider's Supabase session cookie (access + refresh token), the monitoring
-// cron secret, and the AI request body holding their free text.
+// cron secret, the AI request body holding their free text, and the auth code
+// on `/auth/callback`. Four channels, found one at a time, each after the
+// previous fix was believed to have closed the problem - so the rule this file
+// encodes is that the SDK includes by default and its privacy-named option
+// excludes almost nothing.
 describe('sharedSentryOptions.beforeSend', () => {
   const beforeSend = (event: ErrorEvent): ErrorEvent =>
     sharedSentryOptions.beforeSend(event);
@@ -43,13 +47,44 @@ describe('sharedSentryOptions.beforeSend', () => {
     expect(sent.request).not.toHaveProperty('data');
   });
 
-  // The point is to drop those three and nothing else: which URL 500'd is the
-  // first thing an operator needs.
+  // The point is to drop what authenticates somebody and nothing else: which
+  // route 500'd is the first thing an operator needs.
   it('keeps the method and the URL', () => {
     const sent = beforeSend(riderRequestEvent());
 
     expect(sent.request?.url).toBe('https://trackdaytuner.app/api/ai/tuning-advice');
     expect(sent.request?.method).toBe('POST');
+  });
+
+  // `app/auth/callback/route.ts` reads `?code=` and hands it to
+  // `exchangeCodeForSession`, and it serves password recovery as well as OAuth
+  // sign-in - so that code is an account-takeover credential, and it is still
+  // usable when an error interrupts the exchange. `sendDefaultPii: false` gates
+  // neither field: `query_string` resolves through `urlQueryParams !== false`,
+  // which is an object rather than `false`, and the SDK documents `url` as
+  // always included.
+  it('drops the auth code from the query string and the URL', () => {
+    const sent = beforeSend({
+      type: undefined,
+      request: {
+        url: 'https://trackdaytuner.app/auth/callback?code=usable-auth-code&next=/dashboard',
+        method: 'GET',
+        query_string: 'code=usable-auth-code&next=/dashboard',
+      },
+    });
+
+    expect(sent.request).not.toHaveProperty('query_string');
+    expect(sent.request?.url).toBe('https://trackdaytuner.app/auth/callback');
+    expect(JSON.stringify(sent)).not.toContain('usable-auth-code');
+  });
+
+  it('strips a fragment as well, and survives a relative url', () => {
+    const sent = beforeSend({
+      type: undefined,
+      request: { url: '/auth/callback?code=secret#fragment', method: 'GET' },
+    });
+
+    expect(sent.request?.url).toBe('/auth/callback');
   });
 
   it('returns an event with no request unchanged', () => {

@@ -102,13 +102,26 @@ export const sharedSentryOptions = {
   // - `data` is the request body: on the AI routes, the rider's question,
   //   symptoms and change intent - the free text the prompt pipeline already
   //   treats as untrusted, see the `<user_data>` handling in lib/rag/prompt.ts.
+  // - `query_string`, and the search part of `url`, carry a credential on one
+  //   route: `app/auth/callback/route.ts` reads `?code=` and hands it to
+  //   `exchangeCodeForSession`, and that route serves password recovery as well
+  //   as OAuth sign-in, so an error there would ship a still-usable
+  //   account-takeover code. `sendDefaultPii: false` does not gate either -
+  //   `query_string` resolves to `dataCollection.urlQueryParams !== false`,
+  //   which is an object rather than `false` and so is true, and `url` is
+  //   documented in the SDK as always included.
   //
   // Headers go wholesale rather than by blanking `cookie`, `set-cookie` and
   // `authorization` by name, because a deny list of sensitive header names is
   // exactly what failed here: the SDK shipped one and `cookie` was not on it. A
   // header worth keeping should be re-added by name as an allow list, as a
   // decision somebody makes on purpose. What survives is the error, the stack,
-  // the method and the URL.
+  // the method, and the URL with its search part removed - enough to name the
+  // route that failed and nothing that authenticates anybody.
+  //
+  // The pattern behind all four is the one to carry forward: this SDK collects
+  // by DEFAULT and `sendDefaultPii: false` gates almost none of it. Assume a new
+  // field is included until you have read the code that excludes it.
   //
   // Do NOT swap this for the `dataCollection` option: `resolveDataCollectionOptions`
   // switches its base to the all-PII-on `DEFAULTS` as soon as that key is
@@ -120,6 +133,12 @@ export const sharedSentryOptions = {
       delete event.request.headers;
       delete event.request.cookies;
       delete event.request.data;
+      delete event.request.query_string;
+      if (typeof event.request.url === 'string') {
+        // Split rather than `new URL()`: this must never throw inside the hook
+        // that strips credentials, and a relative or malformed url would.
+        event.request.url = event.request.url.split('#')[0].split('?')[0];
+      }
     }
     return event;
   },
