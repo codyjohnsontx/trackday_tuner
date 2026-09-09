@@ -6,10 +6,16 @@
 #   /api/monitoring/ai-health   - has anything failed in the last hour? (error
 #                                 rate and p95 latency over `ai_requests`)
 #
-# A failed scheduled run is itself the alert: GitHub emails the repository owner
-# on one, so this reaches somebody with no external monitoring account at all. A
-# webhook (`MONITORING_ALERT_WEBHOOK_URL` on the deployment) is the upgrade, and
-# an external uptime monitor pointed at /api/health is the belt-and-braces third
+# A failed scheduled run is itself the alert, and this file configures no
+# recipient for it: GitHub notifies the user who CREATED this workflow, or
+# whoever last edited the `cron:` line below, and only if that user has Actions
+# email notifications enabled. So the alert follows commit authorship rather
+# than anything set here, and editing that cron line moves it to you. That is
+# the cheapest channel and the only one needing no external account, but it is
+# worth proving once rather than assuming - docs/monitoring.md step 2 item 5
+# walks through failing this on purpose and checking the mail arrives. A webhook
+# (`MONITORING_ALERT_WEBHOOK_URL` on the deployment) is the upgrade, and an
+# external uptime monitor pointed at /api/health is the belt-and-braces third
 # path. See docs/monitoring.md.
 #
 # GitHub disables a scheduled workflow in a public repository after 60 days with

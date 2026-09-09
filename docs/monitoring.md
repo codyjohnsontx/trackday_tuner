@@ -23,7 +23,7 @@ external account at all**, and two need an account you have to create.
 
 | Piece | Live on merge? | What it needs from you |
 | --- | --- | --- |
-| `/api/health` | **Yes.** Public, no variable, no account | Nothing |
+| `/api/health` | **Yes.** Public, no monitoring-specific variable, no account | Nothing new. It does use the app's existing `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, and needs `data/rag-index.json` in the bundle - those are what it checks |
 | `/api/monitoring/ai-health` | No - answers `503 Monitoring is not configured.` | `MONITORING_CRON_SECRET` in Vercel |
 | The 15-minute probe + alert | No - the workflow runs but exits clean with a warning | Two GitHub settings. **No external account** |
 | Sentry | No - the SDK is not initialised at all | A sentry.io account (free tier) you create |
@@ -31,10 +31,22 @@ external account at all**, and two need an account you have to create.
 
 **The most useful line on this page:** the alert that catches an R3-shaped
 outage is the GitHub Actions one, and it costs you nothing but the two settings
-in step 2 below. A failed scheduled workflow run emails the repository owner, so
-that is a working alert channel with no vendor, no plan and no card. Sentry adds
-the stack trace behind a failure; it does not add the alarm. Do step 1 and step
-2 and the claim is true. Steps 3 and 4 make a failure faster to diagnose.
+in step 2 below: a failed scheduled workflow run notifies you by email, with no
+vendor, no plan and no card. Sentry adds the stack trace behind a failure; it
+does not add the alarm. Do step 1 and step 2 and the claim is true. Steps 3 and
+4 make a failure faster to diagnose.
+
+**That email has a dependency worth knowing before you rely on it**, because it
+is not "GitHub emails the repository owner". GitHub sends a failed
+scheduled-workflow notification to **the user who created the workflow, or
+whoever last edited the cron line**, and only if *that* user has Actions email
+notifications enabled. Today that user is you, by authorship rather than by
+design - the cron in `.github/workflows/monitoring.yml` was committed under your
+identity and nothing since has touched that line. It **moves to somebody else
+the moment they edit the cron**, which on a repository worked by agents is a
+live possibility rather than a hypothetical. Whether your own Actions email
+notifications are on cannot be checked from inside the repository. So confirm it
+once, with step 2's last item, rather than assuming it.
 
 ## Set it up
 
@@ -102,8 +114,14 @@ check is named.
 # any 3xx                    = MONITORING_APP_URL is not the canonical host. Use
 #                              the host Vercel serves directly, not an apex or
 #                              alias that redirects to it.
-curl -i -H "Authorization: Bearer <the secret>" \
-  https://<your-app>/api/monitoring/ai-health
+#
+# The secret is typed at a prompt and fed to curl on stdin rather than written
+# into the command. Pasted inline it would land in your shell history and in
+# curl's argv, where any other process on the machine can read it.
+read -r -s -p 'Monitoring secret: ' SECRET </dev/tty; printf '\n'
+printf 'header = "Authorization: Bearer %s"\nurl = "%s"\n' \
+  "$SECRET" "https://<your-app>/api/monitoring/ai-health" | curl -i --config -
+unset SECRET
 ```
 
 Then GitHub → Actions → **Monitoring** → Run workflow. A configured run shows
@@ -114,7 +132,26 @@ says what failed. An unconfigured one shows a yellow `::warning::` saying
 monitoring is not wired up yet and does nothing else - if you see that, step 3
 above did not take.
 
-From then on it runs every 15 minutes and a failure emails you.
+From then on it runs every 15 minutes.
+
+5. **Prove the notification actually reaches you. Do this once.** Everything
+   above only shows that the probes answer; it does not show that a *failure*
+   reaches a human, and that is the whole claim. Nothing else on this page
+   establishes it, and the dependency described at the top is why.
+
+   Temporarily point `MONITORING_APP_URL` at a URL that cannot answer - append
+   `/nope` to it - then Actions → **Monitoring** → Run workflow. The run must go
+   red. Then check that you actually received the email, including your spam
+   folder. Put the variable back when you are done.
+
+   - **Mail arrived:** the alert channel works end to end. Nothing more to do.
+   - **No mail:** GitHub → Settings → Notifications → Actions, and turn on email
+     for failed workflows. If it still does not arrive, this repository has *no*
+     working zero-account alert path, and a webhook or an external uptime
+     monitor (both below) stops being optional.
+
+   Do this again if anyone ever edits the `cron:` line, because that moves who
+   gets notified.
 
 ### Step 3 - Sentry (needs an account you create)
 
@@ -132,12 +169,21 @@ Free tier is enough. No plan was chosen for you.
    on. It is on by default for a new project. Without a rule, Sentry collects
    issues and tells nobody.
 
-**Verify it worked:** open the deployed site, open the browser console and type
-`window.__SENTRY__`. An object means the DSN reached the client bundle and the
-SDK initialised; `undefined` means the variable did not reach the build. The
-server side is proven the first time something actually throws - `reportError`
-writes a `console.error` line at the same moment it sends, so the Vercel log
-line and the Sentry issue should appear together.
+**Verify it worked.** Two checks, and only the second one proves anything.
+
+A quick smoke test first: open the deployed site, open the browser console and
+type `window.__SENTRY__`. `undefined` means the DSN never reached the build, so
+stop and fix that. But an object is **not** proof - it is an internal carrier,
+and it tells you the SDK module loaded, not that it initialised with a working
+DSN and not that a single event was ever delivered.
+
+What proves delivery is a real error, and step 2's item 5 already produces one:
+breaking `/api/health` on purpose makes `reportError` fire, so run that check and
+watch for a `MissingKnowledgeIndexError` or `SupabaseUnreachableError` issue
+appearing in Sentry within a minute or so. Do the two together and one deliberate
+failure verifies both channels - the email and Sentry. If the workflow goes red
+and the Vercel log shows a `[health]` line but Sentry stays empty, the DSN is
+wrong or the alert rule is off.
 
 Optional, and separate: source maps. Set `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` and
 `SENTRY_PROJECT` in the Vercel **build** environment and stack traces point at
@@ -285,8 +331,12 @@ Two deliberate settings:
 Three channels, in order of how little setup they need:
 
 1. **A failed scheduled workflow run.** `monitoring.yml` fails when either probe
-   is not `200`, and GitHub emails the repository owner on a failed scheduled
-   run. This needs no external account.
+   is not `200`, and GitHub emails a failed scheduled run to the workflow's
+   creator or whoever last edited the `cron:` line, if that user has Actions
+   email notifications on. This needs no external account, and it is the only
+   channel that does - which is exactly why step 2's item 5 has you prove it
+   arrives once instead of trusting it. Nothing here configures a recipient, so
+   this channel follows commit authorship rather than a setting in this repo.
 2. **A webhook.** `MONITORING_ALERT_WEBHOOK_URL`, above.
 3. **An external uptime monitor** pointed at `/api/health`, above.
 
@@ -297,8 +347,10 @@ runs inside the deployment, and the route already accepts the exact
 `Authorization: Bearer` header it sends. It was not used because **a `*/15`
 schedule requires a Vercel Pro subscription**: the Hobby plan allows cron jobs
 but caps them at two, triggered once a day, which is not a monitor. A GitHub
-Actions schedule runs every 15 minutes on a free account, and a failed run
-already emails the owner, so the alert channel comes with it.
+Actions schedule runs every 15 minutes on a free account, and a failed run is
+itself emailed, so the alert channel comes with it - subject to the actor and
+notification-settings dependency described at the top of this page, which is
+worth reading before leaning on it.
 
 The route is deliberately written so this is reversible with no code change:
 add the `crons` entry to `vercel.json`, set `MONITORING_CRON_SECRET` in Vercel
