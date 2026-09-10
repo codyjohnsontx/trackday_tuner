@@ -808,6 +808,86 @@ describe('sessions actions', () => {
     expect(trackRollback.eq).toHaveBeenCalledWith('created_by', 'user-1');
   });
 
+  // The last path in createSession that handed raw PostgREST to the rider. The
+  // payload writes `enabled_modules`, which arrives with 20260228000200, so a
+  // database behind that migration printed `PGRST204 Could not find the
+  // 'enabled_modules' column of 'sessions' in the schema cache` under the Save
+  // button with nothing reaching Sentry - the Save Outcome incident shape, one
+  // statement earlier in the same function.
+  it('does not show the rider raw PostgREST when the session insert fails', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const trackLookup = createQuery({
+      single: { data: { id: 'track-1', name: 'Road America' }, error: null },
+    });
+    const sessionInsert = createQuery({
+      single: {
+        data: null,
+        error: {
+          code: 'PGRST204',
+          message: "Could not find the 'enabled_modules' column of 'sessions' in the schema cache",
+          details: null,
+          hint: null,
+        },
+      },
+    });
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => trackLookup)
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return sessionInsert;
+      })
+      .mockImplementation(() => createQuery({ base: { data: [], error: null } }));
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession(validInput);
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).not.toContain('enabled_modules');
+    expect(!result.ok && result.error).not.toContain('schema cache');
+    // The same session-level sentence its two sibling paths return.
+    expect(!result.ok && result.error).toMatch(/did not save completely/i);
+    expect(!result.ok && result.error).toMatch(/on our end/i);
+    expect(reportError).toHaveBeenCalledWith(
+      'session-create',
+      expect.objectContaining({ message: expect.stringContaining('schema cache') }),
+      expect.objectContaining({ reason: 'PGRST204', table: 'sessions' }),
+    );
+  });
+
+  // A gateway blip needs no drift at all: postgrest-js resolves it as an
+  // ordinary error carrying an EMPTY code, which used to render as
+  // `TypeError: fetch failed` under the form.
+  it('does not show the rider a transport failure on the session insert', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const trackLookup = createQuery({
+      single: { data: { id: 'track-1', name: 'Road America' }, error: null },
+    });
+    const sessionInsert = createQuery({
+      single: {
+        data: null,
+        error: { code: '', message: 'TypeError: fetch failed', details: '', hint: '' },
+      },
+    });
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => trackLookup)
+      .mockImplementationOnce(() => sessionInsert)
+      .mockImplementation(() => createQuery({ base: { data: [], error: null } }));
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession(validInput);
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).not.toContain('fetch failed');
+    expect(!result.ok && result.error).toMatch(/did not save completely/i);
+    expect(reportError).toHaveBeenCalled();
+  });
+
   it('leaves a track it did not create alone when the session insert fails', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);

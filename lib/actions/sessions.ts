@@ -790,8 +790,21 @@ export async function createSession(
     .single();
 
   if (error) {
+    // A plain insert, so as with the environment path below there is no `P0001`
+    // class to let through: nothing PostgREST answers here is a rider's to fix.
+    // `enabled_modules` and `extra_modules` arrive with 20260228000200, so a
+    // database behind that migration answered `PGRST204 Could not find the
+    // 'enabled_modules' column of 'sessions' in the schema cache` straight into
+    // the form's sticky bar, with nothing reaching Sentry.
+    reportError('session-create', new Error(error.message), {
+      reason: error.code,
+      table: 'sessions',
+      details: error.details,
+      hint: error.hint,
+      userId: user.id,
+    });
     await rollbackAutoCreatedTrack(supabase, user.id, track);
-    return { ok: false, error: error.message };
+    return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE };
   }
 
   const createdSession = data as Session;
