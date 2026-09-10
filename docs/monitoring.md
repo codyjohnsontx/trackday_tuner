@@ -259,7 +259,7 @@ is deliberately not among them: nothing in the app reads it, only
 
 | Piece | Answers | Catches R3? |
 | --- | --- | --- |
-| `/api/health` | Is Postgres reachable, and does the RAG index load *in this bundle*? | Yes, on the first deploy |
+| `/api/health` | Is Postgres reachable, does the RAG index load *in this bundle*, and does the Data API still expose the RPCs this code calls? | Yes, on the first deploy |
 | `/api/monitoring/ai-health` | Has anything failed in the last hour? Error rate, p95 latency | Yes, on the first rider call |
 | `.github/workflows/monitoring.yml` | Runs both every 15 minutes and fails the run when either says no | This is what makes them alerts |
 | Sentry | The stack trace behind an individual failure | Yes - but only because handled errors are reported explicitly, see below |
@@ -277,6 +277,60 @@ function is its own bundle - so `/api/health` has its own
 `outputFileTracingIncludes` entry in `next.config.ts`.
 `tests/unit/rag-index-bundling.test.ts` walks the import graph of every API
 route and fails any that can reach `lib/rag/retriever` without one.
+
+#### The `schema_contract` check
+
+Nothing applies migrations automatically. `npm run db:push` is a person at a
+terminal, no workflow in `.github/workflows/` runs it, and there is no
+`vercel.json` - so a deploy ships code that can be ahead of the database it
+talks to, and every page still renders. The first anyone hears of it is a rider
+losing what they typed:
+
+    Could not find the function public.save_session_outcome(p_notes, ...)
+    in the schema cache
+
+That is what this check exists to say first. It asks the Data API to resolve
+each RPC the app calls (`lib/monitoring/schema-contract.ts` holds the list) and
+fails the deployment with `MissingRpcError:<names>` when it cannot - so the
+detail names the thing to go and apply.
+
+Two properties are deliberate and worth keeping:
+
+- **It asks PostgREST, not `pg_proc`.** Two different faults produce that one
+  error, and they are byte-identical from a client: the migration was never
+  applied, *or* it was and PostgREST's schema cache has not been reloaded. A
+  catalog check would call the second one healthy while every rider's save
+  failed. The schema cache is what a rider's call resolves against, so the
+  schema cache is what gets asked.
+- **The probe cannot run what it probes.** PostgREST resolves an RPC from the
+  parameter *names* and Postgres coerces the *values* afterwards, so each probe
+  carries every real parameter name plus a value no `uuid` or `integer` can
+  parse. It is rejected with `22P02` before any function body runs. That is not
+  decoration: `service_role` holds execute on `consume_beta_rate_limit`, so a
+  well-formed probe would spend a rate-limit slot every fifteen minutes.
+
+**When it fires**, the two causes need different fixes and one query separates
+them. Run it in the SQL editor (read-only):
+
+```sql
+select proname, pronargs from pg_proc where proname = 'save_session_outcome';
+```
+
+- **A row comes back** - the function is there and the schema cache is stale.
+  `notify pgrst, 'reload schema';` fixes it. Supabase installs a
+  `pgrst_ddl_watch` event trigger that reloads on DDL, so this should be rare
+  and self-healing; if it recurs, that trigger is the thing to check.
+- **No row** - the migration is not applied. `scripts/sql/audit-migrations-against-database.sql`
+  is the next step: it reports all 17 migrations against the live schema in one
+  read-only query, because a database that is missing one is likely to be
+  missing others. Apply what it names with `npm run db:push` (see the migration
+  notes in `AGENTS.md` - the baseline is dated before the rest of the history,
+  so `db push` needs `--include-all` and the ordering warning is expected).
+
+`npm run db:status` is **not** a substitute for that audit. It compares the
+CLI's recorded *history*, and the hosted project was never built through the
+CLI, so it has no history to compare against - see "A migration in this
+repository is not evidence the hosted project has it" in `AGENTS.md`.
 
 ### `/api/monitoring/ai-health`
 

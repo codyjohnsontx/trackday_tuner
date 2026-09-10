@@ -1299,7 +1299,7 @@ replay is free and complete, so the cost argument for a cheaper half is moot.
 ## Production Monitoring
 
 `docs/monitoring.md` is the runbook: what each piece catches, the three alert
-channels, the wiring checklist, and the known limits. Three facts belong here
+channels, the wiring checklist, and the known limits. Four facts belong here
 because they change how ordinary code is written.
 
 **A handled error never reaches Sentry on its own.** Next's `onRequestError`
@@ -1319,6 +1319,29 @@ function is its own bundle, so an entry for one route says nothing about
 another's copy of `data/rag-index.json`.
 `tests/unit/rag-index-bundling.test.ts` walks the first-party import graph of
 every API route and names any that is missing one.
+
+**NOTHING APPLIES MIGRATIONS AUTOMATICALLY, so a deploy can put code in front of
+a database that has not got the schema it needs.** `npm run db:push` is a person
+at a terminal; no workflow runs it and there is no `vercel.json`. Pages still
+render, and the first anyone hears of it is a rider losing what they typed -
+`save_session_outcome` was missing in production and Save Outcome answered
+`PGRST202 Could not find the function ... in the schema cache` with the notes
+unsaved. `/api/health`'s `schema_contract` check
+(`lib/monitoring/schema-contract.ts`) is what says so now, within fifteen
+minutes, and **a new `supabase.rpc()` call site belongs on its list** or the
+check reports healthy while that feature is the one that is broken.
+
+It asks the Data API rather than `pg_proc` on purpose, and this is the fact worth
+carrying: **a never-applied migration and a stale PostgREST schema cache are
+byte-identical from a client** - same 404, same `PGRST202`, same message, same
+null `hint` (measured). A catalog check would call the stale-cache case healthy
+while every save failed. What the neighbouring faults answer instead, also
+measured, is what makes an error report worth reading: a missing `execute` grant
+is `403` / `42501`, and a signature that drifted by one parameter is `PGRST202`
+*with* a `hint` naming the signature it did find. `scripts/sql/audit-migrations-against-database.sql`
+reports all 17 migrations against a live schema in one read-only query - use it
+rather than `npm run db:status`, which reads a CLI history the hosted project
+has never had.
 
 **`/api/monitoring/ai-health` reads `ai_requests` and every status has to be
 classified.** Refusals, rate limiting and duplicate suppression are not
