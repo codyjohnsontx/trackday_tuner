@@ -90,7 +90,7 @@ const SESSION_LAPS_STALE_READ_MESSAGE =
  * `replace_session_laps` (20260903001500) rejects a request with a bare
  * `raise exception`, which is `P0001`, and those messages are about THIS
  * request. `TT409` is its stale-read refusal, which has a written sentence of
- * its own above. Any OTHER code answers with `SESSION_LAPS_SAVE_FAILED_MESSAGE`
+ * its own above. Any OTHER code answers with the CALLER's `saveFailedMessage`
  * and goes to `reportError`.
  *
  * THE DIRECTION IS THE POINT, and it is the same rule and the same reason as
@@ -110,6 +110,18 @@ const SESSION_LAPS_DOMAIN_REJECTION_CODE = 'P0001';
 const SESSION_LAPS_SAVE_FAILED_MESSAGE =
   'Your lap times were not saved - something is wrong on our end, not with what you entered. They are still on this page: copy them somewhere safe before you leave, then try again in a few minutes.';
 
+/**
+ * The same fault on the CREATE path, where the sentence has to name more.
+ *
+ * `createSession` runs `rollbackCreatedSession` when laps fail, which deletes
+ * the session row inserted moments earlier - so a rider told only that their lap
+ * times were not saved would copy the laps, leave, and find no session at all.
+ * Every field is still on screen while they stay, which is exactly why the
+ * message must not imply it is safe to leave with the laps alone.
+ */
+const SESSION_CREATE_SAVE_FAILED_MESSAGE =
+  'Your session was not saved - something is wrong on our end, not with what you entered. Nothing was stored, including your lap times: copy anything you need before you leave this page, then try again in a few minutes.';
+
 async function persistSessionLaps(params: {
   supabase: Awaited<ReturnType<typeof createClient>>;
   userId: string;
@@ -124,6 +136,12 @@ async function persistSessionLaps(params: {
    * here as well as in SQL would be two records of one fact, and they drift.
    */
   expectedLaps: CreateSessionLapInput[];
+  /**
+   * What a rider reads when the fault is ours rather than theirs. It belongs to
+   * the CALLER because the two callers lose different things: `replaceSessionLaps`
+   * loses the lap times, `createSession` rolls the whole session back.
+   */
+  saveFailedMessage: string;
 }): Promise<string | null> {
   const validationError = validateLaps(params.laps);
   if (validationError) return validationError;
@@ -142,7 +160,7 @@ async function persistSessionLaps(params: {
     details: error.details,
     hint: error.hint,
   });
-  return SESSION_LAPS_SAVE_FAILED_MESSAGE;
+  return params.saveFailedMessage;
 }
 
 /**
@@ -779,6 +797,7 @@ export async function createSession(
     // The session row was inserted two statements ago, so nothing can be holding
     // laps against it yet.
     expectedLaps: [],
+    saveFailedMessage: SESSION_CREATE_SAVE_FAILED_MESSAGE,
   });
   if (lapError) {
     await rollbackCreatedSession({
@@ -966,6 +985,7 @@ export async function replaceSessionLaps(
     session: sessionRow as Session,
     laps,
     expectedLaps,
+    saveFailedMessage: SESSION_LAPS_SAVE_FAILED_MESSAGE,
   });
   if (persistError) return { ok: false, error: persistError };
 

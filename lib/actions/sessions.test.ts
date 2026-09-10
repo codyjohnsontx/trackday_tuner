@@ -904,6 +904,59 @@ describe('sessions actions', () => {
     );
   });
 
+  // A lap failure on the CREATE path deletes the session row that was inserted
+  // moments earlier, so the rider is not merely missing lap times - the whole
+  // session is gone. Telling them only that the laps were not saved sends them
+  // away with the laps copied and nothing else stored.
+  it('tells a rider the whole session was lost when create rolls back on a lap fault', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const insertQuery = createQuery({
+      single: { data: { id: 'sess-1', ...validInput }, error: null },
+    });
+    const rollbackQuery = createQuery({ base: { data: [{ id: 'sess-1' }], error: null } });
+    const from = vi
+      .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return createTrackIdLookup();
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return rollbackQuery;
+      });
+    const rpc = vi.fn(async () => ({
+      data: null,
+      error: {
+        code: 'PGRST202',
+        message:
+          'Could not find the function public.replace_session_laps(p_expected_laps, p_laps, p_session_id, p_user_id) in the schema cache',
+        details: null,
+        hint: null,
+      },
+    }));
+    vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
+
+    const result = await createSession({
+      ...validInput,
+      laps: [{ lap_number: 1, lap_time_ms: 90_000, included: true }],
+    });
+
+    expect(result.ok).toBe(false);
+    // The session really is gone, so the sentence has to say so.
+    expect(!result.ok && result.error).toMatch(/session was not saved/i);
+    expect(!result.ok && result.error).toMatch(/nothing was stored/i);
+    expect(!result.ok && result.error).not.toMatch(/they are still on this page/i);
+    expect(!result.ok && result.error).not.toContain('replace_session_laps');
+    expect(rollbackQuery.delete).toHaveBeenCalled();
+    expect(reportError).toHaveBeenCalled();
+  });
+
   it('rolls back the session when environment insert fails', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
@@ -1609,7 +1662,8 @@ describe('sessions actions', () => {
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error).not.toContain('replace_session_laps');
     expect(!result.ok && result.error).not.toContain('schema cache');
-    expect(!result.ok && result.error).toMatch(/not saved/i);
+    // The lap-only sentence, because only the laps were at stake here.
+    expect(!result.ok && result.error).toMatch(/lap times were not saved/i);
     expect(!result.ok && result.error).toMatch(/on our end/i);
     expect(!result.ok && result.error).toMatch(/copy them somewhere safe/i);
     expect(reportError).toHaveBeenCalledWith(
