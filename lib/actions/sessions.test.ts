@@ -52,9 +52,22 @@ import type {
   VehicleBaseline,
 } from '@/types';
 
+/**
+ * `code`, `details` and `hint` are optional because the code under test reads
+ * them: an error with no `code` is what postgrest-js resolves a transport
+ * failure as, and telling that apart from a database rejection is the whole
+ * point of the paths these fixtures drive.
+ */
+type QueryError = {
+  message: string;
+  code?: string;
+  details?: string | null;
+  hint?: string | null;
+};
+
 type QueryResponse = {
-  base?: { data?: unknown; error?: { message: string } | null; count?: number | null };
-  single?: { data?: unknown; error?: { message: string } | null };
+  base?: { data?: unknown; error?: QueryError | null; count?: number | null };
+  single?: { data?: unknown; error?: QueryError | null };
 };
 
 function createQuery(response: QueryResponse = {}) {
@@ -948,25 +961,36 @@ describe('sessions actions', () => {
     });
 
     expect(result.ok).toBe(false);
-    // The session really is gone, so the sentence has to say so.
-    expect(!result.ok && result.error).toMatch(/session was not saved/i);
-    expect(!result.ok && result.error).toMatch(/nothing was stored/i);
+    // Session-level, because the whole session is at stake rather than the laps.
+    expect(!result.ok && result.error).toMatch(/session did not save completely/i);
+    expect(!result.ok && result.error).toMatch(/sessions list/i);
     expect(!result.ok && result.error).not.toMatch(/they are still on this page/i);
     expect(!result.ok && result.error).not.toContain('replace_session_laps');
     expect(rollbackQuery.delete).toHaveBeenCalled();
     expect(reportError).toHaveBeenCalled();
   });
 
+  // The same shape as the Save Outcome incident on a plain insert:
+  // `session_environment` arrives with 20260422000400, so a database behind it
+  // answers PGRST205 and that text used to be printed under the form while the
+  // rider's whole session was rolled back, with nothing reaching Sentry.
   it('rolls back the session when environment insert fails', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const insertQuery = createQuery({
       single: { data: { id: 'sess-1', ...validInput }, error: null },
     });
     const environmentInsertQuery = createQuery({
-      base: { data: null, error: { message: 'env failed' } },
+      base: {
+        data: null,
+        error: {
+          code: 'PGRST205',
+          message: "Could not find the table 'public.session_environment' in the schema cache",
+          details: null,
+          hint: null,
+        },
+      },
     });
     const rollbackQuery = createQuery({
       base: { data: [{ id: 'sess-1' }], error: null },
@@ -1000,16 +1024,62 @@ describe('sessions actions', () => {
       },
     });
 
-    expect(result).toEqual({ ok: false, error: 'env failed' });
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).not.toContain('session_environment');
+    expect(!result.ok && result.error).not.toContain('schema cache');
+    expect(!result.ok && result.error).toMatch(/did not save completely/i);
     expect(rollbackQuery.delete).toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith(
-      '[sessions] session_environment insert failed',
-      expect.objectContaining({
-        userId: 'user-1',
-        sessionId: 'sess-1',
-        error: 'env failed',
-      }),
+    expect(reportError).toHaveBeenCalledWith(
+      'session-create',
+      expect.objectContaining({ message: expect.stringContaining('schema cache') }),
+      expect.objectContaining({ reason: 'PGRST205', table: 'session_environment' }),
     );
+  });
+
+  // The rollback delete reports nothing back and gives up quietly when it errors
+  // or matches no rows, and a dead transport fails the write AND the delete. So
+  // the sentence must not tell a rider the session is gone - one who believes
+  // that re-enters it and ends up with two.
+  it('does not promise the session was removed when the rollback cannot say so', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const insertQuery = createQuery({
+      single: { data: { id: 'sess-1', ...validInput }, error: null },
+    });
+    // The delete removed nothing, so the session row is still there.
+    const rollbackQuery = createQuery({ base: { data: [], error: null } });
+    const from = vi
+      .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return createTrackIdLookup();
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return rollbackQuery;
+      });
+    const rpc = vi.fn(async () => ({
+      data: null,
+      error: { code: '', message: 'TypeError: fetch failed', details: '', hint: '' },
+    }));
+    vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
+
+    const result = await createSession({
+      ...validInput,
+      laps: [{ lap_number: 1, lap_time_ms: 90_000, included: true }],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).not.toMatch(/nothing was stored/i);
+    expect(!result.ok && result.error).not.toMatch(/was not saved\b/i);
+    // What it does have to carry: the fault is ours, and go and look first.
+    expect(!result.ok && result.error).toMatch(/on our end/i);
+    expect(!result.ok && result.error).toMatch(/sessions list/i);
   });
 
   it('keeps the auto-created track when the session delete removed no row', async () => {
@@ -1056,7 +1126,9 @@ describe('sessions actions', () => {
       environment: { ambient_temperature_c: 24, source: 'manual' },
     });
 
-    expect(result).toEqual({ ok: false, error: 'env failed' });
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).not.toContain('env failed');
+    expect(!result.ok && result.error).toMatch(/did not save completely/i);
     // Silence is not proof the session went, and `sessions.track_id` is
     // ON DELETE SET NULL, so deleting the track now would strip the circuit off a
     // session the rider still has.
@@ -1111,7 +1183,9 @@ describe('sessions actions', () => {
       environment: { ambient_temperature_c: 24, source: 'manual' },
     });
 
-    expect(result).toEqual({ ok: false, error: 'env failed' });
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).not.toContain('env failed');
+    expect(!result.ok && result.error).toMatch(/did not save completely/i);
     // The session row survived its own delete, and `sessions.track_id` is
     // ON DELETE SET NULL, so removing the track now would strip the circuit off a
     // session the rider still has. A stray track is the lesser failure.

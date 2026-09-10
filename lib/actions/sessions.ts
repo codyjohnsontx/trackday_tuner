@@ -111,16 +111,23 @@ const SESSION_LAPS_SAVE_FAILED_MESSAGE =
   'Your lap times were not saved - something is wrong on our end, not with what you entered. They are still on this page: copy them somewhere safe before you leave, then try again in a few minutes.';
 
 /**
- * The same fault on the CREATE path, where the sentence has to name more.
+ * The same fault on the CREATE path, where the sentence has to name more - and
+ * has to stop short of what this code can actually promise.
  *
- * `createSession` runs `rollbackCreatedSession` when laps fail, which deletes
- * the session row inserted moments earlier - so a rider told only that their lap
- * times were not saved would copy the laps, leave, and find no session at all.
- * Every field is still on screen while they stay, which is exactly why the
- * message must not imply it is safe to leave with the laps alone.
+ * `createSession` inserts the session row first, so a later failure runs
+ * `rollbackCreatedSession` to take it back out. A rider told only that their LAP
+ * TIMES were not saved would copy the laps, leave, and find no session at all,
+ * which is why this sentence is session-level. But it must not say the session
+ * was removed either: that delete reports nothing back and gives up quietly when
+ * it errors or matches no rows - and the two faults correlate, because a dead
+ * transport fails the write AND the delete that follows it. A rider told
+ * "nothing was stored" who then re-enters the session ends up with two.
+ *
+ * So it names what is certain (the save did not finish, and the fault is ours),
+ * and sends them to look before re-entering rather than promising a clean slate.
  */
 const SESSION_CREATE_SAVE_FAILED_MESSAGE =
-  'Your session was not saved - something is wrong on our end, not with what you entered. Nothing was stored, including your lap times: copy anything you need before you leave this page, then try again in a few minutes.';
+  'Your session did not save completely - something is wrong on our end, not with what you entered. Check your sessions list before you enter it again, in case a partial one was left behind. What you typed is still on this page, so copy anything you need before you leave.';
 
 async function persistSessionLaps(params: {
   supabase: Awaited<ReturnType<typeof createClient>>;
@@ -827,10 +834,18 @@ export async function createSession(
       .insert(environmentPayload);
 
     if (environmentError) {
-      console.error('[sessions] session_environment insert failed', {
+      // A plain insert, so there is no `P0001` class to let through the way the
+      // RPC paths do: nothing PostgREST answers here is a rider's to fix, and
+      // `session_environment` arrives with 20260422000400, so a database behind
+      // that migration used to print `PGRST205 Could not find the table ...`
+      // under the form while this rider's whole session was rolled back.
+      reportError('session-create', new Error(environmentError.message), {
+        reason: environmentError.code,
+        table: 'session_environment',
+        details: environmentError.details,
+        hint: environmentError.hint,
         userId: user.id,
         sessionId: createdSession.id,
-        error: environmentError.message,
       });
       await rollbackCreatedSession({
         supabase,
@@ -839,7 +854,7 @@ export async function createSession(
         track,
         failureLog: '[sessions] session rollback failed',
       });
-      return { ok: false, error: environmentError.message };
+      return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE };
     }
   }
 
