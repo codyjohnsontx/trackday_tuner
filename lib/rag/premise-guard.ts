@@ -112,7 +112,15 @@ export type DangerousPremiseHazard = 'brake_removal';
 
 export interface DangerousPremiseAssessment {
   decision: 'allow' | 'reject';
-  /** Which hazard matched. The audit row records this, never the rider's text. */
+  /**
+   * Which hazard matched. NOT AUDITED and with no production consumer: the route
+   * calls `applyPremiseRejection`, which reads `decision` and `rejection` only.
+   * An earlier draft appended a `premise_rejected_<hazard>` tag to
+   * `policy_violations`, which put a violation label on a request the policy
+   * recorded as `allow` and would have made every later count of that column
+   * wrong. Making a rejection observable in production again needs a column or a
+   * status of its own, which is a schema change and its own decision.
+   */
   hazard: DangerousPremiseHazard | null;
   /** The sentence the rider must read. Deterministic; never model-authored. */
   rejection: string | null;

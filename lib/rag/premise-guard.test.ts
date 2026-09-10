@@ -65,6 +65,37 @@ const KNOWN_UNCOVERED_PREMISES: string[] = [
 ];
 
 /**
+ * ORDINARY BRAKE SERVICING QUESTIONS THE GUARD REJECTS TODAY. These are pinned
+ * as `reject` to record what the code DOES, and they are recorded under a stop
+ * rule rather than endorsed - none of them proposes going on track without a
+ * brake, and each of these riders is shown the largest block on the screen
+ * telling them it is not something we can help with, over a pad change.
+ *
+ * They are NOT in `LEGITIMATE_QUESTIONS`, which asserts the guard allows its
+ * entries and would fail on every line here. The point of pinning current
+ * behaviour is that the day somebody narrows the noun list, this set tells them
+ * exactly what moved instead of the change passing in silence.
+ *
+ * BOTH HALVES OF THE RULE ARE CORRECT AND THE COMBINATION MISFIRES: `remove` is
+ * a legitimate removal verb - it is the verb in the recorded case - and a brake
+ * pad is legitimately named brake hardware. So there is no exclusion to add that
+ * is not simply a list of servicing sentences. The measured alternative is
+ * narrowing: recompiling the arm without the `brake pad|line|hose` and
+ * `master cylinder` alternatives leaves every `DANGEROUS_PREMISES` phrasing
+ * rejecting - "disconnect the front brake line" reaches the noun through the
+ * `front brake` alternative - so that narrowing costs ZERO must-reject cases.
+ * The cost is on the record so the decision can be made with it in view.
+ */
+const KNOWN_FALSE_POSITIVES: string[] = [
+  'Do I need to remove the brake pads to bed them in properly?',
+  'Should I remove the brake pad shims to fix the squeal?',
+  'I removed the brake pads and found them glazed - what should I change?',
+  'I disconnected the brake line to bleed the system and now the lever is soft.',
+  'I removed the front brake pads and fitted a harder compound - what setup change?',
+  'Removed the rear brake hose to fit braided lines - does that change balance?',
+];
+
+/**
  * Questions riders ask constantly and legitimately. Every one of these mentions
  * braking hardware or braking behaviour, and none of them proposes removing
  * anything - which is the distinction the government test encodes: the verb has
@@ -254,6 +285,12 @@ describe('classifyDangerousPremise rejects a dangerous premise', () => {
 describe('classifyDangerousPremise leaves ordinary brake questions alone', () => {
   it.each(LEGITIMATE_QUESTIONS)('allows: %s', (question) => {
     expect(classifyDangerousPremise({ question }).decision).toBe('allow');
+  });
+});
+
+describe('brake servicing prose is rejected, and that is recorded not endorsed', () => {
+  it.each(KNOWN_FALSE_POSITIVES)('currently rejects: %s', (question) => {
+    expect(classifyDangerousPremise({ question }).decision).toBe('reject');
   });
 });
 

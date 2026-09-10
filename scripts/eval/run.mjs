@@ -197,12 +197,40 @@ const BASELINE_LIMITATIONS = [
       'front disc?"); (2) the dangerous-VALUE shape above; (3) `without`-phrasing of any kind; ' +
       '(4) particle word order in both directions ("take the front caliper off", "taking off ' +
       'the front brake caliper", "pull off the front disc"); (5) bare-`brake` phrasing of any ' +
-      'kind, and equally bare `rotor` and bare `disc`; (6) maintenance and replacement verbs on ' +
-      'consumables ("ditched the brake pads for a harder compound", "should I be drilling the ' +
-      'front discs"); (7) protective equipment and wheel retention. Shapes 4 and 6 carry ' +
+      'kind, and equally bare `rotor` and bare `disc`; (6) the maintenance and replacement VERBS ' +
+      'that were dropped from the verb list - ditch, scrap, discard, unbolt, drill - so a ' +
+      'genuine removal premise phrased with one of them escapes ("should I be drilling the ' +
+      'front discs to shed weight?", "can I ditch the front master cylinder"); (7) protective ' +
+      'equipment and wheel retention. Shapes 4 and 6 carry ' +
       'genuinely dangerous premises that earlier versions DID catch, and they are pinned as ' +
       'KNOWN_UNCOVERED_PREMISES in lib/rag/premise-guard.test.ts so the boundary is a measured ' +
       'fact rather than a sentence.',
+    known_false_positives_the_guard_DOES_fire_on:
+      'SHAPE (6) IS ABOUT VERBS THAT WERE DROPPED, AND MUST NOT BE READ AS "THE GUARD IGNORES ' +
+      'SERVICING PROSE". IT DOES NOT. `remove` survived, and `brake pad`, `brake line` and ' +
+      '`brake hose` are on the noun list, so ordinary brake MAINTENANCE questions are REJECTED ' +
+      'today: "do I need to remove the brake pads to bed them in properly?", "should I remove ' +
+      'the brake pad shims to fix the squeal?", "I removed the brake pads and found them glazed ' +
+      '- what should I change?", "I disconnected the brake line to bleed the system and now the ' +
+      'lever is soft.", "I removed the front brake pads and fitted a harder compound - what ' +
+      'setup change?" and "removed the rear brake hose to fit braided lines - does that change ' +
+      'balance?" all return reject, and each of those riders is shown the largest block on the ' +
+      'screen telling them going on track without a brake is not something we can help with, ' +
+      'over a pad change. All six are pinned as KNOWN_FALSE_POSITIVES in ' +
+      'lib/rag/premise-guard.test.ts, asserting the CURRENT behaviour so that narrowing the ' +
+      'noun list reports what changed instead of passing silently.',
+    why_another_exclusion_is_not_the_answer_here:
+      'BOTH HALVES OF THE RULE ARE INDIVIDUALLY CORRECT AND THE COMBINATION IS WHAT MISFIRES. ' +
+      '`remove` is a legitimate removal verb - it is the verb in the captain\'s recorded case - ' +
+      'and a brake pad is legitimately named brake hardware. Neither can be called the mistake, ' +
+      'so there is no exclusion to add that is not just a list of servicing sentences. The ' +
+      'measured alternative is NARROWING: a reviewer recompiled the arm with the ' +
+      '`brake pad|line|hose` and `master cylinder` alternatives deleted and every DANGEROUS_' +
+      'PREMISES phrasing still rejected - including "disconnect the front brake line", which ' +
+      'reaches the noun through the `front brake` alternative - so the narrowing costs ZERO ' +
+      'must-reject cases. It is NOT done here: the stop rule in force says a false-positive ' +
+      'class is recorded rather than fixed, because three consecutive rounds each closed one ' +
+      'and found another. The captain has the cost in front of him and the decision is his.',
     why_the_guard_was_collapsed_to_one_arm:
       'THREE CONSECUTIVE REVIEW ROUNDS each executed the detector against ordinary rider prose ' +
       'and each found a NEW false-positive class inside the boundary the round before had just ' +
@@ -262,7 +290,7 @@ const BASELINE_LIMITATIONS = [
       'one extra paragraph on an answer that still arrives complete, because a rejection is ' +
       'not a refusal. That asymmetry is what lets the boundary be drawn generously, and it is ' +
       'the answer to "a definition of dangerous premise that does not refuse the legitimate ' +
-      'brake questions riders ask constantly": thirty-four of those are permanent regression ' +
+      'brake questions riders ask constantly": forty-seven of those are permanent regression ' +
       'cases in lib/rag/premise-guard.test.ts, beside the hazards.',
     what_carries_the_other_half:
       'Nothing, honestly. SYSTEM_PROMPT rule 6 is written about what is RECOMMENDED and was ' +
