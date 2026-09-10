@@ -31,7 +31,11 @@ import {
   applyPremiseRejection,
   classifyDangerousPremise,
 } from '@/lib/rag/premise-guard';
-import { collectTuningAdviceRiderText, dropScreenedSources } from '@/lib/rag/prompt';
+import {
+  collectTuningAdviceRiderText,
+  collectTuningAdviceSessionIds,
+  dropScreenedSources,
+} from '@/lib/rag/prompt';
 import { validateTuningAdviceRequest } from '@/lib/rag/validation';
 import { fetchPreviousSession } from '@/lib/session-previous';
 import { createClient } from '@/lib/supabase/server';
@@ -105,20 +109,6 @@ function errorResponse(
     { ok: false, error, request_id: requestId },
     { status, headers: { 'x-request-id': requestId, ...extraHeaders } },
   );
-}
-
-function validRaceEngineerSessionIds(params: {
-  session: Session;
-  similarSessionIds: string[];
-  feedbackSessionIds: Array<string | null | undefined>;
-  recommendationSessionIds: Array<string | null | undefined>;
-}): string[] {
-  return [...new Set([
-    params.session.id,
-    ...params.similarSessionIds,
-    ...params.feedbackSessionIds,
-    ...params.recommendationSessionIds,
-  ].filter((value): value is string => Boolean(value)))];
 }
 
 async function persistRecommendation(params: {
@@ -525,7 +515,12 @@ export async function POST(request: Request) {
       session,
     );
 
-    const result = await generateTuningAdvice({
+    // One object builds the prompt and the id set the policy will accept, so
+    // the model is offered exactly the session ids its answer may cite. Built
+    // from the SCREENED context for the same reason everything else downstream
+    // is: a dropped source is gone from the prompt, so accepting its id would
+    // let the model cite a row it was never shown.
+    const promptInput = {
       session,
       previousSession,
       vehicle,
@@ -534,7 +529,9 @@ export async function POST(request: Request) {
       changeIntent: validated.data.change_intent,
       temperatureC: validated.data.temperature_c,
       raceEngineerContext: screenedContext,
-    });
+    };
+
+    const result = await generateTuningAdvice(promptInput);
 
     const policyResult = evaluateAdvicePolicy({
       advice: result.advice,
@@ -543,15 +540,7 @@ export async function POST(request: Request) {
         weather:
           validated.data.temperature_c != null || screenedContext.dataUsed.weather,
       },
-      validSessionIds: validRaceEngineerSessionIds({
-        session,
-        similarSessionIds: screenedContext.similarSessions.map((item) => item.session.id),
-        feedbackSessionIds: screenedContext.recentFeedback.map((item) => item.session_id),
-        recommendationSessionIds: screenedContext.recentRecommendations.flatMap((item) => [
-          item.session_id,
-          item.outcome_session_id,
-        ]),
-      }),
+      validSessionIds: collectTuningAdviceSessionIds(promptInput),
     });
     // AFTER the policy, deliberately. `buildRefusalAdvice` builds a fresh object
     // on every force_refusal path, so stamping before this would drop the

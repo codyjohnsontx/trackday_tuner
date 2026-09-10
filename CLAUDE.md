@@ -1017,6 +1017,38 @@ separately, afterwards, once `SYSTEM_PROMPT` started making every stored
 held to the same bar - `tests/unit/demo-advice-vocabulary.test.ts` runs the real
 `evaluateAdvicePolicy` over the objects the panels render.
 
+**A SESSION THE PROMPT DOES NOT NAME CANNOT BE CITED, AND `evaluateAdvicePolicy`
+READS AN UNNAMEABLE CITATION AS FABRICATION.** The Race Engineer refused
+well-formed questions on the live site and then listed, as examples of what it
+*could* answer, questions of the same shape. The message was
+`invalid_personal_evidence` - "I could not verify the historical session evidence
+referenced in that response" - firing on the session the app had just handed the
+model. `formatSessionBlock` printed no `session_id`, so the current session, the
+previous session and every day-plan recent session reached the model anonymous,
+while the allowed set was built from those very ids. Asked for personal evidence
+about a session it had no id for, the model invented one: the committed recording
+for `mc-gearing-slow-corner` cites the rider's own session notes with
+`source_session_id: "null"` and has its whole answer discarded. No account could
+avoid it, because the three blocks that DID print ids - `similar_sessions`,
+`recent_feedback`, `recent_recommendations` - are all empty for a new rider.
+
+So the invariant is two-way and each direction is its own defect. **Accepting an
+id the prompt never printed** is the bug above: unusable, and it bait-and-switches
+the model into fabricating. **Printing an id the policy will not accept** is the
+mirror, and `previousSession` was that one - printed and named in the instructions
+since the route was written, absent from the allowed set. `collectTuningAdviceSessionIds`
+and `collectDayPlanSessionIds` (`lib/rag/prompt.ts`) are now the single source of
+both, one per prompt builder for the same reason there are two rider-text
+collectors: each takes its own builder's input type, so a route accepts exactly
+what its own prompt printed. `tests/unit/ai-session-evidence-ids.test.ts` builds
+the prompt and the id set from one input and fails on either direction;
+`app/api/ai/tuning-advice/route.session-evidence.test.ts` runs the real policy
+through the route, which is the only place that can catch the route substituting a
+set of its own. **This widened nothing:** every accepted id belongs to a row read
+under the rider's own RLS scope, an id from anywhere else is still refused, and so
+is the literal string `"null"` - coercing that to null would leave an unverified
+evidence entry in front of the rider, which is the class the guard exists for.
+
 **An `AdviceResponse` is rendered in exactly one place, and that is the guard.**
 `components/ai/advice-report.tsx` prints the whole payload; the Race Engineer and
 Morning Plan panels supply only their own wording. They had grown three

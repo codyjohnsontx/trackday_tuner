@@ -25,7 +25,7 @@ import {
   classifyDayPlanRequest,
   classifyStoredRiderText,
 } from '@/lib/rag/domain-guard';
-import { collectDayPlanRiderText } from '@/lib/rag/prompt';
+import { collectDayPlanRiderText, collectDayPlanSessionIds } from '@/lib/rag/prompt';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
 import { isUuid } from '@/lib/rag/validation';
 import {
@@ -743,25 +743,27 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await generateDayPlan({
+    // One object builds the prompt and the id set the policy will accept, so a
+    // plan may cite exactly the sessions its own prompt printed.
+    const promptInput = {
       vehicle,
       targetDate: computedTargetDate,
       trackName: validated.data.track_name,
       environment: hasEnvironment ? environment : null,
       recentSessions,
       raceEngineerContext,
-    });
+    };
+
+    const result = await generateDayPlan(promptInput);
 
     // Only real, persisted sessions ground personal evidence. The planning
     // session buildContext synthesises is not one of them, so its id is
-    // deliberately absent here: a plan citing it would be citing itself.
+    // deliberately absent from the collector: a plan citing it would be citing
+    // itself, and `formatSessionBlock` never prints it.
     const policyResult = evaluateAdvicePolicy({
       advice: result.advice,
       fallbackDataUsed: raceEngineerContext.dataUsed,
-      validSessionIds: [
-        ...recentSessionIds,
-        ...feedback.map((entry) => entry.session_id),
-      ].filter((value): value is string => Boolean(value)),
+      validSessionIds: collectDayPlanSessionIds(promptInput),
       // A morning plan whose right answer is "run your baseline and check hot
       // pressures" recommends no change, and the day-plan prompt says so
       // explicitly. Every other policy check still applies, including the
