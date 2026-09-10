@@ -1,3 +1,4 @@
+import { PremiseRejectionCard } from '@/components/ai/premise-rejection-card';
 import { RefusalCard } from '@/components/ai/refusal-card';
 import { SafetyBanner } from '@/components/ai/safety-banner';
 import { WatchItems } from '@/components/ai/watch-items';
@@ -54,10 +55,19 @@ export function AdviceReport({ advice, summaryHeading, refusal, emptyChangesMess
   const refusalMessage = advice.refusal?.trim();
   const isRefusal = Boolean(refusalMessage);
   const hasRecommendations = advice.recommended_changes.length > 0;
+  const premiseRejection = advice.premise_rejection?.trim();
 
   return (
     <div className="space-y-4">
       <SafetyBanner />
+
+      {/* Above the answer AND above the refusal branch. A rider whose response
+          was withheld for some unrelated reason is exactly the one most likely
+          to go and do the dangerous thing anyway, which is the same argument
+          that keeps the safety notes outside that branch below. */}
+      {premiseRejection ? (
+        <PremiseRejectionCard message={premiseRejection} hasAnswerBelow={!isRefusal} />
+      ) : null}
 
       {isRefusal ? (
         <RefusalCard

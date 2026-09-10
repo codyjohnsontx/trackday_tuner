@@ -27,6 +27,11 @@ import {
   classifyStoredRiderText,
 } from '@/lib/rag/domain-guard';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
+import {
+  applyPremiseRejection,
+  classifyDangerousPremise,
+  premiseRejectionAuditTag,
+} from '@/lib/rag/premise-guard';
 import { collectTuningAdviceRiderText, dropScreenedSources } from '@/lib/rag/prompt';
 import { validateTuningAdviceRequest } from '@/lib/rag/validation';
 import { fetchPreviousSession } from '@/lib/session-previous';
@@ -236,6 +241,20 @@ export async function POST(request: Request) {
     return errorResponse(400, validated.error, requestId);
   }
 
+  // The one screen in this pipeline that reads what was ASKED. It needs nothing
+  // but the validated request, so it is computed before any I/O and stamped onto
+  // EVERY advice-bearing return below - the duplicate refusal and both
+  // classifier refusals included. A rider who asks the same dangerous question
+  // twice inside the dedupe window, or whose request is withheld for an
+  // unrelated reason, is not a rider who should go unwarned.
+  // See lib/rag/premise-guard.ts for why no other layer can catch this.
+  const premise = classifyDangerousPremise({
+    question: validated.data.question,
+    symptoms: validated.data.symptoms,
+    changeIntent: validated.data.change_intent,
+  });
+  const premiseAuditTags = premise.hazard ? [premiseRejectionAuditTag(premise.hazard)] : [];
+
   const user = await getRealUser();
   if (!user) {
     return errorResponse(401, 'Not authenticated.', requestId);
@@ -342,15 +361,18 @@ export async function POST(request: Request) {
   });
 
   if (duplicateRequestId) {
-    const advice = buildRefusalAdvice({
-      reason: 'no_safe_answer',
-      message:
-        'An identical Race Engineer request was handled recently. Review the previous result or change the question before retrying.',
-      dataUsed: buildFallbackDataUsed({
-        session,
-        temperatureC: validated.data.temperature_c,
+    const advice = applyPremiseRejection(
+      buildRefusalAdvice({
+        reason: 'no_safe_answer',
+        message:
+          'An identical Race Engineer request was handled recently. Review the previous result or change the question before retrying.',
+        dataUsed: buildFallbackDataUsed({
+          session,
+          temperatureC: validated.data.temperature_c,
+        }),
       }),
-    });
+      premise,
+    );
 
     await updateRequestLog({
       logTag: LOG_TAG,
@@ -359,7 +381,7 @@ export async function POST(request: Request) {
       status: 'duplicate_recent_request',
       refusalReason: 'duplicate_recent_request',
       policyResult: 'force_refusal',
-      policyViolations: ['duplicate_recent_request'],
+      policyViolations: ['duplicate_recent_request', ...premiseAuditTags],
       classifierStage: 'dedupe',
     });
 
@@ -385,14 +407,17 @@ export async function POST(request: Request) {
 
   if (questionAssessment.decision === 'refuse') {
     const refusalReason = questionAssessment.reason ?? 'out_of_domain';
-    const advice = buildRefusalAdvice({
-      reason: refusalReason,
-      message: questionAssessment.message ?? 'This request is outside trackday setup scope.',
-      dataUsed: buildFallbackDataUsed({
-        session,
-        temperatureC: validated.data.temperature_c,
+    const advice = applyPremiseRejection(
+      buildRefusalAdvice({
+        reason: refusalReason,
+        message: questionAssessment.message ?? 'This request is outside trackday setup scope.',
+        dataUsed: buildFallbackDataUsed({
+          session,
+          temperatureC: validated.data.temperature_c,
+        }),
       }),
-    });
+      premise,
+    );
 
     await updateRequestLog({
       logTag: LOG_TAG,
@@ -401,7 +426,7 @@ export async function POST(request: Request) {
       status: `completed_refusal_${refusalReason}`,
       refusalReason,
       policyResult: 'force_refusal',
-      policyViolations: [],
+      policyViolations: premiseAuditTags,
       classifierStage: 'preflight',
     });
 
@@ -461,7 +486,7 @@ export async function POST(request: Request) {
         status: STORED_TEXT_INJECTION_REFUSAL_STATUS,
         refusalReason: STORED_TEXT_INJECTION_REFUSAL_REASON,
         policyResult: 'force_refusal',
-        policyViolations: [],
+        policyViolations: premiseAuditTags,
         classifierStage: 'stored_rider_text',
       });
 
@@ -470,16 +495,19 @@ export async function POST(request: Request) {
           ok: true,
           request_id: requestId,
           recommendation_id: null,
-          advice: buildRefusalAdvice({
-            reason: 'prompt_injection',
-            message:
-              storedAssessment.message ??
-              'I could not answer that from your saved setup data. Check your saved vehicle and session notes for wording that reads as an instruction.',
-            dataUsed: buildFallbackDataUsed({
-              session,
-              temperatureC: validated.data.temperature_c,
+          advice: applyPremiseRejection(
+            buildRefusalAdvice({
+              reason: 'prompt_injection',
+              message:
+                storedAssessment.message ??
+                'I could not answer that from your saved setup data. Check your saved vehicle and session notes for wording that reads as an instruction.',
+              dataUsed: buildFallbackDataUsed({
+                session,
+                temperatureC: validated.data.temperature_c,
+              }),
             }),
-          }),
+            premise,
+          ),
           retrieved: [],
         },
         { status: 200, headers: { 'x-request-id': requestId } },
@@ -527,7 +555,13 @@ export async function POST(request: Request) {
         ]),
       }),
     });
-    const advice = policyResult.advice;
+    // AFTER the policy, deliberately. `buildRefusalAdvice` builds a fresh object
+    // on every force_refusal path, so stamping before this would drop the
+    // rejection on exactly the responses where a rider is most likely to go and
+    // do the dangerous thing anyway. Stamping here also puts it on the stored
+    // `ai_recommendations.advice` blob, so it is still there when the rider
+    // re-reads the recommendation weeks later.
+    const advice = applyPremiseRejection(policyResult.advice, premise);
 
     const recommendationId = await persistRecommendation({
       userId: user.id,
@@ -552,7 +586,7 @@ export async function POST(request: Request) {
       latencyMs: result.latencyMs,
       refusalReason: advice.refusal ? (policyResult.violations[0] ?? 'no_safe_answer') : null,
       policyResult: policyResult.decision,
-      policyViolations: policyResult.violations,
+      policyViolations: [...policyResult.violations, ...premiseAuditTags],
       classifierStage: 'post_policy',
     });
 

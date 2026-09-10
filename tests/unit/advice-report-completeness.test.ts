@@ -77,12 +77,18 @@ function render(node: Parameters<typeof renderToStaticMarkup>[0]): string {
  */
 function everyRiderFacingString(value: AdviceResponse): string[] {
   const refusal = value.refusal?.trim();
+  const premiseRejection = value.premise_rejection?.trim();
   // A refusal replaces the result, so everything belonging to the withheld
   // answer goes with it. The safety notes do not: they are the one thing a
-  // rider still needs when the answer they came for was not given.
-  if (refusal) return [refusal, ...value.safety_notes];
+  // rider still needs when the answer they came for was not given. Neither does
+  // a premise rejection, and for a stronger version of the same reason - it is
+  // about something the rider proposed doing, not about the answer.
+  if (refusal) {
+    return [refusal, ...value.safety_notes, ...(premiseRejection ? [premiseRejection] : [])];
+  }
 
   return [
+    ...(premiseRejection ? [premiseRejection] : []),
     value.summary,
     ...value.recommended_changes.map((change) => change.magnitude),
     ...value.recommended_changes.map((change) => change.reason),
@@ -171,6 +177,80 @@ describe('AdviceReport renders the whole response', () => {
     expect(html).not.toContain('Personal evidence');
     expect(html).not.toContain('Citations');
     expect(html).not.toContain('Safety notes');
+  });
+});
+
+/**
+ * The captain accepted a real tension when he chose "reject the premise, then
+ * help" over a clean refusal: a safety warning and ordinary setup advice end up
+ * on one screen, and the warning must not read as a disclaimer the rider scrolls
+ * past to reach the answer.
+ *
+ * The unit suite has no DOM and cannot say a block is legible, so what is locked
+ * here is the structure that carries the difference - the rejection reaches the
+ * rider, it comes FIRST, it is body-sized primary ink where the standing
+ * disclaimer is footnote-sized amber, and it survives a withheld answer. Whether
+ * it lands on a phone is a browser question and belongs in the manual e2e walk.
+ */
+describe('a rejected premise does not read as the standing disclaimer', () => {
+  const REJECTION =
+    'Removing or disabling a brake is not a setup change, and going on track without one ' +
+    'is not something I can help you set up.';
+
+  it('reaches the rider above the answer, and the answer still arrives', () => {
+    const value = advice({ premise_rejection: REJECTION });
+    const html = render(
+      createElement(AdviceReport, { advice: value, summaryHeading: 'Summary', refusal: REFUSAL_COPY }),
+    );
+
+    expectComplete(html, value);
+    // Reject the premise, THEN help: the recommendation is still on the screen.
+    expect(html).toContain('Rear tire pressure');
+    expect(html.indexOf(REJECTION)).toBeLessThan(html.indexOf(value.summary));
+    // The pivot that makes the advice below read as "instead" rather than as an
+    // answer to what was asked.
+    expect(html).toContain('Here is what I would look at for the handling you described instead.');
+  });
+
+  it('is not styled like the standing disclaimer', () => {
+    const html = render(
+      createElement(AdviceReport, {
+        advice: advice({ premise_rejection: REJECTION }),
+        summaryHeading: 'Summary',
+        refusal: REFUSAL_COPY,
+      }),
+    );
+
+    // From the card's own opening tag through its message, so the container's
+    // classes are in the slice alongside the copy's.
+    const eyebrowAt = html.indexOf('Not a setup change');
+    const rejectionMarkup = html.slice(
+      html.lastIndexOf('<div', eyebrowAt),
+      html.indexOf(REJECTION) + REJECTION.length,
+    );
+    // Body-sized primary ink. The standing disclaimer is `text-xs text-signal`,
+    // and nothing else in an AdviceReport is `text-base`.
+    expect(rejectionMarkup).toContain('text-base');
+    expect(rejectionMarkup).toContain('text-ink');
+    expect(rejectionMarkup).not.toContain('text-xs');
+    // Both blocks are on screen, so they must not be two amber panels stacked:
+    // the caution here is a rule, not a fill.
+    expect(rejectionMarkup).toContain('border-signal');
+    expect(rejectionMarkup).not.toContain('bg-signal');
+  });
+
+  it('survives a withheld answer, and drops the promise of help that is not there', () => {
+    const value = advice({
+      premise_rejection: REJECTION,
+      refusal: 'I could not identify a safe, supported setup recommendation.',
+      recommended_changes: [],
+    });
+    const html = render(
+      createElement(AdviceReport, { advice: value, summaryHeading: 'Summary', refusal: REFUSAL_COPY }),
+    );
+
+    expectComplete(html, value);
+    expect(html).not.toContain('Here is what I would look at');
   });
 });
 

@@ -47,6 +47,20 @@ export interface AdviceResponse {
   personal_evidence: PersonalEvidence[];
   data_used: AdviceDataUsed;
   refusal?: string | null;
+  /**
+   * A dangerous premise in the rider's QUESTION, rejected in plain words.
+   *
+   * Deliberately NOT in `adviceResponseJsonSchema` below and never emitted by
+   * the model: `classifyDangerousPremise` reads the request and
+   * `app/api/ai/tuning-advice/route.ts` stamps this on the way out, after the
+   * policy has run. Keeping it off the model contract is the point - a guarantee
+   * the model can decline to honour is not a guarantee, and `SYSTEM_PROMPT`
+   * rule 6 is the recorded proof (see `lib/rag/premise-guard.ts`).
+   *
+   * It coexists with a recommendation on purpose. Captain's ruling, 2026-09-10:
+   * reject the premise, then help.
+   */
+  premise_rejection?: string | null;
 }
 
 export const adviceResponseJsonSchema = {
