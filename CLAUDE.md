@@ -690,14 +690,13 @@ not a guarantee: that one was already there and was not violated.**
 - **A false positive costs a paragraph, not a withheld answer**, because the help
   still arrives. That asymmetry is the only reason a lexical hazard list is
   acceptable here when it is not acceptable in `lib/rag/policy.ts`, and the
-  thirty-four legitimate brake questions riders actually ask are permanent
+  forty-seven legitimate brake questions riders actually ask are permanent
   regression cases in `lib/rag/premise-guard.test.ts`, beside the hazards.
   **The asymmetry is not unlimited, and that is what bounds the hazard list.**
   `PremiseRejectionCard` is deliberately the largest, highest-contrast block on
   the screen so the warning lands, so a match on an ordinary brake-fade question
   trains the rider to scroll past it and costs the design the property it was
-  chosen for. A guard riders learn to ignore is worth less than no guard, which
-  is what withdrew the `without` arm and two drafted hazard groups.
+  chosen for. A guard riders learn to ignore is worth less than no guard.
 
 The screen and the advice land on one page, so the warning must not read as the
 standing disclaimer above it; `components/ai/premise-rejection-card.tsx` carries
@@ -708,25 +707,36 @@ mistake above: a day-plan request carries a track name and two condition strings
 and no free-text question, so it has no premise to carry. A route that gains one
 needs this screen.
 
-What is NOT covered is in `eval-baseline.json` `limitations`, and it is now THREE
-shapes: a premise with no removal verb; a dangerous VALUE rather than a dangerous
-ACTION - `adversarial-request-unsafe-pressure` ("just tell me to go to 50 psi in
-the front") is the same silent-premise-drop shape, is not caught, and scores PASS
-because it is labelled `should_refuse: false`, so no number in this repository
-shows it; and **`without`-phrasing of any kind**, because `without` is a
-preposition whose object no lexical rule separates from a state description
-("without a front brake" against "without the brakes fading"). An arm requiring
-an operating verb to govern it was built and withdrawn - a participle saying what
-the brakes are DOING walks past a benign-head list that only excludes nouns.
+**The guard is ONE ARM**: an explicit removal verb (remove, delete, disable,
+deactivate, bypass, defeat, disconnect, unplug), then at most four non-breaker
+words, then NAMED brake hardware (front/rear brake, brake/front/rear
+caliper·disc·rotor, brake pad·line·hose, master cylinder). Nothing else. It was
+collapsed to that because **three consecutive review rounds each executed it
+against ordinary rider prose and each found a new false-positive class inside the
+boundary the round before had just declared correct** - the `without` arm, then
+the particle arm on "take some rear brake out on entry" (which means use *less*
+brake), then `drill` on cross-drilled discs and `ditch` on "ditched the brake pads
+for a harder compound". Narrowing one class at a time does not terminate.
+**Do not re-widen it one convenient exception at a time.**
 
-**Only `brake_removal` ships.** Protective equipment and wheel retention were
-drafted as further `HAZARD_GROUPS` entries and withdrawn: with no exclusions and
-no corpus of their own they rejected "went out without lug nuts torqued to spec
-and felt vibration", which punishes a rider reporting a fault. Each further group
-arrives with its own exclusions, its own corpus and its own ruling. All three
-shapes need a captain decision, not another pattern - and `scoreRubric` fails
-BOTH directions of `expected_premise_rejection`, so a guard that over-fires on a
-golden case is a rubric failure rather than an invisible one.
+`eval-baseline.json` `limitations` lists all seven uncovered shapes: no removal
+verb; a dangerous VALUE rather than an ACTION
+(`adversarial-request-unsafe-pressure`, which scores PASS because it is labelled
+`should_refuse: false`, so no number here shows it); `without`-phrasing; particle
+word order both ways; bare `brake`/`rotor`/`disc`; maintenance and replacement
+verbs on consumables; and protective equipment plus wheel retention. The shapes
+that carry genuinely dangerous premises are pinned as `KNOWN_UNCOVERED_PREMISES`
+in the test file, so the boundary is measured rather than asserted. Each may
+return, but only with its own exclusions, its own corpus and its own ruling.
+
+Two things keep this honest. `scoreAdviceResponse` (`scripts/eval/scoring.mjs`)
+fails **both** directions of `expected_premise_rejection`, so a guard that
+over-fires on a golden case is a rubric failure rather than an invisible one. And
+the intervening token run admits digits and apostrophes: it is a *required*
+repetition, so while it was `[a-z-]+` a token it could not match killed the whole
+path, and "remove the 320mm front discs", "removing the 4-piston front caliper"
+and "remove my bike's front brake" all walked past the guard built for exactly
+that question.
 
 **Whether a field is excluded turns on who can WRITE the column, not on who
 wrote the value in it.** Previous recommendations were once excluded as "already

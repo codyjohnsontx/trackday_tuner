@@ -78,16 +78,34 @@ import type { AdviceResponse } from '@/lib/rag/schema';
  *   ordinary brake-fade question trains the rider to scroll past it, which
  *   destroys the exact property the design was chosen for. A guard that teaches
  *   riders to ignore it is worth less than no guard.
+ * - PARTICLE WORD ORDER, both directions: "take the front caliper off", "taking
+ *   off the front brake caliper", "pull off the front disc", "leave the discs
+ *   out". Two arms covered these and both are withdrawn, because `take` and
+ *   `leave` are among the commonest words in a session note and the arm carrying
+ *   them fired on the ordinary idiom "take some rear brake out on entry", which
+ *   means USE LESS BRAKE.
+ * - BARE-`brake` PHRASING of any kind, which is the same finding one level down:
+ *   an unqualified `brake`, `rotor` or `disc` is the word riders use for BRAKING,
+ *   so the noun must name hardware ("front brake", "brake caliper") to count.
+ * - MAINTENANCE AND REPLACEMENT VERBS on consumables - "ditched the brake pads
+ *   for a harder compound", "scrapped the old rotors and fitted new ones",
+ *   "should I be drilling the front discs". See `REMOVAL_ACTION_SOURCE`.
+ * - PROTECTIVE EQUIPMENT (helmets, leathers, harnesses, cages) and WHEEL
+ *   RETENTION (axle nuts, safety wire, cotter pins). Both were drafted as
+ *   further groups and withdrawn: with no exclusions and no corpus of their own
+ *   they rejected "went out without lug nuts torqued to spec and felt
+ *   vibration" - a rider REPORTING A FAULT, told that what they did was not a
+ *   setup change. That is worse than no coverage, because it punishes the report
+ *   we most want. Each arrives with its own exclusions, its own corpus and its
+ *   own ruling, which is what `HAZARD_GROUPS` being a table is for.
  *
- * ONLY `brake_removal` SHIPS. Protective equipment (helmets, leathers,
- * harnesses, cages) and wheel retention (axle nuts, safety wire, cotter pins)
- * were drafted as further groups and withdrawn: they carried no benign-head
- * exclusions and no legitimate-question corpus of their own, and so rejected
- * "went out without lug nuts torqued to spec and felt vibration" - a rider
- * REPORTING A FAULT, told that what they did was not a setup change. That is
- * worse than no coverage, because it punishes the report we most want. Each
- * further group arrives with its own exclusions, its own corpus and its own
- * ruling, exactly as `HAZARD_GROUPS` being a table is meant to allow.
+ * THE LIST IS LONG ON PURPOSE, AND SO IS THE GUARD SHORT. Three consecutive
+ * review rounds each executed this detector against ordinary rider prose and
+ * each found a NEW false-positive class inside the boundary the round before had
+ * just declared correct. That is evidence about the approach rather than about
+ * any one pattern, so the guard was collapsed to a single arm that can be read
+ * and argued with in one sitting. Do not re-widen it one convenient exception at
+ * a time; a shape that escapes belongs on this list.
  */
 
 export type DangerousPremiseHazard = 'brake_removal';
@@ -107,30 +125,25 @@ export interface ClassifyDangerousPremiseInput {
 }
 
 /**
- * Verbs that physically take something off the vehicle or stop it working.
+ * Verbs that unambiguously mean TAKE OFF AND DO NOT REPLACE.
  *
- * MAINTENANCE VERBS ARE DELIBERATELY ABSENT. `skip`, `omit` and `forgo` were in
- * an earlier draft and each produced a wrong-toned match on an ordinary
- * question - "should I skip the brake pad change this weekend?" is a servicing
- * question, and answering it with "removing a brake is not a setup change" is
- * both wrong and insulting. A bare `no` is absent for the same reason from the
- * other direction: "I have no brakes left" is a rider reporting a FAULT, which
- * the mechanical-fault path already handles with the right words.
+ * MAINTENANCE AND REPLACEMENT VERBS ARE DELIBERATELY ABSENT, and the list is
+ * short because every verb that was ever cut from it was cut after being watched
+ * misfire on ordinary prose. `skip`, `omit` and `forgo` never shipped - "should
+ * I skip the brake pad change this weekend?" is a servicing question. `ditch`,
+ * `scrap`, `discard` and `unbolt` were dropped for the same reason one round
+ * later: in rider prose they mean REPLACED ("ditched the brake pads for a harder
+ * compound"). `drill` and `strip` were dropped because they describe hardware far
+ * more often than they act on it - cross-drilled discs are a standard brake spec,
+ * and "I stripped the caliper bolt" is a rider reporting a FAULT.
+ *
+ * A bare `no` is absent from the other direction: "I have no brakes left" is also
+ * a fault report, which the mechanical-fault path already answers properly.
  */
 const REMOVAL_ACTION_SOURCE =
-  '(?:remov(?:e|es|ed|ing|al)|delet(?:e|es|ed|ing)|ditch(?:es|ed|ing)?|discard(?:s|ed|ing)?' +
-  '|scrap(?:s|ped|ping)?|strip(?:s|ped|ping)?|gut(?:s|ted|ting)?|disabl(?:e|es|ed|ing)' +
-  '|deactivat(?:e|es|ed|ing)|bypass(?:es|ed|ing)?|defeat(?:s|ed|ing)?|disconnect(?:s|ed|ing)?' +
-  '|unplug(?:s|ged|ging)?|unbolt(?:s|ed|ing)?|drill(?:s|ed|ing)?)';
-
-/**
- * Verbs that only remove something once a particle follows the noun - "take the
- * caliper OFF", "leave the discs OUT". They are useless without it: "take" and
- * "leave" on their own are two of the commonest words in a session note.
- */
-const PARTICLE_ACTION_SOURCE =
-  '(?:tak(?:e|es|ing)|took|pull(?:s|ed|ing)?|rip(?:s|ped|ping)?|yank(?:s|ed|ing)?' +
-  '|cut(?:s|ting)?|leav(?:e|es|ing)|left)';
+  '(?:remov(?:e|es|ed|ing|al)|delet(?:e|es|ed|ing)|disabl(?:e|es|ed|ing)' +
+  '|deactivat(?:e|es|ed|ing)|bypass(?:es|ed|ing)?|defeat(?:s|ed|ing)?' +
+  '|disconnect(?:s|ed|ing)?|unplug(?:s|ged|ging)?)';
 
 /**
  * Words that mean the verb does NOT govern the noun after them. Same idea as
@@ -154,14 +167,21 @@ interface HazardGroup {
 }
 
 /**
- * The equipment, and the wording each group is rejected with.
+ * The equipment, and the wording it is rejected with.
  *
- * THE BENIGN-HEAD EXCLUSIONS ON `brake` ARE THE WHOLE BOUNDARY. Riders ask about
- * brakes constantly and legitimately, and almost every such question attaches a
- * head noun that is about USING the brakes rather than about the hardware: brake
- * bias, brake balance, brake ducts, brake markers, brake points, brake feel,
- * brake fade, brake temps, brake bedding. `take some brake bias out of the
- * front` is a real setup change and must not be read as removing a brake.
+ * EVERY NOUN NAMES HARDWARE EXPLICITLY, and none of them stands alone. Bare
+ * `brake`, bare `rotor` and bare `disc` were all in the list and all came out:
+ * a bare noun matches the word riders use constantly for BRAKING rather than for
+ * the brake, so "take some rear brake out on entry" (use less brake) read as
+ * removing one, and "drilled rotors" read as a removal because `rotors?` stood
+ * alone while `discs?` did not - the same sentence answered two different ways
+ * depending on which synonym the rider happened to type.
+ *
+ * `front|rear brake` is the one qualified spelling that still needs a lookahead,
+ * because a rider says "remove some front brake bias" about a setup change. It
+ * carries the six heads that were actually observed to collide and no more; the
+ * eighteen-head list this replaced existed to prop up the bare noun that is now
+ * gone.
  *
  * The copy says "going on track" rather than "riding": this app serves cars as
  * well as motorcycles, and the captain's approved wording was written against a
@@ -173,11 +193,8 @@ const HAZARD_GROUPS: HazardGroup[] = [
     subject: 'Removing or disabling a brake',
     onTrack: 'going on track without one',
     nouns: [
-      'brakes?(?!\\s+(?:bias|balance|ducts?|cooling|markers?|boards?|points?|zones?' +
-        '|feel|fade|temps?|temperature|pressure|bedding|lever|lights?|technique|inputs?))',
-      '(?:brake\\s+)?calipers?',
-      '(?:brake|front|rear)\\s+(?:discs?|rotors?)',
-      'rotors?',
+      '(?:front|rear)\\s+brakes?(?!\\s+(?:bias|balance|pressure|feel|ducts?|markers?))',
+      '(?:brake|front|rear)\\s+(?:calipers?|discs?|rotors?)',
       'brake\\s+(?:pads?|lines?|hoses?)',
       'master\\s+cylinder',
     ],
@@ -186,39 +203,33 @@ const HAZARD_GROUPS: HazardGroup[] = [
 
 interface CompiledHazard {
   group: HazardGroup;
-  patterns: RegExp[];
+  pattern: RegExp;
 }
 
+/**
+ * ONE ARM: a removal verb, then at most four plain words none of which is a
+ * breaker, then named brake hardware. There is nothing else, and the collapse to
+ * this was the ruling rather than an economy - three consecutive review rounds
+ * each executed the guard against ordinary rider prose and each found a NEW
+ * false-positive class inside the boundary the round before had just declared
+ * correct. Narrowing one class at a time does not terminate.
+ *
+ * THE INTERVENING CLASS ADMITS DIGITS AND APOSTROPHES, and that is a fix rather
+ * than a decoration: it is a REQUIRED repetition, so a token it cannot match
+ * kills the whole path rather than merely failing to count. While it was
+ * `[a-z-]+`, "remove the 320mm front discs", "removing the 4-piston front
+ * caliper" and "remove my bike's front brake" all walked straight past - which is
+ * how riders normally name this hardware, and one of them is the recorded case
+ * this guard exists for.
+ */
 function compile(group: HazardGroup): CompiledHazard {
   const noun = `(?:${group.nouns.join('|')})`;
   return {
     group,
-    patterns: [
-      // (a) The verb governs the noun directly: a removal action, then at most
-      // four plain words none of which is a breaker, then the equipment.
-      new RegExp(
-        `\\b${REMOVAL_ACTION_SOURCE}\\b\\s+(?:(?!(?:${GOVERNMENT_BREAKERS})\\b)[a-z-]+\\s+){0,4}?${noun}\\b`,
-        'i',
-      ),
-      // (b) The particle verbs, where the equipment sits between the verb and
-      // the particle. Both spans stop at any punctuation, and the span after the
-      // noun is short: past a dozen characters the "off" belongs to a different
-      // phrase, which is how "I left the brakes alone and took 2 psi out of the
-      // front" stops matching.
-      new RegExp(
-        `\\b${PARTICLE_ACTION_SOURCE}\\b[^.,;!?]{0,25}?\\b${noun}\\b[^.,;!?]{0,12}?\\b(?:off|out)\\b`,
-        'i',
-      ),
-      // (c) The particle verbs again, with the particle BEFORE the equipment -
-      // "taking off the front caliper", "pull off the front disc". The same
-      // removal in the other English word order, which pattern (b) cannot see
-      // and pattern (a) cannot either, since `take` and `pull` are deliberately
-      // absent from the removal verbs.
-      new RegExp(
-        `\\b${PARTICLE_ACTION_SOURCE}\\b\\s+(?:off|out)\\b\\s+(?:(?!(?:${GOVERNMENT_BREAKERS})\\b)[a-z-]+\\s+){0,3}?${noun}\\b`,
-        'i',
-      ),
-    ],
+    pattern: new RegExp(
+      `\\b${REMOVAL_ACTION_SOURCE}\\b\\s+(?:(?!(?:${GOVERNMENT_BREAKERS})\\b)[a-z0-9'’-]+\\s+){0,4}?${noun}\\b`,
+      'i',
+    ),
   };
 }
 
@@ -232,8 +243,8 @@ function buildRejection(group: HazardGroup): string {
 }
 
 function matchHazard(text: string): HazardGroup | null {
-  for (const { group, patterns } of COMPILED_HAZARDS) {
-    if (patterns.some((pattern) => pattern.test(text))) return group;
+  for (const { group, pattern } of COMPILED_HAZARDS) {
+    if (pattern.test(text)) return group;
   }
   return null;
 }
@@ -287,9 +298,4 @@ export function applyPremiseRejection(
 ): AdviceResponse {
   if (assessment.decision !== 'reject' || !assessment.rejection) return advice;
   return { ...advice, premise_rejection: assessment.rejection };
-}
-
-/** The audit-row marker, so a rejected premise is countable in `ai_requests`. */
-export function premiseRejectionAuditTag(hazard: DangerousPremiseHazard): string {
-  return `premise_rejected_${hazard}`;
 }

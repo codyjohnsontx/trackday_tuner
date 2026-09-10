@@ -649,7 +649,7 @@ describe('POST /api/ai/tuning-advice dangerous premise', () => {
     expect(body.advice.summary).toBe(MODEL_ADVICE.summary);
   });
 
-  it('records the hazard on the audit row without echoing the rider text', async () => {
+  it('leaves policy_violations empty on the path the policy allowed', async () => {
     const aiRequests: AiRequestRow[] = [];
     createAdminClient.mockReturnValue(
       createAdminClientMock(aiRequests, { acceptRecommendations: true }),
@@ -657,12 +657,12 @@ describe('POST /api/ai/tuning-advice dangerous premise', () => {
 
     await post(BRAKE_QUESTION);
 
-    const row = aiRequests.at(-1);
-    expect(row?.policy_violations).toContain('premise_rejected_brake_removal');
-    // The tag names the equipment group, never the rider's words. Scoped to the
-    // field this guard writes: `prompt_redacted_preview` carries the question by
-    // the audit trail's own existing design, written at reservation time.
-    expect((row?.policy_violations ?? []).join(' ')).not.toMatch(/unsprung|caliper/i);
+    // A REJECTION IS NOT A POLICY OUTCOME. The rejection rides on the response,
+    // never on the audit row: an earlier draft appended a
+    // `premise_rejected_brake_removal` tag here, on a request `policy_result`
+    // records as `allow`, so anything later counting non-empty violations as
+    // "the policy rejected something" would have counted it.
+    expect(aiRequests.at(-1)?.policy_violations).toEqual([]);
   });
 
   it('leaves an ordinary question untouched', async () => {
@@ -726,9 +726,6 @@ describe('POST /api/ai/tuning-advice dangerous premise', () => {
 
     expect(body.advice.refusal).toContain('could not verify a safe');
     expect(body.advice.premise_rejection).toContain(REJECTION);
-    expect(aiRequests.at(-1)?.policy_violations).toEqual([
-      'unsafe_magnitude',
-      'premise_rejected_brake_removal',
-    ]);
+    expect(aiRequests.at(-1)?.policy_violations).toEqual(['unsafe_magnitude']);
   });
 });
