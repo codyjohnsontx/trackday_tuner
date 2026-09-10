@@ -65,17 +65,35 @@ After the next production deploy:
 curl -i https://<your-app>/api/health
 ```
 
-Expect `HTTP/2 200` and a body naming two checks:
+Expect `HTTP/2 200` and a body naming three checks:
 
 ```json
 {"status":"ok","checked_at":"...","checks":[
   {"name":"supabase","status":"ok","duration_ms":10},
-  {"name":"rag_index","status":"ok","duration_ms":8,"detail":"75 chunks"}]}
+  {"name":"rag_index","status":"ok","duration_ms":8,"detail":"75 chunks"},
+  {"name":"schema_contract","status":"ok","duration_ms":12,"detail":"3 rpcs"}]}
 ```
 
-If `rag_index` says `"status":"fail"`, that is R3 happening again and the deployment
-cannot answer a Race Engineer question. The response is `503` and the failing
-check is named.
+Anything failing answers `503` and names the check, and **which check it is
+decides what to do**:
+
+- `rag_index` - R3 happening again: the index did not reach this bundle, so the
+  deployment cannot answer a Race Engineer question.
+- `schema_contract` - the deployed code is ahead of the deployed schema. The
+  detail names the RPC:
+
+  ```json
+  {"name":"schema_contract","status":"fail","detail":"MissingRpcError:save_session_outcome"}
+  ```
+
+  That one means riders are losing Save Outcome **right now**. It is not an
+  unreachable deployment - pages are serving normally, which is exactly why
+  nothing else says so. Go to "The `schema_contract` check" below: it has the
+  one query that separates an unapplied migration from a stale schema cache,
+  and the audit script that reports all 17 migrations at once. A detail of
+  `DataApiUnreachableError` instead means no probe got an answer, so nothing
+  was measured - expect `supabase` to be failing beside it.
+- `supabase` - the database did not answer at all.
 
 ### Step 2 - the 15-minute alert (no external account)
 

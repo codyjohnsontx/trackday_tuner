@@ -11,24 +11,35 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const OUTCOMES = new Set<FeedbackOutcome>(['better', 'same', 'worse', 'unknown']);
 
 /**
- * Failures that mean this DEPLOYMENT is broken, not this request.
+ * The ONE SQLSTATE whose message is written for the rider.
  *
- * `PGRST202` is the Save Outcome outage: PostgREST cannot resolve
- * `save_session_outcome`, because `20260716000800` was never applied to the
- * database or because the schema cache has not been reloaded - the two are
- * byte-identical from here. `42501` is the same class one step on: the function
- * exists and the caller has no `execute`.
+ * `save_session_outcome` rejects a request with a bare `raise exception`, which
+ * is `P0001`, and every one of those messages is about THIS request: "session
+ * vehicle mismatch" tells a rider to go and pick another session. Those answer
+ * `400` and say so verbatim. EVERYTHING ELSE IS A DEPLOYMENT OR TRANSPORT
+ * FAULT, answers `503` with a message the rider can act on, and goes to
+ * `reportError`.
  *
- * Both used to reach the rider as `error.message`, which is a list of nine
- * Postgres parameter names printed under their unsaved notes. Both codes were
- * measured against a real stack rather than taken from documentation; anything
- * else is a domain rejection raised by the function itself and still passes
- * through as a 400.
+ * THE DIRECTION IS THE POINT, and it is the direction this started out
+ * backwards. Listing the faults instead caught `PGRST202` - the Save Outcome
+ * outage, where `20260716000800` is unapplied or PostgREST's schema cache is
+ * stale, the two being byte-identical from here - and `42501`, where the
+ * function is there and `execute` is revoked. Both were measured against a real
+ * stack. But a list of the faults you thought of leaves every code you did not
+ * printing raw Postgres under a rider's unsaved notes, and two reach this line
+ * without any exotic state: `postgrest-js` resolves a transport failure as an
+ * ordinary error carrying an EMPTY `code`, and a body it cannot parse as one
+ * carrying NO `code` at all, so a network blip used to render as
+ * `TypeError: fetch failed` on the screen with nothing logged.
  *
- * `lib/monitoring/schema-contract.ts` is the check that finds this before a
- * rider does.
+ * So assume a database error reaches the rider until you have read the code
+ * that stops it. Same fail-closed allow-list doctrine, and for the same reason,
+ * as `REPORTABLE_EXTRA_KEYS` in `lib/monitoring/report-error.ts`.
+ *
+ * `lib/monitoring/schema-contract.ts` is the check that finds the schema half
+ * of this before a rider does.
  */
-const DEPLOYMENT_FAULT_CODES = new Set(['PGRST202', '42501']);
+const RIDER_FACING_FAULT_CODE = 'P0001';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -73,7 +84,7 @@ export async function PUT(request: Request, context: RouteContext) {
     p_recommendation_helpfulness: (body.recommendation_helpfulness as number | null | undefined) ?? null,
   });
   if (error) {
-    if (DEPLOYMENT_FAULT_CODES.has(error.code ?? '')) {
+    if (error.code !== RIDER_FACING_FAULT_CODE) {
       // The rider can do nothing about this and their notes are still in the
       // box, so the message says both. The real error - code, hint and all -
       // goes to the log rather than to the screen.
@@ -87,7 +98,7 @@ export async function PUT(request: Request, context: RouteContext) {
         {
           ok: false,
           error:
-            'Saving outcomes is temporarily unavailable. Your notes have not been saved - copy them somewhere safe and try again shortly.',
+            'Your outcome was not saved - something is wrong on our end, not with what you wrote. Your notes are still on this page: copy them somewhere safe before you leave, then try again in a few minutes.',
         },
         { status: 503 },
       );

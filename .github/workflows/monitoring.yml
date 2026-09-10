@@ -2,7 +2,8 @@
 # fails the run if either answer is not a 200:
 #
 #   /api/health                 - can this deployment serve? (Postgres reachable,
-#                                 RAG index present in the bundle)
+#                                 RAG index present in the bundle, Data API still
+#                                 resolving every RPC the app calls)
 #   /api/monitoring/ai-health   - has anything failed in the last hour? (error
 #                                 rate and p95 latency over `ai_requests`)
 #

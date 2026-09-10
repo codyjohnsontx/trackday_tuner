@@ -101,9 +101,12 @@ describe('PUT /api/sessions/[id]/outcome', () => {
     expect(body.ok).toBe(false);
     expect(body.error).not.toContain('save_session_outcome');
     expect(body.error).not.toContain('schema cache');
-    // It has to say the notes are not saved: the rider's only copy is the text
-    // still sitting in the box, and a reload takes it.
-    expect(body.error).toMatch(/not been saved/i);
+    // The message has to carry all three: that the save did not happen, that the
+    // fault is not theirs, and the one action that saves their typing right now.
+    // The rider's only copy is the text still in the box, and a reload takes it.
+    expect(body.error).toMatch(/not saved/i);
+    expect(body.error).toMatch(/on our end/i);
+    expect(body.error).toMatch(/copy them somewhere safe/i);
   });
 
   it('reports the real PostgREST error to the server so the outage is visible', async () => {
@@ -150,8 +153,69 @@ describe('PUT /api/sessions/[id]/outcome', () => {
     await expect(response.json()).resolves.toMatchObject({ ok: false });
   });
 
+  // THE CLASS, not the two instances. A network blip or a paused project between
+  // the function and PostgREST never reaches Postgres at all, and postgrest-js
+  // RESOLVES that as an ordinary error carrying an empty `code` rather than
+  // rejecting. Listing the deployment faults instead of the rider-facing one let
+  // exactly this print `TypeError: fetch failed` under unsaved notes, with
+  // nothing reaching Sentry or the log drain.
+  const TRANSPORT_FAILURE = {
+    code: '',
+    message: 'TypeError: fetch failed',
+    details: 'TypeError: fetch failed\n\nCaused by: Error: connect ECONNREFUSED (ECONNREFUSED)',
+    hint: '',
+  };
+
+  it('does not show the rider a transport failure that never reached Postgres', async () => {
+    rpcAnswers({ data: null, error: TRANSPORT_FAILURE });
+
+    const response = await PUT(request(), context);
+    const body = await response.json() as { ok: boolean; error: string };
+
+    expect(response.status).toBe(503);
+    expect(body.error).not.toContain('fetch failed');
+    expect(body.error).not.toContain('ECONNREFUSED');
+    expect(body.error).toMatch(/not saved/i);
+    expect(reportError).toHaveBeenCalledWith(
+      'session-outcome',
+      expect.objectContaining({ message: 'TypeError: fetch failed' }),
+      expect.objectContaining({ reason: '' }),
+    );
+  });
+
+  // The same class one shape further out: postgrest-js gives an error no `code`
+  // at all when it cannot parse the body, which is what a proxy's HTML error
+  // page produces.
+  it('does not show the rider an error that carries no code at all', async () => {
+    rpcAnswers({ data: null, error: { message: '<html>502 Bad Gateway</html>' } });
+
+    const response = await PUT(request(), context);
+    const body = await response.json() as { ok: boolean; error: string };
+
+    expect(response.status).toBe(503);
+    expect(body.error).not.toContain('502 Bad Gateway');
+    expect(reportError).toHaveBeenCalled();
+  });
+
+  // A schema drift the resolve-only health probe cannot see: the function is
+  // there, but a table its body touches is not, so plpgsql raises at run time.
+  it('does not show the rider a missing table from inside the function body', async () => {
+    rpcAnswers({
+      data: null,
+      error: { code: '42P01', message: 'relation "public.race_engineer_memory" does not exist' },
+    });
+
+    const response = await PUT(request(), context);
+    const body = await response.json() as { ok: boolean; error: string };
+
+    expect(response.status).toBe(503);
+    expect(body.error).not.toContain('race_engineer_memory');
+    expect(reportError).toHaveBeenCalled();
+  });
+
   // The function's own rejections still reach the rider unchanged: they are
   // about this request, and they are what tells them to pick another session.
+  // This is the ONE code that does, so it is what keeps the inversion honest.
   it('passes a domain rejection through as a 400', async () => {
     rpcAnswers({ data: null, error: { code: 'P0001', message: 'session vehicle mismatch' } });
 
