@@ -73,6 +73,7 @@ npm run rag:eval -- --update-baseline  # commit this run's scores as the baselin
 npm run db:status    # which migrations are applied on the linked project
 npm run db:new <name>  # scaffold a migration
 npm run db:push      # apply pending migrations to the linked project
+npm run db:audit     # regenerate the live-schema migration audit query
 ```
 
 **Never run `npm run build` while a dev server is up.** They share `.next`, and
@@ -121,6 +122,10 @@ grants by hand" in `docs/beta-runbook.md`.
 - Filenames are `<14-digit timestamp>_<name>.sql`. The timestamp is the version
   recorded remotely and is a primary key, so **two migrations must never share a
   prefix** — an earlier pair both named `20260224_` could not both be recorded
+- A new migration also needs a probe in `scripts/build-migration-audit.mjs` and
+  `npm run db:audit` re-run to regenerate the committed query; the unit suite
+  fails until both are done. The audit is what answers whether the *hosted*
+  project has the migration - see the note under "Production Monitoring"
 - `create table`, `create index`, and `create function` statements are written
   idempotently (`if not exists` / `or replace`). `create policy` is not, so a
   half-applied migration cannot simply be replayed — check `db:status` first. The

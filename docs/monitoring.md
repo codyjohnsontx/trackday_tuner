@@ -23,7 +23,7 @@ external account at all**, and two need an account you have to create.
 
 | Piece | Live on merge? | What it needs from you |
 | --- | --- | --- |
-| `/api/health` | **Yes.** Public, no monitoring-specific variable, no account | Nothing new. It does use the app's existing `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, and needs `data/rag-index.json` in the bundle - those are what it checks |
+| `/api/health` | **Yes.** Public, no monitoring-specific variable, no account | Nothing new. It does use the app's existing `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, and needs `data/rag-index.json` in the bundle. Step 1 below lists the checks those feed |
 | `/api/monitoring/ai-health` | No - answers `503 Monitoring is not configured.` | `MONITORING_CRON_SECRET` in Vercel |
 | The 15-minute probe + alert | No - the workflow runs but exits clean with a warning | Two GitHub settings plus the Vercel secret and a redeploy. **No external account** |
 | Sentry | No - the SDK is not initialised at all | A sentry.io account (free tier) you create |
@@ -497,7 +497,7 @@ add the `crons` entry to `vercel.json`, set `MONITORING_CRON_SECRET` in Vercel
   one Sentry event. So while a dependency is down, the volume is set by how
   often the endpoint is *called* rather than by the outage: the documented
   callers alone (the 15-minute workflow plus a 5-minute external monitor)
-  produce roughly 32 events an hour with both checks failing, and anyone can
+  produce roughly 48 events an hour with all three checks failing, and anyone can
   raise that by looping the URL - during exactly the window Sentry's free tier
   needs to still be accepting events. Accepted because a health check that
   reports nothing defeats its own purpose, and it has to stay reachable by an
