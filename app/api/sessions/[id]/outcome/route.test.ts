@@ -213,9 +213,40 @@ describe('PUT /api/sessions/[id]/outcome', () => {
     expect(reportError).toHaveBeenCalled();
   });
 
+  // A rider-caused conflict the function does not raise itself. Two tabs opened
+  // while one recommendation was still `proposed`, saved against two different
+  // sessions: the second hits the partial unique index on
+  // `session_feedback.recommendation_id`, which the `on conflict (session_id)`
+  // upsert does not cover. Falling through to the deployment branch told them
+  // the fault was ours and to retry - both false, and the retry can never work.
+  it('tells a rider a recommendation is already linked rather than blaming the deployment', async () => {
+    rpcAnswers({
+      data: null,
+      error: {
+        code: '23505',
+        message:
+          'duplicate key value violates unique constraint "session_feedback_recommendation_id_key"',
+        details: 'Key (recommendation_id)=(44444444-4444-4444-8444-444444444444) already exists.',
+        hint: null,
+      },
+    });
+
+    const response = await PUT(request(), context);
+    const body = await response.json() as { ok: boolean; error: string };
+
+    // 400: this is about the request, and there is something to go and change.
+    expect(response.status).toBe(400);
+    expect(body.error).toMatch(/already linked to another session/i);
+    expect(body.error).toMatch(/pick a different recommendation/i);
+    // The raw text names an index and echoes an id, and neither is fit to read.
+    expect(body.error).not.toContain('session_feedback_recommendation_id_key');
+    expect(body.error).not.toContain('duplicate key');
+    // Not a fault, so it must not raise a Sentry issue on a rider's choice.
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
   // The function's own rejections still reach the rider unchanged: they are
   // about this request, and they are what tells them to pick another session.
-  // This is the ONE code that does, so it is what keeps the inversion honest.
   it('passes a domain rejection through as a 400', async () => {
     rpcAnswers({ data: null, error: { code: 'P0001', message: 'session vehicle mismatch' } });
 

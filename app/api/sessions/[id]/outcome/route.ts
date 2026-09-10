@@ -11,14 +11,17 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const OUTCOMES = new Set<FeedbackOutcome>(['better', 'same', 'worse', 'unknown']);
 
 /**
- * The ONE SQLSTATE whose message is written for the rider.
+ * The SQLSTATE whose message is written for the rider and passed through as-is.
  *
  * `save_session_outcome` rejects a request with a bare `raise exception`, which
  * is `P0001`, and every one of those messages is about THIS request: "session
  * vehicle mismatch" tells a rider to go and pick another session. Those answer
  * `400` and say so verbatim. EVERYTHING ELSE IS A DEPLOYMENT OR TRANSPORT
  * FAULT, answers `503` with a message the rider can act on, and goes to
- * `reportError`.
+ * `reportError`. The one exception below is `23505`, which is rider-caused,
+ * rider-fixable and gets a sentence this route writes - naming a second code
+ * that somebody has actually traced is what an allow-list is FOR, and it leaves
+ * the default direction closed.
  *
  * THE DIRECTION IS THE POINT, and it is the direction this started out
  * backwards. Listing the faults instead caught `PGRST202` - the Save Outcome
@@ -39,7 +42,37 @@ const OUTCOMES = new Set<FeedbackOutcome>(['better', 'same', 'worse', 'unknown']
  * `lib/monitoring/schema-contract.ts` is the check that finds the schema half
  * of this before a rider does.
  */
-const RIDER_FACING_FAULT_CODE = 'P0001';
+const DOMAIN_REJECTION_CODE = 'P0001';
+
+/**
+ * The one other code a rider can act on, and the only reason it needs naming is
+ * that the message it would otherwise get is false in both halves.
+ *
+ * `20260716000800:37-39` puts a partial unique index on
+ * `session_feedback.recommendation_id`. The function upserts
+ * `on conflict (session_id)` (:193) and its `do update` sets
+ * `recommendation_id` (:196), so that second index is separately violable: two
+ * tabs opened while one recommendation was still `proposed`, saved against two
+ * different sessions, and the second save raises `23505` rather than a
+ * `raise exception`. Falling through to the deployment branch told that rider
+ * the fault was on our end and to try again in a few minutes - wrong about
+ * whose fault it is, and a retry that can never succeed, while the one action
+ * that would work is the one the message rules out. It also raised a Sentry
+ * issue on a rider's choice.
+ *
+ * The raw text names an index and is not fit for a rider, so THE ROUTE WRITES
+ * THE SENTENCE. In principle the check belongs in `save_session_outcome`,
+ * catching the unique violation and re-raising so it arrives as `P0001` like
+ * every other domain rejection - but that is a migration, and a migration
+ * production may not have is the exact bug this branch exists to fix, so
+ * routing the message through one would make it correct only if the thing we
+ * cannot yet confirm is true. Even after that migration the sentence belongs
+ * here rather than in SQL, so this is not a stopgap.
+ */
+const RECOMMENDATION_ALREADY_LINKED_CODE = '23505';
+
+const RECOMMENDATION_ALREADY_LINKED_MESSAGE =
+  "That recommendation is already linked to another session's outcome. Pick a different recommendation, or None, and save again.";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -84,7 +117,13 @@ export async function PUT(request: Request, context: RouteContext) {
     p_recommendation_helpfulness: (body.recommendation_helpfulness as number | null | undefined) ?? null,
   });
   if (error) {
-    if (error.code !== RIDER_FACING_FAULT_CODE) {
+    if (error.code === RECOMMENDATION_ALREADY_LINKED_CODE) {
+      return NextResponse.json(
+        { ok: false, error: RECOMMENDATION_ALREADY_LINKED_MESSAGE },
+        { status: 400 },
+      );
+    }
+    if (error.code !== DOMAIN_REJECTION_CODE) {
       // The rider can do nothing about this and their notes are still in the
       // box, so the message says both. The real error - code, hint and all -
       // goes to the log rather than to the screen.

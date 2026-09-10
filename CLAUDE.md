@@ -1330,6 +1330,9 @@ unsaved. `/api/health`'s `schema_contract` check
 (`lib/monitoring/schema-contract.ts`) is what says so now, within fifteen
 minutes, and **a new `supabase.rpc()` call site belongs on its list** or the
 check reports healthy while that feature is the one that is broken.
+`tests/unit/rpc-call-sites.test.ts` is what holds that rule - it sweeps `app/`
+and `lib/` and fails naming any RPC the list does not carry, so this paragraph
+is the reason rather than the enforcement.
 
 It asks the Data API rather than `pg_proc` on purpose, and this is the fact worth
 carrying: **a never-applied migration and a stale PostgREST schema cache are
@@ -1339,9 +1342,13 @@ while every save failed. What the neighbouring faults answer instead, also
 measured, is what makes an error report worth reading: a missing `execute` grant
 is `403` / `42501`, and a signature that drifted by one parameter is `PGRST202`
 *with* a `hint` naming the signature it did find. `scripts/sql/audit-migrations-against-database.sql`
-reports all 17 migrations against a live schema in one read-only query - use it
+reports every migration against a live schema in one read-only query - use it
 rather than `npm run db:status`, which reads a CLI history the hosted project
-has never had.
+has never had. **It is GENERATED** by `scripts/build-migration-audit.mjs` from
+`supabase/migrations/` (`npm run db:audit`), because a hand-kept list of rows
+reports the migration it never heard of as present - the audit answering its own
+question wrongly. Adding a migration means adding its probe there; generation
+fails naming the file until you do.
 
 **`/api/monitoring/ai-health` reads `ai_requests` and every status has to be
 classified.** Refusals, rate limiting and duplicate suppression are not
