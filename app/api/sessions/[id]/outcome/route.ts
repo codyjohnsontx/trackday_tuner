@@ -4,10 +4,31 @@ import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import { assertNotDemoRoute } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
+import { reportError } from '@/lib/monitoring/report-error';
 import type { FeedbackOutcome, Json, SessionFeedback } from '@/types';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const OUTCOMES = new Set<FeedbackOutcome>(['better', 'same', 'worse', 'unknown']);
+
+/**
+ * Failures that mean this DEPLOYMENT is broken, not this request.
+ *
+ * `PGRST202` is the Save Outcome outage: PostgREST cannot resolve
+ * `save_session_outcome`, because `20260716000800` was never applied to the
+ * database or because the schema cache has not been reloaded - the two are
+ * byte-identical from here. `42501` is the same class one step on: the function
+ * exists and the caller has no `execute`.
+ *
+ * Both used to reach the rider as `error.message`, which is a list of nine
+ * Postgres parameter names printed under their unsaved notes. Both codes were
+ * measured against a real stack rather than taken from documentation; anything
+ * else is a domain rejection raised by the function itself and still passes
+ * through as a 400.
+ *
+ * `lib/monitoring/schema-contract.ts` is the check that finds this before a
+ * rider does.
+ */
+const DEPLOYMENT_FAULT_CODES = new Set(['PGRST202', '42501']);
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -51,7 +72,26 @@ export async function PUT(request: Request, context: RouteContext) {
     p_notes: typeof body.notes === 'string' ? body.notes.trim() || null : null,
     p_recommendation_helpfulness: (body.recommendation_helpfulness as number | null | undefined) ?? null,
   });
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+  if (error) {
+    if (DEPLOYMENT_FAULT_CODES.has(error.code ?? '')) {
+      // The rider can do nothing about this and their notes are still in the
+      // box, so the message says both. The real error - code, hint and all -
+      // goes to the log rather than to the screen.
+      reportError('session-outcome', new Error(error.message), {
+        reason: error.code,
+        query: 'save_session_outcome',
+      });
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            'Saving outcomes is temporarily unavailable. Your notes have not been saved - copy them somewhere safe and try again shortly.',
+        },
+        { status: 503 },
+      );
+    }
+    return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+  }
 
   return NextResponse.json({ ok: true, outcome: data as Json as unknown as SessionFeedback });
 }
