@@ -38,6 +38,16 @@
  * theoretically: `service_role` holds execute on `consume_beta_rate_limit`, so a
  * well-formed probe would spend a rate-limit slot on every health check. This was
  * verified against a real stack - the probe leaves `beta_rate_limits` empty.
+ *
+ * WHAT IT CANNOT SEE, recorded rather than built for. Resolution is by parameter
+ * NAME, so a migration that changed a parameter's TYPE while keeping its name
+ * would still resolve here and the check would call the deployment in step. No
+ * such change exists in this repository's history: every signature change so far
+ * renamed the parameter too - `20260901001400`'s `p_expected_lap_count integer`
+ * became `20260903001500`'s `p_expected_laps jsonb` - so a database holding the
+ * older one answers `PGRST202` for a probe sending the newer name, and that drift
+ * IS caught. Closing the type case would mean comparing signatures rather than
+ * names, which is a different check; nothing here does it.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/supabase';

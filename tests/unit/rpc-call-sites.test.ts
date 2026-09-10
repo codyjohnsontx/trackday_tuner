@@ -22,6 +22,14 @@ import { REQUIRED_RPCS } from '@/lib/monitoring/schema-contract';
  * the sweep is the mechanism rather than a proxy for one, and it is proven
  * against `tests/fixtures/rpc-call-sites/` below rather than only against a
  * repository that already gets it right.
+ *
+ * IT HAS TO BE ABLE TO SEE ITSELF. A raw match over the file text cannot tell
+ * code from prose, and this guard first failed on the very module it checks:
+ * `supabase.rpc()` written in a doc comment read as a call site with an
+ * unreadable name, so it reported a wrong reason confidently - the same shape as
+ * an audit answering "seventeen of seventeen" while blind to an eighteenth. So
+ * comments are removed before anything is matched, and quotes are tracked while
+ * removing them so a `//` inside a string cannot swallow a real call.
  */
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -38,15 +46,65 @@ const DEPLOYMENT_TREES = ['app', 'lib'];
 const OPERATOR_ONLY_RPCS = new Set(['create_beta_invite']);
 
 /**
- * The probe loop in `schema_contract` reads its name from `REQUIRED_RPCS`, so
- * it is covered by construction and asking the list to contain it would be
- * asking it to contain itself. Named rather than pattern-matched, so a second
- * dynamic call site cannot inherit the exemption by accident.
+ * The contract module is the thing being CHECKED, not a caller: its one
+ * `.rpc()` is the probe loop dispatching over `REQUIRED_RPCS` itself, so its
+ * name is the list by construction and there is nothing here to cover. Excluded
+ * by name rather than by pattern, so the exclusion covers this file and reading
+ * it tells you which file it is.
  */
-const NAMES_COME_FROM_THE_LIST = new Set(['lib/monitoring/schema-contract.ts']);
+const THE_MODULE_BEING_CHECKED = 'lib/monitoring/schema-contract.ts';
 
 const RPC_CALL = /\.rpc\(\s*(['"`])([A-Za-z0-9_]+)\1/g;
 const RPC_ANY = /\.rpc\(/g;
+
+/**
+ * `source` with comments removed and string and template literals left intact.
+ *
+ * Quote state is tracked rather than assumed, because stripping from a bare
+ * `//` would truncate any line holding one inside a string and could hide a real
+ * call site - a sweep failing OPEN is worse than one failing loud.
+ */
+function withoutComments(source: string): string {
+  let out = '';
+  let index = 0;
+  let quote: string | null = null;
+  while (index < source.length) {
+    const char = source[index];
+    const next = source[index + 1];
+    if (quote) {
+      if (char === '\\') {
+        out += char + (next ?? '');
+        index += 2;
+        continue;
+      }
+      if (char === quote) quote = null;
+      out += char;
+      index += 1;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char;
+      out += char;
+      index += 1;
+      continue;
+    }
+    if (char === '/' && next === '/') {
+      while (index < source.length && source[index] !== '\n') index += 1;
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      index += 2;
+      while (index < source.length && !(source[index] === '*' && source[index + 1] === '/')) {
+        index += 1;
+      }
+      index += 2;
+      continue;
+    }
+    out += char;
+    index += 1;
+  }
+  return out;
+}
 
 function sourceFiles(dir: string): string[] {
   const found: string[] = [];
@@ -70,7 +128,7 @@ function collectRpcCallSites(dirs: string[]): CallSite[] {
   const sites: CallSite[] = [];
   for (const dir of dirs) {
     for (const file of sourceFiles(dir)) {
-      const source = readFileSync(file, 'utf8');
+      const source = withoutComments(readFileSync(file, 'utf8'));
       for (const match of source.matchAll(RPC_CALL)) {
         sites.push({ file: path.relative(ROOT, file), rpc: match[2] });
       }
@@ -88,8 +146,8 @@ function unreadableCallSites(dirs: string[]): string[] {
   for (const dir of dirs) {
     for (const file of sourceFiles(dir)) {
       const relative = path.relative(ROOT, file);
-      if (NAMES_COME_FROM_THE_LIST.has(relative)) continue;
-      const source = readFileSync(file, 'utf8');
+      if (relative === THE_MODULE_BEING_CHECKED) continue;
+      const source = withoutComments(readFileSync(file, 'utf8'));
       const total = [...source.matchAll(RPC_ANY)].length;
       const named = [...source.matchAll(RPC_CALL)].length;
       if (total > named) unreadable.push(relative);
@@ -110,6 +168,34 @@ describe('supabase.rpc() call sites', () => {
     expect(new Set(callSites.map((site) => site.rpc)).size).toBeGreaterThan(1);
   });
 
+  // Comment stripping is what makes the sweep readable, and a stripper that ate
+  // a string could quietly drop a real call and leave every assertion below
+  // passing over less than it should. These three are the RPCs a deployment
+  // calls today, so losing one has to be visible here.
+  it('still sees the call sites that comment stripping runs over', () => {
+    expect(new Set(callSites.map((site) => site.rpc))).toEqual(
+      new Set(['save_session_outcome', 'replace_session_laps', 'consume_beta_rate_limit']),
+    );
+  });
+
+  // Prose is not a call site. `lib/monitoring/schema-contract.ts` carries
+  // `supabase.rpc()` in its doc comments, which is what this guard used to
+  // report as an unreadable name.
+  it('does not read an RPC call written in a comment', () => {
+    const commented = withoutComments(
+      ["/** calls supabase.rpc('ghost_rpc') in prose */", "// also supabase.rpc('phantom_rpc')", 'export const x = 1;'].join('\n'),
+    );
+
+    expect([...commented.matchAll(RPC_CALL)]).toEqual([]);
+    expect([...commented.matchAll(RPC_ANY)]).toEqual([]);
+  });
+
+  it('does not mistake a comment marker inside a string for a comment', () => {
+    const kept = withoutComments(`const url = 'http://x/y'; await supabase.rpc('kept_rpc', {});`);
+
+    expect([...kept.matchAll(RPC_CALL)].map((match) => match[2])).toEqual(['kept_rpc']);
+  });
+
   it('reads every `.rpc()` in the deployment trees', () => {
     expect(
       unreadableCallSites(DEPLOYMENT_TREES.map((dir) => path.join(ROOT, dir))),
@@ -117,8 +203,8 @@ describe('supabase.rpc() call sites', () => {
     ).toEqual([]);
   });
 
-  // The exemption is only sound while that file really does take its names from
-  // the list, so the sweep is watched failing on a dynamic call site.
+  // The exclusion is only sound while a dispatch really is the only thing in
+  // that file, so the sweep is watched failing on a dynamic call site.
   it('reports a call site whose RPC name it cannot read', () => {
     expect(unreadableCallSites([path.resolve(__dirname, '../fixtures/rpc-call-sites')])).toEqual([
       'tests/fixtures/rpc-call-sites/dynamic-rpc-name.ts',

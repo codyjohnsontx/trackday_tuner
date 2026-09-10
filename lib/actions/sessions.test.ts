@@ -21,11 +21,16 @@ vi.mock('@/lib/actions/vehicles', () => ({
   getUserProfile: vi.fn(),
 }));
 
+vi.mock('@/lib/monitoring/report-error', () => ({
+  reportError: vi.fn(),
+}));
+
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { cookies } from 'next/headers';
 import { getRealUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
+import { reportError } from '@/lib/monitoring/report-error';
 import { DEMO_COOKIE_NAME } from '@/lib/demo/mode';
 import {
   createSession,
@@ -1457,7 +1462,9 @@ describe('sessions actions', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it('returns the transactional RPC error when lap replacement fails', async () => {
+  // A code-less error is a transport failure or an unparseable body, not the
+  // function talking. It used to reach the rider verbatim.
+  it('does not show the rider a lap error the function did not raise', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     const sessionQuery = createQuery({
       single: { data: createdSession, error: null },
@@ -1473,7 +1480,9 @@ describe('sessions actions', () => {
 
     const result = await replaceSessionLaps('sess-1', [], readLaps);
 
-    expect(result).toEqual({ ok: false, error: 'lap transaction failed' });
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).not.toContain('lap transaction failed');
+    expect(!result.ok && result.error).toMatch(/not saved/i);
     expect(rpc).toHaveBeenCalledWith('replace_session_laps', {
       p_user_id: 'user-1',
       p_session_id: 'sess-1',
@@ -1572,6 +1581,80 @@ describe('sessions actions', () => {
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error).toContain('changed since this page loaded');
     expect(!result.ok && result.error).not.toContain('replace_session_laps');
+    // Not a fault: the guard did its job and the rider has something to do.
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
+  // THE SIBLING OF THE SAVE OUTCOME DEFECT. `replace_session_laps` unresolvable
+  // in production printed raw PostgREST parameter names under lap times that
+  // were not saved, with nothing reaching Sentry or the log drain.
+  it('does not show the rider raw PostgREST when the lap RPC cannot be resolved', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const sessionQuery = createQuery({ single: { data: createdSession, error: null } });
+    const from = vi.fn(() => sessionQuery);
+    const rpc = vi.fn(async () => ({
+      data: null,
+      error: {
+        code: 'PGRST202',
+        message:
+          'Could not find the function public.replace_session_laps(p_expected_laps, p_laps, p_session_id, p_user_id) in the schema cache',
+        details: null,
+        hint: null,
+      },
+    }));
+    vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
+
+    const result = await replaceSessionLaps('sess-1', [], []);
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).not.toContain('replace_session_laps');
+    expect(!result.ok && result.error).not.toContain('schema cache');
+    expect(!result.ok && result.error).toMatch(/not saved/i);
+    expect(!result.ok && result.error).toMatch(/on our end/i);
+    expect(!result.ok && result.error).toMatch(/copy them somewhere safe/i);
+    expect(reportError).toHaveBeenCalledWith(
+      'session-laps',
+      expect.objectContaining({ message: expect.stringContaining('schema cache') }),
+      expect.objectContaining({ reason: 'PGRST202', query: 'replace_session_laps' }),
+    );
+  });
+
+  // A transport failure never reaches Postgres, and postgrest-js resolves it as
+  // an ordinary error carrying an EMPTY code.
+  it('does not show the rider a transport failure on the lap path', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const sessionQuery = createQuery({ single: { data: createdSession, error: null } });
+    const from = vi.fn(() => sessionQuery);
+    const rpc = vi.fn(async () => ({
+      data: null,
+      error: { code: '', message: 'TypeError: fetch failed', details: '', hint: '' },
+    }));
+    vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
+
+    const result = await replaceSessionLaps('sess-1', [], []);
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).not.toContain('fetch failed');
+    expect(!result.ok && result.error).toMatch(/not saved/i);
+    expect(reportError).toHaveBeenCalled();
+  });
+
+  // The function's own domain rejections still reach the rider unchanged: they
+  // are about this request and tell them what to change.
+  it('passes a lap domain rejection through unchanged', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const sessionQuery = createQuery({ single: { data: createdSession, error: null } });
+    const from = vi.fn(() => sessionQuery);
+    const rpc = vi.fn(async () => ({
+      data: null,
+      error: { code: 'P0001', message: 'sessions cannot exceed 200 laps' },
+    }));
+    vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
+
+    const result = await replaceSessionLaps('sess-1', [], []);
+
+    expect(result).toEqual({ ok: false, error: 'sessions cannot exceed 200 laps' });
+    expect(reportError).not.toHaveBeenCalled();
   });
 
   it('tells a new session the database is holding none of its laps yet', async () => {

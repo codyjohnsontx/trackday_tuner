@@ -21,6 +21,7 @@ import {
   sessionsMatchTrack,
 } from '@/lib/session-compare';
 import { fetchPreviousSession } from '@/lib/session-previous';
+import { reportError } from '@/lib/monitoring/report-error';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
@@ -82,6 +83,33 @@ const SESSION_LAPS_STALE_READ_CODE = 'TT409';
 const SESSION_LAPS_STALE_READ_MESSAGE =
   'The lap times on this session changed since this page loaded, so nothing was overwritten. Reload the session and try again.';
 
+/**
+ * The codes whose own message is written for a rider, and everything else is a
+ * deployment or transport fault.
+ *
+ * `replace_session_laps` (20260903001500) rejects a request with a bare
+ * `raise exception`, which is `P0001`, and those messages are about THIS
+ * request. `TT409` is its stale-read refusal, which has a written sentence of
+ * its own above. Any OTHER code answers with `SESSION_LAPS_SAVE_FAILED_MESSAGE`
+ * and goes to `reportError`.
+ *
+ * THE DIRECTION IS THE POINT, and it is the same rule and the same reason as
+ * `app/api/sessions/[id]/outcome/route.ts`. This path returned `error.message`
+ * verbatim for everything but `TT409`, so a `replace_session_laps` the Data API
+ * cannot resolve printed raw PostgREST parameter names under a rider's unsaved
+ * lap times with nothing reaching Sentry - the Save Outcome defect exactly, on
+ * the sibling RPC. A transport failure is the same hole: `postgrest-js` resolves
+ * one as an ordinary error carrying an EMPTY `code`, and an unparseable body as
+ * one carrying NO `code`, so neither is on any list of faults anyone thought of.
+ *
+ * Lap times are rider-typed data lost the same way notes are, so assume a
+ * database error reaches the rider until you have read the code that stops it.
+ */
+const SESSION_LAPS_DOMAIN_REJECTION_CODE = 'P0001';
+
+const SESSION_LAPS_SAVE_FAILED_MESSAGE =
+  'Your lap times were not saved - something is wrong on our end, not with what you entered. They are still on this page: copy them somewhere safe before you leave, then try again in a few minutes.';
+
 async function persistSessionLaps(params: {
   supabase: Awaited<ReturnType<typeof createClient>>;
   userId: string;
@@ -106,7 +134,15 @@ async function persistSessionLaps(params: {
     p_expected_laps: params.expectedLaps as unknown as Json,
   });
   if (!error) return null;
-  return error.code === SESSION_LAPS_STALE_READ_CODE ? SESSION_LAPS_STALE_READ_MESSAGE : error.message;
+  if (error.code === SESSION_LAPS_STALE_READ_CODE) return SESSION_LAPS_STALE_READ_MESSAGE;
+  if (error.code === SESSION_LAPS_DOMAIN_REJECTION_CODE) return error.message;
+  reportError('session-laps', new Error(error.message), {
+    reason: error.code,
+    query: 'replace_session_laps',
+    details: error.details,
+    hint: error.hint,
+  });
+  return SESSION_LAPS_SAVE_FAILED_MESSAGE;
 }
 
 /**
