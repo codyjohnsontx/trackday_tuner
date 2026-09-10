@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 import {
+  DataApiUnreachableError,
   REQUIRED_RPCS,
   UNCOERCIBLE_PROBE_VALUE,
   findUnresolvableRpcs,
@@ -46,6 +47,18 @@ const UNCOERCIBLE_BODY = {
   message: `invalid input syntax for type uuid: "${UNCOERCIBLE_PROBE_VALUE}"`,
 };
 
+/**
+ * A real supabase-js client over a stubbed `fetch`, so every test below goes
+ * through `postgrest-js`'s own response parsing rather than a hand-written
+ * shape of what it is believed to return.
+ */
+function clientOver(fetchStub: typeof fetch) {
+  return createClient('http://postgrest.stub', 'service-role-key', {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: fetchStub },
+  });
+}
+
 /** A supabase-js client whose PostgREST answers `perRpc[name]` for each RPC. */
 function stubClient(perRpc: Record<string, { status: number; body: unknown }>) {
   const seen: { name: string; body: Record<string, unknown> }[] = [];
@@ -59,11 +72,7 @@ function stubClient(perRpc: Record<string, { status: number; body: unknown }>) {
       headers: { 'content-type': 'application/json; charset=utf-8' },
     });
   }) as unknown as typeof fetch;
-  const client = createClient('http://postgrest.stub', 'service-role-key', {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { fetch: fetchStub },
-  });
-  return { client, seen };
+  return { client: clientOver(fetchStub), seen };
 }
 
 function allResolvable(): Record<string, { status: number; body: unknown }> {
@@ -113,6 +122,43 @@ describe('findUnresolvableRpcs', () => {
     });
 
     await expect(findUnresolvableRpcs(client)).resolves.toEqual([]);
+  });
+
+  // Nothing answered, so nothing was measured. `postgrest-js` RESOLVES a
+  // transport failure as `{ error: { code: '' } }` rather than rejecting, so
+  // "not PGRST202" used to make a paused project read as a schema in step, and
+  // /api/health published `3 rpcs` for three probes that never left the process.
+  it('refuses to report a clean schema when the Data API never answered', async () => {
+    const client = clientOver((async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch);
+
+    await expect(findUnresolvableRpcs(client)).rejects.toBeInstanceOf(DataApiUnreachableError);
+  });
+
+  // The other shape of the same thing: a proxy or gateway in front of Supabase
+  // answers with a page PostgREST did not write, which `postgrest-js` reports as
+  // an error carrying no `code` at all.
+  it('refuses to report a clean schema when something answered that is not PostgREST', async () => {
+    const client = clientOver((async () =>
+      new Response('<html>502 Bad Gateway</html>', {
+        status: 502,
+        headers: { 'content-type': 'text/html' },
+      })) as unknown as typeof fetch);
+
+    await expect(findUnresolvableRpcs(client)).rejects.toBeInstanceOf(DataApiUnreachableError);
+  });
+
+  // The failing detail /api/health publishes is the error NAME, so it has to be
+  // the one that says which of the two faults this is.
+  it('names the unreachable Data API rather than a missing RPC', async () => {
+    const client = clientOver((async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch);
+
+    await expect(findUnresolvableRpcs(client)).rejects.toMatchObject({
+      name: 'DataApiUnreachableError',
+    });
   });
 
   it('sends each contract probe verbatim, so PostgREST matches on the real parameter names', async () => {

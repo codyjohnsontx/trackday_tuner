@@ -44,8 +44,10 @@ import type { Database } from '@/types/supabase';
 
 /**
  * PostgREST's code for "no function of that name and parameter set is in the
- * schema cache". The one code that means drift; every other outcome means the
- * Data API resolved the function, which is all this check asks.
+ * schema cache". The one code that means drift; any OTHER PostgREST answer -
+ * `22P02`, `42501`, a success - means the Data API resolved the function, which
+ * is all this check asks. An answer that is not PostgREST's at all is a third
+ * case, and `DataApiUnreachableError` below is it.
  */
 export const RPC_NOT_IN_SCHEMA_CACHE = 'PGRST202';
 
@@ -55,6 +57,28 @@ export const RPC_NOT_IN_SCHEMA_CACHE = 'PGRST202';
  * `schema-contract.test.ts` fails if one stops doing so.
  */
 export const UNCOERCIBLE_PROBE_VALUE = 'trackday-tuner-health-probe';
+
+/**
+ * Raised when a probe came back with no PostgREST error code: the request never
+ * reached the Data API (a paused project, DNS, TLS), or something in front of it
+ * answered with a body PostgREST did not write.
+ *
+ * `postgrest-js` resolves both of those as an ordinary error rather than
+ * rejecting - `code: ''` for a transport failure, no `code` at all for a body it
+ * could not parse - so neither is `PGRST202`, and treating "not PGRST202" as
+ * proof of resolution would report a schema in step that nothing had answered
+ * for. An empty result from `findUnresolvableRpcs` has to mean every contract
+ * was asked AND every one resolved.
+ *
+ * The name is what `/api/health` publishes as the check detail; it carries no
+ * table name and no rider data.
+ */
+export class DataApiUnreachableError extends Error {
+  constructor(names: readonly string[]) {
+    super(`The Data API did not answer for: ${names.join(', ')}.`);
+    this.name = 'DataApiUnreachableError';
+  }
+}
 
 type DatabaseFunction = keyof Database['public']['Functions'];
 
@@ -120,11 +144,17 @@ export const REQUIRED_RPCS: readonly RpcContract[] = [
   }),
 ];
 
-/** The names of the RPCs the Data API could not resolve, in contract order. */
+/**
+ * The names of the RPCs the Data API could not resolve, in contract order.
+ *
+ * Throws `DataApiUnreachableError` when any probe got no PostgREST-shaped
+ * answer, so an empty list means every contract was asked and every one
+ * resolved rather than that nothing answered.
+ */
 export async function findUnresolvableRpcs(
   client: Pick<SupabaseClient, 'rpc'>,
 ): Promise<string[]> {
-  const results = await Promise.all(
+  const answers = await Promise.all(
     REQUIRED_RPCS.map(async (required) => {
       // The generated `Database` types describe the arguments a caller is
       // supposed to send. This deliberately sends ones that cannot coerce, which
@@ -138,8 +168,16 @@ export async function findUnresolvableRpcs(
         }>;
       };
       const { error } = await untyped.rpc(required.name, required.probe);
-      return error?.code === RPC_NOT_IN_SCHEMA_CACHE ? required.name : null;
+      return { name: required.name, error };
     }),
   );
-  return results.filter((name): name is DatabaseFunction => name !== null);
+
+  const unanswered = answers.filter(({ error }) => error !== null && !error.code);
+  if (unanswered.length > 0) {
+    throw new DataApiUnreachableError(unanswered.map(({ name }) => name));
+  }
+
+  return answers
+    .filter(({ error }) => error?.code === RPC_NOT_IN_SCHEMA_CACHE)
+    .map(({ name }) => name);
 }

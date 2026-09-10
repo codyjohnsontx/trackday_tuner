@@ -126,6 +126,27 @@ describe('GET /api/health', () => {
     expect(check(body, 'rag_index').status).toBe('ok');
   });
 
+  // A probe that never reached PostgREST measured nothing, so the body must not
+  // say the schema is in step. `postgrest-js` resolves a transport failure as an
+  // error carrying an empty `code`, which is not PGRST202 and used to read as a
+  // resolved function - `schema_contract: ok, detail: 3 rpcs` while nothing had
+  // answered.
+  it('does not call the schema in step when the Data API never answered', async () => {
+    createAdminClient.mockReturnValue(
+      supabaseReturning(
+        { error: null },
+        { error: { code: '', message: 'TypeError: fetch failed' } },
+      ),
+    );
+
+    const response = await GET();
+    const body = (await response.json()) as HealthBody;
+
+    expect(response.status).toBe(503);
+    expect(check(body, 'schema_contract').status).toBe('fail');
+    expect(check(body, 'schema_contract').detail).toBe('DataApiUnreachableError');
+  });
+
   it('is never served from a cache', async () => {
     const response = await GET();
     expect(response.headers.get('cache-control')).toContain('no-store');

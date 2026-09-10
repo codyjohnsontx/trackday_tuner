@@ -57,9 +57,19 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   -- and cannot restrict the column, so that privilege is a rider setting their
   -- own `tier`. Testing only the revoke would read `present` on a database that
   -- never granted anything at all.
+  --
+  -- The CASE is load-bearing rather than style. `has_table_privilege` RAISES on
+  -- a table that does not exist, and Postgres does not promise to short-circuit
+  -- AND - the docs send you to CASE when evaluation order matters. Without it,
+  -- a database missing the baseline aborts this whole query on row 13 instead of
+  -- printing the seventeen MISSING rows the operator came here to read, which is
+  -- exactly the state row 1 exists to report.
   (13, '20260719001100_grant_data_api_access',           'grant',    'authenticated has insert on public.sessions and NO update on public.profiles',
-       has_table_privilege('authenticated', 'public.sessions', 'insert')
-       and not has_table_privilege('authenticated', 'public.profiles', 'update')),
+       case when to_regclass('public.sessions') is null
+              or to_regclass('public.profiles') is null then false
+            else has_table_privilege('authenticated', 'public.sessions', 'insert')
+                 and not has_table_privilege('authenticated', 'public.profiles', 'update')
+       end),
   (14, '20260816001200_add_profile_on_auth_user_created','trigger',  'on_auth_user_created on auth.users',
        exists (select 1 from pg_trigger
                where tgname='on_auth_user_created'
