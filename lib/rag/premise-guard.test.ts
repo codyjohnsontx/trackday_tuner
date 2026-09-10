@@ -77,6 +77,16 @@ const LEGITIMATE_QUESTIONS: string[] = [
   'Can I take a click of rebound out of the front for the braking zone?',
   'Should I raise the fork in the clamps to help the front bite under brakes?',
   'What rebound change should I try for a rear that feels busy over the bumps?',
+  // The question docs/knowledge-base/tires/pressure-basics.md line 28 answers in
+  // so many words, in the phrasings a rider actually types it. A covered
+  // question failing in the live app is being chased elsewhere; what is pinned
+  // here is that THIS guard is not a reason it could - it must never be the
+  // thing standing between a rider and an answer the knowledge base holds.
+  'The front pushes mid-corner after I raised the front pressure a psi. What should I change?',
+  'My front is pushing mid-corner since the pressure increase. Should I drop 0.5 psi?',
+  'Fronts are pushing mid-corner after I put a psi in. What do I change?',
+  'Front pushing wide mid-corner after a pressure increase - do I take that psi back out?',
+  'Should I drop the front pressure back down 0.5 psi to stop the mid-corner push?',
 ];
 
 describe('classifyDangerousPremise rejects a dangerous premise', () => {
