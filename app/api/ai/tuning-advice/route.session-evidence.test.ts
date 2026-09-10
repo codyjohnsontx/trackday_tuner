@@ -307,6 +307,45 @@ describe('the race engineer answers the questions it suggests', () => {
     expect(rows.at(-1)?.status).toBe('ok');
   });
 
+  it('is the refusal the captain saw: the model cites this session and names no id it was shown', async () => {
+    // THE REPRODUCTION, not a hypothetical. This payload is the shape the model
+    // actually returned in the committed recording for `mc-gearing-slow-corner`
+    // (tests/fixtures/rag-eval/recordings/completions.json): it cites the
+    // rider's OWN session notes and writes the string "null" where a
+    // `source_session_id` belongs, because the prompt printed no id for the
+    // session it was reasoning about. `evaluateAdvicePolicy` discards the whole
+    // answer - a correct, cited recommendation included - and the rider is told
+    // the historical session evidence could not be verified.
+    //
+    // The value is still refused after the fix and must stay refused: "null" is
+    // not a session id, so it is fabrication as far as the guard can tell, and
+    // coercing it to null would leave an unverified evidence entry in front of
+    // the rider. What the fix changes is that the model is now given a real id
+    // to copy instead, which is the test above.
+    const recorded = adviceCiting('null');
+    recorded.personal_evidence = [
+      {
+        label: 'Session notes',
+        detail:
+          'Falls out of the powerband on the drive out of the slow left. Second gear is too tall there.',
+        source_session_id: 'null',
+      },
+    ];
+    generateTuningAdvice.mockResolvedValue({
+      advice: recorded,
+      retrieved: [],
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+      latencyMs: 1,
+      model: 'gpt-4o-mini-2024-07-18',
+    });
+
+    const body = await (await ask(CAPTAIN_QUESTION)).json();
+
+    expect(body.advice.refusal).toContain(UNVERIFIED_EVIDENCE_REFUSAL);
+    expect(body.advice.recommended_changes).toEqual([]);
+    expect(rows.at(-1)?.policy_violations).toContain('invalid_personal_evidence');
+  });
+
   it('STILL refuses a session id the rider does not own', async () => {
     generateTuningAdvice.mockResolvedValue({
       advice: adviceCiting(INVENTED_SESSION_ID),
