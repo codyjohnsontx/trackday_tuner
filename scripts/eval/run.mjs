@@ -199,8 +199,8 @@ const BASELINE_LIMITATIONS = [
       'one extra paragraph on an answer that still arrives complete, because a rejection is ' +
       'not a refusal. That asymmetry is what lets the boundary be drawn generously, and it is ' +
       'the answer to "a definition of dangerous premise that does not refuse the legitimate ' +
-      'brake questions riders ask constantly": twenty of those are permanent regression cases ' +
-      'in lib/rag/premise-guard.test.ts, beside the hazards.',
+      'brake questions riders ask constantly": twenty-seven of those are permanent regression ' +
+      'cases in lib/rag/premise-guard.test.ts, beside the hazards.',
     what_carries_the_other_half:
       'Nothing, honestly. SYSTEM_PROMPT rule 6 is written about what is RECOMMENDED and was ' +
       'satisfied by the response that opened this finding. Strengthening it to cover premises ' +

@@ -690,8 +690,8 @@ not a guarantee: that one was already there and was not violated.**
 - **A false positive costs a paragraph, not a withheld answer**, because the help
   still arrives. That asymmetry is the only reason a lexical hazard list is
   acceptable here when it is not acceptable in `lib/rag/policy.ts`, and the
-  twenty legitimate brake questions riders actually ask are permanent regression
-  cases in `lib/rag/premise-guard.test.ts`, beside the hazards.
+  twenty-seven legitimate brake questions riders actually ask are permanent
+  regression cases in `lib/rag/premise-guard.test.ts`, beside the hazards.
 
 The screen and the advice land on one page, so the warning must not read as the
 standing disclaimer above it; `components/ai/premise-rejection-card.tsx` carries
