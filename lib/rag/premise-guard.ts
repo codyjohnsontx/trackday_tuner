@@ -59,12 +59,38 @@ import type { AdviceResponse } from '@/lib/rag/schema';
  *   `eval-baseline.json` limitations as
  *   `a-dangerous-value-is-not-a-dangerous-action`, and it needs a product
  *   decision rather than another pattern.
+ * - `without`-PHRASING, of any kind: "riding without the front rotor", "a track
+ *   day without the front brake". `without` is a PREPOSITION, and its object
+ *   cannot be told from a state description by any lexical means - "without a
+ *   front brake" and "without the brakes fading" differ only semantically. An
+ *   arm requiring an operating verb to govern it was tried and withdrawn: it
+ *   still rejected "how many laps can I run without the brakes fading?",
+ *   "without the brakes locking", "without the rear brake dragging" and the
+ *   servicing question "can I run all day without brake pad changes?", because
+ *   a PARTICIPLE saying what the brakes are DOING walks past a benign-head list
+ *   that only excludes nouns.
+ *
+ *   THE COST OF THAT MISFIRE IS NOT THE USUAL ONE, WHICH IS WHY THE ARM WENT
+ *   RATHER THAN GETTING A THIRD ITERATION. Elsewhere a false positive here is
+ *   cheap. But `components/ai/premise-rejection-card.tsx` is deliberately the
+ *   largest, highest-contrast block on the screen, because the captain chose
+ *   "reject the premise, then help" so the warning would LAND. Firing it on an
+ *   ordinary brake-fade question trains the rider to scroll past it, which
+ *   destroys the exact property the design was chosen for. A guard that teaches
+ *   riders to ignore it is worth less than no guard.
+ *
+ * ONLY `brake_removal` SHIPS. Protective equipment (helmets, leathers,
+ * harnesses, cages) and wheel retention (axle nuts, safety wire, cotter pins)
+ * were drafted as further groups and withdrawn: they carried no benign-head
+ * exclusions and no legitimate-question corpus of their own, and so rejected
+ * "went out without lug nuts torqued to spec and felt vibration" - a rider
+ * REPORTING A FAULT, told that what they did was not a setup change. That is
+ * worse than no coverage, because it punishes the report we most want. Each
+ * further group arrives with its own exclusions, its own corpus and its own
+ * ruling, exactly as `HAZARD_GROUPS` being a table is meant to allow.
  */
 
-export type DangerousPremiseHazard =
-  | 'brake_removal'
-  | 'protective_equipment_removal'
-  | 'wheel_retention_removal';
+export type DangerousPremiseHazard = 'brake_removal';
 
 export interface DangerousPremiseAssessment {
   decision: 'allow' | 'reject';
@@ -105,27 +131,6 @@ const REMOVAL_ACTION_SOURCE =
 const PARTICLE_ACTION_SOURCE =
   '(?:tak(?:e|es|ing)|took|pull(?:s|ed|ing)?|rip(?:s|ped|ping)?|yank(?:s|ed|ing)?' +
   '|cut(?:s|ting)?|leav(?:e|es|ing)|left)';
-
-/**
- * Verbs for OPERATING the vehicle, which are the only thing that turns
- * `without` into a removal.
- *
- * `without` is a PREPOSITION, so the government test the other patterns rest on
- * cannot be applied to it directly - there is no verb reaching the equipment,
- * and the removal sense lives in "RIDE without the front disc" rather than in
- * "without" on its own. Given a removal verb's reach it crossed four words of
- * ordinary prose to land on a brake noun, so "front end pushes without brakes
- * applied", "turn-in is lazy without the brakes loaded" and "can I run the whole
- * day without brake pad changes?" all read as proposing to remove a brake. The
- * last is the servicing class `skip`, `omit` and `forgo` are kept out for.
- *
- * So the operating verb has to govern the preposition, and both spans are short
- * because a preposition binds to its verb phrase and to its own object: past
- * two words on either side the clause belongs to something else.
- */
-const OPERATE_ACTION_SOURCE =
-  '(?:run(?:s|ning)?|ran|rid(?:e|es|ing)|rode|driv(?:e|es|ing)|drove' +
-  '|rac(?:e|es|ed|ing)|lap(?:s|ped|ping)?|go(?:es|ing)?|went|head(?:s|ed|ing)?)';
 
 /**
  * Words that mean the verb does NOT govern the noun after them. Same idea as
@@ -177,31 +182,6 @@ const HAZARD_GROUPS: HazardGroup[] = [
       'master\\s+cylinder',
     ],
   },
-  {
-    id: 'protective_equipment_removal',
-    subject: 'Removing your safety gear',
-    onTrack: 'going on track without it',
-    nouns: [
-      'helmets?',
-      'leathers',
-      '(?:back|chest)\\s+protectors?',
-      'harness(?:es)?',
-      'seat\\s?belts?',
-      'roll\\s?(?:bar|cage)s?',
-      'hans\\s+device',
-    ],
-  },
-  {
-    id: 'wheel_retention_removal',
-    subject: 'Removing wheel or axle retention hardware',
-    onTrack: 'going on track without it',
-    nouns: [
-      '(?:axle|wheel|lug|castle)\\s+nuts?',
-      'safety\\s+wire',
-      '(?:cotter|split)\\s+pins?',
-      'r-?clips?',
-    ],
-  },
 ];
 
 interface CompiledHazard {
@@ -236,14 +216,6 @@ function compile(group: HazardGroup): CompiledHazard {
       // absent from the removal verbs.
       new RegExp(
         `\\b${PARTICLE_ACTION_SOURCE}\\b\\s+(?:off|out)\\b\\s+(?:(?!(?:${GOVERNMENT_BREAKERS})\\b)[a-z-]+\\s+){0,3}?${noun}\\b`,
-        'i',
-      ),
-      // (d) `without`, governed by an operating verb rather than reaching on its
-      // own. Breakers apply to the object span, so "riding without confidence in
-      // the brakes" does not reach the noun.
-      new RegExp(
-        `\\b${OPERATE_ACTION_SOURCE}\\b\\s+(?:[a-z-]+\\s+){0,2}?without\\s+` +
-          `(?:(?!(?:${GOVERNMENT_BREAKERS})\\b)[a-z-]+\\s+){0,2}?${noun}\\b`,
         'i',
       ),
     ],

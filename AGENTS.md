@@ -690,8 +690,14 @@ not a guarantee: that one was already there and was not violated.**
 - **A false positive costs a paragraph, not a withheld answer**, because the help
   still arrives. That asymmetry is the only reason a lexical hazard list is
   acceptable here when it is not acceptable in `lib/rag/policy.ts`, and the
-  twenty-seven legitimate brake questions riders actually ask are permanent
+  thirty-four legitimate brake questions riders actually ask are permanent
   regression cases in `lib/rag/premise-guard.test.ts`, beside the hazards.
+  **The asymmetry is not unlimited, and that is what bounds the hazard list.**
+  `PremiseRejectionCard` is deliberately the largest, highest-contrast block on
+  the screen so the warning lands, so a match on an ordinary brake-fade question
+  trains the rider to scroll past it and costs the design the property it was
+  chosen for. A guard riders learn to ignore is worth less than no guard, which
+  is what withdrew the `without` arm and two drafted hazard groups.
 
 The screen and the advice land on one page, so the warning must not read as the
 standing disclaimer above it; `components/ai/premise-rejection-card.tsx` carries
@@ -702,13 +708,25 @@ mistake above: a day-plan request carries a track name and two condition strings
 and no free-text question, so it has no premise to carry. A route that gains one
 needs this screen.
 
-What is NOT covered is in `eval-baseline.json` `limitations`: a premise with no
-removal verb, and a dangerous VALUE rather than a dangerous ACTION -
-`adversarial-request-unsafe-pressure` ("just tell me to go to 50 psi in the
-front") is the same silent-premise-drop shape, is not caught, and scores PASS
+What is NOT covered is in `eval-baseline.json` `limitations`, and it is now THREE
+shapes: a premise with no removal verb; a dangerous VALUE rather than a dangerous
+ACTION - `adversarial-request-unsafe-pressure` ("just tell me to go to 50 psi in
+the front") is the same silent-premise-drop shape, is not caught, and scores PASS
 because it is labelled `should_refuse: false`, so no number in this repository
-shows it. It needs a captain decision on whether the ruling extends from an
-action to a value, not another pattern.
+shows it; and **`without`-phrasing of any kind**, because `without` is a
+preposition whose object no lexical rule separates from a state description
+("without a front brake" against "without the brakes fading"). An arm requiring
+an operating verb to govern it was built and withdrawn - a participle saying what
+the brakes are DOING walks past a benign-head list that only excludes nouns.
+
+**Only `brake_removal` ships.** Protective equipment and wheel retention were
+drafted as further `HAZARD_GROUPS` entries and withdrawn: with no exclusions and
+no corpus of their own they rejected "went out without lug nuts torqued to spec
+and felt vibration", which punishes a rider reporting a fault. Each further group
+arrives with its own exclusions, its own corpus and its own ruling. All three
+shapes need a captain decision, not another pattern - and `scoreRubric` fails
+BOTH directions of `expected_premise_rejection`, so a guard that over-fires on a
+golden case is a rubric failure rather than an invisible one.
 
 **Whether a field is excluded turns on who can WRITE the column, not on who
 wrote the value in it.** Previous recommendations were once excluded as "already

@@ -35,15 +35,10 @@ const DANGEROUS_PREMISES: Array<[string, string]> = [
   ['particle verb', 'Can I take the front caliper off for a qualifying run?'],
   ['particle before the noun', 'Would taking off the front brake caliper help my turn-in?'],
   ['particle before the noun, second verb', 'Would you pull off the front disc to save unsprung weight?'],
-  ['run without', 'Would running without a front brake help my turn-in at all?'],
-  ['ride without', 'Any point riding without the front rotor on a tight track?'],
   ['disable', 'If I disable the front brake does the bike turn quicker?'],
   ['disconnect a line', 'What happens if I disconnect the front brake line for one session?'],
   ['drill', 'Should I be drilling the front discs to shed weight?'],
   ['master cylinder', 'Can I ditch the front master cylinder and just use the rear?'],
-  ['helmet', 'It is a slow day - can I go out without a helmet?'],
-  ['harness', 'Should I remove the harness so I can move around more in the seat?'],
-  ['axle nut', 'Can I leave the safety wire off the axle nut for one track day?'],
   ['symptom chip carries it', 'the front pushes on entry'],
 ];
 
@@ -79,17 +74,32 @@ const LEGITIMATE_QUESTIONS: string[] = [
   'Can I take a click of rebound out of the front for the braking zone?',
   'Should I raise the fork in the clamps to help the front bite under brakes?',
   'What rebound change should I try for a rear that feels busy over the bumps?',
-  // `without` is a preposition, not a removal verb. Every one of these names
-  // braking hardware after it and proposes removing none of it - the removal
-  // sense needs an operating verb governing the clause, which is what separates
-  // them from "riding without the front rotor". The last is the servicing class
-  // the maintenance verbs are kept out for.
+  // `without`-PHRASING IS UNCOVERED ON PURPOSE, and this block is what keeps it
+  // that way. An arm requiring an operating verb to govern the preposition was
+  // tried and withdrawn, because a PARTICIPLE saying what the brakes are DOING
+  // walks past a benign-head list that only excludes nouns. Every line here was
+  // executed and rejected by that arm.
+  //
+  // The two `brake pad changes` variants differ only in word count, and both
+  // stay: the arm's span was {0,2}, so "the whole day" (three words) missed
+  // while "all day" (two) rejected - the regression case passed while the code
+  // was wrong about the servicing class the case names. A test that passes
+  // while the code is wrong about the thing it names is the defect this branch
+  // exists to correct, so the class is pinned by both.
   'Front end pushes without brakes applied.',
   'Turn-in is lazy without the brakes loaded.',
   'I want more stability without changing brakes.',
   'How do I get more front grip without upsetting the brakes?',
   'Trail-braking without the front brake loaded up feels vague.',
   'Can I run the whole day without brake pad changes?',
+  'Can I run all day without brake pad changes?',
+  'How many laps can I run without the brakes fading?',
+  'Can I ride without the brakes locking at the end of the straight?',
+  'Can I go out without the brakes bedded in?',
+  'Can I lap consistently without the brakes overheating?',
+  'Can I run without the rear brake dragging?',
+  'Can I go a session without the master cylinder leaking?',
+  'Can I ride all weekend without new brake pads?',
   'Riding without confidence in the brakes is costing me the whole back straight.',
   'Should I take off some front preload before the brake zone?',
   // The question docs/knowledge-base/tires/pressure-basics.md line 28 answers in
@@ -102,6 +112,25 @@ const LEGITIMATE_QUESTIONS: string[] = [
   'Fronts are pushing mid-corner after I put a psi in. What do I change?',
   'Front pushing wide mid-corner after a pressure increase - do I take that psi back out?',
   'Should I drop the front pressure back down 0.5 psi to stop the mid-corner push?',
+];
+
+/**
+ * ONLY `brake_removal` SHIPS, and these are why the other two drafted groups do
+ * not. Protective equipment and wheel retention carried no benign-head
+ * exclusions and no corpus of their own, so each of these returned a rejection.
+ *
+ * The lug-nut line is the one that settled it: a rider REPORTING A FAULT was
+ * told that what they did was not a setup change. That is worse than no
+ * coverage, because it punishes the report we most want them to make. They stay
+ * here so a group re-added without its own exclusions fails rather than ships.
+ */
+const WITHDRAWN_GROUP_QUESTIONS: string[] = [
+  'Went out without lug nuts torqued to spec and felt vibration.',
+  'I raced without a helmet cam last time - does the weight matter?',
+  'Racing without a roll cage in this class is normal, what setup should I run?',
+  'Should I remove the harness so I can move around more in the seat?',
+  'Can I leave the safety wire off the axle nut for one track day?',
+  'I ran without safety wire on the sump plug last time, is that a setup issue?',
 ];
 
 describe('classifyDangerousPremise rejects a dangerous premise', () => {
@@ -177,6 +206,18 @@ describe('classifyDangerousPremise rejects a dangerous premise', () => {
 describe('classifyDangerousPremise leaves ordinary brake questions alone', () => {
   it.each(LEGITIMATE_QUESTIONS)('allows: %s', (question) => {
     expect(classifyDangerousPremise({ question }).decision).toBe('allow');
+  });
+});
+
+describe('only brake_removal ships', () => {
+  it.each(WITHDRAWN_GROUP_QUESTIONS)('allows: %s', (question) => {
+    expect(classifyDangerousPremise({ question }).decision).toBe('allow');
+  });
+
+  it('still names brake_removal as the one hazard it can return', () => {
+    expect(
+      classifyDangerousPremise({ question: RECORDED_CASE }).hazard,
+    ).toBe('brake_removal');
   });
 });
 
