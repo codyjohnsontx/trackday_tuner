@@ -95,7 +95,7 @@ const REMOVAL_ACTION_SOURCE =
   '(?:remov(?:e|es|ed|ing|al)|delet(?:e|es|ed|ing)|ditch(?:es|ed|ing)?|discard(?:s|ed|ing)?' +
   '|scrap(?:s|ped|ping)?|strip(?:s|ped|ping)?|gut(?:s|ted|ting)?|disabl(?:e|es|ed|ing)' +
   '|deactivat(?:e|es|ed|ing)|bypass(?:es|ed|ing)?|defeat(?:s|ed|ing)?|disconnect(?:s|ed|ing)?' +
-  '|unplug(?:s|ged|ging)?|unbolt(?:s|ed|ing)?|drill(?:s|ed|ing)?|without)';
+  '|unplug(?:s|ged|ging)?|unbolt(?:s|ed|ing)?|drill(?:s|ed|ing)?)';
 
 /**
  * Verbs that only remove something once a particle follows the noun - "take the
@@ -105,6 +105,27 @@ const REMOVAL_ACTION_SOURCE =
 const PARTICLE_ACTION_SOURCE =
   '(?:tak(?:e|es|ing)|took|pull(?:s|ed|ing)?|rip(?:s|ped|ping)?|yank(?:s|ed|ing)?' +
   '|cut(?:s|ting)?|leav(?:e|es|ing)|left)';
+
+/**
+ * Verbs for OPERATING the vehicle, which are the only thing that turns
+ * `without` into a removal.
+ *
+ * `without` is a PREPOSITION, so the government test the other patterns rest on
+ * cannot be applied to it directly - there is no verb reaching the equipment,
+ * and the removal sense lives in "RIDE without the front disc" rather than in
+ * "without" on its own. Given a removal verb's reach it crossed four words of
+ * ordinary prose to land on a brake noun, so "front end pushes without brakes
+ * applied", "turn-in is lazy without the brakes loaded" and "can I run the whole
+ * day without brake pad changes?" all read as proposing to remove a brake. The
+ * last is the servicing class `skip`, `omit` and `forgo` are kept out for.
+ *
+ * So the operating verb has to govern the preposition, and both spans are short
+ * because a preposition binds to its verb phrase and to its own object: past
+ * two words on either side the clause belongs to something else.
+ */
+const OPERATE_ACTION_SOURCE =
+  '(?:run(?:s|ning)?|ran|rid(?:e|es|ing)|rode|driv(?:e|es|ing)|drove' +
+  '|rac(?:e|es|ed|ing)|lap(?:s|ped|ping)?|go(?:es|ing)?|went|head(?:s|ed|ing)?)';
 
 /**
  * Words that mean the verb does NOT govern the noun after them. Same idea as
@@ -206,6 +227,23 @@ function compile(group: HazardGroup): CompiledHazard {
       // front" stops matching.
       new RegExp(
         `\\b${PARTICLE_ACTION_SOURCE}\\b[^.,;!?]{0,25}?\\b${noun}\\b[^.,;!?]{0,12}?\\b(?:off|out)\\b`,
+        'i',
+      ),
+      // (c) The particle verbs again, with the particle BEFORE the equipment -
+      // "taking off the front caliper", "pull off the front disc". The same
+      // removal in the other English word order, which pattern (b) cannot see
+      // and pattern (a) cannot either, since `take` and `pull` are deliberately
+      // absent from the removal verbs.
+      new RegExp(
+        `\\b${PARTICLE_ACTION_SOURCE}\\b\\s+(?:off|out)\\b\\s+(?:(?!(?:${GOVERNMENT_BREAKERS})\\b)[a-z-]+\\s+){0,3}?${noun}\\b`,
+        'i',
+      ),
+      // (d) `without`, governed by an operating verb rather than reaching on its
+      // own. Breakers apply to the object span, so "riding without confidence in
+      // the brakes" does not reach the noun.
+      new RegExp(
+        `\\b${OPERATE_ACTION_SOURCE}\\b\\s+(?:[a-z-]+\\s+){0,2}?without\\s+` +
+          `(?:(?!(?:${GOVERNMENT_BREAKERS})\\b)[a-z-]+\\s+){0,2}?${noun}\\b`,
         'i',
       ),
     ],

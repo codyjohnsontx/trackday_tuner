@@ -1293,12 +1293,13 @@ export function compareAgainstBaseline({ metrics, coverage, scoredResults, basel
       // by `describeUnusableBaseline` rather than skipped silently here.
       if (was == null) continue;
       const now = r.labels;
-      for (const field of [
-        'should_refuse',
-        'expected_premise_rejection',
-        'expected_component',
-        'expected_direction',
-      ]) {
+      // Derived from `describeCaseLabels`, exactly as `describeUnusableBaseline`
+      // requires them, so a label added later is COMPARED as well as required.
+      // A hand-kept copy here would let the next label be demanded of every
+      // baseline and never checked - the silent ungating this gate exists to
+      // stop. `expected_sources` is excluded because it is an array and gets the
+      // sorted comparison directly below.
+      for (const field of LABEL_FIELDS.filter((f) => f !== 'expected_sources')) {
         if (was[field] !== now[field]) {
           relabelled.push(`${r.id} ${field} ${JSON.stringify(was[field])} -> ${JSON.stringify(now[field])}`);
         }

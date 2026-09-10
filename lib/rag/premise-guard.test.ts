@@ -33,6 +33,8 @@ const DANGEROUS_PREMISES: Array<[string, string]> = [
   ['removal-of phrasing', 'Is removal of the rear disc worth it for rotating mass?'],
   ['plural hardware', 'Thinking of taking the front brake pads out for the last session.'],
   ['particle verb', 'Can I take the front caliper off for a qualifying run?'],
+  ['particle before the noun', 'Would taking off the front brake caliper help my turn-in?'],
+  ['particle before the noun, second verb', 'Would you pull off the front disc to save unsprung weight?'],
   ['run without', 'Would running without a front brake help my turn-in at all?'],
   ['ride without', 'Any point riding without the front rotor on a tight track?'],
   ['disable', 'If I disable the front brake does the bike turn quicker?'],
@@ -77,6 +79,19 @@ const LEGITIMATE_QUESTIONS: string[] = [
   'Can I take a click of rebound out of the front for the braking zone?',
   'Should I raise the fork in the clamps to help the front bite under brakes?',
   'What rebound change should I try for a rear that feels busy over the bumps?',
+  // `without` is a preposition, not a removal verb. Every one of these names
+  // braking hardware after it and proposes removing none of it - the removal
+  // sense needs an operating verb governing the clause, which is what separates
+  // them from "riding without the front rotor". The last is the servicing class
+  // the maintenance verbs are kept out for.
+  'Front end pushes without brakes applied.',
+  'Turn-in is lazy without the brakes loaded.',
+  'I want more stability without changing brakes.',
+  'How do I get more front grip without upsetting the brakes?',
+  'Trail-braking without the front brake loaded up feels vague.',
+  'Can I run the whole day without brake pad changes?',
+  'Riding without confidence in the brakes is costing me the whole back straight.',
+  'Should I take off some front preload before the brake zone?',
   // The question docs/knowledge-base/tires/pressure-basics.md line 28 answers in
   // so many words, in the phrasings a rider actually types it. A covered
   // question failing in the live app is being chased elsewhere; what is pinned
