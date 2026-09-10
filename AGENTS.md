@@ -339,7 +339,7 @@ components/sessions/ # session form
 components/garage/   # vehicle form
 lib/actions/         # server actions (sessions, tracks, vehicles, sag)
 lib/monitoring/      # health checks, the ai_requests alert, reportError
-lib/rag/             # RAG retrieval, prompt, policy, and validation helpers
+lib/rag/             # RAG retrieval, prompt, policy, premise-guard, and validation helpers
 lib/supabase/        # client, server, middleware, admin clients
 lib/auth/            # OAuth providers, next-path sanitizing, auth error copy
 lib/auth.ts          # getViewer(), isAuthenticated()
@@ -591,7 +591,8 @@ and watch each new one fail before it passes.
 Two AI routes reach the model: `/api/ai/tuning-advice` and `/api/ai/day-plan`.
 `/api/ai/recommendation-feedback` is a 410 tombstone; that feedback is
 recorded through the session outcome flow instead.
-`lib/rag/` contains retrieval, prompt, policy, validation, and schema helpers.
+`lib/rag/` contains retrieval, prompt, policy, premise-guard, validation, and
+schema helpers.
 Knowledge-base markdown lives in `docs/knowledge-base/` and can be indexed with `npm run rag:index`.
 
 **Every route that puts rider text in front of the model runs the same four
@@ -1318,17 +1319,20 @@ deleting a label a case was missing - with the COUNT preserved so that check
 cannot see it. Gating the deletion and not the substitution would enforce the
 principle in one direction only, and a half-enforced principle is worse than an
 absent one because the next reader concludes it means more than it does. So
-`per_case` stores `labels` - `should_refuse`, `expected_component`,
-`expected_direction` and the SORTED `expected_sources` - and any change is a
-regression rather than a fall, since a label edit makes the stored score an
+`per_case` stores `labels` - every key `describeCaseLabels` emits, which is
+`should_refuse`, `expected_premise_rejection`, `expected_component`,
+`expected_direction` and the SORTED `expected_sources` today - and any change is
+a regression rather than a fall, since a label edit makes the stored score an
 answer to a different question and comparing the two is meaningless in either
 direction. Re-labelling on purpose is legitimate and needs `--update-baseline`.
 Reordering `expected_sources` is not a change: the set is what recall measures.
 A baseline whose `per_case` rows carry no `labels` is UNUSABLE rather than
 partially usable, because a comparison with no left-hand side would skip in
-silence.
+silence. `describeUnusableBaseline` derives the keys it demands from
+`describeCaseLabels` itself, so a baseline written before a label was added is
+unusable rather than quietly ungating that label's own comparison.
 
-**One of those four paths was demonstrated and the others were not, and the
+**One of those five paths was demonstrated and the others were not, and the
 baseline says which.** `should_refuse` is the measured one above. The retrieval
 half - substituting a missed `expected_sources` entry for a retrieved one at
 constant count, to raise a case's recall - was attempted on

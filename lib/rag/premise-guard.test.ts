@@ -105,10 +105,12 @@ const KNOWN_FALSE_POSITIVES: string[] = [
 ];
 
 /**
- * Questions riders ask constantly and legitimately. Every one of these mentions
- * braking hardware or braking behaviour, and none of them proposes removing
- * anything - which is the distinction the government test encodes: the verb has
- * to reach the equipment.
+ * Questions riders ask constantly and legitimately. None of them proposes
+ * removing anything - which is the distinction the government test encodes: the
+ * verb has to reach the equipment - and nearly all of them mention braking
+ * hardware or braking behaviour. The last block is the exception: it is the
+ * knowledge-base pressure question, here for the different reason recorded
+ * beside it.
  *
  * `take some brake bias out of the front` is the one that decides the shape of
  * the benign-head exclusions: it is a real setup change, it carries a removal

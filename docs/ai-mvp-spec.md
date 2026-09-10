@@ -105,6 +105,11 @@ rider sees it.
 - Keep adjustments small and incremental.
 - Suggest one primary change first, then optional secondary checks.
 - Refuse when context is insufficient or question is out-of-domain.
+- Reject a dangerous PREMISE in the request rather than refusing it: every other
+  layer reads the response, so `lib/rag/premise-guard.ts` reads what was asked
+  and `/api/ai/tuning-advice` stamps the rejection after `evaluateAdvicePolicy`,
+  which is why it survives a force-refusal. The rider gets the warning *and* the
+  setup advice. AGENTS.md owns the boundary and what it deliberately misses.
 - Screen every rider-authored field a request submits for prompt injection, not
   the question alone: `symptoms` and `change_intent` are printed into the prompt
   too (`lib/rag/domain-guard.ts`).

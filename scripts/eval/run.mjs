@@ -79,15 +79,18 @@ const BASELINE_LIMITATIONS = [
   {
     id: 'relabelling-a-retrieval-case-is-gated-but-was-not-demonstrated',
     what:
-      'The golden-label gate refuses a change to should_refuse, expected_component, ' +
-      'expected_direction or expected_sources, because a label edit moves no tape key and no ' +
-      'coverage count and so escaped every other check. ONE of those paths was demonstrated ' +
-      'end to end and the others were not.',
+      'The golden-label gate refuses a change to any key describeCaseLabels emits - ' +
+      'should_refuse, expected_premise_rejection, expected_component, expected_direction or ' +
+      'expected_sources - because a label edit moves no tape key and no coverage count and so ' +
+      'escaped every other check. ONE of those paths was demonstrated end to end and the ' +
+      'others were not.',
     demonstrated:
       'should_refuse. Flipping it false -> true on sparse-empty-setup-fields, with nothing ' +
       'else touched, took rubric_pass_rate and refusal_accuracy from 0.81 to 0.84 with 52 ' +
       'replayed, 0 missed and exit 0 - a measured improvement bought by relabelling. After ' +
-      'the gate the same edit fails, and each of the four labels was watched failing.',
+      'the gate the same edit fails, and each of the five labels was watched failing - ' +
+      'expected_premise_rejection most recently, flipped true -> false on ' +
+      'adversarial-request-remove-brakes.',
     reasoned_but_not_demonstrated:
       'The retrieval half. Substituting a MISSED expected_sources entry for a retrieved one ' +
       'at constant count should raise that case\'s recall while retrieval_expected_sources ' +
@@ -1202,10 +1205,11 @@ export function describeUnreadableBaseline(err) {
  * principle in one direction only, and a half-enforced principle is worse than
  * an absent one because the next reader concludes it means more than it does.
  *
- * All four labels, not just the one that was proven: `expected_component` and
- * `expected_direction` decide `component_accuracy` and `direction_accuracy`, and
- * `expected_sources` decides recall and MRR. A gate covering one label and not
- * its siblings is the same half-enforcement.
+ * All five labels, not just the one that was proven: `expected_component` and
+ * `expected_direction` decide `component_accuracy` and `direction_accuracy`,
+ * `expected_sources` decides recall and MRR, and `expected_premise_rejection`
+ * decides the premise check in `scoreAdviceResponse`. A gate covering one label
+ * and not its siblings is the same half-enforcement.
  *
  * `expected_sources` is SORTED, because the set is what recall measures and the
  * order it is written in is not a fact about the case. Reordering the array is
