@@ -34,16 +34,27 @@ import type { AdviceResponse } from '@/lib/rag/schema';
  * force-refusal too: a rider whose response was withheld for some unrelated
  * reason is exactly the one most likely to go and do the dangerous thing anyway.
  *
- * WHY A FALSE POSITIVE IS CHEAP HERE, WHICH IS WHAT LETS THE BOUNDARY BE DRAWN
- * GENEROUSLY. Every other guard in this repository is dominated by the cost of a
- * false refusal - a paid route withheld over a phrase the rider cannot find. The
- * cost here is one extra paragraph on an answer that still arrives complete.
- * That asymmetry is the whole reason this can be a lexical detector at all, and
- * it is the answer to "a definition of dangerous premise that does not refuse
- * the legitimate brake questions riders ask constantly": a wrong match does not
- * refuse anything. It is still worth not being wrong, so the corpus in
- * `premise-guard.test.ts` carries the legitimate brake questions as permanent
- * regression cases alongside the hazards.
+ * WHY A FALSE POSITIVE IS CHEAPER HERE THAN ELSEWHERE - AND WHY IT IS NOT FREE.
+ * Every other guard in this repository is dominated by the cost of a false
+ * refusal - a paid route withheld over a phrase the rider cannot find. The cost
+ * here is one extra paragraph on an answer that still arrives complete, and that
+ * asymmetry is the whole reason this can be a lexical detector at all.
+ *
+ * IT IS NOT THE WHOLE STORY, AND READING IT AS ONE IS HOW THIS GUARD GOT TOO
+ * WIDE THREE TIMES. `components/ai/premise-rejection-card.tsx` is deliberately
+ * the largest, highest-contrast block on the screen, because the captain chose
+ * "reject the premise, then help" so the warning would LAND. Every wrong match
+ * spends that, and a rider who meets it on an ordinary question learns to scroll
+ * past it - which costs the design the one property it was chosen for. Three
+ * consecutive review rounds each executed this detector against ordinary rider
+ * prose and each found a NEW false-positive class inside the boundary the round
+ * before had just declared correct, which is why the guard was collapsed to a
+ * single arm.
+ *
+ * SO THE CORPUS IN `premise-guard.test.ts` CARRIES BOTH SIDES, and both are
+ * permanent: `LEGITIMATE_QUESTIONS` for the ordinary brake questions that must
+ * stay allowed, and `KNOWN_FALSE_POSITIVES` for the ones the guard gets WRONG
+ * today - see the misfire note below the uncovered list.
  *
  * WHAT IT DELIBERATELY DOES NOT COVER, recorded rather than chased:
  * - A premise with no removal verb ("do I really need the front disc?",
@@ -106,6 +117,22 @@ import type { AdviceResponse } from '@/lib/rag/schema';
  * any one pattern, so the guard was collapsed to a single arm that can be read
  * and argued with in one sitting. Do not re-widen it one convenient exception at
  * a time; a shape that escapes belongs on this list.
+ *
+ * WHAT IT GETS WRONG IN THE OTHER DIRECTION, because a boundary described only
+ * by its MISSES reads as if it never MISFIRES. It does, today, on ordinary brake
+ * SERVICING prose: "do I need to remove the brake pads to bed them in properly?"
+ * and "I disconnected the brake line to bleed the system" are both REJECTED, and
+ * those riders get the safety card over a pad change. `KNOWN_FALSE_POSITIVES` in
+ * `premise-guard.test.ts` pins all six measured phrasings as `reject`, so that
+ * narrowing the noun list reports what moved instead of passing in silence.
+ *
+ * It is not a bug in either half of the rule: `remove` is a legitimate removal
+ * verb - it is the verb in the recorded case - and a brake pad is legitimately
+ * named brake hardware, so the combination is what misfires and there is no
+ * exclusion to add that is not a list of servicing sentences. It is recorded
+ * rather than fixed under a standing stop rule; the two-step narrowing and its
+ * measured cost, including the one hazard phrasing the second step would lose,
+ * are in `eval-baseline.json` limitations and beside that corpus.
  */
 
 export type DangerousPremiseHazard = 'brake_removal';

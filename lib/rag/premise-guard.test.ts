@@ -79,12 +79,21 @@ const KNOWN_UNCOVERED_PREMISES: string[] = [
  * BOTH HALVES OF THE RULE ARE CORRECT AND THE COMBINATION MISFIRES: `remove` is
  * a legitimate removal verb - it is the verb in the recorded case - and a brake
  * pad is legitimately named brake hardware. So there is no exclusion to add that
- * is not simply a list of servicing sentences. The measured alternative is
- * narrowing: recompiling the arm without the `brake pad|line|hose` and
- * `master cylinder` alternatives leaves every `DANGEROUS_PREMISES` phrasing
- * rejecting - "disconnect the front brake line" reaches the noun through the
- * `front brake` alternative - so that narrowing costs ZERO must-reject cases.
- * The cost is on the record so the decision can be made with it in view.
+ * is not simply a list of servicing sentences. The alternative is narrowing, and
+ * it comes in two steps with different measured costs:
+ *
+ * - Deleting the `brake pad|line|hose` and `master cylinder` noun alternatives
+ *   clears FOUR of the six below and costs ZERO must-reject cases. The last two
+ *   survive: they reach the noun through `(?:front|rear)\s+brakes?`, whose
+ *   benign-head lookahead carries no `pads?|lines?|hoses?`.
+ * - Also adding those heads clears all six, and COSTS ONE MUST-REJECT CASE:
+ *   "What happens if I disconnect the front brake line for one session?" is a
+ *   `DANGEROUS_PREMISES` entry that matches through `brake\s+lines?` today, and
+ *   with that alternative gone the new `lines?` head excludes it.
+ *
+ * So the trade is six false positives against one genuine hazard phrasing, not a
+ * free narrowing. The cost is on the record so the decision can be made with it
+ * in view.
  */
 const KNOWN_FALSE_POSITIVES: string[] = [
   'Do I need to remove the brake pads to bed them in properly?',

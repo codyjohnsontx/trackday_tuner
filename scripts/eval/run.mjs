@@ -224,13 +224,26 @@ const BASELINE_LIMITATIONS = [
       '`remove` is a legitimate removal verb - it is the verb in the captain\'s recorded case - ' +
       'and a brake pad is legitimately named brake hardware. Neither can be called the mistake, ' +
       'so there is no exclusion to add that is not just a list of servicing sentences. The ' +
-      'measured alternative is NARROWING: a reviewer recompiled the arm with the ' +
-      '`brake pad|line|hose` and `master cylinder` alternatives deleted and every DANGEROUS_' +
-      'PREMISES phrasing still rejected - including "disconnect the front brake line", which ' +
-      'reaches the noun through the `front brake` alternative - so the narrowing costs ZERO ' +
-      'must-reject cases. It is NOT done here: the stop rule in force says a false-positive ' +
-      'class is recorded rather than fixed, because three consecutive rounds each closed one ' +
-      'and found another. The captain has the cost in front of him and the decision is his.',
+      'alternative is NARROWING, and it comes in two steps with DIFFERENT COSTS. Both were ' +
+      'measured by recompiling the arm and running it over the six pinned KNOWN_FALSE_POSITIVES ' +
+      'and the ten must-reject DANGEROUS_PREMISES phrasings.\n\n' +
+      'STEP ONE - delete the `brake pad|line|hose` and `master cylinder` noun alternatives. ' +
+      'Clears FOUR of the six false positives and costs ZERO must-reject cases. TWO SURVIVE: ' +
+      '"I removed the front brake pads and fitted a harder compound - what setup change?" and ' +
+      '"Removed the rear brake hose to fit braided lines - does that change balance?" still ' +
+      'reject, because they reach the noun through the `(?:front|rear)\\s+brakes?` alternative, ' +
+      'whose benign-head lookahead carries only bias, balance, pressure, feel, ducts and ' +
+      'markers - no pads, lines or hoses. So step one alone does NOT remove the recorded class.\n\n' +
+      'STEP TWO - also add `pads?|lines?|hoses?` to that lookahead. Clears all six, and it is ' +
+      'NOT free: it COSTS ONE MUST-REJECT CASE. "What happens if I disconnect the front brake ' +
+      'line for one session?" is a DANGEROUS_PREMISES entry that today matches through ' +
+      '`brake\\s+lines?`; with that alternative deleted it can only reach `front brake`, and the ' +
+      'new `lines?` head then excludes it. That is the real trade in front of the captain: six ' +
+      'false positives cleared against one genuine hazard phrasing lost, not a free narrowing.\n\n' +
+      'NEITHER STEP IS DONE HERE: the stop rule in force says a false-positive class is ' +
+      'recorded rather than fixed, because three consecutive rounds each closed one and found ' +
+      'another. The captain has the measured cost of both steps in front of him and the ' +
+      'decision is his.',
     why_the_guard_was_collapsed_to_one_arm:
       'THREE CONSECUTIVE REVIEW ROUNDS each executed the detector against ordinary rider prose ' +
       'and each found a NEW false-positive class inside the boundary the round before had just ' +
