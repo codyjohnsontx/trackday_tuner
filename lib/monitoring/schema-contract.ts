@@ -40,6 +40,7 @@
  * verified against a real stack - the probe leaves `beta_rate_limits` empty.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/supabase';
 
 /**
  * PostgREST's code for "no function of that name and parameter set is in the
@@ -55,11 +56,11 @@ export const RPC_NOT_IN_SCHEMA_CACHE = 'PGRST202';
  */
 export const UNCOERCIBLE_PROBE_VALUE = 'trackday-tuner-health-probe';
 
+type DatabaseFunction = keyof Database['public']['Functions'];
+
 export interface RpcContract {
   /** The function name, as `supabase.rpc()` names it at the call site. */
-  name: string;
-  /** Where it is called from, so a failure names something to go and look at. */
-  calledBy: string;
+  name: DatabaseFunction;
   /**
    * Every parameter name the deployment sends, with the uncoercible value in at
    * least one `uuid` or `integer` parameter. The names are the contract: they are
@@ -70,55 +71,61 @@ export interface RpcContract {
 }
 
 /**
+ * Builds a contract whose probe carries EXACTLY the parameters
+ * `types/supabase.ts` declares for that function - no more and no fewer, checked
+ * by the compiler.
+ *
+ * That generated `Args` type is the same one every real `supabase.rpc()` call
+ * site is checked against, and `schema-contract.test.ts` holds the probe to the
+ * migration that declares the function. So the two together tie a call site to
+ * the SQL it needs applied: the neighbouring failure where a route and its
+ * migration disagree by one parameter returns the SAME `PGRST202` a missing
+ * function does, and fails to compile here instead of reaching a rider.
+ */
+function contract<Name extends DatabaseFunction>(
+  name: Name,
+  probe: { [Key in keyof Database['public']['Functions'][Name]['Args']]: unknown },
+): RpcContract {
+  return { name, probe };
+}
+
+/**
  * The RPCs a *deployment* calls. `create_beta_invite` is deliberately absent: it
  * is reached only from `scripts/beta-invites.mjs`, which an operator runs from a
  * laptop, so its absence breaks no rider request and would make this check fail
  * for something the deployment never touches.
  */
 export const REQUIRED_RPCS: readonly RpcContract[] = [
-  {
-    name: 'save_session_outcome',
-    calledBy: 'app/api/sessions/[id]/outcome/route.ts',
-    probe: {
-      p_user_id: UNCOERCIBLE_PROBE_VALUE,
-      p_session_id: UNCOERCIBLE_PROBE_VALUE,
-      p_reference_session_id: UNCOERCIBLE_PROBE_VALUE,
-      p_recommendation_id: null,
-      p_outcome: 'better',
-      p_rider_confidence: null,
-      p_symptoms: [],
-      p_notes: null,
-      p_recommendation_helpfulness: null,
-    },
-  },
-  {
-    name: 'replace_session_laps',
-    calledBy: 'lib/actions/sessions.ts',
-    probe: {
-      p_user_id: UNCOERCIBLE_PROBE_VALUE,
-      p_session_id: UNCOERCIBLE_PROBE_VALUE,
-      p_laps: [],
-      p_expected_laps: [],
-    },
-  },
-  {
-    name: 'consume_beta_rate_limit',
-    calledBy: 'app/api/beta/waitlist/route.ts',
-    probe: {
-      p_key_hash: UNCOERCIBLE_PROBE_VALUE,
-      p_limit: UNCOERCIBLE_PROBE_VALUE,
-      p_window_seconds: UNCOERCIBLE_PROBE_VALUE,
-    },
-  },
+  contract('save_session_outcome', {
+    p_user_id: UNCOERCIBLE_PROBE_VALUE,
+    p_session_id: UNCOERCIBLE_PROBE_VALUE,
+    p_reference_session_id: UNCOERCIBLE_PROBE_VALUE,
+    p_recommendation_id: null,
+    p_outcome: 'better',
+    p_rider_confidence: null,
+    p_symptoms: [],
+    p_notes: null,
+    p_recommendation_helpfulness: null,
+  }),
+  contract('replace_session_laps', {
+    p_user_id: UNCOERCIBLE_PROBE_VALUE,
+    p_session_id: UNCOERCIBLE_PROBE_VALUE,
+    p_laps: [],
+    p_expected_laps: [],
+  }),
+  contract('consume_beta_rate_limit', {
+    p_key_hash: UNCOERCIBLE_PROBE_VALUE,
+    p_limit: UNCOERCIBLE_PROBE_VALUE,
+    p_window_seconds: UNCOERCIBLE_PROBE_VALUE,
+  }),
 ];
 
 /** The names of the RPCs the Data API could not resolve, in contract order. */
 export async function findUnresolvableRpcs(
   client: Pick<SupabaseClient, 'rpc'>,
-  contracts: readonly RpcContract[] = REQUIRED_RPCS,
 ): Promise<string[]> {
   const results = await Promise.all(
-    contracts.map(async (contract) => {
+    REQUIRED_RPCS.map(async (required) => {
       // The generated `Database` types describe the arguments a caller is
       // supposed to send. This deliberately sends ones that cannot coerce, which
       // is the whole mechanism, so the call is made through an untyped view of
@@ -130,9 +137,9 @@ export async function findUnresolvableRpcs(
           error: { code?: string } | null;
         }>;
       };
-      const { error } = await untyped.rpc(contract.name, contract.probe);
-      return error?.code === RPC_NOT_IN_SCHEMA_CACHE ? contract.name : null;
+      const { error } = await untyped.rpc(required.name, required.probe);
+      return error?.code === RPC_NOT_IN_SCHEMA_CACHE ? required.name : null;
     }),
   );
-  return results.filter((name): name is string => name !== null);
+  return results.filter((name): name is DatabaseFunction => name !== null);
 }

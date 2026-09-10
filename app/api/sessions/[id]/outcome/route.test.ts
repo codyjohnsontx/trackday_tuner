@@ -31,6 +31,19 @@ const NOTES = 'Rear felt planted onto the back straight.';
 const PGRST202_MESSAGE =
   'Could not find the function public.save_session_outcome(p_notes, p_outcome, p_recommendation_helpfulness, p_recommendation_id, p_reference_session_id, p_rider_confidence, p_session_id, p_symptoms, p_user_id) in the schema cache';
 
+/** The rest of that recorded body. A never-applied migration carries no hint. */
+const PGRST202_DETAILS =
+  'Searched for the function public.save_session_outcome with parameters p_notes, p_outcome, p_recommendation_helpfulness, p_recommendation_id, p_reference_session_id, p_rider_confidence, p_session_id, p_symptoms, p_user_id or with a single unnamed json/jsonb parameter, but no matches were found in the schema cache.';
+
+/**
+ * The SAME code and message when the route and the migration disagree by one
+ * parameter instead - the one field that tells the two faults apart is the
+ * `hint`, which names the signature PostgREST did find. A log that drops it
+ * sends the operator back to a database to ask what it was already told.
+ */
+const PGRST202_DRIFT_HINT =
+  'Perhaps you meant to call the function public.save_session_outcome(p_notes, p_outcome, p_recommendation_id, p_reference_session_id, p_rider_confidence, p_session_id, p_symptoms, p_user_id)';
+
 function request() {
   return new Request(`http://localhost/api/sessions/${SESSION_ID}/outcome`, {
     method: 'PUT',
@@ -94,14 +107,36 @@ describe('PUT /api/sessions/[id]/outcome', () => {
   });
 
   it('reports the real PostgREST error to the server so the outage is visible', async () => {
-    rpcAnswers({ data: null, error: { code: 'PGRST202', message: PGRST202_MESSAGE } });
+    rpcAnswers({
+      data: null,
+      error: { code: 'PGRST202', message: PGRST202_MESSAGE, details: PGRST202_DETAILS, hint: null },
+    });
 
     await PUT(request(), context);
 
     expect(reportError).toHaveBeenCalledWith(
       'session-outcome',
       expect.objectContaining({ message: PGRST202_MESSAGE }),
-      expect.objectContaining({ reason: 'PGRST202' }),
+      expect.objectContaining({ reason: 'PGRST202', details: PGRST202_DETAILS, hint: null }),
+    );
+  });
+
+  // The log has to carry the field that says WHICH fault this is. A missing
+  // migration and a stale schema cache both answer `PGRST202` with a null hint;
+  // a signature that drifted answers the same code with a hint naming what it
+  // found, and that is a different fix. Dropping it makes the report unreadable.
+  it('carries the hint that separates a drifted signature from a missing one', async () => {
+    rpcAnswers({
+      data: null,
+      error: { code: 'PGRST202', message: PGRST202_MESSAGE, details: PGRST202_DETAILS, hint: PGRST202_DRIFT_HINT },
+    });
+
+    await PUT(request(), context);
+
+    expect(reportError).toHaveBeenCalledWith(
+      'session-outcome',
+      expect.anything(),
+      expect.objectContaining({ hint: PGRST202_DRIFT_HINT }),
     );
   });
 

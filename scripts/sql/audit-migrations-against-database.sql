@@ -48,11 +48,18 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
        to_regclass('public.session_laps') is not null),
   (12, '20260718001000_add_beta_foundation',             'table',    'public.beta_invites',
        to_regclass('public.beta_invites') is not null),
-  -- Grants, not objects. `authenticated` must NOT hold update on profiles: RLS
-  -- picks the row and cannot restrict the column, so that privilege is a rider
-  -- setting their own `tier`. This row is `true` only when the privilege is gone.
-  (13, '20260719001100_grant_data_api_access',           'grant',    'authenticated has NO update on public.profiles',
-       not has_table_privilege('authenticated', 'public.profiles', 'update')),
+  -- Grants, not objects, so it takes two halves. The insert on sessions is one
+  -- this migration is the only thing in the repository to make, and without it
+  -- the Data API answers `permission denied for table` on a project created
+  -- today - one built before Supabase turned off `auto_expose_new_tables` gets
+  -- it from the legacy defaults instead. The revoke is the other half:
+  -- `authenticated` must NOT hold update on profiles, because RLS picks the row
+  -- and cannot restrict the column, so that privilege is a rider setting their
+  -- own `tier`. Testing only the revoke would read `present` on a database that
+  -- never granted anything at all.
+  (13, '20260719001100_grant_data_api_access',           'grant',    'authenticated has insert on public.sessions and NO update on public.profiles',
+       has_table_privilege('authenticated', 'public.sessions', 'insert')
+       and not has_table_privilege('authenticated', 'public.profiles', 'update')),
   (14, '20260816001200_add_profile_on_auth_user_created','trigger',  'on_auth_user_created on auth.users',
        exists (select 1 from pg_trigger
                where tgname='on_auth_user_created'

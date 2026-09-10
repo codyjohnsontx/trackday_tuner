@@ -131,6 +131,12 @@ describe('findUnresolvableRpcs', () => {
 // ---------------------------------------------------------------------------
 // The contract has to describe the migrations, or the check passes while the
 // deployment is broken in exactly the way it was written to catch.
+//
+// This is one half of the route-to-migration link. The other half is the
+// compiler: `contract()` types each probe as the generated `Args` for that
+// function, which is what every real `supabase.rpc()` call site is checked
+// against - so a route and its migration disagreeing by one parameter (the
+// neighbouring failure, a PGRST202 carrying a `hint`) fails to build.
 // ---------------------------------------------------------------------------
 
 /** Parameter name -> declared SQL type, from the LAST migration defining `name`. */
@@ -187,32 +193,5 @@ describe.each(REQUIRED_RPCS as RpcContract[])('$name contract', (contract) => {
       poisoned.some((type) => UNPARSEABLE_TYPES.includes(type)),
       `${contract.name} probe must poison a ${UNPARSEABLE_TYPES.join('/')} parameter`,
     ).toBe(true);
-  });
-});
-
-describe('the code that actually calls these RPCs', () => {
-  // The neighbouring failure: the route and the migration disagreeing by one
-  // parameter produces the SAME PGRST202 message, with a `hint` naming the
-  // signature it did find. Ruled out for this outage by reading both; locked
-  // here so the next one is caught in CI instead of by a rider.
-  it('sends the parameter names its migration declares', () => {
-    const callSites: { rpc: string; file: string }[] = [
-      { rpc: 'save_session_outcome', file: 'app/api/sessions/[id]/outcome/route.ts' },
-      { rpc: 'replace_session_laps', file: 'lib/actions/sessions.ts' },
-      { rpc: 'consume_beta_rate_limit', file: 'app/api/beta/waitlist/route.ts' },
-    ];
-
-    for (const { rpc, file } of callSites) {
-      const source = readFileSync(path.resolve(__dirname, '../..', file), 'utf8');
-      const start = source.indexOf(`.rpc('${rpc}'`);
-      expect(start, `${file} no longer calls ${rpc}`).toBeGreaterThan(-1);
-      const open = source.indexOf('{', start);
-      const close = source.indexOf('});', open);
-      const sent = [...source.slice(open, close).matchAll(/^\s*(p_[a-z_]+):/gm)].map((m) => m[1]);
-
-      expect(sent.sort(), `${file} drifted from the ${rpc} migration`).toEqual(
-        [...declaredParameters(rpc).keys()].sort(),
-      );
-    }
   });
 });

@@ -80,6 +80,8 @@ export async function PUT(request: Request, context: RouteContext) {
       reportError('session-outcome', new Error(error.message), {
         reason: error.code,
         query: 'save_session_outcome',
+        details: error.details,
+        hint: error.hint,
       });
       return NextResponse.json(
         {
