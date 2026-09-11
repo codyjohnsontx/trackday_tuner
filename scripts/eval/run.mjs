@@ -53,30 +53,6 @@ const RUBRIC_TARGET = 0.85;
  */
 const BASELINE_LIMITATIONS = [
   {
-    id: 'model-emits-a-string-null-source-session-id',
-    what:
-      'On the live re-record, mc-gearing-slow-corner came back with a personal_evidence entry ' +
-      'whose source_session_id is the STRING "null" rather than a real id or a JSON null. ' +
-      'validSessionIds is non-empty for that case, so hasInvalidPersonalEvidence finds an id ' +
-      'that is not in the allowed set and evaluateAdvicePolicy force-refuses the whole ' +
-      'response as invalid_personal_evidence. The rider gets a refusal instead of advice.',
-    the_guard_is_behaving_correctly:
-      'This is not a harness defect and not a policy defect. An unverifiable session reference ' +
-      'is exactly what that rule exists to catch, and refusing is the fail-safe direction. It ' +
-      'is recorded because it is a REAL PRODUCTION BEHAVIOUR the harness surfaced: on this ' +
-      'prompt the model sometimes emits a string "null" into a field typed as a nullable id, ' +
-      'and every such response is discarded whole.',
-    scope:
-      'One of the 32 cases on this sample, and it is the entire difference between the ' +
-      'pre-re-record rubric_pass_rate and refusal_accuracy of 27/32 and the committed 26/32. ' +
-      'It is sampling, not a trend: the same case passed on the previous recording, where the ' +
-      'model returned an empty personal_evidence array.',
-    out_of_scope_here:
-      'Fixing it would mean changing the prompt or the schema handling, which this task ' +
-      'excludes ("do not fix the model, the prompts, the knowledge base, or the retrieval ' +
-      'parameters - record what was found and it becomes separate work").',
-  },
-  {
     id: 'relabelling-a-retrieval-case-is-gated-but-was-not-demonstrated',
     what:
       'The golden-label gate refuses a change to any key describeCaseLabels emits - ' +
@@ -372,14 +348,21 @@ function buildVehicle(caseInput, ids) {
  * primary source and this is derived from it.
  */
 /**
- * The SECOND movement in this baseline's history, and a different KIND from the
- * one in BASELINE_CORRECTION_RECORD below. That one was an offline re-score of
- * fixed tapes, where "no metric moved" was verifiable byte-for-byte. This one
- * re-sampled the model, so new numbers are expected by construction and the two
- * are kept apart rather than folded into one table that would imply more
+ * EVERY live re-record this baseline has had, oldest first, and a different KIND
+ * from the one in BASELINE_CORRECTION_RECORD below. That one was an offline
+ * re-score of fixed tapes, where "no metric moved" was verifiable byte-for-byte.
+ * These re-sampled the model, so new numbers are expected by construction and
+ * the two are kept apart rather than folded into one table that would imply more
  * precision than either has.
+ *
+ * It is a LIST because it used to be one object, and a second re-record would
+ * have overwritten the first. The same argument the limitations carry applies to
+ * a movement record: one that vanishes when somebody re-baselines is worse than
+ * one nobody wrote, because the reader after that cannot know it existed.
+ * Nothing reads this field - it is written into `eval-baseline.json` and never
+ * gated on - so the shape was free to fix. APPEND here; do not replace.
  */
-const BASELINE_LIVE_RERECORD = {
+const BASELINE_LIVE_RERECORDS = [{
   what_this_is:
     'The two data_used divergences recorded as harness-context-weather-flag and ' +
     'harness-context-manual-flag were corrected in buildContext, which derives every flag the ' +
@@ -458,7 +441,104 @@ const BASELINE_LIVE_RERECORD = {
       cause: 'DID NOT MOVE, for the same reason.',
     },
   ],
-};
+},
+{
+  what_this_is:
+    'The THIRD movement, and the first caused by a product fix rather than by the harness. ' +
+    'formatSessionBlock printed no session_id, so the current session, the previous session ' +
+    'and every day-plan recent session reached the model anonymous while the policy built its ' +
+    'allowed set from those very ids. Printing them moves every completion tape key, so the ' +
+    'recordings were refreshed with one `npm run rag:eval -- --live`.',
+  what_was_corrected:
+    'The prompt now prints session_id for every session block and instructs the model to copy ' +
+    'one verbatim or emit JSON null; collectTuningAdviceSessionIds and collectDayPlanSessionIds ' +
+    'became the single source of both the printed ids and the accepted ids. Nothing in the ' +
+    'harness changed - buildContext, runCase and fallbackDataUsed are untouched - so this ' +
+    'movement is the product behaving differently, not the measurement.',
+  blast_radius:
+    'All 26 completion keys moved. All 26 EMBEDDING keys replayed untouched, so recall@k and ' +
+    'MRR ran on byte-identical input and could not move; they did not. That is the standing ' +
+    'claim about retrieval demonstrated a second time rather than assumed - the query text ' +
+    'embedQuery sees carries no session block.',
+  closes:
+    'The limitation model-emits-a-string-null-source-session-id, named in the record above and ' +
+    'now removed from `limitations`. Its CAUSE is gone rather than its symptom papered over: ' +
+    'the model wrote the string "null" because the prompt printed no id for the session it was ' +
+    'reasoning about, and it now prints one. The literal "null" is still refused by ' +
+    'evaluateAdvicePolicy if it ever reappears - coercing it would leave an unverified ' +
+    'evidence entry in front of the rider - and ' +
+    'app/api/ai/tuning-advice/route.session-evidence.test.ts locks that refusal with the exact ' +
+    'payload the old recording carried.',
+  what_the_model_now_emits:
+    'THE ACCEPTANCE BAR, measured off the committed recordings rather than argued. Before: 1 ' +
+    'of 26 responses carried a personal_evidence entry at all, and its source_session_id was ' +
+    'the fabricated string "null". After: 25 of 26 carry one, and all 25 cite the exact ' +
+    'session id printed in that case\'s own prompt. Zero fabricated, zero wrong, zero "null". ' +
+    'The 26th returned an empty personal_evidence array, which is the honest answer the ' +
+    'prompt asks for when there is nothing personal to cite.',
+  these_numbers_are_the_baseline_whatever_they_say:
+    'Two gated rates ROSE and the split is stated rather than claimed whole: of the two cases ' +
+    'that went fail -> pass, ONE is this fix (mc-gearing-slow-corner, force-refused as ' +
+    'invalid_personal_evidence and now answered) and ONE is model sampling ' +
+    '(sparse-no-history-comparison, force-refused as no_recommendation, unrelated mechanism). ' +
+    'direction_accuracy FELL and is committed as measured. Attributing both rises to the fix ' +
+    'would be the same defect as keeping a flattering tape.',
+  metrics: [
+    {
+      metric: 'rubric_pass_rate',
+      before: 0.8125,
+      after: 0.875,
+      fraction: '26/32 -> 28/32',
+      cause:
+        'TWO cases, one each. mc-gearing-slow-corner is the fix: it was force-refused as ' +
+        'invalid_personal_evidence because the model had no id to cite, and the recording now ' +
+        'carries the real session id. sparse-no-history-comparison is sampling: it was ' +
+        'force-refused as no_recommendation and the re-sampled model returned one. No case ' +
+        'went pass -> fail.',
+    },
+    {
+      metric: 'refusal_accuracy',
+      before: 0.8125,
+      after: 0.875,
+      fraction: '26/32 -> 28/32',
+      cause: 'The same two cases. These two rates share a numerator over the same 32 cases.',
+    },
+    {
+      metric: 'recall_at_k',
+      before: 0.8076923076923077,
+      after: 0.8076923076923077,
+      fraction: '21/26 -> 21/26',
+      cause: 'DID NOT MOVE, and could not have: every embedding key replayed.',
+    },
+    {
+      metric: 'mrr',
+      before: 0.7596153846153846,
+      after: 0.7596153846153846,
+      fraction: '19.75/26 -> 19.75/26',
+      cause: 'DID NOT MOVE, for the same reason.',
+    },
+    {
+      metric: 'component_accuracy',
+      before: 0.8461538461538461,
+      after: 0.8461538461538461,
+      fraction: '11/13 -> 11/13',
+      cause:
+        'DID NOT MOVE in aggregate. It is re-sampled like everything else here, so this is a ' +
+        'coincidence of equal counts rather than a guarantee.',
+    },
+    {
+      metric: 'direction_accuracy',
+      before: 0.5384615384615384,
+      after: 0.46153846153846156,
+      fraction: '7/13 -> 6/13',
+      cause:
+        'FELL by one answered case. Reported, never gated - it tracks whether the model ' +
+        'reaches a human\'s answer, which belongs in the baseline rather than in a pass ' +
+        'condition. Committed as measured; a fall on a re-sample is expected by construction ' +
+        'and softening it would be choosing a number for how it reads.',
+    },
+  ],
+}];
 
 /**
  * THE NUMBERS ROSE BECAUSE A PRODUCT RULING CHANGED WHAT THE CORRECT ANSWER IS,
@@ -1857,7 +1937,7 @@ async function report(ctx) {
       metrics,
       coverage,
       limitations: BASELINE_LIMITATIONS,
-      live_rerecord: BASELINE_LIVE_RERECORD,
+      live_rerecord: BASELINE_LIVE_RERECORDS,
       correction_record: BASELINE_CORRECTION_RECORD,
       ruling_record: BASELINE_RULING_RECORD,
       per_case: Object.fromEntries(

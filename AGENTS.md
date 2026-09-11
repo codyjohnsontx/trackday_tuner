@@ -1294,22 +1294,33 @@ demonstrated rather than asserted: the query text `embedQuery` sees carries no
 that did not move is the case with no `temperature_c` and manual data present,
 where both flags already read what production would have printed.
 
-**The live numbers are the baseline, including the two that fell.**
-`rubric_pass_rate` and `refusal_accuracy` both went 27/32 -> 26/32. The whole
-difference is one case, `mc-gearing-slow-corner`, where the re-sampled model
-returned a `personal_evidence` entry whose `source_session_id` is the STRING
-`"null"`; `evaluateAdvicePolicy` force-refuses the response as
-`invalid_personal_evidence`, correctly, and the rider gets a refusal instead of
-advice. That is sampling rather than a trend - the same case passed on the
-previous recording, where the model returned an empty array - and it is recorded
-as the limitation `model-emits-a-string-null-source-session-id`. Keeping the
-older, higher tape because it flattered the harness would rebuild the exact
-defect this harness exists to remove: a number chosen for how it reads rather
-than for being true. `live_rerecord` in `eval-baseline.json` carries the movement
-with a cause per metric, kept SEPARATE from `correction_record` because that one
-was an offline re-score of fixed tapes where "no metric moved" was verifiable
-byte-for-byte, and this one re-sampled the model, where new numbers are expected
-by construction.
+**The live numbers are the baseline whatever they say, in both directions.** On
+that re-record `rubric_pass_rate` and `refusal_accuracy` both FELL, 27/32 ->
+26/32, over one case - `mc-gearing-slow-corner`, where the model returned a
+`source_session_id` of the STRING `"null"` and `evaluateAdvicePolicy` correctly
+discarded the whole response. Keeping the older, higher tape because it flattered
+the harness would rebuild the exact defect this harness exists to remove: a
+number chosen for how it reads rather than for being true.
+
+The re-record after the session-id fix is the mirror image and gets the same
+treatment. Both rates ROSE, 26/32 -> 28/32, and **the two cases are attributed
+separately because only one of them is the fix**: `mc-gearing-slow-corner` was
+force-refused as `invalid_personal_evidence` and is now answered, while
+`sparse-no-history-comparison` was force-refused as `no_recommendation` and is
+model sampling on an unrelated mechanism. `direction_accuracy` fell 7/13 -> 6/13
+and is committed as measured. Claiming both rises for the fix would be the same
+defect wearing the opposite sign. The acceptance evidence is counted off the
+recordings rather than argued: before, 1 of 26 responses carried personal
+evidence at all and its id was the fabricated `"null"`; after, 25 of 26 cite the
+exact id printed in their own prompt, none fabricated.
+
+`live_rerecord` in `eval-baseline.json` is a LIST of these movements, oldest
+first - it was one object, which the next re-record would have overwritten, and a
+movement record that vanishes on re-baseline is worth no more than the
+limitations it sits beside. APPEND to `BASELINE_LIVE_RERECORDS`; do not replace.
+It is kept SEPARATE from `correction_record` because that one was an offline
+re-score of fixed tapes where "no metric moved" was verifiable byte-for-byte,
+and these re-sampled the model, where new numbers are expected by construction.
 
 **The `limitations` array is the list, and it is the list because it was wrong
 once.** This section previously said the weather flag was the only prompt
