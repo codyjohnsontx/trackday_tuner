@@ -797,9 +797,12 @@ CHECKs, `information_schema.columns` for the column type. As of this writing
 every survivor with a column behind it is pinned by a column type or a CHECK
 (`sessions.conditions`, `sessions.date`, `vehicles.type`,
 `session_environment.source`, `session_feedback.outcome`,
-`ai_recommendations.status`) or validated as a number or date by the route
-validator (`temperature_c`, `target_date`, the day-plan environment numerics);
-the survivors with no column at all are the knowledge-base chunk fields, which
+`ai_recommendations.status`, and the `uuid` ids the session block and the
+recommendation line print: `sessions.id`, `ai_recommendations.id`,
+`ai_recommendations.session_id`, `ai_recommendations.outcome_session_id`) or
+validated as a number or date by the route validator (`temperature_c`,
+`target_date`, the day-plan environment numerics); the survivors with no column
+at all are the knowledge-base chunk fields, which
 come off disk rather than from a rider (step 5 above). So those two `direction`
 fields were the only gap. The regression test locks the BLOCK STRUCTURE rather
 than spying `formatValue`, because a helper that stopped neutralising tags would
