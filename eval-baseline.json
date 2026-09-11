@@ -1,18 +1,18 @@
 {
   "version": 1,
-  "recorded_at": "2026-09-10T09:28:54.797Z",
+  "recorded_at": "2026-09-11T07:03:09.445Z",
   "mode": "offline",
   "model": "gpt-4o-mini",
   "embedding_model": "text-embedding-3-small",
   "knowledge_index_generated_at": "2026-07-26T07:41:29.658Z",
   "cases": 32,
   "metrics": {
-    "rubric_pass_rate": 0.84375,
+    "rubric_pass_rate": 0.90625,
     "recall_at_k": 0.8076923076923077,
     "mrr": 0.7596153846153846,
-    "refusal_accuracy": 0.84375,
+    "refusal_accuracy": 0.90625,
     "component_accuracy": 0.8461538461538461,
-    "direction_accuracy": 0.5384615384615384
+    "direction_accuracy": 0.46153846153846156
   },
   "coverage": {
     "scored_cases": 32,
@@ -23,13 +23,6 @@
     "direction_cases": 13
   },
   "limitations": [
-    {
-      "id": "model-emits-a-string-null-source-session-id",
-      "what": "On the live re-record, mc-gearing-slow-corner came back with a personal_evidence entry whose source_session_id is the STRING \"null\" rather than a real id or a JSON null. validSessionIds is non-empty for that case, so hasInvalidPersonalEvidence finds an id that is not in the allowed set and evaluateAdvicePolicy force-refuses the whole response as invalid_personal_evidence. The rider gets a refusal instead of advice.",
-      "the_guard_is_behaving_correctly": "This is not a harness defect and not a policy defect. An unverifiable session reference is exactly what that rule exists to catch, and refusing is the fail-safe direction. It is recorded because it is a REAL PRODUCTION BEHAVIOUR the harness surfaced: on this prompt the model sometimes emits a string \"null\" into a field typed as a nullable id, and every such response is discarded whole.",
-      "scope": "One of the 32 cases on this sample, and it is the entire difference between the pre-re-record rubric_pass_rate and refusal_accuracy of 27/32 and the committed 26/32. It is sampling, not a trend: the same case passed on the previous recording, where the model returned an empty personal_evidence array.",
-      "out_of_scope_here": "Fixing it would mean changing the prompt or the schema handling, which this task excludes (\"do not fix the model, the prompts, the knowledge base, or the retrieval parameters - record what was found and it becomes separate work\")."
-    },
     {
       "id": "relabelling-a-retrieval-case-is-gated-but-was-not-demonstrated",
       "what": "The golden-label gate refuses a change to any key describeCaseLabels emits - should_refuse, expected_premise_rejection, expected_component, expected_direction or expected_sources - because a label edit moves no tape key and no coverage count and so escaped every other check. ONE of those paths was demonstrated end to end and the others were not.",
@@ -73,56 +66,110 @@
       "what_carries_the_other_half": "Nothing, honestly. SYSTEM_PROMPT rule 6 is written about what is RECOMMENDED and was satisfied by the response that opened this finding. Strengthening it to cover premises is worth doing and is NOT done here: SYSTEM_PROMPT is in every completion body, so editing it moves all 26 completion tape keys and needs a `--live` re-record, which needs an API key. It would be a second layer over a deterministic guarantee rather than the guarantee itself."
     }
   ],
-  "live_rerecord": {
-    "what_this_is": "The two data_used divergences recorded as harness-context-weather-flag and harness-context-manual-flag were corrected in buildContext, which derives every flag the way loadRaceEngineerContext derives it. Correcting them moves the completion tape keys, so the recordings were refreshed with one `npm run rag:eval -- --live` and the model was re-sampled. Both limitations are closed and removed from `limitations` above; this record is what replaced them.",
-    "what_was_corrected": "weather was `temperature_c != null` beside no session_environment row, a pair production cannot produce; manual was hard-coded true where production calls hasManualSessionData. runCase's fallbackDataUsed was deliberately NOT changed - it mirrors the route's own buildFallbackDataUsed, which hard-codes those same two, so deriving it there would have introduced a divergence rather than removed one.",
-    "blast_radius": "25 of the 26 completion keys moved. All 26 EMBEDDING keys replayed untouched, which is the documented claim about retrieval holding up under test: the query text embedQuery sees carries no data_used. The one completion that did not move is a case with no temperature_c and manual data present, where both flags already read what production would have printed.",
-    "these_numbers_are_the_baseline_whatever_they_say": "Two gated metrics fell and were committed as measured. Keeping the older, higher tape because it flattered the harness would rebuild the exact defect this harness was built to remove - a number chosen for how it reads rather than for being true.",
-    "metrics": [
-      {
-        "metric": "rubric_pass_rate",
-        "before": 0.84375,
-        "after": 0.8125,
-        "fraction": "27/32 -> 26/32",
-        "cause": "ONE case, mc-gearing-slow-corner, and it is model sampling rather than a trend. On the re-sampled prompt the model returned a personal_evidence entry whose source_session_id is the string \"null\"; evaluateAdvicePolicy force-refuses the response as invalid_personal_evidence, correctly. It passed on the previous recording, where the model returned an empty personal_evidence array. Recorded as the limitation model-emits-a-string-null-source-session-id."
-      },
-      {
-        "metric": "refusal_accuracy",
-        "before": 0.84375,
-        "after": 0.8125,
-        "fraction": "27/32 -> 26/32",
-        "cause": "The same single case. These two rates share a numerator over the same 32 cases."
-      },
-      {
-        "metric": "recall_at_k",
-        "before": 0.8076923076923077,
-        "after": 0.8076923076923077,
-        "fraction": "21/26 -> 21/26",
-        "cause": "DID NOT MOVE, and could not have: every embedding key replayed, so retrieval ran on byte-identical input. This is the evidence for the claim the old limitations made rather than a restatement of it."
-      },
-      {
-        "metric": "mrr",
-        "before": 0.7596153846153846,
-        "after": 0.7596153846153846,
-        "fraction": "19.75/26 -> 19.75/26",
-        "cause": "DID NOT MOVE, for the same reason."
-      },
-      {
-        "metric": "component_accuracy",
-        "before": 0.8461538461538461,
-        "after": 0.8461538461538461,
-        "fraction": "11/13 -> 11/13",
-        "cause": "DID NOT MOVE. The refused case carries no component label, so it is not in this denominator - the case that changed and the cases this measures do not overlap."
-      },
-      {
-        "metric": "direction_accuracy",
-        "before": 0.5384615384615384,
-        "after": 0.5384615384615384,
-        "fraction": "7/13 -> 7/13",
-        "cause": "DID NOT MOVE, for the same reason."
-      }
-    ]
-  },
+  "live_rerecord": [
+    {
+      "what_this_is": "The two data_used divergences recorded as harness-context-weather-flag and harness-context-manual-flag were corrected in buildContext, which derives every flag the way loadRaceEngineerContext derives it. Correcting them moves the completion tape keys, so the recordings were refreshed with one `npm run rag:eval -- --live` and the model was re-sampled. Both limitations are closed and removed from `limitations` above; this record is what replaced them.",
+      "what_was_corrected": "weather was `temperature_c != null` beside no session_environment row, a pair production cannot produce; manual was hard-coded true where production calls hasManualSessionData. runCase's fallbackDataUsed was deliberately NOT changed - it mirrors the route's own buildFallbackDataUsed, which hard-codes those same two, so deriving it there would have introduced a divergence rather than removed one.",
+      "blast_radius": "25 of the 26 completion keys moved. All 26 EMBEDDING keys replayed untouched, which is the documented claim about retrieval holding up under test: the query text embedQuery sees carries no data_used. The one completion that did not move is a case with no temperature_c and manual data present, where both flags already read what production would have printed.",
+      "these_numbers_are_the_baseline_whatever_they_say": "Two gated metrics fell and were committed as measured. Keeping the older, higher tape because it flattered the harness would rebuild the exact defect this harness was built to remove - a number chosen for how it reads rather than for being true.",
+      "metrics": [
+        {
+          "metric": "rubric_pass_rate",
+          "before": 0.84375,
+          "after": 0.8125,
+          "fraction": "27/32 -> 26/32",
+          "cause": "ONE case, mc-gearing-slow-corner, and it is model sampling rather than a trend. On the re-sampled prompt the model returned a personal_evidence entry whose source_session_id is the string \"null\"; evaluateAdvicePolicy force-refuses the response as invalid_personal_evidence, correctly. It passed on the previous recording, where the model returned an empty personal_evidence array. Recorded as the limitation model-emits-a-string-null-source-session-id."
+        },
+        {
+          "metric": "refusal_accuracy",
+          "before": 0.84375,
+          "after": 0.8125,
+          "fraction": "27/32 -> 26/32",
+          "cause": "The same single case. These two rates share a numerator over the same 32 cases."
+        },
+        {
+          "metric": "recall_at_k",
+          "before": 0.8076923076923077,
+          "after": 0.8076923076923077,
+          "fraction": "21/26 -> 21/26",
+          "cause": "DID NOT MOVE, and could not have: every embedding key replayed, so retrieval ran on byte-identical input. This is the evidence for the claim the old limitations made rather than a restatement of it."
+        },
+        {
+          "metric": "mrr",
+          "before": 0.7596153846153846,
+          "after": 0.7596153846153846,
+          "fraction": "19.75/26 -> 19.75/26",
+          "cause": "DID NOT MOVE, for the same reason."
+        },
+        {
+          "metric": "component_accuracy",
+          "before": 0.8461538461538461,
+          "after": 0.8461538461538461,
+          "fraction": "11/13 -> 11/13",
+          "cause": "DID NOT MOVE. The refused case carries no component label, so it is not in this denominator - the case that changed and the cases this measures do not overlap."
+        },
+        {
+          "metric": "direction_accuracy",
+          "before": 0.5384615384615384,
+          "after": 0.5384615384615384,
+          "fraction": "7/13 -> 7/13",
+          "cause": "DID NOT MOVE, for the same reason."
+        }
+      ]
+    },
+    {
+      "what_this_is": "The THIRD movement, and the first caused by a product fix rather than by the harness. formatSessionBlock printed no session_id, so the current session, the previous session and every day-plan recent session reached the model anonymous while the policy built its allowed set from those very ids. Printing them moves every completion tape key, so the recordings were refreshed with one `npm run rag:eval -- --live`.",
+      "what_was_corrected": "The prompt now prints session_id for every session block and instructs the model to copy one verbatim or emit JSON null; collectTuningAdviceSessionIds and collectDayPlanSessionIds became the single source of both the printed ids and the accepted ids. Nothing in the harness changed - buildContext, runCase and fallbackDataUsed are untouched - so this movement is the product behaving differently, not the measurement.",
+      "blast_radius": "All 26 completion keys moved. All 26 EMBEDDING keys replayed untouched, so recall@k and MRR ran on byte-identical input and could not move; they did not. That is the standing claim about retrieval demonstrated a second time rather than assumed - the query text embedQuery sees carries no session block.",
+      "closes": "The limitation model-emits-a-string-null-source-session-id, named in the record above and now removed from `limitations`. Its CAUSE is gone rather than its symptom papered over: the model wrote the string \"null\" because the prompt printed no id for the session it was reasoning about, and it now prints one. The literal \"null\" is still refused by evaluateAdvicePolicy if it ever reappears - coercing it would leave an unverified evidence entry in front of the rider - and app/api/ai/tuning-advice/route.session-evidence.test.ts locks that refusal with the exact payload the old recording carried.",
+      "what_the_model_now_emits": "THE ACCEPTANCE BAR, measured off the committed recordings rather than argued. Before: 1 of 26 responses carried a personal_evidence entry at all, and its source_session_id was the fabricated string \"null\". After: 25 of 26 carry one, and all 25 cite the exact session id printed in that case's own prompt. Zero fabricated, zero wrong, zero \"null\". The 26th returned an empty personal_evidence array, which is the honest answer the prompt asks for when there is nothing personal to cite.",
+      "these_numbers_are_the_baseline_whatever_they_say": "Two gated rates ROSE and the split is stated rather than claimed whole: of the two cases that went fail -> pass, ONE is this fix (mc-gearing-slow-corner, force-refused as invalid_personal_evidence and now answered) and ONE is model sampling (sparse-no-history-comparison, force-refused as no_recommendation, unrelated mechanism). direction_accuracy FELL and is committed as measured. Attributing both rises to the fix would be the same defect as keeping a flattering tape.",
+      "metrics": [
+        {
+          "metric": "rubric_pass_rate",
+          "before": 0.84375,
+          "after": 0.90625,
+          "fraction": "27/32 -> 29/32",
+          "cause": "TWO cases, one each. mc-gearing-slow-corner is the fix: it was force-refused as invalid_personal_evidence because the model had no id to cite, and the recording now carries the real session id. sparse-no-history-comparison is sampling: it was force-refused as no_recommendation and the re-sampled model returned one. No case went pass -> fail."
+        },
+        {
+          "metric": "refusal_accuracy",
+          "before": 0.84375,
+          "after": 0.90625,
+          "fraction": "27/32 -> 29/32",
+          "cause": "The same two cases. These two rates share a numerator over the same 32 cases."
+        },
+        {
+          "metric": "recall_at_k",
+          "before": 0.8076923076923077,
+          "after": 0.8076923076923077,
+          "fraction": "21/26 -> 21/26",
+          "cause": "DID NOT MOVE, and could not have: every embedding key replayed."
+        },
+        {
+          "metric": "mrr",
+          "before": 0.7596153846153846,
+          "after": 0.7596153846153846,
+          "fraction": "19.75/26 -> 19.75/26",
+          "cause": "DID NOT MOVE, for the same reason."
+        },
+        {
+          "metric": "component_accuracy",
+          "before": 0.8461538461538461,
+          "after": 0.8461538461538461,
+          "fraction": "11/13 -> 11/13",
+          "cause": "DID NOT MOVE in aggregate. It is re-sampled like everything else here, so this is a coincidence of equal counts rather than a guarantee."
+        },
+        {
+          "metric": "direction_accuracy",
+          "before": 0.5384615384615384,
+          "after": 0.46153846153846156,
+          "fraction": "7/13 -> 6/13",
+          "cause": "FELL by one answered case. Reported, never gated - it tracks whether the model reaches a human's answer, which belongs in the baseline rather than in a pass condition. Committed as measured; a fall on a re-sample is expected by construction and softening it would be choosing a number for how it reads."
+        }
+      ]
+    }
+  ],
   "correction_record": {
     "what_this_is": "The first baseline, committed at b115aaf, was measured by a harness carrying three measurement bugs. Each was corrected under review and the baseline re-measured offline against the SAME committed recordings - no re-recording, no model call, no change to any golden case. This is what moved, from those first figures to the ones this file carries.",
     "first_baseline": "b115aaf, 32 golden cases, offline replay of the recordings in tests/fixtures/rag-eval/recordings/",
@@ -233,7 +280,7 @@
       "passed": true,
       "recall": 1,
       "reciprocal_rank": 1,
-      "policy": "downgrade_confidence",
+      "policy": "allow",
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -248,7 +295,7 @@
       "passed": true,
       "recall": 1,
       "reciprocal_rank": 1,
-      "policy": "downgrade_confidence",
+      "policy": "allow",
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -310,7 +357,7 @@
       "passed": true,
       "recall": 0.5,
       "reciprocal_rank": 1,
-      "policy": "downgrade_confidence",
+      "policy": "allow",
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -353,10 +400,10 @@
       }
     },
     "mc-gearing-slow-corner": {
-      "passed": false,
+      "passed": true,
       "recall": 1,
       "reciprocal_rank": 1,
-      "policy": "force_refusal",
+      "policy": "allow",
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -424,10 +471,10 @@
       }
     },
     "sparse-no-history-comparison": {
-      "passed": false,
+      "passed": true,
       "recall": 1,
       "reciprocal_rank": 0.5,
-      "policy": "force_refusal",
+      "policy": "allow",
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -632,7 +679,7 @@
       "passed": true,
       "recall": 0,
       "reciprocal_rank": 0,
-      "policy": "downgrade_confidence",
+      "policy": "allow",
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,

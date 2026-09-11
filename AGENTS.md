@@ -802,9 +802,12 @@ CHECKs, `information_schema.columns` for the column type. As of this writing
 every survivor with a column behind it is pinned by a column type or a CHECK
 (`sessions.conditions`, `sessions.date`, `vehicles.type`,
 `session_environment.source`, `session_feedback.outcome`,
-`ai_recommendations.status`) or validated as a number or date by the route
-validator (`temperature_c`, `target_date`, the day-plan environment numerics);
-the survivors with no column at all are the knowledge-base chunk fields, which
+`ai_recommendations.status`, and the `uuid` ids the session block and the
+recommendation line print: `sessions.id`, `ai_recommendations.id`,
+`ai_recommendations.session_id`, `ai_recommendations.outcome_session_id`) or
+validated as a number or date by the route validator (`temperature_c`,
+`target_date`, the day-plan environment numerics); the survivors with no column
+at all are the knowledge-base chunk fields, which
 come off disk rather than from a rider (step 5 above). So those two `direction`
 fields were the only gap. The regression test locks the BLOCK STRUCTURE rather
 than spying `formatValue`, because a helper that stopped neutralising tags would
@@ -1021,6 +1024,38 @@ separately, afterwards, once `SYSTEM_PROMPT` started making every stored
 `ai_recommendations` row an identifier rather than prose. Both demo fixtures are
 held to the same bar - `tests/unit/demo-advice-vocabulary.test.ts` runs the real
 `evaluateAdvicePolicy` over the objects the panels render.
+
+**A SESSION THE PROMPT DOES NOT NAME CANNOT BE CITED, AND `evaluateAdvicePolicy`
+READS AN UNNAMEABLE CITATION AS FABRICATION.** The Race Engineer refused
+well-formed questions on the live site and then listed, as examples of what it
+*could* answer, questions of the same shape. The message was
+`invalid_personal_evidence` - "I could not verify the historical session evidence
+referenced in that response" - firing on the session the app had just handed the
+model. `formatSessionBlock` printed no `session_id`, so the current session, the
+previous session and every day-plan recent session reached the model anonymous,
+while the allowed set was built from those very ids. Asked for personal evidence
+about a session it had no id for, the model invented one: the committed recording
+for `mc-gearing-slow-corner` cites the rider's own session notes with
+`source_session_id: "null"` and has its whole answer discarded. No account could
+avoid it, because the three blocks that DID print ids - `similar_sessions`,
+`recent_feedback`, `recent_recommendations` - are all empty for a new rider.
+
+So the invariant is two-way and each direction is its own defect. **Accepting an
+id the prompt never printed** is the bug above: unusable, and it bait-and-switches
+the model into fabricating. **Printing an id the policy will not accept** is the
+mirror, and `previousSession` was that one - printed and named in the instructions
+since the route was written, absent from the allowed set. `collectTuningAdviceSessionIds`
+and `collectDayPlanSessionIds` (`lib/rag/prompt.ts`) are now the single source of
+both, one per prompt builder for the same reason there are two rider-text
+collectors: each takes its own builder's input type, so a route accepts exactly
+what its own prompt printed. `tests/unit/ai-session-evidence-ids.test.ts` builds
+the prompt and the id set from one input and fails on either direction;
+`app/api/ai/tuning-advice/route.session-evidence.test.ts` runs the real policy
+through the route, which is the only place that can catch the route substituting a
+set of its own. **This widened nothing:** every accepted id belongs to a row read
+under the rider's own RLS scope, an id from anywhere else is still refused, and so
+is the literal string `"null"` - coercing that to null would leave an unverified
+evidence entry in front of the rider, which is the class the guard exists for.
 
 **An `AdviceResponse` is rendered in exactly one place, and that is the guard.**
 `components/ai/advice-report.tsx` prints the whole payload; the Race Engineer and
@@ -1267,22 +1302,36 @@ demonstrated rather than asserted: the query text `embedQuery` sees carries no
 that did not move is the case with no `temperature_c` and manual data present,
 where both flags already read what production would have printed.
 
-**The live numbers are the baseline, including the two that fell.**
-`rubric_pass_rate` and `refusal_accuracy` both went 27/32 -> 26/32. The whole
-difference is one case, `mc-gearing-slow-corner`, where the re-sampled model
-returned a `personal_evidence` entry whose `source_session_id` is the STRING
-`"null"`; `evaluateAdvicePolicy` force-refuses the response as
-`invalid_personal_evidence`, correctly, and the rider gets a refusal instead of
-advice. That is sampling rather than a trend - the same case passed on the
-previous recording, where the model returned an empty array - and it is recorded
-as the limitation `model-emits-a-string-null-source-session-id`. Keeping the
-older, higher tape because it flattered the harness would rebuild the exact
-defect this harness exists to remove: a number chosen for how it reads rather
-than for being true. `live_rerecord` in `eval-baseline.json` carries the movement
-with a cause per metric, kept SEPARATE from `correction_record` because that one
-was an offline re-score of fixed tapes where "no metric moved" was verifiable
-byte-for-byte, and this one re-sampled the model, where new numbers are expected
-by construction.
+**The live numbers are the baseline whatever they say, in both directions.** On
+that re-record `rubric_pass_rate` and `refusal_accuracy` both FELL, 27/32 ->
+26/32, over one case - `mc-gearing-slow-corner`, where the model returned a
+`source_session_id` of the STRING `"null"` and `evaluateAdvicePolicy` correctly
+discarded the whole response. Keeping the older, higher tape because it flattered
+the harness would rebuild the exact defect this harness exists to remove: a
+number chosen for how it reads rather than for being true.
+
+The re-record after the session-id fix is the mirror image and gets the same
+treatment. Both rates ROSE, 27/32 -> 29/32 - the starting figure is 27 rather
+than 26 because the ruling record's relabelling of
+`adversarial-request-remove-brakes` had already landed on `main` and the tapes
+were re-scored against that baseline - and **the two cases are attributed
+separately because only one of them is the fix**: `mc-gearing-slow-corner` was
+force-refused as `invalid_personal_evidence` and is now answered, while
+`sparse-no-history-comparison` was force-refused as `no_recommendation` and is
+model sampling on an unrelated mechanism. `direction_accuracy` fell 7/13 -> 6/13
+and is committed as measured. Claiming both rises for the fix would be the same
+defect wearing the opposite sign. The acceptance evidence is counted off the
+recordings rather than argued: before, 1 of 26 responses carried personal
+evidence at all and its id was the fabricated `"null"`; after, 25 of 26 cite the
+exact id printed in their own prompt, none fabricated.
+
+`live_rerecord` in `eval-baseline.json` is a LIST of these movements, oldest
+first - it was one object, which the next re-record would have overwritten, and a
+movement record that vanishes on re-baseline is worth no more than the
+limitations it sits beside. APPEND to `BASELINE_LIVE_RERECORDS`; do not replace.
+It is kept SEPARATE from `correction_record` because that one was an offline
+re-score of fixed tapes where "no metric moved" was verifiable byte-for-byte,
+and these re-sampled the model, where new numbers are expected by construction.
 
 **The `limitations` array is the list, and it is the list because it was wrong
 once.** This section previously said the weather flag was the only prompt
