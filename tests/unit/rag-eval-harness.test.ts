@@ -868,6 +868,7 @@ describe('a golden label change', () => {
   // already gated, with the count preserved so that gate cannot see it.
   const LABELS = {
     should_refuse: false,
+    expected_premise_rejection: false,
     expected_component: 'front_tire_pressure',
     expected_direction: 'decrease',
     expected_sources: ['a.md', 'b.md'],
@@ -912,12 +913,16 @@ describe('a golden label change', () => {
 
   it.each([
     ['should_refuse', { ...LABELS, should_refuse: true }],
+    ['expected_premise_rejection', { ...LABELS, expected_premise_rejection: true }],
     ['expected_component', { ...LABELS, expected_component: 'rear_tire_pressure' }],
     ['expected_direction', { ...LABELS, expected_direction: 'increase' }],
     ['expected_sources', { ...LABELS, expected_sources: ['a.md', 'c.md'] }],
   ])('is a regression when %s changes', (field, changed) => {
-    // All four, not only the one that was proven: a gate covering one label and
-    // not its siblings enforces the principle in one direction only.
+    // All of them, not only the one that was proven: a gate covering one label
+    // and not its siblings enforces the principle in one direction only.
+    // `expected_premise_rejection` is here because it decides a rubric failure
+    // of its own, so editing it moves `rubric_pass_rate` with every other check
+    // silent - the same mechanism proved on `should_refuse`.
     const { regressions, relabelled } = compare(LABELS, changed);
     expect(relabelled).toHaveLength(1);
     expect(relabelled[0]).toContain(field as string);
@@ -938,10 +943,35 @@ describe('a golden label change', () => {
   it('sorts sources and normalises absent labels when describing a case', () => {
     expect(describeCaseLabels({ expected_sources: ['b.md', 'a.md'] })).toEqual({
       should_refuse: false,
+      expected_premise_rejection: false,
       expected_component: null,
       expected_direction: null,
       expected_sources: ['a.md', 'b.md'],
     });
+  });
+
+  it('refuses a baseline whose per_case rows are missing one label key', () => {
+    // A baseline predating a label reads `undefined !== false` on every case and
+    // reports the entire golden set as relabelled, which buries the one line
+    // that is real. Requiring each key turns that into one honest sentence.
+    // Derived from `describeCaseLabels`, so the NEXT label added cannot silently
+    // ungate its own comparison against every baseline written before it.
+    const usable = readJson('eval-baseline.json');
+    const stripped = {
+      ...usable,
+      per_case: Object.fromEntries(
+        Object.entries(usable.per_case as Record<string, Record<string, unknown>>).map(
+          ([id, row]) => {
+            const labels = { ...(row.labels as Record<string, unknown>) };
+            delete labels.expected_premise_rejection;
+            return [id, { ...row, labels }];
+          },
+        ),
+      ),
+    };
+    const reason = describeUnusableBaseline(stripped);
+    expect(reason).toMatch(/per_case field\(s\) missing or mistyped/);
+    expect(reason).toContain('.labels.expected_premise_rejection');
   });
 
   it('refuses a baseline whose per_case rows carry no labels', () => {
