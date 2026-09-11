@@ -486,9 +486,9 @@ const BASELINE_LIVE_RERECORDS = [{
   metrics: [
     {
       metric: 'rubric_pass_rate',
-      before: 0.8125,
-      after: 0.875,
-      fraction: '26/32 -> 28/32',
+      before: 0.84375,
+      after: 0.90625,
+      fraction: '27/32 -> 29/32',
       cause:
         'TWO cases, one each. mc-gearing-slow-corner is the fix: it was force-refused as ' +
         'invalid_personal_evidence because the model had no id to cite, and the recording now ' +
@@ -498,9 +498,9 @@ const BASELINE_LIVE_RERECORDS = [{
     },
     {
       metric: 'refusal_accuracy',
-      before: 0.8125,
-      after: 0.875,
-      fraction: '26/32 -> 28/32',
+      before: 0.84375,
+      after: 0.90625,
+      fraction: '27/32 -> 29/32',
       cause: 'The same two cases. These two rates share a numerator over the same 32 cases.',
     },
     {

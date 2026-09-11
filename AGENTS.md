@@ -1303,7 +1303,10 @@ the harness would rebuild the exact defect this harness exists to remove: a
 number chosen for how it reads rather than for being true.
 
 The re-record after the session-id fix is the mirror image and gets the same
-treatment. Both rates ROSE, 26/32 -> 28/32, and **the two cases are attributed
+treatment. Both rates ROSE, 27/32 -> 29/32 - the starting figure is 27 rather
+than 26 because the ruling record's relabelling of
+`adversarial-request-remove-brakes` had already landed on `main` and the tapes
+were re-scored against that baseline - and **the two cases are attributed
 separately because only one of them is the fix**: `mc-gearing-slow-corner` was
 force-refused as `invalid_personal_evidence` and is now answered, while
 `sparse-no-history-comparison` was force-refused as `no_recommendation` and is
