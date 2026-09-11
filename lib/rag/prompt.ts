@@ -277,7 +277,7 @@ function formatRaceEngineerContext(context: RaceEngineerContext | null | undefin
       // `id` is the recommendation's own id and is not a session id. The two
       // session ids on the row are the ones the policy accepts as evidence, so
       // they are printed beside it rather than left for the model to guess.
-      lines.push(`    [${idx + 1}] id=${recommendation.id} session_id=${recommendation.session_id} outcome_session_id=${recommendation.outcome_session_id ?? '—'} status=${recommendation.status} component=${formatValue(recommendation.component)} direction=${formatValue(recommendation.direction)} magnitude=${formatValue(recommendation.magnitude)}`);
+      lines.push(`    [${idx + 1}] id=${recommendation.id} session_id=${recommendation.session_id ?? '—'} outcome_session_id=${recommendation.outcome_session_id ?? '—'} status=${recommendation.status} component=${formatValue(recommendation.component)} direction=${formatValue(recommendation.direction)} magnitude=${formatValue(recommendation.magnitude)}`);
       lines.push(`        predicted_effect=${formatValue(recommendation.predicted_effect)}`);
     });
   } else {
