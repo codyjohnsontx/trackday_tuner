@@ -73,6 +73,7 @@ npm run rag:eval -- --update-baseline  # commit this run's scores as the baselin
 npm run db:status    # which migrations are applied on the linked project
 npm run db:new <name>  # scaffold a migration
 npm run db:push      # apply pending migrations to the linked project
+npm run db:audit     # regenerate the live-schema migration audit query
 ```
 
 **Never run `npm run build` while a dev server is up.** They share `.next`, and
@@ -121,6 +122,10 @@ grants by hand" in `docs/beta-runbook.md`.
 - Filenames are `<14-digit timestamp>_<name>.sql`. The timestamp is the version
   recorded remotely and is a primary key, so **two migrations must never share a
   prefix** — an earlier pair both named `20260224_` could not both be recorded
+- A new migration also needs a probe in `scripts/build-migration-audit.mjs` and
+  `npm run db:audit` re-run to regenerate the committed query; the unit suite
+  fails until both are done. The audit is what answers whether the *hosted*
+  project has the migration - see the note under "Production Monitoring"
 - `create table`, `create index`, and `create function` statements are written
   idempotently (`if not exists` / `or replace`). `create policy` is not, so a
   half-applied migration cannot simply be replayed — check `db:status` first. The
@@ -1403,7 +1408,7 @@ replay is free and complete, so the cost argument for a cheaper half is moot.
 ## Production Monitoring
 
 `docs/monitoring.md` is the runbook: what each piece catches, the three alert
-channels, the wiring checklist, and the known limits. Three facts belong here
+channels, the wiring checklist, and the known limits. Four facts belong here
 because they change how ordinary code is written.
 
 **A handled error never reaches Sentry on its own.** Next's `onRequestError`
@@ -1423,6 +1428,36 @@ function is its own bundle, so an entry for one route says nothing about
 another's copy of `data/rag-index.json`.
 `tests/unit/rag-index-bundling.test.ts` walks the first-party import graph of
 every API route and names any that is missing one.
+
+**NOTHING APPLIES MIGRATIONS AUTOMATICALLY, so a deploy can put code in front of
+a database that has not got the schema it needs.** `npm run db:push` is a person
+at a terminal; no workflow runs it and there is no `vercel.json`. Pages still
+render, and the first anyone hears of it is a rider losing what they typed -
+`save_session_outcome` was missing in production and Save Outcome answered
+`PGRST202 Could not find the function ... in the schema cache` with the notes
+unsaved. `/api/health`'s `schema_contract` check
+(`lib/monitoring/schema-contract.ts`) is what says so now, within fifteen
+minutes, and **a new `supabase.rpc()` call site belongs on its list** or the
+check reports healthy while that feature is the one that is broken.
+`tests/unit/rpc-call-sites.test.ts` is what holds that rule - it sweeps `app/`
+and `lib/` and fails naming any RPC the list does not carry, so this paragraph
+is the reason rather than the enforcement.
+
+It asks the Data API rather than `pg_proc` on purpose, and this is the fact worth
+carrying: **a never-applied migration and a stale PostgREST schema cache are
+byte-identical from a client** - same 404, same `PGRST202`, same message, same
+null `hint` (measured). A catalog check would call the stale-cache case healthy
+while every save failed. What the neighbouring faults answer instead, also
+measured, is what makes an error report worth reading: a missing `execute` grant
+is `403` / `42501`, and a signature that drifted by one parameter is `PGRST202`
+*with* a `hint` naming the signature it did find. `scripts/sql/audit-migrations-against-database.sql`
+reports every migration against a live schema in one read-only query - use it
+rather than `npm run db:status`, which reads a CLI history the hosted project
+has never had. **It is GENERATED** by `scripts/build-migration-audit.mjs` from
+`supabase/migrations/` (`npm run db:audit`), because a hand-kept list of rows
+reports the migration it never heard of as present - the audit answering its own
+question wrongly. Adding a migration means adding its probe there; generation
+fails naming the file until you do.
 
 **`/api/monitoring/ai-health` reads `ai_requests` and every status has to be
 classified.** Refusals, rate limiting and duplicate suppression are not

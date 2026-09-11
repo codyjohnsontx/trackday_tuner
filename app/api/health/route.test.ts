@@ -30,11 +30,20 @@ class ZeroVectorIndexError extends Error {
   }
 }
 
-function supabaseReturning(result: { error: { message: string; code?: string } | null }) {
+function supabaseReturning(
+  result: { error: { message: string; code?: string } | null },
+  // What PostgREST says to the `schema_contract` probes. `22P02` is what a real
+  // stack answers: the function resolved, and the uncoercible probe value was
+  // then rejected before its body ran.
+  rpcResult: { error: { message: string; code?: string } | null } = {
+    error: { code: '22P02', message: 'invalid input syntax for type uuid' },
+  },
+) {
   const limit = vi.fn().mockResolvedValue(result);
   const select = vi.fn(() => ({ limit }));
   const from = vi.fn(() => ({ select }));
-  return { from, select, limit };
+  const rpc = vi.fn().mockResolvedValue(rpcResult);
+  return { from, select, limit, rpc };
 }
 
 interface HealthCheckBody {
@@ -74,7 +83,7 @@ describe('GET /api/health', () => {
     vi.useRealTimers();
   });
 
-  it('answers 200 with both checks passing when the deployment is healthy', async () => {
+  it('answers 200 with every check passing when the deployment is healthy', async () => {
     const response = await GET();
     const body = (await response.json()) as HealthBody;
 
@@ -83,7 +92,59 @@ describe('GET /api/health', () => {
     expect(check(body, 'supabase').status).toBe('ok');
     expect(check(body, 'rag_index').status).toBe('ok');
     expect(check(body, 'rag_index').detail).toBe('3 chunks');
+    expect(check(body, 'schema_contract').status).toBe('ok');
     expect(Number.isNaN(Date.parse(body.checked_at))).toBe(false);
+  });
+
+  // The Save Outcome outage. Nothing applies migrations automatically, so the
+  // deployed code can be ahead of the deployed schema; the rider finds out by
+  // losing what they typed. A `503` here is what makes the scheduled probe in
+  // .github/workflows/monitoring.yml fail instead.
+  it('answers 503 naming the RPC when the Data API cannot resolve it', async () => {
+    createAdminClient.mockReturnValue(
+      supabaseReturning(
+        { error: null },
+        {
+          error: {
+            code: 'PGRST202',
+            message:
+              'Could not find the function public.save_session_outcome(...) in the schema cache',
+          },
+        },
+      ),
+    );
+
+    const response = await GET();
+    const body = (await response.json()) as HealthBody;
+
+    expect(response.status).toBe(503);
+    expect(body.status).toBe('unhealthy');
+    expect(check(body, 'schema_contract').status).toBe('fail');
+    expect(check(body, 'schema_contract').detail).toContain('save_session_outcome');
+    // The other two are untouched: this failure is the schema, not the database.
+    expect(check(body, 'supabase').status).toBe('ok');
+    expect(check(body, 'rag_index').status).toBe('ok');
+  });
+
+  // A probe that never reached PostgREST measured nothing, so the body must not
+  // say the schema is in step. `postgrest-js` resolves a transport failure as an
+  // error carrying an empty `code`, which is not PGRST202 and used to read as a
+  // resolved function - `schema_contract: ok, detail: 3 rpcs` while nothing had
+  // answered.
+  it('does not call the schema in step when the Data API never answered', async () => {
+    createAdminClient.mockReturnValue(
+      supabaseReturning(
+        { error: null },
+        { error: { code: '', message: 'TypeError: fetch failed' } },
+      ),
+    );
+
+    const response = await GET();
+    const body = (await response.json()) as HealthBody;
+
+    expect(response.status).toBe(503);
+    expect(check(body, 'schema_contract').status).toBe('fail');
+    expect(check(body, 'schema_contract').detail).toBe('DataApiUnreachableError');
   });
 
   it('is never served from a cache', async () => {

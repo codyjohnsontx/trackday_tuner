@@ -15,6 +15,10 @@
  *
  * - Postgres is reachable through the Data API
  * - the RAG index actually loads in this bundle
+ * - the Data API still exposes the RPCs the app calls (`schema_contract`), which
+ *   is the Save Outcome outage: nothing applies migrations automatically, so the
+ *   deployed code can be ahead of the deployed schema and only the one feature
+ *   that needs the missing function says so - to the rider, as a lost save
  *
  * `runHealthChecks` never throws. A health endpoint that 500s tells you only
  * that it 500'd; one that answers `503` with a named failing check tells you
@@ -23,6 +27,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { reportError } from '@/lib/monitoring/report-error';
 import { isKnowledgeIndexLoaded, loadKnowledgeIndex } from '@/lib/rag/retriever';
+import { REQUIRED_RPCS, findUnresolvableRpcs } from '@/lib/monitoring/schema-contract';
 
 export type HealthCheckStatus = 'ok' | 'fail';
 
@@ -168,6 +173,37 @@ export async function checkRagIndex(): Promise<HealthCheck> {
   });
 }
 
+/**
+ * The schema-drift check.
+ *
+ * A rider pressing "Save Outcome" against a database missing
+ * `20260716000800` gets `PGRST202 Could not find the function
+ * public.save_session_outcome(...) in the schema cache` and loses what they
+ * typed. Nothing else about the deployment looks wrong, which is why this is
+ * checked rather than waited for.
+ *
+ * `lib/monitoring/schema-contract.ts` owns the list and explains why the probe
+ * goes through the Data API instead of `pg_proc`, and why it cannot execute what
+ * it probes. A failure names the RPCs so the detail says what to go and apply -
+ * these are function names from this repository, not rider data, so unlike the
+ * other checks the detail here is safe to put in a public body.
+ */
+export async function checkSchemaContract(): Promise<HealthCheck> {
+  return timed('schema_contract', async () => {
+    const admin = createAdminClient();
+    const missing = await findUnresolvableRpcs(admin);
+    if (missing.length > 0) {
+      const err = new Error(`Data API cannot resolve: ${missing.join(', ')}.`);
+      // The name carries the list because `timed` reports `err.name` as the
+      // detail, and a check that says only "something drifted" sends the
+      // operator back to a database to find out what.
+      err.name = `MissingRpcError:${missing.join(',')}`;
+      throw err;
+    }
+    return `${REQUIRED_RPCS.length} rpcs`;
+  });
+}
+
 export function summarizeHealth(checks: HealthCheck[], checkedAt: Date): HealthReport {
   return {
     status: checks.some((check) => check.status === 'fail') ? 'unhealthy' : 'ok',
@@ -182,6 +218,6 @@ export function healthHttpStatus(report: HealthReport): 200 | 503 {
 }
 
 export async function runHealthChecks(now: Date = new Date()): Promise<HealthReport> {
-  const checks = await Promise.all([checkSupabase(), checkRagIndex()]);
+  const checks = await Promise.all([checkSupabase(), checkRagIndex(), checkSchemaContract()]);
   return summarizeHealth(checks, now);
 }

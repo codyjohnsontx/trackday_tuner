@@ -17,6 +17,7 @@
     "db:status": "supabase migration list --linked",
     "db:push": "supabase db push",
     "db:new": "supabase migration new",
+    "db:audit": "node scripts/build-migration-audit.mjs",
     "analyze": "ANALYZE=true next build",
     "check:agent-docs": "node scripts/check-agent-docs.mjs",
     "ai:requests": "node scripts/inspect-ai-requests.mjs",

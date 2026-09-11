@@ -36,7 +36,13 @@
    an existing deployment that means applying them before merging the pull
    request that ships the matching caller. Either order leaves a window and both
    were walked in a browser: the mismatched call gets `PGRST202` from PostgREST,
-   the message reaches the rider, nothing is saved and nothing stored is lost.
+   nothing is saved and nothing stored is lost. The rider no longer reads that
+   `PGRST202`: `lib/actions/sessions.ts` passes through only the function's own
+   domain rejections and answers everything else with a sentence saying the save
+   did not happen, sending the real error to `reportError`. So the window is
+   quiet on screen, and what names it is the deployment's own `/api/health` -
+   its `schema_contract` check resolves `replace_session_laps` by parameter name
+   and fails on exactly this drift (see `docs/monitoring.md`).
    Saving laps *and* logging a session are both down for that window -
    `createSession` calls the function even for a session with no laps - while
    reading is unaffected. Each migration's own header carries the detail.

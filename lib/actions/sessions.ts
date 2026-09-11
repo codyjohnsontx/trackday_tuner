@@ -21,6 +21,7 @@ import {
   sessionsMatchTrack,
 } from '@/lib/session-compare';
 import { fetchPreviousSession } from '@/lib/session-previous';
+import { reportError } from '@/lib/monitoring/report-error';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
@@ -82,6 +83,52 @@ const SESSION_LAPS_STALE_READ_CODE = 'TT409';
 const SESSION_LAPS_STALE_READ_MESSAGE =
   'The lap times on this session changed since this page loaded, so nothing was overwritten. Reload the session and try again.';
 
+/**
+ * The codes whose own message is written for a rider, and everything else is a
+ * deployment or transport fault.
+ *
+ * `replace_session_laps` (20260903001500) rejects a request with a bare
+ * `raise exception`, which is `P0001`, and those messages are about THIS
+ * request. `TT409` is its stale-read refusal, which has a written sentence of
+ * its own above. Any OTHER code answers with the CALLER's `saveFailedMessage`
+ * and goes to `reportError`.
+ *
+ * THE DIRECTION IS THE POINT, and it is the same rule and the same reason as
+ * `app/api/sessions/[id]/outcome/route.ts`. This path returned `error.message`
+ * verbatim for everything but `TT409`, so a `replace_session_laps` the Data API
+ * cannot resolve printed raw PostgREST parameter names under a rider's unsaved
+ * lap times with nothing reaching Sentry - the Save Outcome defect exactly, on
+ * the sibling RPC. A transport failure is the same hole: `postgrest-js` resolves
+ * one as an ordinary error carrying an EMPTY `code`, and an unparseable body as
+ * one carrying NO `code`, so neither is on any list of faults anyone thought of.
+ *
+ * Lap times are rider-typed data lost the same way notes are, so assume a
+ * database error reaches the rider until you have read the code that stops it.
+ */
+const SESSION_LAPS_DOMAIN_REJECTION_CODE = 'P0001';
+
+const SESSION_LAPS_SAVE_FAILED_MESSAGE =
+  'Your lap times were not saved - something is wrong on our end, not with what you entered. They are still on this page: copy them somewhere safe before you leave, then try again in a few minutes.';
+
+/**
+ * The same fault on the CREATE path, where the sentence has to name more - and
+ * has to stop short of what this code can actually promise.
+ *
+ * `createSession` inserts the session row first, so a later failure runs
+ * `rollbackCreatedSession` to take it back out. A rider told only that their LAP
+ * TIMES were not saved would copy the laps, leave, and find no session at all,
+ * which is why this sentence is session-level. But it must not say the session
+ * was removed either: that delete reports nothing back and gives up quietly when
+ * it errors or matches no rows - and the two faults correlate, because a dead
+ * transport fails the write AND the delete that follows it. A rider told
+ * "nothing was stored" who then re-enters the session ends up with two.
+ *
+ * So it names what is certain (the save did not finish, and the fault is ours),
+ * and sends them to look before re-entering rather than promising a clean slate.
+ */
+const SESSION_CREATE_SAVE_FAILED_MESSAGE =
+  'Your session did not save completely - something is wrong on our end, not with what you entered. Check your sessions list before you enter it again, in case a partial one was left behind. What you typed is still on this page, so copy anything you need before you leave.';
+
 async function persistSessionLaps(params: {
   supabase: Awaited<ReturnType<typeof createClient>>;
   userId: string;
@@ -96,6 +143,12 @@ async function persistSessionLaps(params: {
    * here as well as in SQL would be two records of one fact, and they drift.
    */
   expectedLaps: CreateSessionLapInput[];
+  /**
+   * What a rider reads when the fault is ours rather than theirs. It belongs to
+   * the CALLER because the two callers lose different things: `replaceSessionLaps`
+   * loses the lap times, `createSession` rolls the whole session back.
+   */
+  saveFailedMessage: string;
 }): Promise<string | null> {
   const validationError = validateLaps(params.laps);
   if (validationError) return validationError;
@@ -106,7 +159,15 @@ async function persistSessionLaps(params: {
     p_expected_laps: params.expectedLaps as unknown as Json,
   });
   if (!error) return null;
-  return error.code === SESSION_LAPS_STALE_READ_CODE ? SESSION_LAPS_STALE_READ_MESSAGE : error.message;
+  if (error.code === SESSION_LAPS_STALE_READ_CODE) return SESSION_LAPS_STALE_READ_MESSAGE;
+  if (error.code === SESSION_LAPS_DOMAIN_REJECTION_CODE) return error.message;
+  reportError('session-laps', new Error(error.message), {
+    reason: error.code,
+    query: 'replace_session_laps',
+    details: error.details,
+    hint: error.hint,
+  });
+  return params.saveFailedMessage;
 }
 
 /**
@@ -729,8 +790,21 @@ export async function createSession(
     .single();
 
   if (error) {
+    // A plain insert, so as with the environment path below there is no `P0001`
+    // class to let through: nothing PostgREST answers here is a rider's to fix.
+    // `enabled_modules` and `extra_modules` arrive with 20260228000200, so a
+    // database behind that migration answered `PGRST204 Could not find the
+    // 'enabled_modules' column of 'sessions' in the schema cache` straight into
+    // the form's sticky bar, with nothing reaching Sentry.
+    reportError('session-create', new Error(error.message), {
+      reason: error.code,
+      table: 'sessions',
+      details: error.details,
+      hint: error.hint,
+      userId: user.id,
+    });
     await rollbackAutoCreatedTrack(supabase, user.id, track);
-    return { ok: false, error: error.message };
+    return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE };
   }
 
   const createdSession = data as Session;
@@ -743,6 +817,7 @@ export async function createSession(
     // The session row was inserted two statements ago, so nothing can be holding
     // laps against it yet.
     expectedLaps: [],
+    saveFailedMessage: SESSION_CREATE_SAVE_FAILED_MESSAGE,
   });
   if (lapError) {
     await rollbackCreatedSession({
@@ -772,10 +847,18 @@ export async function createSession(
       .insert(environmentPayload);
 
     if (environmentError) {
-      console.error('[sessions] session_environment insert failed', {
+      // A plain insert, so there is no `P0001` class to let through the way the
+      // RPC paths do: nothing PostgREST answers here is a rider's to fix, and
+      // `session_environment` arrives with 20260422000400, so a database behind
+      // that migration used to print `PGRST205 Could not find the table ...`
+      // under the form while this rider's whole session was rolled back.
+      reportError('session-create', new Error(environmentError.message), {
+        reason: environmentError.code,
+        table: 'session_environment',
+        details: environmentError.details,
+        hint: environmentError.hint,
         userId: user.id,
         sessionId: createdSession.id,
-        error: environmentError.message,
       });
       await rollbackCreatedSession({
         supabase,
@@ -784,7 +867,7 @@ export async function createSession(
         track,
         failureLog: '[sessions] session rollback failed',
       });
-      return { ok: false, error: environmentError.message };
+      return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE };
     }
   }
 
@@ -930,6 +1013,7 @@ export async function replaceSessionLaps(
     session: sessionRow as Session,
     laps,
     expectedLaps,
+    saveFailedMessage: SESSION_LAPS_SAVE_FAILED_MESSAGE,
   });
   if (persistError) return { ok: false, error: persistError };
 

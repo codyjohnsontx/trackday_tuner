@@ -23,7 +23,7 @@ external account at all**, and two need an account you have to create.
 
 | Piece | Live on merge? | What it needs from you |
 | --- | --- | --- |
-| `/api/health` | **Yes.** Public, no monitoring-specific variable, no account | Nothing new. It does use the app's existing `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, and needs `data/rag-index.json` in the bundle - those are what it checks |
+| `/api/health` | **Yes.** Public, no monitoring-specific variable, no account | Nothing new. It does use the app's existing `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, and needs `data/rag-index.json` in the bundle. Step 1 below lists the checks those feed |
 | `/api/monitoring/ai-health` | No - answers `503 Monitoring is not configured.` | `MONITORING_CRON_SECRET` in Vercel |
 | The 15-minute probe + alert | No - the workflow runs but exits clean with a warning | Two GitHub settings plus the Vercel secret and a redeploy. **No external account** |
 | Sentry | No - the SDK is not initialised at all | A sentry.io account (free tier) you create |
@@ -65,17 +65,35 @@ After the next production deploy:
 curl -i https://<your-app>/api/health
 ```
 
-Expect `HTTP/2 200` and a body naming two checks:
+Expect `HTTP/2 200` and a body naming three checks:
 
 ```json
 {"status":"ok","checked_at":"...","checks":[
   {"name":"supabase","status":"ok","duration_ms":10},
-  {"name":"rag_index","status":"ok","duration_ms":8,"detail":"75 chunks"}]}
+  {"name":"rag_index","status":"ok","duration_ms":8,"detail":"75 chunks"},
+  {"name":"schema_contract","status":"ok","duration_ms":12,"detail":"3 rpcs"}]}
 ```
 
-If `rag_index` says `"status":"fail"`, that is R3 happening again and the deployment
-cannot answer a Race Engineer question. The response is `503` and the failing
-check is named.
+Anything failing answers `503` and names the check, and **which check it is
+decides what to do**:
+
+- `rag_index` - R3 happening again: the index did not reach this bundle, so the
+  deployment cannot answer a Race Engineer question.
+- `schema_contract` - the deployed code is ahead of the deployed schema. The
+  detail names the RPC:
+
+  ```json
+  {"name":"schema_contract","status":"fail","detail":"MissingRpcError:save_session_outcome"}
+  ```
+
+  That one means riders are losing Save Outcome **right now**. It is not an
+  unreachable deployment - pages are serving normally, which is exactly why
+  nothing else says so. Go to "The `schema_contract` check" below: it has the
+  one query that separates an unapplied migration from a stale schema cache,
+  and the audit script that reports every migration at once. A detail of
+  `DataApiUnreachableError` instead means no probe got an answer, so nothing
+  was measured - expect `supabase` to be failing beside it.
+- `supabase` - the database did not answer at all.
 
 ### Step 2 - the 15-minute alert (no external account)
 
@@ -259,7 +277,7 @@ is deliberately not among them: nothing in the app reads it, only
 
 | Piece | Answers | Catches R3? |
 | --- | --- | --- |
-| `/api/health` | Is Postgres reachable, and does the RAG index load *in this bundle*? | Yes, on the first deploy |
+| `/api/health` | Is Postgres reachable, does the RAG index load *in this bundle*, and does the Data API still expose the RPCs this code calls? | Yes, on the first deploy |
 | `/api/monitoring/ai-health` | Has anything failed in the last hour? Error rate, p95 latency | Yes, on the first rider call |
 | `.github/workflows/monitoring.yml` | Runs both every 15 minutes and fails the run when either says no | This is what makes them alerts |
 | Sentry | The stack trace behind an individual failure | Yes - but only because handled errors are reported explicitly, see below |
@@ -277,6 +295,62 @@ function is its own bundle - so `/api/health` has its own
 `outputFileTracingIncludes` entry in `next.config.ts`.
 `tests/unit/rag-index-bundling.test.ts` walks the import graph of every API
 route and fails any that can reach `lib/rag/retriever` without one.
+
+#### The `schema_contract` check
+
+Nothing applies migrations automatically. `npm run db:push` is a person at a
+terminal, no workflow in `.github/workflows/` runs it, and there is no
+`vercel.json` - so a deploy ships code that can be ahead of the database it
+talks to, and every page still renders. The first anyone hears of it is a rider
+losing what they typed:
+
+    Could not find the function public.save_session_outcome(p_notes, ...)
+    in the schema cache
+
+That is what this check exists to say first. It asks the Data API to resolve
+each RPC the app calls (`lib/monitoring/schema-contract.ts` holds the list) and
+fails the deployment with `MissingRpcError:<names>` when it cannot - so the
+detail names the thing to go and apply.
+
+Two properties are deliberate and worth keeping:
+
+- **It asks PostgREST, not `pg_proc`.** Two different faults produce that one
+  error, and they are byte-identical from a client: the migration was never
+  applied, *or* it was and PostgREST's schema cache has not been reloaded. A
+  catalog check would call the second one healthy while every rider's save
+  failed. The schema cache is what a rider's call resolves against, so the
+  schema cache is what gets asked.
+- **The probe cannot run what it probes.** PostgREST resolves an RPC from the
+  parameter *names* and Postgres coerces the *values* afterwards, so each probe
+  carries every real parameter name plus a value no `uuid` or `integer` can
+  parse. It is rejected with `22P02` before any function body runs. That is not
+  decoration: `service_role` holds execute on `consume_beta_rate_limit`, so a
+  well-formed probe would spend a rate-limit slot every fifteen minutes.
+
+**When it fires**, the two causes need different fixes and one query separates
+them. Run it in the SQL editor (read-only):
+
+```sql
+select proname, pronargs from pg_proc where proname = 'save_session_outcome';
+```
+
+- **A row comes back** - the function is there and the schema cache is stale.
+  `notify pgrst, 'reload schema';` fixes it. Supabase installs a
+  `pgrst_ddl_watch` event trigger that reloads on DDL, so this should be rare
+  and self-healing; if it recurs, that trigger is the thing to check.
+- **No row** - the migration is not applied. `scripts/sql/audit-migrations-against-database.sql`
+  is the next step: it reports every migration in `supabase/migrations/`
+  against the live schema in one read-only query, because a database that is
+  missing one is likely to be missing others. It is generated by
+  `scripts/build-migration-audit.mjs` from that directory rather than hand-kept,
+  so it cannot answer for sixteen of seventeen and call them all present. Apply what it names with `npm run db:push` (see the migration
+  notes in `AGENTS.md` - the baseline is dated before the rest of the history,
+  so `db push` needs `--include-all` and the ordering warning is expected).
+
+`npm run db:status` is **not** a substitute for that audit. It compares the
+CLI's recorded *history*, and the hosted project was never built through the
+CLI, so it has no history to compare against - see "A migration in this
+repository is not evidence the hosted project has it" in `AGENTS.md`.
 
 ### `/api/monitoring/ai-health`
 
@@ -423,7 +497,7 @@ add the `crons` entry to `vercel.json`, set `MONITORING_CRON_SECRET` in Vercel
   one Sentry event. So while a dependency is down, the volume is set by how
   often the endpoint is *called* rather than by the outage: the documented
   callers alone (the 15-minute workflow plus a 5-minute external monitor)
-  produce roughly 32 events an hour with both checks failing, and anyone can
+  produce roughly 48 events an hour with all three checks failing, and anyone can
   raise that by looping the URL - during exactly the window Sentry's free tier
   needs to still be accepting events. Accepted because a health check that
   reports nothing defeats its own purpose, and it has to stay reachable by an
