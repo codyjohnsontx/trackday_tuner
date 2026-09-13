@@ -1084,9 +1084,10 @@ have one (`app/api/ai/*/route.test.ts`); they mock Supabase and the model but le
 the guards themselves real, so the refusal they assert is the refusal a rider gets.
 
 The two classifiers are not interchangeable. `classifyRaceEngineerQuestion` also
-refuses out-of-domain requests, an arm that needs setup vocabulary in the
-question or in free text sent in the symptom or intent fields, never in a chip id
-(see that arm's comment in `lib/rag/domain-guard.ts`);
+refuses out-of-domain requests. A question with an off-topic word and no setup
+vocabulary is refused whatever else was sent, and one with neither is let through
+only by setup vocabulary in free text sent as a symptom or intent, never by a chip
+id (see that arm's comment in `lib/rag/domain-guard.ts`).
 `classifyDayPlanRequest` screens only for injection, because a day plan has no
 question - just a track name and two condition strings, which carry no motorsport
 vocabulary and would be refused on every single request. `evaluateAdvicePolicy`
