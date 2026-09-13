@@ -37,7 +37,7 @@ const INDEX_PATH = path.join(REPO_ROOT, 'data', 'rag-index.json');
 
 /**
  * The exit criterion `docs/ai-mvp-spec.md` sets. It is PRINTED, not gated: with
- * 32 cases one case is 3.1%, and a hard floor on an absolute rate turns any
+ * 33 cases one case is 3.0%, and a hard floor on an absolute rate turns any
  * honest golden case the model gets wrong into permanently red CI. What gates
  * is the baseline comparison below, which is also the thing the resume claim is
  * actually about - comparing prompt and retrieval changes before shipping them.

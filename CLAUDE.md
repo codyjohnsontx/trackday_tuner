@@ -1095,7 +1095,7 @@ the model that recommending no change is a valid morning plan, so the default
 ## The RAG Eval Harness
 
 `scripts/eval-rag.mjs` runs the real pipeline over
-`tests/fixtures/rag-eval/golden-cases.json` - 32 requests - and scores what comes
+`tests/fixtures/rag-eval/golden-cases.json` - 33 requests - and scores what comes
 back. **Before this it did none of that.** It read eleven hand-written
 `AdviceResponse` objects, applied four boolean shape predicates, imported nothing
 from `lib/rag/`, and had reported 100% since the day it was written because its
@@ -1145,8 +1145,8 @@ deliberate. The old harness could not detect the largest prompt change in the
 project's history; this one turns it into a red check that says re-record.
 
 **The gate is `eval-baseline.json`, not an absolute threshold.** The 85% in
-`docs/ai-mvp-spec.md` is printed and not enforced: with 32 cases one case is
-3.1%, so a floor turns any honest case the model gets wrong into permanently red
+`docs/ai-mvp-spec.md` is printed and not enforced: with 33 cases one case is
+3.0%, so a floor turns any honest case the model gets wrong into permanently red
 CI. What fails the build is a metric regressing against the committed baseline,
 which is also the thing the claim is about - comparing prompt and retrieval
 changes before shipping. Regressions gate in offline mode only; `--live`

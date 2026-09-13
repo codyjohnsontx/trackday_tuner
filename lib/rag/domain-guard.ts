@@ -166,46 +166,61 @@ const NON_DOMAIN_PATTERNS = [
   /\bwrite code\b/i,
 ];
 
+/**
+ * One word of the setup vocabulary per entry, WITH ITS OWN INFLECTIONS AND
+ * NOTHING ELSE. "The fronts overheat after three laps and hot pressures run over
+ * target" is the same question as its singular rewrite, but while every entry
+ * here was a `\b`-anchored singular it scored zero signals and was refused as
+ * out of domain.
+ *
+ * A noun takes its plural. A word riders also use as a verb for what the vehicle
+ * did, or what they did on it, takes -s, -ed and -ing as well. An inflection is
+ * left out when ordinary English almost always means a different sense by it -
+ * `tired`, `pressured`, `shocked`, `tracking` - because admitting those would
+ * widen what counts as motorsport rather than match how riders write. Adding a
+ * new word is a different change from inflecting one already here, and
+ * `domain-guard.test.ts` pins both halves.
+ */
 const MOTORSPORT_PATTERNS = [
-  /\bsetup\b/i,
-  /\bsession\b/i,
-  /\btrack\b/i,
-  /\blap\b/i,
-  /\btire\b/i,
-  /\btyre\b/i,
-  /\bpressure\b/i,
-  /\bsuspension\b/i,
-  /\brebound\b/i,
-  /\bcompression\b/i,
+  /\bsetups?\b/i,
+  /\bsessions?\b/i,
+  /\btracks?\b/i,
+  /\blap(?:s|ped|ping)?\b/i,
+  /\btires?\b/i,
+  /\btyres?\b/i,
+  /\bpressures?\b/i,
+  /\bsuspensions?\b/i,
+  /\brebound(?:s|ed|ing)?\b/i,
+  /\bcompressions?\b/i,
   /\bdamping\b/i,
-  /\bfork\b/i,
-  /\bshock\b/i,
-  /\bsag\b/i,
-  /\bcamber\b/i,
-  /\btoe\b/i,
-  /\bcaster\b/i,
-  /\bride height\b/i,
-  /\bgeometry\b/i,
+  /\bforks?\b/i,
+  /\bshocks?\b/i,
+  /\bsag(?:s|ged|ging)?\b/i,
+  /\bcambers?\b/i,
+  /\btoe(?:s|d|ing)?\b/i,
+  /\bcasters?\b/i,
+  /\bride heights?\b/i,
+  /\bgeometr(?:y|ies)\b/i,
   /\baero\b/i,
-  /\bwing\b/i,
-  /\bsplitter\b/i,
+  /\bwings?\b/i,
+  /\bsplitters?\b/i,
   /\bgearing\b/i,
-  /\bsprocket\b/i,
-  /\bundersteer\b/i,
-  /\boversteer\b/i,
-  /\bturn[- ]?in\b/i,
-  /\bmid[- ]?corner\b/i,
-  /\bentry\b/i,
-  /\bexit\b/i,
-  /\bgrip\b/i,
+  /\bsprockets?\b/i,
+  /\bundersteer(?:s|ed|ing)?\b/i,
+  /\boversteer(?:s|ed|ing)?\b/i,
+  /\bturn(?:s|ed|ing)?[- ]?ins?\b/i,
+  /\bmid[- ]?corners?\b/i,
+  /\bentr(?:y|ies)\b/i,
+  /\bexit(?:s|ed|ing)?\b/i,
+  /\bgrip(?:s|ped|ping)?\b/i,
   /\btraction\b/i,
-  /\bbrak(?:e|ing)\b/i,
-  /\bchatter\b/i,
-  /\bwallow\b/i,
-  /\bpacking down\b/i,
-  /\bpush(?:es|ing)?\b/i,
-  /\bfront\b/i,
-  /\brear\b/i,
+  /\bbrak(?:es?|ed|ing)\b/i,
+  /\bchatter(?:s|ed|ing)?\b/i,
+  /\bwallow(?:s|ed|ing)?\b/i,
+  /\bpack(?:s|ed|ing)? down\b/i,
+  /\bpush(?:es|ed|ing)?\b/i,
+  /\bfronts?\b/i,
+  /\brears?\b/i,
   /\bchassis\b/i,
 ];
 
@@ -274,6 +289,19 @@ export function classifyRaceEngineerQuestion(
     };
   }
 
+  // THIS ARM IS INERT FOR THE PANEL'S CHIPS. The ids it posts -
+  // `understeer_mid`, `reduce_tire_wear` - are joined by `_`, which is a word
+  // character, so no `\b`-anchored pattern above matches inside one and no chip
+  // ever adds a signal here. Every chip combination the route accepts, with
+  // questions of every kind, was run through this function and none changed a
+  // classification. Free text in these fields still can: the route accepts any
+  // short string, so a request carrying "Understeer on entry" as a symptom
+  // rescues a question with no signal of its own.
+  //
+  // Whether a chip SHOULD be able to rescue such a question is an open product
+  // decision. Teaching the patterns to read ids would decide it one way and
+  // deleting this arm would decide it the other, so it is left as it is until
+  // that decision is made.
   const combinedMotorsportSignals = countMatches(
     [questionText, supportingText].filter(Boolean).join(' '),
     MOTORSPORT_PATTERNS,
