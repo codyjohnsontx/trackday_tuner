@@ -763,6 +763,71 @@ describe('classifyRaceEngineerQuestion inflected vocabulary', () => {
     expect(classifyRaceEngineerQuestion({ question: plural, ...chips })).toEqual(singularResult);
   });
 
+  const refusedOutOfDomain = { decision: 'refuse', reason: 'out_of_domain' };
+  const ALL_INFLECTED_FORMS = INFLECTIONS.flatMap(([, ...inflected]) => inflected);
+
+  // AN INFLECTION NEVER RESCUES A QUESTION CARRYING AN OFF-TOPIC WORD. Every one
+  // of these was refused before inflections counted, and each was let through
+  // once they did, because its everyday plural - chicken wings, forks and
+  // spoons, weather fronts - scored as setup vocabulary and outweighed the
+  // off-topic word. The off-topic check reads the vocabulary exactly as it was.
+  it.each([
+    'Give me a recipe for chicken wings',
+    'Write a poem about forks and spoons',
+    'Recommend a movie with big jump-scare shocks',
+    'Summarize the weather fronts moving in this week',
+    'Translate this email about the building exits',
+    'Help me get to grips with python',
+    'Write an essay about the entries in my diary',
+    'Tell me a joke about being pushed around at work',
+    'Tell me a joke about how stress rears its head',
+    'Write an email to book our therapy sessions',
+    'Write a poem about a cat that laps up milk',
+    'Write an essay on the pressures of modern life',
+    'Recommend a movie with great tracks on the soundtrack',
+  ])('still refuses an off-topic question carrying an everyday plural: %s', (question) => {
+    expect(classifyRaceEngineerQuestion({ question })).toMatchObject(refusedOutOfDomain);
+  });
+
+  // The class rather than the examples: no inflection in the table rescues a
+  // question that carries an off-topic word.
+  it('lets no inflection rescue a question that carries an off-topic word', () => {
+    for (const form of ALL_INFLECTED_FORMS) {
+      expect(
+        classifyRaceEngineerQuestion({ question: `Can you give me a recipe for ${form}?` }),
+        `inflected form: ${form}`,
+      ).toMatchObject(refusedOutOfDomain);
+    }
+  });
+
+  // The symptom and intent fields keep the vocabulary exactly as it was, so an
+  // inflection sent there never rescues a question either. That arm waits on an
+  // open product decision and this change must not move it in either direction.
+  it('lets no inflection in a symptom or intent rescue a question', () => {
+    const NO_SIGNAL = 'Give me a list of the best vacuum cleaners for sale right now.';
+    for (const form of ALL_INFLECTED_FORMS) {
+      expect(
+        classifyRaceEngineerQuestion({ question: NO_SIGNAL, symptoms: [form] }),
+        `symptom: ${form}`,
+      ).toMatchObject(refusedOutOfDomain);
+      expect(
+        classifyRaceEngineerQuestion({ question: NO_SIGNAL, changeIntent: form }),
+        `intent: ${form}`,
+      ).toMatchObject(refusedOutOfDomain);
+    }
+  });
+
+  // A KNOWN AND ACCEPTED BOUNDARY, asserted so it is measured rather than
+  // discovered. With no off-topic word in it, a question whose only vocabulary is
+  // an everyday plural is allowed, exactly as its singular rewrite always was.
+  // It has the same shape as the golden question that motivated this change -
+  // "The fronts overheat after three laps..." - and no word-matching rule can
+  // refuse one and allow the other.
+  it('documents that an everyday plural in a question with no off-topic word is allowed', () => {
+    expect(classifyRaceEngineerQuestion({ question: 'Where can I buy a cheap fork and spoon?' }).decision).toBe('allow');
+    expect(classifyRaceEngineerQuestion({ question: 'Where can I buy cheap forks and spoons?' }).decision).toBe('allow');
+  });
+
   // Inflections of the SAME word, never a new word. These share letters with the
   // vocabulary but are either a different word or, in ordinary English, almost
   // always a different sense of it - tired is fatigue, shocked is surprise,
