@@ -1088,9 +1088,9 @@ refuses out-of-domain requests. A question with an off-topic word is refused unl
 it also names setup vocabulary in the form the list has always matched: a plural
 or other inflection never rescues it ("a recipe for chicken wings" stays refused),
 and nothing sent as a symptom or intent does either. A question with no off-topic
-word is let through by setup vocabulary in any inflection, or by that original
-vocabulary in free text sent as a symptom or intent, never by a chip id (see
-`MOTORSPORT_VOCABULARY` in `lib/rag/domain-guard.ts`).
+word is let through by setup vocabulary in any inflection the table lists, or by
+that original vocabulary in free text sent as a symptom or intent, never by a chip
+id (see `MOTORSPORT_VOCABULARY` in `lib/rag/domain-guard.ts`).
 `classifyDayPlanRequest` screens only for injection, because a day plan has no
 question - just a track name and two condition strings, which carry no motorsport
 vocabulary and would be refused on every single request. `evaluateAdvicePolicy`
