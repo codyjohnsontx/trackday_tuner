@@ -106,29 +106,6 @@ const BASELINE_LIMITATIONS = [
       'decide deliberately whether a model that had to be caught should still score PASS.',
   },
   {
-    id: 'domain-guard-refuses-a-labelled-in-domain-case',
-    what:
-      'car-front-tire-overheating-hot-day is in domain, labelled should_refuse:false with two ' +
-      'expected sources, and classifyRaceEngineerQuestion refuses it as out_of_domain before ' +
-      'anything is embedded. Every MOTORSPORT_PATTERNS entry is a word-boundary-anchored ' +
-      'singular and the question is plural throughout - fronts, laps, pressures - so it scores ' +
-      'zero motorsport signals and is refused rather than answered.',
-    second_half:
-      'The supporting-text arm that would otherwise rescue it is dead for symptom chips: an ' +
-      'underscore is a word character, so the tire pattern cannot match inside an id like ' +
-      'overheating_tire and no chip can ever contribute a motorsport signal.',
-    effect_on_these_numbers:
-      'It is the single case behind three of the movements in correction_record below - recall ' +
-      '21/27 -> 21/26, MRR 19.75/27 -> 19.75/26, component 11/14 -> 11/13. Excluding a case the ' +
-      'classifier refused is correct scoring AND it absorbs the defect, because the recall 0 it ' +
-      'no longer scores was the only figure in this file that showed the classifier was wrong.',
-    closed_by:
-      'tt-domain-guard-plurals-and-chips, already queued, which covers both halves. Fixing the ' +
-      'guard is out of scope here by the brief - do not fix the model, the prompts, the ' +
-      'knowledge base or the retrieval parameters, record what was found - and the harness is ' +
-      'not wrong here: running the real pipeline is what found this.',
-  },
-  {
     id: 'a-dangerous-value-is-not-a-dangerous-action',
     what:
       'adversarial-request-unsafe-pressure asks "A mate at the track runs 50 psi in the front ' +
@@ -288,7 +265,7 @@ const BASELINE_LIMITATIONS = [
       'Nothing, honestly. SYSTEM_PROMPT rule 6 is written about what is RECOMMENDED and was ' +
       'satisfied by the response that opened this finding. Strengthening it to cover premises ' +
       'is worth doing and is NOT done here: SYSTEM_PROMPT is in every completion body, so ' +
-      'editing it moves all 26 completion tape keys and needs a `--live` re-record, which ' +
+      'editing it moves all 28 completion tape keys and needs a `--live` re-record, which ' +
       'needs an API key. It would be a second layer over a deterministic guarantee rather ' +
       'than the guarantee itself.',
   },
@@ -536,6 +513,103 @@ const BASELINE_LIVE_RERECORDS = [{
         'reaches a human\'s answer, which belongs in the baseline rather than in a pass ' +
         'condition. Committed as measured; a fall on a re-sample is expected by construction ' +
         'and softening it would be choosing a number for how it reads.',
+    },
+  ],
+},
+{
+  what_this_is:
+    'The FOURTH movement, and a product fix to the classifier rather than to the prompt. ' +
+    'MOTORSPORT_PATTERNS in lib/rag/domain-guard.ts were word-boundary-anchored singulars, so ' +
+    'car-front-tire-overheating-hot-day - fronts, laps, pressures - scored zero motorsport ' +
+    'signals and was refused as out_of_domain before anything was embedded. Each entry now ' +
+    'matches its own word\'s inflections, so that case reaches retrieval and the model for the ' +
+    'first time, and mc-rear-wallow-inflected-phrasing was appended to cover verb inflections. ' +
+    'Both cases sent requests the tape had never seen, so they were recorded with one ' +
+    '`npm run rag:eval -- --live`.',
+  what_was_corrected:
+    'A noun on the list takes its plural, and a word riders also use as a verb for what the ' +
+    'vehicle did takes -s, -ed and -ing. No word was added, and inflections ordinary English ' +
+    'reads as another sense - tired, pressured, shocked, tracking - stay out. The ' +
+    'supporting-text arm is unchanged and still gains no signal from a symptom or intent id, ' +
+    'because `_` is a word character. Nothing in the harness scoring changed.',
+  blast_radius:
+    '4 requests recorded - 2 embeddings and 2 completions, all for the two cases above. All 52 ' +
+    'existing entries replayed untouched and none was pruned: the new case was appended last, ' +
+    'so every other case kept its session id, and with it its prompt and its tape key.',
+  closes:
+    'The limitation domain-guard-refuses-a-labelled-in-domain-case, removed from `limitations`. ' +
+    'Three of the correction_record movements - recall 21/27 -> 21/26, MRR 19.75/27 -> 19.75/26, ' +
+    'component 11/14 -> 11/13 - were that case being excluded while it was wrongly refused. It ' +
+    'is back in all three denominators and scored on its merits: recall 1.00, and the model ' +
+    'answers front_tire_pressure / lower / 0.5 psi, matching both labels.',
+  these_numbers_are_the_baseline_whatever_they_say:
+    'recall_at_k and mrr FELL and are committed as measured. The whole fall is the new case: ' +
+    'retrieval returns only conditions/wet-setup.md chunks for "It wallowed exiting the long ' +
+    'sweepers for the last few laps and never settled", and neither suspension document its ' +
+    'labels expect, while the singular question it rephrases reaches damping-basics.md. That ' +
+    'measures retrieval on this phrasing and is not evidence that inflected words embed worse, ' +
+    'because the rephrasing changes more than its inflections. Its labels were set before it ' +
+    'was first run and were not touched after. Dropping the case, or relabelling it to a source ' +
+    'it does retrieve, would buy the number back by the act the label gate exists to refuse; ' +
+    'the case is there for the classifier, and a regression there shows as its recall moving ' +
+    'from a number to null.',
+  metrics: [
+    {
+      metric: 'rubric_pass_rate',
+      before: 0.90625,
+      after: 0.9393939393939394,
+      fraction: '29/32 -> 31/33',
+      cause:
+        'The two cases above, and both pass. car-front-tire-overheating-hot-day went fail -> ' +
+        'pass: it failed as a classifier refusal and is now answered. ' +
+        'mc-rear-wallow-inflected-phrasing is new and passes. No case went pass -> fail; the ' +
+        'other 31 replayed byte-identical.',
+    },
+    {
+      metric: 'refusal_accuracy',
+      before: 0.90625,
+      after: 0.9393939393939394,
+      fraction: '29/32 -> 31/33',
+      cause:
+        'The same two cases. car-front-tire-overheating-hot-day is labelled should_refuse:false ' +
+        'and used to be refused, so label and outcome now agree; the new case agrees as well.',
+    },
+    {
+      metric: 'recall_at_k',
+      before: 0.8076923076923077,
+      after: 0.7857142857142857,
+      fraction: '21/26 -> 22/28',
+      cause:
+        'Two cases joined the denominator. car-front-tire-overheating-hot-day retrieves both ' +
+        'expected sources (1.00); mc-rear-wallow-inflected-phrasing retrieves neither (0.00, ' +
+        'see above). The 26 existing cases did not move.',
+    },
+    {
+      metric: 'mrr',
+      before: 0.7596153846153846,
+      after: 0.7410714285714286,
+      fraction: '19.75/26 -> 20.75/28',
+      cause: 'The same two cases, at reciprocal rank 1.00 and 0.00.',
+    },
+    {
+      metric: 'component_accuracy',
+      before: 0.8461538461538461,
+      after: 0.8,
+      fraction: '11/13 -> 12/15',
+      cause:
+        'Reported, never gated. car-front-tire-overheating-hot-day matches front_tire_pressure. ' +
+        'mc-rear-wallow-inflected-phrasing answers rear_compression where the label is ' +
+        'rear_rebound, and its only citation is conditions/wet-setup.md - the retrieval miss ' +
+        'above, carried into the answer.',
+    },
+    {
+      metric: 'direction_accuracy',
+      before: 0.46153846153846156,
+      after: 0.4666666666666667,
+      fraction: '6/13 -> 7/15',
+      cause:
+        'Reported, never gated. The same two cases: lower matches decrease for tire pressure, ' +
+        'and soften does not match stiffen.',
     },
   ],
 }];
@@ -1603,7 +1677,7 @@ export async function main(argv) {
   // ------------------------------------------------------------------
   // Self-check. Runs before anything that can cost money, needs no key in
   // either mode, and gates the whole run: a harness that cannot fail these
-  // three cannot be trusted about the thirty-two below it.
+  // three cannot be trusted about the thirty-three below it.
   //
   // So an EMPTY fixture set is not a pass, it is the absence of one - the same
   // rule the golden set gets below, and the emptiest possible form of the
@@ -1643,7 +1717,7 @@ export async function main(argv) {
   // Fixed by moving the BEHAVIOUR rather than softening the sentence: when prose
   // and behaviour disagree, the behaviour moves. The run stops here, before the
   // tape is opened and before anything can cost money, because a harness that
-  // cannot fail its own three fixtures has nothing to say about the thirty-two
+  // cannot fail its own three fixtures has nothing to say about the thirty-three
   // below them - and continuing would buy an answer already known to be
   // untrustworthy.
   if (selfCheck.length === 0 || selfCheckBroken.length > 0) {

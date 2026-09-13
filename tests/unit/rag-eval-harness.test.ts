@@ -371,7 +371,10 @@ describe('the baseline the gate compares against', () => {
     // disagreement with `coverage.scored_cases` means the file was edited.
     const trimmed = { ...usable, per_case: { ...usable.per_case } };
     delete trimmed.per_case[Object.keys(trimmed.per_case)[0]];
-    expect(describeUnusableBaseline(trimmed)).toMatch(/records 32 scored cases but 31 per_case entries/);
+    const scored = usable.coverage.scored_cases;
+    expect(describeUnusableBaseline(trimmed)).toMatch(
+      `records ${scored} scored cases but ${scored - 1} per_case entries`,
+    );
   });
 
   it.each([
@@ -421,18 +424,19 @@ describe('the baseline the gate compares against', () => {
 
   it('refuses a gated metric with no value over a population that was not empty', () => {
     // Presence alone is the right rule for a coverage figure and not for a
-    // gated metric's value: a null `rubric_pass_rate` beside 32 scored cases
+    // gated metric's value: a null `rubric_pass_rate` beside every scored case
     // leaves `previous` null, so all four rates print `(no baseline)` and the
     // run exits 0 - the exact signature this function exists to stop, reached
-    // by a file that keeps every key, every coverage figure and all 32 rows.
+    // by a file that keeps every key, every coverage figure and every row.
     const nulled = { ...usable, metrics: { ...usable.metrics } };
     for (const key of ['rubric_pass_rate', 'recall_at_k', 'mrr', 'refusal_accuracy']) {
       nulled.metrics[key] = null;
     }
+    const { scored_cases: scored, retrieval_cases: retrieval } = usable.coverage;
     expect(describeUnusableBaseline(nulled)).toBe(
       'eval-baseline.json has no number for gated metric(s) whose population was not empty: ' +
-        'rubric_pass_rate (over 32 scored_cases), recall_at_k (over 26 retrieval_cases), ' +
-        'mrr (over 26 retrieval_cases), refusal_accuracy (over 32 scored_cases)',
+        `rubric_pass_rate (over ${scored} scored_cases), recall_at_k (over ${retrieval} retrieval_cases), ` +
+        `mrr (over ${retrieval} retrieval_cases), refusal_accuracy (over ${scored} scored_cases)`,
     );
   });
 

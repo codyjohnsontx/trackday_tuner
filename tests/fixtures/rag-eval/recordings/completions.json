@@ -247,6 +247,47 @@
         "system_fingerprint": "fp_4f8a068d33"
       }
     },
+    "392d9e2eebbc3264d91cefe50fb15315": {
+      "status": 200,
+      "recorded_at": "2026-09-13T05:04:00.695Z",
+      "request_summary": "<user_data> Question: It wallowed exiting the long sweepers for the last few laps and never settled. What should I adjus",
+      "response": {
+        "id": "chatcmpl-ENWfe9IqKbacRGoCxMpTGFWjMY61C",
+        "object": "chat.completion",
+        "created": 1789275838,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"The rear wallowing you experienced suggests that the rear suspension may be too stiff in compression, preventing it from settling properly during cornering. I recommend softening the rear compression by 1 click to help the rear tire maintain better contact with the track surface and improve stability in the long sweepers.\",\"recommended_changes\":[{\"component\":\"rear_compression\",\"direction\":\"soften\",\"magnitude\":\"1 click\",\"reason\":\"To improve rear tire contact and stability during cornering.\"}],\"tradeoffs\":[\"Softer compression may lead to increased bottoming out if the preload is not sufficient.\"],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/conditions/wet-setup.md\",\"snippet\":\"Soften compression slightly (1-2 clicks) to help the tires conform to the wet surface and find mechanical grip.\"}],\"prediction\":{\"expected_effect\":\"Improved rear stability and reduced wallowing in long sweepers.\",\"day_trend\":\"Track conditions are stable, but monitor tire pressures as they may increase with temperature.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase behavior\"]},\"personal_evidence\":[{\"label\":\"Current session notes\",\"detail\":\"Rear keeps moving under me through the long sweepers and never settles.\",\"source_session_id\":\"00000000-0000-4000-8000-000000000033\"}],\"data_used\":{\"manual\":true,\"weather\":false,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2362,
+          "completion_tokens": 346,
+          "total_tokens": 2708,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
     "4ae819b2b6b631aae97546e04a208b46": {
       "status": 200,
       "recorded_at": "2026-09-11T06:38:55.496Z",
@@ -890,6 +931,47 @@
           "total_tokens": 2764,
           "prompt_tokens_details": {
             "cached_tokens": 1024,
+            "audio_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "audio_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          }
+        },
+        "service_tier": "default",
+        "system_fingerprint": "fp_4f8a068d33"
+      }
+    },
+    "da75eab7d338fb972dfba98064770aea": {
+      "status": 200,
+      "recorded_at": "2026-09-13T05:03:57.264Z",
+      "request_summary": "<user_data> Question: The fronts overheat after three laps on this hot day and hot pressures run over target. What shoul",
+      "response": {
+        "id": "chatcmpl-ENWfb6j80KehQEuoUpSfzo5ShEg3t",
+        "object": "chat.completion",
+        "created": 1789275835,
+        "model": "gpt-4o-mini-2024-07-18",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"summary\":\"To address the overheating front tires, I recommend lowering the front tire pressure by 0.5 psi. This small adjustment may help bring the hot pressures back toward target and improve tire performance during the session.\",\"recommended_changes\":[{\"component\":\"front_tire_pressure\",\"direction\":\"lower\",\"magnitude\":\"0.5 psi\",\"reason\":\"Hot pressures are running over target, which can lead to overheating and reduced grip.\"}],\"tradeoffs\":[\"Lowering tire pressure may slightly reduce initial responsiveness but can improve overall tire performance and longevity.\"],\"confidence\":\"medium\",\"safety_notes\":[\"This is informational only. You are responsible for vehicle safety and on-track conduct.\",\"Make one change at a time and re-test for a full session before stacking another change.\"],\"citations\":[{\"source\":\"docs/knowledge-base/tires/pressure-basics.md\",\"snippet\":\"Front pushing mid-corner after a pressure increase: you likely raised the front beyond its optimal operating window. Try dropping 0.5 psi.\"}],\"prediction\":{\"expected_effect\":\"Improved tire temperature management and grip during the session.\",\"day_trend\":\"Hot conditions may continue to affect tire performance; monitor pressures closely.\",\"watch_items\":[\"hot pressures\",\"tire wear\",\"corner phase performance\"]},\"personal_evidence\":[{\"label\":\"Current session tire pressures\",\"detail\":\"Front tire pressure is currently at 32.0 psi, which is above target after three laps.\",\"source_session_id\":\"00000000-0000-4000-8000-000000000030\"}],\"data_used\":{\"manual\":true,\"weather\":false,\"history\":false,\"feedback\":false,\"lap_data\":false,\"telemetry\":false},\"refusal\":null}",
+              "refusal": null,
+              "annotations": []
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2526,
+          "completion_tokens": 343,
+          "total_tokens": 2869,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
             "audio_tokens": 0
           },
           "completion_tokens_details": {
