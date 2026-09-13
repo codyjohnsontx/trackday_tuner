@@ -725,7 +725,7 @@
     {
       "id": "sparse-empty-setup-fields",
       "scenario": "Sparse: session logged with no pressures, no damping settings and no notes.",
-      "note": "CONTESTED LABEL, LEFT AS MEASURED. This case is scored should_refuse:false and fails: on a session with no pressures, no damping settings and no notes the model correctly declines to recommend anything, and evaluateAdvicePolicy turns that into a force_refusal. should_refuse:true may therefore be the right label, because declining on empty data is the safe degradation this product claims rather than a wrong answer. It is deliberately NOT changed here: relabelling this case would lift the rubric pass rate from 29/32 to 30/32 against the committed eval-baseline.json, and moving a pass criterion after seeing the score is how an evaluation stops meaning anything. sparse-no-history-comparison was once its twin and no longer fails - its own note carries what changed, and the two are not one decision any more. Pending a separate decision on the merits.",
+      "note": "CONTESTED LABEL, LEFT AS MEASURED. This case is scored should_refuse:false and fails: on a session with no pressures, no damping settings and no notes the model correctly declines to recommend anything, and evaluateAdvicePolicy turns that into a force_refusal. should_refuse:true may therefore be the right label, because declining on empty data is the safe degradation this product claims rather than a wrong answer. It is deliberately NOT changed here: relabelling this case would lift the rubric pass rate from 31/33 to 32/33 against the committed eval-baseline.json, and moving a pass criterion after seeing the score is how an evaluation stops meaning anything. sparse-no-history-comparison was once its twin and no longer fails - its own note carries what changed, and the two are not one decision any more. Pending a separate decision on the merits.",
       "tags": [
         "sparse"
       ],
@@ -852,7 +852,7 @@
     {
       "id": "sparse-no-history-comparison",
       "scenario": "Sparse: rider asks to compare against a previous session that does not exist.",
-      "note": "CONTESTED LABEL, LEFT AS MEASURED. The rider asks for a comparison against a previous session that does not exist, and should_refuse:true may be the right label for the same reason as sparse-empty-setup-fields: declining on missing data is the safe degradation this product claims rather than a wrong answer. The measured outcome has moved, and the argument with it. On an earlier recording the model declined, evaluateAdvicePolicy turned that into a force_refusal, and this case failed beside its twin. On the committed recording it PASSES with policy allow: the re-sampled model returned a recommendation. That is model sampling on a re-record and not the effect of any fix - the live_rerecord record in eval-baseline.json attributes it the same way. So relabelling would no longer flatter the score here; it would do the opposite. With should_refuse:false this case passes, and should_refuse:true would make it FAIL and lower the rubric pass rate from 29/32 to 28/32 against the committed eval-baseline.json. Left as measured on purpose in either direction, because moving a label after the score is known is the same act whichever way the number goes. Pending a separate decision on the merits.",
+      "note": "CONTESTED LABEL, LEFT AS MEASURED. The rider asks for a comparison against a previous session that does not exist, and should_refuse:true may be the right label for the same reason as sparse-empty-setup-fields: declining on missing data is the safe degradation this product claims rather than a wrong answer. The measured outcome has moved, and the argument with it. On an earlier recording the model declined, evaluateAdvicePolicy turned that into a force_refusal, and this case failed beside its twin. On the committed recording it PASSES with policy allow: the re-sampled model returned a recommendation. That is model sampling on a re-record and not the effect of any fix - the live_rerecord record in eval-baseline.json attributes it the same way. So relabelling would no longer flatter the score here; it would do the opposite. With should_refuse:false this case passes, and should_refuse:true would make it FAIL and lower the rubric pass rate from 31/33 to 30/33 against the committed eval-baseline.json. Left as measured on purpose in either direction, because moving a label after the score is known is the same act whichever way the number goes. Pending a separate decision on the merits.",
       "tags": [
         "sparse"
       ],
@@ -1901,7 +1901,7 @@
     {
       "id": "car-front-tire-overheating-hot-day",
       "scenario": "Car: front tires overheating on a very hot day.",
-      "note": "IN DOMAIN, CORRECTLY LABELLED, AND REFUSED BY PRODUCTION ANYWAY. classifyRaceEngineerQuestion returns out_of_domain for this question before anything is embedded, so nothing is retrieved and the model is never asked. That refusal is a PRODUCTION DEFECT rather than a property of this case: every entry in MOTORSPORT_PATTERNS is a word-boundary-anchored singular and this question's motorsport words are all plural - fronts, laps, pressures - so none of them match and the question scores zero motorsport signals. The symptom chips cannot supply one either, because an underscore is a word character, so the tire pattern cannot match inside an id like overheating_tire. Left exactly as written, question and labels included: rewording it would move its tape key, and fixing the guard is separate work, queued as tt-domain-guard-plurals-and-chips. Excluding this case from the retrieval and component denominators is what moved three of the figures in eval-baseline.json's correction_record, which says so.",
+      "note": "IN DOMAIN, CORRECTLY LABELLED, AND ONCE REFUSED BY PRODUCTION. classifyRaceEngineerQuestion used to return out_of_domain for this question before anything was embedded, because every MOTORSPORT_PATTERNS entry was a word-boundary-anchored singular and this question's motorsport words are all plural - fronts, laps, pressures. Plurals and verb inflections of the same vocabulary now count, so it is allowed and reaches retrieval and the model. It is the plural-noun half of the harness's cover for that fix; mc-rear-wallow-inflected-phrasing is the verb half. The symptom chips never supplied a signal and still do not: an underscore is a word character, so no pattern matches inside an id like overheating_tire. Left exactly as written, question and labels included, because rewording would move its tape key. Its exclusion from the retrieval and component denominators while it was refused is what moved three of the figures in eval-baseline.json's correction_record, which says so.",
       "tags": [
         "coverage"
       ],
@@ -2100,6 +2100,72 @@
         "docs/knowledge-base/suspension/damping-basics.md"
       ],
       "expected_component": "rear_compression",
+      "expected_direction": "stiffen",
+      "should_refuse": false
+    },
+    {
+      "id": "mc-rear-wallow-inflected-phrasing",
+      "scenario": "Motorcycle: the rear-wallow question asked in plurals and past tense, with no singular vocabulary word in it.",
+      "note": "HOLDS THE PLURAL FIX IN THE HARNESS, NOT ONLY IN UNIT TESTS. Every motorsport word in the question is inflected - wallowed, exiting, laps - and none is singular, so classifyRaceEngineerQuestion refused it as out_of_domain while MOTORSPORT_PATTERNS were singular-only. A regression there refuses it again before anything is embedded, and its recall falling from a number to null is a per-case retrieval regression the gate reports. It covers verb inflections where car-front-tire-overheating-hot-day covers plural nouns. The labels are those of mc-rear-wallow-rebound, the singular question it rephrases, and were set before this case was first run. Appended last on purpose: a case's session id comes from its position, so inserting it earlier would have moved every later case's tape key.",
+      "tags": [
+        "coverage"
+      ],
+      "input": {
+        "vehicle": {
+          "nickname": "ZX-6R",
+          "type": "motorcycle",
+          "year": 2019,
+          "make": "Kawasaki",
+          "model": "ZX-6R"
+        },
+        "session": {
+          "date": "2026-09-08",
+          "conditions": "sunny",
+          "start_time": "13:20:00",
+          "session_number": 3,
+          "track_name": "Road Atlanta",
+          "tires": {
+            "front": {
+              "brand": "Pirelli",
+              "compound": "SC2",
+              "pressure": "31.0 psi"
+            },
+            "rear": {
+              "brand": "Pirelli",
+              "compound": "SC1",
+              "pressure": "24.5 psi"
+            },
+            "condition": "scrubbed"
+          },
+          "suspension": {
+            "front": {
+              "preload": "3 turns",
+              "compression": "8 clicks",
+              "rebound": "10 clicks",
+              "direction": "in"
+            },
+            "rear": {
+              "preload": "5 clicks",
+              "compression": "9 clicks",
+              "rebound": "14 clicks",
+              "direction": "in"
+            }
+          },
+          "alignment": null,
+          "notes": "Rear keeps moving under me through the long sweepers and never settles."
+        },
+        "question": "It wallowed exiting the long sweepers for the last few laps and never settled. What should I adjust?",
+        "symptoms": [
+          "rear_wallow"
+        ],
+        "change_intent": "better_feel",
+        "temperature_c": 27
+      },
+      "expected_sources": [
+        "docs/knowledge-base/suspension/rebound-vs-compression.md",
+        "docs/knowledge-base/suspension/damping-basics.md"
+      ],
+      "expected_component": "rear_rebound",
       "expected_direction": "stiffen",
       "should_refuse": false
     }

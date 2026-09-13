@@ -166,48 +166,84 @@ const NON_DOMAIN_PATTERNS = [
   /\bwrite code\b/i,
 ];
 
-const MOTORSPORT_PATTERNS = [
-  /\bsetup\b/i,
-  /\bsession\b/i,
-  /\btrack\b/i,
-  /\blap\b/i,
-  /\btire\b/i,
-  /\btyre\b/i,
-  /\bpressure\b/i,
-  /\bsuspension\b/i,
-  /\brebound\b/i,
-  /\bcompression\b/i,
-  /\bdamping\b/i,
-  /\bfork\b/i,
-  /\bshock\b/i,
-  /\bsag\b/i,
-  /\bcamber\b/i,
-  /\btoe\b/i,
-  /\bcaster\b/i,
-  /\bride height\b/i,
-  /\bgeometry\b/i,
-  /\baero\b/i,
-  /\bwing\b/i,
-  /\bsplitter\b/i,
-  /\bgearing\b/i,
-  /\bsprocket\b/i,
-  /\bundersteer\b/i,
-  /\boversteer\b/i,
-  /\bturn[- ]?in\b/i,
-  /\bmid[- ]?corner\b/i,
-  /\bentry\b/i,
-  /\bexit\b/i,
-  /\bgrip\b/i,
-  /\btraction\b/i,
-  /\bbrak(?:e|ing)\b/i,
-  /\bchatter\b/i,
-  /\bwallow\b/i,
-  /\bpacking down\b/i,
-  /\bpush(?:es|ing)?\b/i,
-  /\bfront\b/i,
-  /\brear\b/i,
-  /\bchassis\b/i,
+/**
+ * The setup vocabulary, one word per row: the pattern as it matched before
+ * inflections counted, then the same word with its own inflections. A noun
+ * takes its plural; a word riders also use as a verb for what the vehicle did
+ * takes -s, -ed and -ing as well. An inflection ordinary English almost always
+ * reads as another sense - `tired`, `pressured`, `shocked`, `tracking` - is left
+ * out, and no row adds a new word. A row with no second pattern has no
+ * inflection worth matching.
+ *
+ * THE TWO COLUMNS ARE READ BY DIFFERENT CHECKS, AND THAT IS THE DESIGN. "The
+ * fronts overheat after three laps and hot pressures run over target" is the
+ * same question as its singular rewrite, and while only the first column existed
+ * it was refused as out of domain. But an inflection also carries everyday
+ * senses into a question - chicken wings, forks and spoons, weather fronts - and
+ * while the second column fed the off-topic check, "Give me a recipe for chicken
+ * wings" scored a setup signal that outweighed `recipe` and reached the model.
+ * So:
+ *
+ * - the off-topic check and the symptom and intent fields read the first column
+ *   only, the vocabulary they always had, so an inflection can never rescue a
+ *   question carrying an off-topic word, and one sent as a symptom or intent
+ *   never rescues anything;
+ * - the second column counts in the question itself and nowhere else, and only
+ *   once that check has found no off-topic word in it.
+ *
+ * What that leaves open is a question with no off-topic word whose only
+ * vocabulary is an everyday plural - "Where can I buy cheap forks and spoons?".
+ * It is allowed, as its singular rewrite always was, and it has the same shape
+ * as the plural question that motivated this, so no word-matching rule can
+ * refuse one and allow the other. `domain-guard.test.ts` pins every half.
+ */
+const MOTORSPORT_VOCABULARY: ReadonlyArray<readonly [asBefore: RegExp, inflected?: RegExp]> = [
+  [/\bsetup\b/i, /\bsetups?\b/i],
+  [/\bsession\b/i, /\bsessions?\b/i],
+  [/\btrack\b/i, /\btracks?\b/i],
+  [/\blap\b/i, /\blap(?:s|ped|ping)?\b/i],
+  [/\btire\b/i, /\btires?\b/i],
+  [/\btyre\b/i, /\btyres?\b/i],
+  [/\bpressure\b/i, /\bpressures?\b/i],
+  [/\bsuspension\b/i, /\bsuspensions?\b/i],
+  [/\brebound\b/i, /\brebound(?:s|ed|ing)?\b/i],
+  [/\bcompression\b/i, /\bcompressions?\b/i],
+  [/\bdamping\b/i],
+  [/\bfork\b/i, /\bforks?\b/i],
+  [/\bshock\b/i, /\bshocks?\b/i],
+  [/\bsag\b/i, /\bsag(?:s|ged|ging)?\b/i],
+  [/\bcamber\b/i, /\bcambers?\b/i],
+  [/\btoe\b/i, /\btoe(?:s|d|ing)?\b/i],
+  [/\bcaster\b/i, /\bcasters?\b/i],
+  [/\bride height\b/i, /\bride heights?\b/i],
+  [/\bgeometry\b/i, /\bgeometr(?:y|ies)\b/i],
+  [/\baero\b/i],
+  [/\bwing\b/i, /\bwings?\b/i],
+  [/\bsplitter\b/i, /\bsplitters?\b/i],
+  [/\bgearing\b/i],
+  [/\bsprocket\b/i, /\bsprockets?\b/i],
+  [/\bundersteer\b/i, /\bundersteer(?:s|ed|ing)?\b/i],
+  [/\boversteer\b/i, /\boversteer(?:s|ed|ing)?\b/i],
+  [/\bturn[- ]?in\b/i, /\bturn(?:s|ed|ing)?[- ]?ins?\b/i],
+  [/\bmid[- ]?corner\b/i, /\bmid[- ]?corners?\b/i],
+  [/\bentry\b/i, /\bentr(?:y|ies)\b/i],
+  [/\bexit\b/i, /\bexit(?:s|ed|ing)?\b/i],
+  [/\bgrip\b/i, /\bgrip(?:s|ped|ping)?\b/i],
+  [/\btraction\b/i],
+  [/\bbrak(?:e|ing)\b/i, /\bbrak(?:es?|ed|ing)\b/i],
+  [/\bchatter\b/i, /\bchatter(?:s|ed|ing)?\b/i],
+  [/\bwallow\b/i, /\bwallow(?:s|ed|ing)?\b/i],
+  [/\bpacking down\b/i, /\bpack(?:s|ed|ing)? down\b/i],
+  [/\bpush(?:es|ing)?\b/i, /\bpush(?:es|ed|ing)?\b/i],
+  [/\bfront\b/i, /\bfronts?\b/i],
+  [/\brear\b/i, /\brears?\b/i],
+  [/\bchassis\b/i],
 ];
+
+const MOTORSPORT_PATTERNS = MOTORSPORT_VOCABULARY.map(([asBefore]) => asBefore);
+const INFLECTED_MOTORSPORT_PATTERNS = MOTORSPORT_VOCABULARY.map(
+  ([asBefore, inflected]) => inflected ?? asBefore,
+);
 
 const PROMPT_INJECTION_MESSAGE =
   'I can only help with track setup questions grounded in this session. Ask what the vehicle did on track and what small setup change to try next.';
@@ -274,12 +310,36 @@ export function classifyRaceEngineerQuestion(
     };
   }
 
+  // THIS ARM IS INERT FOR THE PANEL'S CHIPS. The ids it posts -
+  // `understeer_mid`, `reduce_tire_wear` - are joined by `_`, which is a word
+  // character, so no `\b`-anchored pattern above matches inside one and no chip
+  // ever adds a signal here. Every chip combination the route accepts, with
+  // questions of every kind, was run through this function and none changed a
+  // classification. Free text in these fields still can: the route accepts any
+  // short string, so a request carrying "Understeer on entry" as a symptom
+  // rescues a question with no signal of its own. That free text is read against
+  // the vocabulary as it always matched, so an inflection sent there counts for
+  // nothing - see MOTORSPORT_VOCABULARY.
+  //
+  // Whether a chip SHOULD be able to rescue such a question is an open product
+  // decision. Teaching the patterns to read ids would decide it one way and
+  // deleting this arm would decide it the other, so it is left as it is until
+  // that decision is made.
   const combinedMotorsportSignals = countMatches(
     [questionText, supportingText].filter(Boolean).join(' '),
     MOTORSPORT_PATTERNS,
   );
 
-  if (combinedMotorsportSignals === 0 && questionNonDomainSignals === 0) {
+  // Inflections count here and nowhere else: in the question itself, which the
+  // off-topic check above has already cleared of any off-topic word or rescued
+  // with vocabulary in its original form.
+  const questionInflectedSignals = countMatches(questionText, INFLECTED_MOTORSPORT_PATTERNS);
+
+  if (
+    combinedMotorsportSignals === 0 &&
+    questionInflectedSignals === 0 &&
+    questionNonDomainSignals === 0
+  ) {
     return {
       decision: 'refuse',
       reason: 'out_of_domain',

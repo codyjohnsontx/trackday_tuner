@@ -654,5 +654,193 @@ describe('classifyRaceEngineerQuestion supporting fields', () => {
       }).decision,
     ).toBe('allow');
   });
+
+  // PINS TODAY'S BEHAVIOUR, NOT A RULING. Whether a chip may rescue a question
+  // with no motorsport signal of its own is an open product decision. Until it
+  // is made, no id the panel posts supplies any signal: `_` is a word character,
+  // so no `\b`-anchored pattern matches inside `overheating_tire`. This test
+  // changes when that decision is made; it also catches a pattern rewrite that
+  // starts reading inside ids by accident.
+  it('lets no symptom or intent id the panel posts supply a motorsport signal', () => {
+    const NO_SIGNAL = 'Any ideas after today?';
+    const refused = { decision: 'refuse', reason: 'out_of_domain' };
+    expect(classifyRaceEngineerQuestion({ question: NO_SIGNAL })).toMatchObject(refused);
+    for (const symptom of REAL_SYMPTOM_IDS) {
+      expect(
+        classifyRaceEngineerQuestion({ question: NO_SIGNAL, symptoms: [symptom] }),
+        `symptom id: ${symptom}`,
+      ).toMatchObject(refused);
+    }
+    for (const intent of REAL_INTENTS) {
+      expect(
+        classifyRaceEngineerQuestion({ question: NO_SIGNAL, changeIntent: intent }),
+        `intent id: ${intent}`,
+      ).toMatchObject(refused);
+    }
+    expect(
+      classifyRaceEngineerQuestion({
+        question: NO_SIGNAL,
+        symptoms: REAL_SYMPTOM_IDS.slice(0, 8),
+        changeIntent: 'reduce_tire_wear',
+      }),
+    ).toMatchObject(refused);
+  });
+});
+
+describe('classifyRaceEngineerQuestion inflected vocabulary', () => {
+  // A rider who writes in plurals is asking the same question as one who writes
+  // in singulars. The first row of each entry is a form the vocabulary matched
+  // before inflections counted; every form after it must classify exactly like
+  // that one. The carrier has no signal of either kind, so the word under test
+  // is the only thing that can make it allow.
+  const carrier = (word: string) => `Notes from today: ${word}. Any ideas?`;
+
+  const INFLECTIONS: Array<[matched: string, ...inflected: string[]]> = [
+    ['setup', 'setups'],
+    ['session', 'sessions'],
+    ['track', 'tracks'],
+    ['lap', 'laps', 'lapped', 'lapping'],
+    ['tire', 'tires'],
+    ['tyre', 'tyres'],
+    ['pressure', 'pressures'],
+    ['suspension', 'suspensions'],
+    ['rebound', 'rebounds', 'rebounded', 'rebounding'],
+    ['compression', 'compressions'],
+    ['fork', 'forks'],
+    ['shock', 'shocks'],
+    ['sag', 'sags', 'sagged', 'sagging'],
+    ['camber', 'cambers'],
+    ['toe', 'toes', 'toed', 'toeing'],
+    ['caster', 'casters'],
+    ['ride height', 'ride heights'],
+    ['geometry', 'geometries'],
+    ['wing', 'wings'],
+    ['splitter', 'splitters'],
+    ['sprocket', 'sprockets'],
+    ['understeer', 'understeers', 'understeered', 'understeering'],
+    ['oversteer', 'oversteers', 'oversteered', 'oversteering'],
+    ['turn-in', 'turn-ins', 'turns in', 'turned in', 'turning in'],
+    ['mid-corner', 'mid-corners'],
+    ['entry', 'entries'],
+    ['exit', 'exits', 'exited', 'exiting'],
+    ['grip', 'grips', 'gripped', 'gripping'],
+    ['brake', 'brakes', 'braked'],
+    ['chatter', 'chatters', 'chattered', 'chattering'],
+    ['wallow', 'wallows', 'wallowed', 'wallowing'],
+    ['packing down', 'pack down', 'packs down', 'packed down'],
+    ['push', 'pushed'],
+    ['front', 'fronts'],
+    ['rear', 'rears'],
+  ];
+
+  it('has a carrier with no signal of its own', () => {
+    expect(classifyRaceEngineerQuestion({ question: carrier('') })).toMatchObject({
+      decision: 'refuse',
+      reason: 'out_of_domain',
+    });
+  });
+
+  it.each(
+    INFLECTIONS.flatMap(([matched, ...inflected]) =>
+      inflected.map((form) => [form, matched] as const),
+    ),
+  )('classifies "%s" like "%s"', (form, matched) => {
+    const singular = classifyRaceEngineerQuestion({ question: carrier(matched) });
+    expect(singular.decision).toBe('allow');
+    expect(classifyRaceEngineerQuestion({ question: carrier(form) })).toEqual(singular);
+  });
+
+  // The reproduction the eval harness found, verbatim from the golden case
+  // car-front-tire-overheating-hot-day: every motorsport word in it is plural.
+  it('allows the plural golden question exactly as it allows its singular rewrite', () => {
+    const chips = { symptoms: ['overheating_tire', 'understeer_mid'], changeIntent: 'reduce_tire_wear' };
+    const plural =
+      'The fronts overheat after three laps on this hot day and hot pressures run over target. What should I change?';
+    const singular =
+      'The front overheat after three lap on this hot day and hot pressure run over target. What should I change?';
+    const singularResult = classifyRaceEngineerQuestion({ question: singular, ...chips });
+    expect(singularResult.decision).toBe('allow');
+    expect(classifyRaceEngineerQuestion({ question: plural, ...chips })).toEqual(singularResult);
+  });
+
+  const refusedOutOfDomain = { decision: 'refuse', reason: 'out_of_domain' };
+  const ALL_INFLECTED_FORMS = INFLECTIONS.flatMap(([, ...inflected]) => inflected);
+
+  // AN INFLECTION NEVER RESCUES A QUESTION CARRYING AN OFF-TOPIC WORD. Every one
+  // of these was refused before inflections counted, and each was let through
+  // once they did, because its everyday plural - chicken wings, forks and
+  // spoons, weather fronts - scored as setup vocabulary and outweighed the
+  // off-topic word. The off-topic check reads the vocabulary exactly as it was.
+  it.each([
+    'Give me a recipe for chicken wings',
+    'Write a poem about forks and spoons',
+    'Recommend a movie with big jump-scare shocks',
+    'Summarize the weather fronts moving in this week',
+    'Translate this email about the building exits',
+    'Help me get to grips with python',
+    'Write an essay about the entries in my diary',
+    'Tell me a joke about being pushed around at work',
+    'Tell me a joke about how stress rears its head',
+    'Write an email to book our therapy sessions',
+    'Write a poem about a cat that laps up milk',
+    'Write an essay on the pressures of modern life',
+    'Recommend a movie with great tracks on the soundtrack',
+  ])('still refuses an off-topic question carrying an everyday plural: %s', (question) => {
+    expect(classifyRaceEngineerQuestion({ question })).toMatchObject(refusedOutOfDomain);
+  });
+
+  // The class rather than the examples: no inflection in the table rescues a
+  // question that carries an off-topic word.
+  it('lets no inflection rescue a question that carries an off-topic word', () => {
+    for (const form of ALL_INFLECTED_FORMS) {
+      expect(
+        classifyRaceEngineerQuestion({ question: `Can you give me a recipe for ${form}?` }),
+        `inflected form: ${form}`,
+      ).toMatchObject(refusedOutOfDomain);
+    }
+  });
+
+  // The symptom and intent fields keep the vocabulary exactly as it was, so an
+  // inflection sent there never rescues a question either. That arm waits on an
+  // open product decision and this change must not move it in either direction.
+  it('lets no inflection in a symptom or intent rescue a question', () => {
+    const NO_SIGNAL = 'Give me a list of the best vacuum cleaners for sale right now.';
+    for (const form of ALL_INFLECTED_FORMS) {
+      expect(
+        classifyRaceEngineerQuestion({ question: NO_SIGNAL, symptoms: [form] }),
+        `symptom: ${form}`,
+      ).toMatchObject(refusedOutOfDomain);
+      expect(
+        classifyRaceEngineerQuestion({ question: NO_SIGNAL, changeIntent: form }),
+        `intent: ${form}`,
+      ).toMatchObject(refusedOutOfDomain);
+    }
+  });
+
+  // A KNOWN AND ACCEPTED BOUNDARY, asserted so it is measured rather than
+  // discovered. With no off-topic word in it, a question whose only vocabulary is
+  // an everyday plural is allowed, exactly as its singular rewrite always was.
+  // It has the same shape as the golden question that motivated this change -
+  // "The fronts overheat after three laps..." - and no word-matching rule can
+  // refuse one and allow the other.
+  it('documents that an everyday plural in a question with no off-topic word is allowed', () => {
+    expect(classifyRaceEngineerQuestion({ question: 'Where can I buy a cheap fork and spoon?' }).decision).toBe('allow');
+    expect(classifyRaceEngineerQuestion({ question: 'Where can I buy cheap forks and spoons?' }).decision).toBe('allow');
+  });
+
+  // Inflections of the SAME word, never a new word. These share letters with the
+  // vocabulary but are either a different word or, in ordinary English, almost
+  // always a different sense of it - tired is fatigue, shocked is surprise,
+  // tracking is parcels - so admitting them would widen what counts as
+  // motorsport rather than match how riders write it.
+  it.each(['tired', 'tiring', 'pressured', 'shocked', 'tracking', 'tracked', 'gear', 'gears', 'overheat', 'damper', 'lapse'])(
+    'still reads "%s" as no motorsport signal',
+    (word) => {
+      expect(classifyRaceEngineerQuestion({ question: carrier(word) })).toMatchObject({
+        decision: 'refuse',
+        reason: 'out_of_domain',
+      });
+    },
+  );
 });
 
