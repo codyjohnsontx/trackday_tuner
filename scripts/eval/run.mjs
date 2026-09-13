@@ -521,11 +521,16 @@ const BASELINE_LIVE_RERECORDS = [{
     'The FOURTH movement, and a product fix to the classifier rather than to the prompt. ' +
     'MOTORSPORT_PATTERNS in lib/rag/domain-guard.ts were word-boundary-anchored singulars, so ' +
     'car-front-tire-overheating-hot-day - fronts, laps, pressures - scored zero motorsport ' +
-    'signals and was refused as out_of_domain before anything was embedded. Each entry now ' +
-    'matches its own word\'s inflections, so that case reaches retrieval and the model for the ' +
+    'signals and was refused as out_of_domain before anything was embedded. The vocabulary is ' +
+    'now one table, MOTORSPORT_VOCABULARY, pairing each pattern as it matched before with the ' +
+    'same word\'s inflections. MOTORSPORT_PATTERNS is that as-before column, and it is still ' +
+    'all the off-topic check and the symptom and intent free text read. The inflected column ' +
+    'counts in the question itself and nowhere else, and only when that question carries no ' +
+    'off-topic word. That case carries none, so it reaches retrieval and the model for the ' +
     'first time, and mc-rear-wallow-inflected-phrasing was appended to cover verb inflections. ' +
     'Both cases sent requests the tape had never seen, so they were recorded with one ' +
-    '`npm run rag:eval -- --live`.',
+    '`npm run rag:eval -- --live`. Confining inflections to the question came after that ' +
+    're-record and changed no golden case\'s classification, so no tape key moved.',
   what_was_corrected:
     'A noun on the list takes its plural, and a word riders also use as a verb for what the ' +
     'vehicle did takes -s, -ed and -ing. No word was added, and inflections ordinary English ' +
