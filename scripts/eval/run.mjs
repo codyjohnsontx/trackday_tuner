@@ -1201,7 +1201,7 @@ export function describeUnusableBaseline(baseline) {
   }
   // Presence is the rule for a COVERAGE figure and not for a GATED METRIC's
   // VALUE, and the difference is whether the file says its own population was
-  // empty. A null `rubric_pass_rate` beside 32 scored cases is a pairing the
+  // empty. A null `rubric_pass_rate` beside every scored case is a pairing the
   // writer cannot emit, and it leaves `previous` null on that metric - so the
   // run prints `(no baseline)` against all four gated rates and exits 0, which
   // is the precise signature this function exists to stop. Refusing a trimmed
