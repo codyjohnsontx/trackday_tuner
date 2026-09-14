@@ -21,7 +21,8 @@ client-side. Do not "helpfully" expand them to float arrays: the SDK would then
 try to base64-decode a JSON array and every retrieval would come back empty.
 
 To refresh, with `OPENAI_API_KEY` set in `.env.local` or `.env` (a key already
-exported in the shell wins):
+exported in the shell wins, and a blank `OPENAI_API_KEY=` line in `.env.local`
+counts as no line, so it does not hide the key in `.env`):
 
 ```bash
 npm run rag:eval -- --live                         # re-record and re-score

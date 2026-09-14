@@ -15,6 +15,10 @@ export function loadEnvFiles(root = process.cwd()) {
       ) {
         value = value.slice(1, -1);
       }
+      // A blank line such as `OPENAI_API_KEY=` is no value at all: setting it
+      // would stop the next file from supplying the real one, and leave the
+      // variable empty rather than missing when neither file has it.
+      if (value.trim() === '') continue;
       process.env[match[1]] = value;
     }
   }
