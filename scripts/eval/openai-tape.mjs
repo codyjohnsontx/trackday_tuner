@@ -242,7 +242,8 @@ export function tapeMissMessage(kind, key) {
     `No recorded ${kind} response for request ${key}. ` +
     'Offline mode replays committed tapes, and a miss means the request changed - ' +
     'a prompt, vocabulary, retrieval or golden-case edit is expected to do this. ' +
-    'Re-record with `npm run rag:eval -- --live` (needs OPENAI_API_KEY) and commit ' +
+    'Re-record with `npm run rag:eval -- --live`, which reads OPENAI_API_KEY from ' +
+    '.env.local or .env, and commit ' +
     'tests/fixtures/rag-eval/recordings/ alongside the change.'
   );
 }
