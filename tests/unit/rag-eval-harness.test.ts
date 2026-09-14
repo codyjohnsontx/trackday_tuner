@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
 import * as vocabulary from '@/lib/rag/component-vocabulary';
 // The harness is plain JS on purpose; it runs under node with no build step so
@@ -17,7 +17,7 @@ import { aggregateRetrieval, scoreRetrieval } from '@/scripts/eval/retrieval.mjs
 // @ts-expect-error - see above.
 import { OpenAiTape, UNKEYABLE_REQUEST_ERROR_TYPE } from '@/scripts/eval/openai-tape.mjs';
 // @ts-expect-error - see above.
-import { compareAgainstBaseline, describeCaseLabels, describeUnreadableBaseline, describeUnsoundRun, describeUnusableBaseline, diffLine } from '@/scripts/eval/run.mjs';
+import { compareAgainstBaseline, describeCaseLabels, describeUnreadableBaseline, describeUnsoundRun, describeUnusableBaseline, diffLine, prepareOpenAiApiKey } from '@/scripts/eval/run.mjs';
 // @ts-expect-error - see above.
 import { resolve as resolveAlias } from '@/scripts/eval/ts-loader.mjs';
 
@@ -1154,5 +1154,56 @@ describe('reaching the human\'s answer', () => {
       expect.arrayContaining(['stiffen', 'increase']),
     );
     expect(direction('increase', 'stiffen', 'front_rebound')).toBe(false);
+  });
+});
+
+/**
+ * Every other script that needs the key reads the settings files through
+ * `loadEnvFiles` (`scripts/lib/env.mjs`), and the eval did not, so `--live`
+ * failed unless the key had been exported in the shell by hand. Each case here
+ * points the loader at a directory of its own, so the repository's real
+ * settings files are never read.
+ */
+describe('where the eval finds its OpenAI key', () => {
+  const exported = process.env.OPENAI_API_KEY;
+  let settingsDir: string;
+
+  beforeEach(() => {
+    settingsDir = mkdtempSync(path.join(os.tmpdir(), 'rag-eval-settings-'));
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  afterEach(() => {
+    rmSync(settingsDir, { recursive: true, force: true });
+    if (exported === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = exported;
+  });
+
+  it('reads the key for --live from a settings file when the shell has none', () => {
+    writeFileSync(path.join(settingsDir, '.env'), 'OPENAI_API_KEY=sk-from-settings-file\n');
+
+    expect(prepareOpenAiApiKey({ live: true, root: settingsDir })).toBeNull();
+    expect(process.env.OPENAI_API_KEY).toBe('sk-from-settings-file');
+  });
+
+  it('keeps a key exported in the shell over the one in a settings file', () => {
+    process.env.OPENAI_API_KEY = 'sk-from-shell';
+    writeFileSync(path.join(settingsDir, '.env.local'), 'OPENAI_API_KEY=sk-from-settings-file\n');
+
+    expect(prepareOpenAiApiKey({ live: true, root: settingsDir })).toBeNull();
+    expect(process.env.OPENAI_API_KEY).toBe('sk-from-shell');
+  });
+
+  it('still replays offline on the placeholder when there is no key anywhere', () => {
+    expect(prepareOpenAiApiKey({ live: false, root: settingsDir })).toBeNull();
+    expect(process.env.OPENAI_API_KEY).toBe('sk-offline-replay-placeholder');
+  });
+
+  it('refuses --live with no key anywhere, and names the settings files it read', () => {
+    const problem = prepareOpenAiApiKey({ live: true, root: settingsDir });
+
+    expect(problem).toContain('.env.local');
+    expect(problem).toMatch(/\.env(?!\.)/);
+    expect(process.env.OPENAI_API_KEY).toBeUndefined();
   });
 });

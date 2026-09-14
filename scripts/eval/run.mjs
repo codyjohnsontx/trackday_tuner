@@ -20,6 +20,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
+import { loadEnvFiles } from '../lib/env.mjs';
 import { OpenAiTape } from './openai-tape.mjs';
 import {
   matchesExpectedComponent,
@@ -1643,20 +1644,47 @@ export function describeUnsoundRun({
   return unsound;
 }
 
+/**
+ * Where the run gets its OpenAI key. The settings files are read first, through
+ * the same `loadEnvFiles` that `rag:index` and the beta scripts use, so a key kept
+ * in `.env.local` or `.env` reaches `--live` without being exported by hand.
+ * `loadEnvFiles` never overrides a variable that is already set, so a key exported
+ * in the shell still wins.
+ *
+ * The whole files are loaded, not the key alone, on purpose. `AI_MODEL` and
+ * `AI_EMBEDDING_MODEL` go into the request body, which is the tape key, and
+ * `rag:index` already honours `AI_EMBEDDING_MODEL` from those same files - reading
+ * only the key would let a local override build the index with one embedding
+ * model while this run embedded its queries with another. Honouring it instead
+ * moves the tape key, and offline replay reports that as a miss by name.
+ *
+ * @param {{ live: boolean, root?: string }} options `root` holds the settings files
+ * @returns {string | null} why the run cannot start, or null when it can
+ */
+export function prepareOpenAiApiKey({ live, root = REPO_ROOT }) {
+  loadEnvFiles(root);
+  if (!live && !process.env.OPENAI_API_KEY) {
+    // Offline replays committed tapes and never opens a socket, but the client
+    // is still constructed for real and `getOpenAIApiKey()` throws on an empty
+    // one. This is what lets CI run the whole pipeline with no secret, and why a
+    // real key found in a settings file is equally harmless here.
+    process.env.OPENAI_API_KEY = 'sk-offline-replay-placeholder';
+  }
+  if (live && !process.env.OPENAI_API_KEY) {
+    return '--live needs OPENAI_API_KEY: set it in .env.local or .env, or export it in the shell.';
+  }
+  return null;
+}
+
 export async function main(argv) {
   const args = new Set(argv);
   const live = args.has('--live');
   const updateBaseline = args.has('--update-baseline');
   const mode = live ? 'live' : 'offline';
 
-  if (!live && !process.env.OPENAI_API_KEY) {
-    // Offline replays committed tapes and never opens a socket, but the client
-    // is still constructed for real and `getOpenAIApiKey()` throws on an empty
-    // one. This is what lets CI run the whole pipeline with no secret.
-    process.env.OPENAI_API_KEY = 'sk-offline-replay-placeholder';
-  }
-  if (live && !process.env.OPENAI_API_KEY) {
-    console.error('[rag:eval] --live needs OPENAI_API_KEY in the environment.');
+  const keyProblem = prepareOpenAiApiKey({ live });
+  if (keyProblem) {
+    console.error(`[rag:eval] ${keyProblem}`);
     return 1;
   }
 
@@ -2076,8 +2104,8 @@ async function report(ctx) {
       console.error(`  ... and ${tape.stats.misses.length - MISS_PREVIEW} more`);
     }
     console.error(
-      '  Re-record with `OPENAI_API_KEY=... npm run rag:eval -- --live` and commit\n' +
-        '  tests/fixtures/rag-eval/recordings/ with the change that moved the prompt.',
+      '  Re-record with `npm run rag:eval -- --live`, which reads OPENAI_API_KEY from .env.local\n' +
+        '  or .env, and commit tests/fixtures/rag-eval/recordings/ with the change that moved the prompt.',
     );
   }
   if (errors.length > 0) {

@@ -68,7 +68,7 @@ npm run lint         # eslint
 npx tsc --noEmit     # type check (run after build so .next/types exist)
 npm run rag:index    # build RAG index from docs/knowledge-base/
 npm run rag:eval     # RAG eval harness, offline replay (no API key needed)
-npm run rag:eval -- --live             # re-record against the real API
+npm run rag:eval -- --live             # re-record against the real API (key from .env.local or .env)
 npm run rag:eval -- --update-baseline  # commit this run's scores as the baseline
 npm run db:status    # which migrations are applied on the linked project
 npm run db:new <name>  # scaffold a migration

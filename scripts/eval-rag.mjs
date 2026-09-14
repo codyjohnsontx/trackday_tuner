@@ -4,6 +4,7 @@
  *
  *   npm run rag:eval                          replay committed recordings (default, no key)
  *   npm run rag:eval -- --live                call the real API and re-record
+ *                                             (OPENAI_API_KEY from .env.local or .env)
  *   npm run rag:eval -- --update-baseline     write the run's scores to eval-baseline.json
  *
  * This entry point exists to register the TypeScript resolve hook before
