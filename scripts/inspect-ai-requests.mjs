@@ -1,36 +1,12 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
+import { loadEnvFiles } from './lib/env.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
-
-function loadEnvFile(filename) {
-  const filePath = path.join(repoRoot, filename);
-  if (!existsSync(filePath)) return;
-
-  const raw = readFileSync(filePath, 'utf8');
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const match = trimmed.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (!match) continue;
-    const [, key, value] = match;
-    if (process.env[key] !== undefined) continue;
-
-    let normalized = value.trim();
-    if (
-      (normalized.startsWith('"') && normalized.endsWith('"')) ||
-      (normalized.startsWith("'") && normalized.endsWith("'"))
-    ) {
-      normalized = normalized.slice(1, -1);
-    }
-    process.env[key] = normalized;
-  }
-}
 
 function requireEnv(name) {
   const value = process.env[name]?.trim();
@@ -180,8 +156,7 @@ async function isMissingColumnError(supabase, error, columnName) {
 }
 
 async function main() {
-  loadEnvFile('.env.local');
-  loadEnvFile('.env');
+  loadEnvFiles(repoRoot);
 
   const options = parseArgs(process.argv.slice(2));
   const supabaseUrl = requireEnv('NEXT_PUBLIC_SUPABASE_URL');
