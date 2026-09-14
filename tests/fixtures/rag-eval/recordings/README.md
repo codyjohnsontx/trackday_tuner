@@ -20,10 +20,11 @@ float32 - the OpenAI SDK sends `encoding_format: 'base64'` by default and decode
 client-side. Do not "helpfully" expand them to float arrays: the SDK would then
 try to base64-decode a JSON array and every retrieval would come back empty.
 
-To refresh:
+To refresh, with `OPENAI_API_KEY` set in `.env.local` or `.env` (a key already
+exported in the shell wins):
 
 ```bash
-OPENAI_API_KEY=... npm run rag:eval -- --live      # re-record and re-score
+npm run rag:eval -- --live                         # re-record and re-score
 npm run rag:eval                                   # confirm the replay matches
 npm run rag:eval -- --update-baseline              # only when the new scores are the ones to keep
 ```
