@@ -1513,17 +1513,34 @@ more words is not better - and the remedy for a thin corpus is a product
 investment decision, which a CI gate would take on the owner's behalf by
 refusing to go green until somebody spent the money.
 
-**One `--live` run costs about two cents, and the run says so in tokens.** The
-committed recordings carry the real usage, so the figure is measured rather than
-estimated: 28 completions at 68,905 prompt + 9,386 completion tokens, plus 28
-embeddings at 937 tokens. At the list prices read on 2026-09-16 - gpt-4o-mini
+**One `--live` run costs about two cents, and the run says so in tokens - BOTH
+endpoints, which took counting them somewhere neither could hide.** The report's
+figure is every request the run made: 28 completions at 68,905 prompt + 9,386
+completion tokens on `gpt-4o-mini-2024-07-18`, plus 28 embeddings at 937 prompt
+tokens on `text-embedding-3-small`, one row per model because they bill at
+different rates. At the list prices read on 2026-09-16 - gpt-4o-mini
 $0.15/$0.60 per million, text-embedding-3-small $0.02 per million - that is
-$0.016, of which embeddings are under a hundredth of a cent. The report prints
-TOKENS and not dollars deliberately: a price table committed here is a number
-nobody re-checks, and the model is about to change, which is exactly when a stale
-one misleads most. Offline replay pays none of it, and `--live` replays a
-matching entry before the mode is consulted, so only a prompt that actually moved
-is ever paid for.
+$0.016, of which embeddings are under a hundredth of a cent.
+
+It is totalled in `OpenAiTape` (`scripts/eval/openai-tape.mjs`) rather than
+alongside the scores, because that is the only place BOTH kinds are visible:
+`embedQuery` discards the embeddings response's usage, so a figure read anywhere
+downstream of it is the completion half of the bill printed as though it were
+the run. The tape sees whole response bodies on both the replay and the record
+path, so an offline run and a live one report the same totals, and attribution
+is the response's OWN `model` - the resolved snapshot, which is what was
+actually billed, rather than the name the request asked for. A response carrying
+no `usage` object counts as an unmeasured CALL and contributes no tokens, and a
+model none of whose calls reported usage totals `null` rather than 0: a
+confidently wrong cost is the failure to avoid on exactly the provider change
+ahead. An embeddings response reports no `completion_tokens`, which is zero
+completion rather than an unmeasured one.
+
+The report prints TOKENS and not dollars deliberately: a price table committed
+here is a number nobody re-checks, and the model is about to change, which is
+exactly when a stale one misleads most. **Nothing is gated on cost.** Offline
+replay pays none of it, and `--live` replays a matching entry before the mode is
+consulted, so only a prompt that actually moved is ever paid for.
 
 **No build step and no dependency.** `scripts/eval/ts-loader.mjs` is a resolve
 hook that maps `@/`, adds the missing extension and stubs `server-only` (a

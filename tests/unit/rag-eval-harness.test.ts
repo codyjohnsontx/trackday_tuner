@@ -16,7 +16,7 @@ import { matchesExpectedComponent, matchesExpectedDirection, scoreAdviceResponse
 // @ts-expect-error - see above.
 import { aggregateRetrieval, scoreRetrieval } from '@/scripts/eval/retrieval.mjs';
 // @ts-expect-error - see above.
-import { OpenAiTape, UNKEYABLE_REQUEST_ERROR_TYPE } from '@/scripts/eval/openai-tape.mjs';
+import { OpenAiTape, requestKey, UNKEYABLE_REQUEST_ERROR_TYPE } from '@/scripts/eval/openai-tape.mjs';
 // @ts-expect-error - see above.
 import { compareAgainstBaseline, describeCaseLabels, describeUnreadableBaseline, describeUnsoundRun, describeUnusableBaseline, diffLine, prepareOpenAiApiKey } from '@/scripts/eval/run.mjs';
 // @ts-expect-error - see above.
@@ -1192,6 +1192,70 @@ describe('tape request keying', () => {
     expect(tape.stats.misses).toHaveLength(1);
     expect(tape.stats.misses[0].kind).toBe('embeddings');
   });
+
+  it('accumulates the usage of every replayed response, embeddings included', async () => {
+    // `embedQuery` discards the embeddings response's usage, so the tape is the
+    // only place an embedding call is still countable. A cost figure read
+    // anywhere downstream of it is the completion half of the bill.
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'rag-eval-tape-usage-'));
+    const write = (kind: string, url: string, body: unknown, response: unknown) => {
+      const key = requestKey({ method: 'POST', url, body: JSON.stringify(body) });
+      writeFileSync(
+        path.join(dir, `${kind}.json`),
+        JSON.stringify({ version: 1, entries: { [key]: { status: 200, response } } }),
+      );
+    };
+    const embedRequest = { input: 'front pushes mid-corner', model: 'text-embedding-3-small' };
+    const chatRequest = { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'hi' }] };
+    write('embeddings', 'https://api.openai.com/v1/embeddings', embedRequest, {
+      model: 'text-embedding-3-small',
+      data: [{ embedding: [0, 1] }],
+      usage: { prompt_tokens: 35, total_tokens: 35 },
+    });
+    write('completions', 'https://api.openai.com/v1/chat/completions', chatRequest, {
+      model: 'gpt-4o-mini-2024-07-18',
+      choices: [{ message: { content: '{}' } }],
+      usage: { prompt_tokens: 2468, completion_tokens: 334, total_tokens: 2802 },
+    });
+
+    const tape = new OpenAiTape({ dir, mode: 'offline' });
+    try {
+      await tape.load();
+      const restore = tape.install();
+      try {
+        await fetch('https://api.openai.com/v1/embeddings', {
+          method: 'POST',
+          body: JSON.stringify(embedRequest),
+        });
+        await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          body: JSON.stringify(chatRequest),
+        });
+      } finally {
+        restore();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    expect(tape.stats.hits).toBe(2);
+    expect(aggregateUsage(tape.usage)).toEqual([
+      {
+        model: 'gpt-4o-mini-2024-07-18',
+        calls: 1,
+        measured_calls: 1,
+        prompt_tokens: 2468,
+        completion_tokens: 334,
+      },
+      {
+        model: 'text-embedding-3-small',
+        calls: 1,
+        measured_calls: 1,
+        prompt_tokens: 35,
+        completion_tokens: 0,
+      },
+    ]);
+  });
 });
 
 describe('reaching the human\'s answer', () => {
@@ -1408,33 +1472,38 @@ describe('grounding measurement', () => {
     expect(tally).toEqual([{ source: 'deep.md', misses: 2, labelled: 2 }]);
   });
 
-  it('totals token spend per model and ignores cases that never called one', () => {
+  it('totals token spend per model over both endpoints', () => {
+    // An embeddings response carries prompt_tokens and total_tokens and no
+    // completion_tokens. That is zero completion, not an unmeasured one.
     expect(
       aggregateUsage([
-        { model: 'gpt-4o-mini', usage: { prompt_tokens: 100, completion_tokens: 20 } },
-        { model: 'gpt-4o-mini', usage: { prompt_tokens: 50, completion_tokens: 10 } },
-        { model: null, usage: null },
+        { model: 'gpt-4o-mini-2024-07-18', usage: { prompt_tokens: 100, completion_tokens: 20 } },
+        { model: 'gpt-4o-mini-2024-07-18', usage: { prompt_tokens: 50, completion_tokens: 10 } },
+        { model: 'text-embedding-3-small', usage: { prompt_tokens: 35, total_tokens: 35 } },
       ]),
     ).toEqual([
       {
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o-mini-2024-07-18',
         calls: 2,
         measured_calls: 2,
         prompt_tokens: 150,
         completion_tokens: 30,
       },
+      {
+        model: 'text-embedding-3-small',
+        calls: 1,
+        measured_calls: 1,
+        prompt_tokens: 35,
+        completion_tokens: 0,
+      },
     ]);
   });
 
-  it('counts a call whose response reported no usage as unmeasured, not as zero tokens', () => {
-    // `generateTuningAdvice` nulls both fields when the completion carries no
-    // `usage` object. Summing that as 0 prints a confidently wrong cost with no
-    // signal it was never measured - which is exactly what a model or gateway
-    // change would produce.
+  it('counts a response that reported no usage as unmeasured, not as zero tokens', () => {
     expect(
       aggregateUsage([
         { model: 'gpt-4o-mini', usage: { prompt_tokens: 100, completion_tokens: 20 } },
-        { model: 'gpt-4o-mini', usage: { prompt_tokens: 50, completion_tokens: null } },
+        { model: 'gpt-4o-mini', usage: undefined },
       ]),
     ).toEqual([
       {
@@ -1448,11 +1517,10 @@ describe('grounding measurement', () => {
   });
 
   it('reports null totals rather than zero when no call reported usage at all', () => {
-    expect(
-      aggregateUsage([
-        { model: 'next-model', usage: { prompt_tokens: null, completion_tokens: null } },
-      ]),
-    ).toEqual([
+    // Summing an absent usage object as 0 prints a confidently wrong cost with
+    // no signal it was never measured - which is what a provider that stops
+    // filling the field would produce, on exactly the model change ahead.
+    expect(aggregateUsage([{ model: 'next-model', usage: null }])).toEqual([
       {
         model: 'next-model',
         calls: 1,

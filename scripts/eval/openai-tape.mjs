@@ -79,6 +79,17 @@ export class OpenAiTape {
     this.mode = mode;
     this.tapes = { embeddings: null, completions: null };
     this.stats = { hits: 0, recorded: 0, misses: [] };
+    /**
+     * One entry per response this run replayed or recorded, of BOTH kinds.
+     * This is the only place that sees every request the pipeline makes:
+     * `embedQuery` discards the embeddings response's usage, so an embedding
+     * call is invisible to anything downstream of it, and a cost figure read
+     * further up the stack is the completion half of the bill only. The
+     * `model` is the response's own, so a completion snapshot and an embedding
+     * model stay separate rows. Replay and record both accumulate, so an
+     * offline run and a live one report the same totals.
+     */
+    this.usage = [];
     // The keys this run actually replayed or recorded. `save({ prune: true })`
     // keeps only these, so it is correct ONLY after a run that reached every
     // case - see the soundness gate at its call site.
@@ -174,6 +185,7 @@ export class OpenAiTape {
     if (entry) {
       this.stats.hits += 1;
       this.used[kind].add(key);
+      this.usage.push({ model: entry.response?.model, usage: entry.response?.usage });
       return new Response(JSON.stringify(entry.response), {
         status: entry.status,
         headers: { 'content-type': 'application/json' },
@@ -213,6 +225,7 @@ export class OpenAiTape {
       };
       this.stats.recorded += 1;
       this.used[kind].add(key);
+      this.usage.push({ model: parsed?.model, usage: parsed?.usage });
     }
 
     return new Response(text, {

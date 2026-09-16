@@ -1849,7 +1849,6 @@ export async function main(argv) {
           scored,
           retrieval,
           contextDepth: outcome.contextDepth,
-          usage: outcome.usage ?? null,
           confidence: outcome.response.confidence,
           componentMatch: modelAnswered
             ? matchesExpectedComponent(primary?.component, testCase.expected_component, vocabulary)
@@ -2035,11 +2034,14 @@ async function report(ctx) {
 
   /**
    * What re-recording this set costs, in the only unit that cannot go stale
-   * here. Offline replay spends nothing; these counts are read back off the
-   * recordings, so they are what a `--live` re-record would pay for. AGENTS.md
-   * carries the dollar figure, its prices and the date they were read.
+   * here. Both endpoints are counted - the tape is the one place an embedding
+   * call is still visible, since `embedQuery` discards its usage - so this is
+   * the whole bill rather than the completion half of it. Offline replay spends
+   * nothing; these counts are read back off the recordings, so they are what a
+   * `--live` re-record would pay for. AGENTS.md carries the dollar figure, its
+   * prices and the date they were read.
    */
-  const usage = aggregateUsage(scoredResults);
+  const usage = aggregateUsage(tape.usage);
   if (usage.length > 0) {
     console.log('\nCost of one --live run  (offline replay spends none of it)');
     for (const entry of usage) {

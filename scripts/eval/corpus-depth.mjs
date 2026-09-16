@@ -139,32 +139,41 @@ export function tallyMissedSources(perCase) {
  * run, because they are read from the recorded responses, so the figure below
  * is what re-recording this set would cost.
  *
- * A call whose response carried no `usage` object is UNMEASURED rather than
- * free - the same empty-is-not-zero rule the rest of this file applies. It
- * counts toward `calls` and not toward `measured_calls`, its tokens are not
- * summed, and a model no call reported usage for totals `null` rather than 0,
- * because a confidently wrong cost is worse than an admittedly unknown one and
- * a model change is exactly when a provider stops filling that field.
+ * The observations come from `OpenAiTape`, which is the only place that sees
+ * BOTH endpoints: `embedQuery` discards the embeddings response's usage, so
+ * anything read downstream of it totals the completion half of the bill and
+ * calls it the run. Attribution is the response's own `model`, so a completion
+ * snapshot and an embedding model are separate rows rather than one sum over
+ * two price tiers.
+ *
+ * MEASURED IS PER CALL, AND THE SIGNAL IS THE `usage` OBJECT, not a field
+ * inside it. An embeddings response reports `prompt_tokens` and `total_tokens`
+ * and no `completion_tokens`, which is zero completion rather than an
+ * unmeasured one; a response carrying no usage at all is unmeasured, counts
+ * toward `calls` and not `measured_calls`, and contributes nothing. A model no
+ * call reported usage for totals `null`, never 0 - the empty-is-not-zero rule
+ * the rest of this file applies, and a confidently wrong cost is the failure it
+ * guards against on exactly the provider change this harness exists to measure.
+ *
+ * @param {Array<{model: unknown, usage: {prompt_tokens?: number, completion_tokens?: number} | null | undefined}>} observations
  */
-export function aggregateUsage(perCase) {
+export function aggregateUsage(observations) {
   const byModel = new Map();
-  for (const entry of perCase) {
-    if (entry.usage == null || entry.model == null) continue;
-    const totals = byModel.get(entry.model) ?? {
+  for (const { model, usage } of observations) {
+    const name = String(model);
+    const totals = byModel.get(name) ?? {
       calls: 0,
       measured_calls: 0,
       prompt_tokens: 0,
       completion_tokens: 0,
     };
     totals.calls += 1;
-    const prompt = entry.usage.prompt_tokens;
-    const completion = entry.usage.completion_tokens;
-    if (typeof prompt === 'number' && typeof completion === 'number') {
+    if (typeof usage?.prompt_tokens === 'number') {
       totals.measured_calls += 1;
-      totals.prompt_tokens += prompt;
-      totals.completion_tokens += completion;
+      totals.prompt_tokens += usage.prompt_tokens;
+      totals.completion_tokens += usage.completion_tokens ?? 0;
     }
-    byModel.set(entry.model, totals);
+    byModel.set(name, totals);
   }
   return [...byModel.entries()]
     .map(([model, totals]) => ({
