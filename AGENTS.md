@@ -1034,7 +1034,7 @@ referenced in that response" - firing on the session the app had just handed the
 model. `formatSessionBlock` printed no `session_id`, so the current session, the
 previous session and every day-plan recent session reached the model anonymous,
 while the allowed set was built from those very ids. Asked for personal evidence
-about a session it had no id for, the model invented one: the committed recording
+about a session it had no id for, the model wrote a placeholder: the committed recording
 for `mc-gearing-slow-corner` cites the rider's own session notes with
 `source_session_id: "null"` and has its whole answer discarded. No account could
 avoid it, because the three blocks that DID print ids - `similar_sessions`,
@@ -1347,8 +1347,8 @@ where both flags already read what production would have printed.
 **The live numbers are the baseline whatever they say, in both directions.** On
 that re-record `rubric_pass_rate` and `refusal_accuracy` both FELL, 27/32 ->
 26/32, over one case - `mc-gearing-slow-corner`, where the model returned a
-`source_session_id` of the STRING `"null"` and `evaluateAdvicePolicy` correctly
-discarded the whole response. Keeping the older, higher tape because it flattered
+`source_session_id` of the STRING `"null"` and `evaluateAdvicePolicy` discarded
+the whole response - a placeholder the parser now normalises (above). Keeping the older, higher tape because it flattered
 the harness would rebuild the exact defect this harness exists to remove: a
 number chosen for how it reads rather than for being true.
 
@@ -1364,7 +1364,7 @@ model sampling on an unrelated mechanism. `direction_accuracy` fell 7/13 -> 6/13
 and is committed as measured. Claiming both rises for the fix would be the same
 defect wearing the opposite sign. The acceptance evidence is counted off the
 recordings rather than argued: before, 1 of 26 responses carried personal
-evidence at all and its id was the fabricated `"null"`; after, 25 of 26 cite the
+evidence at all and its id was the placeholder `"null"`; after, 25 of 26 cite the
 exact id printed in their own prompt, none fabricated.
 
 `live_rerecord` in `eval-baseline.json` is a LIST of these movements, oldest
