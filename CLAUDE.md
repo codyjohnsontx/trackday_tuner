@@ -1053,9 +1053,32 @@ the prompt and the id set from one input and fails on either direction;
 `app/api/ai/tuning-advice/route.session-evidence.test.ts` runs the real policy
 through the route, which is the only place that can catch the route substituting a
 set of its own. **This widened nothing:** every accepted id belongs to a row read
-under the rider's own RLS scope, an id from anywhere else is still refused, and so
-is the literal string `"null"` - coercing that to null would leave an unverified
-evidence entry in front of the rider, which is the class the guard exists for.
+under the rider's own RLS scope, and an id from anywhere else is still refused.
+
+**THAT PARAGRAPH USED TO END BY REFUSING THE LITERAL STRING `"null"` TOO, AND
+THAT PART WAS WRONG.** Captain's ruling, 2026-09-16: a rider asking a legitimate
+question must not lose a good answer to the model's own placeholder text. The
+string `"null"` is not a fabricated reference, it is the model declining to give
+one, and `PLACEHOLDER_SESSION_REFERENCES` in `lib/rag/schema.ts` now normalises
+it - with `undefined`, `none`, `nil` and the empty string - to the JSON null the
+field already allows. The old argument was that coercing it leaves unverified
+evidence in front of the rider; it does not, because a null reference counts
+toward neither `grounded` nor `hasSupportForHighConfidence`, so the entry reads
+as the observation it is and can prop up nothing. **The set is measured**: across
+the five committed generations of the completions tape the model emitted 78
+`personal_evidence` entries, 77 carrying an id its own prompt printed and exactly
+one carrying the string `"null"`; the other four spellings are the same act in
+another language and are carried because no session id is any of them. What is
+NOT normalised is anything else, whatever its shape - declining to give a
+reference and inventing one are different acts, and a fabricated id still reaches
+the policy and is still refused.
+
+The fix is at the PARSER and not at the policy, and that boundary is the whole
+design: `parseAdviceResponse` decides what the model actually said, and
+`evaluateAdvicePolicy` decides whether what it said may be served. A placeholder
+is a question about the first. **Whether ONE unverifiable citation should discard
+the WHOLE response, or only that evidence item, is a separate product call and is
+deliberately still open** - the parser fix must not quietly become it.
 
 **An `AdviceResponse` is rendered in exactly one place, and that is the guard.**
 `components/ai/advice-report.tsx` prints the whole payload; the Race Engineer and
@@ -1125,6 +1148,23 @@ every run scores them as a self-check and exits non-zero if any passes, so a run
 that reports a pass rate has also just proved it can report a failure.
 `tests/unit/rag-eval-harness.test.ts` locks that in the required checks, because
 `rag:eval` failing is not the same as `test:unit` failing.
+
+**THE SELF-CHECK HAS A SECOND HALF, AND IT RUNS THE OTHER WAY.**
+`tests/fixtures/rag-eval/must-serve-responses.json` holds real recorded model
+outputs that production discarded and should not have; the run scores every one
+and exits non-zero if any is REFUSED, before the tape is opened. Proving the
+harness can report a failure says nothing about whether it can report a pass on a
+response a guard nearly threw away, and that direction costs the rider more,
+because it leaves nothing behind but a `completed_refusal_*` audit row and a pass
+rate that quietly falls. **These fixtures go through `parseAdviceResponse` first
+and the adversarial three deliberately do not**: the adversarial set asks what the
+SCORER does with a well-formed response, this one asks what the PARSER hands the
+scorer, and scoring it raw would skip the only step under test. Every case is
+scored with `validSessionIds: []`, the strictest setting the policy has. The empty
+set is a failure here on the same rule as everywhere else, and
+`describeUnsoundRun` carries both counts - it now THROWS on a missing count rather
+than reading `undefined` as zero, because an omitted count ungates exactly the
+check that was forgotten.
 
 **The general rule behind that, and the one to apply to anything added here: a
 conclusion drawn from a collection has to say what the EMPTY collection
