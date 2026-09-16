@@ -60,6 +60,8 @@ export type {
 export type Profile = Tables<'profiles'>;
 export type Vehicle = Tables<'vehicles'>;
 export type Track = Tables<'tracks'>;
+export type TrackLayout = Tables<'track_layouts'>;
+export type TrackAlias = Tables<'track_aliases'>;
 export type Session = Tables<'sessions'>;
 export type SessionEnvironment = Tables<'session_environment'>;
 export type VehicleBaseline = Tables<'vehicle_baselines'>;
@@ -101,6 +103,9 @@ export interface CreateSessionInput {
   vehicle_id: string;
   track_id: string | null;
   track_name: string | null;
+  // Optional by design: a rider who does not care which configuration they ran
+  // never has to answer. See lib/track-directory.ts.
+  layout_id?: string | null;
   date: string;
   start_time?: string | null;
   session_number?: number | null;

@@ -26,7 +26,8 @@ import {
 } from '@/lib/session-answers';
 import { trackProductEvent } from '@/lib/product-events.client';
 import { copyLastSessionSetup } from '@/lib/session-copy';
-import { MISSING_TRACK_MESSAGE, hasTrackName, normalizeTrackName } from '@/lib/session-track';
+import { MISSING_TRACK_MESSAGE, findSavedTrackByName, hasTrackName, normalizeTrackName, trackNameKey } from '@/lib/session-track';
+import { findTrackByAlias, type TrackAliasIndex, type TrackLayoutIndex } from '@/lib/track-directory';
 import {
   getAvailableSessionModules,
   getDefaultAdvancedVisibility,
@@ -64,8 +65,15 @@ import type {
 interface SessionFormProps {
   vehicles: Vehicle[];
   tracks: Track[];
+  /** Other names each circuit is known by. See lib/track-directory.ts. */
+  trackAliases?: TrackAliasIndex;
+  /** Each circuit's configurations; a circuit absent here has none to offer. */
+  trackLayouts?: TrackLayoutIndex;
   latestSessionsByVehicle?: Record<string, Session>;
 }
+
+const noAliases: TrackAliasIndex = {};
+const noLayouts: TrackLayoutIndex = {};
 
 const sessionDraftKey = 'session_form_new';
 
@@ -104,6 +112,8 @@ interface SessionDraft {
   vehicleId: string;
   trackQuery: string;
   trackId: string | null;
+  /** Absent in drafts saved before layouts existed, which is the same as none. */
+  layoutId?: string | null;
   date: string;
   startTime: string;
   sessionNumber: string;
@@ -167,7 +177,13 @@ function ModuleHeader({
   );
 }
 
-export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: SessionFormProps) {
+export function SessionForm({
+  vehicles,
+  tracks,
+  trackAliases = noAliases,
+  trackLayouts = noLayouts,
+  latestSessionsByVehicle = {},
+}: SessionFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
@@ -184,6 +200,9 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
   const [vehicleId, setVehicleId] = useState(initialVehicle?.id ?? '');
   const [trackQuery, setTrackQuery] = useState('');
   const [trackId, setTrackId] = useState<string | null>(null);
+  // Null means "not specified", which is the answer most riders give and never
+  // has to be chosen: the picker only appears for a circuit that has layouts.
+  const [layoutId, setLayoutId] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   // Which suggestion the arrow keys have travelled to. Focus stays in the input
   // the whole time and this index becomes `aria-activedescendant`, which is what
@@ -238,11 +257,47 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     [selectedVehicleType],
   );
 
+  // Each circuit's other names, folded, so "cota" offers Circuit of the Americas.
+  // The list still shows the circuit's own name: the alias is how the rider
+  // found it, not what it is called.
+  const aliasKeysByTrack = useMemo(() => {
+    const byTrack = new Map<string, string[]>();
+    for (const [key, id] of Object.entries(trackAliases)) {
+      byTrack.set(id, [...(byTrack.get(id) ?? []), key]);
+    }
+    return byTrack;
+  }, [trackAliases]);
+
   const filteredTracks = useMemo(() => {
-    const query = trackQuery.trim().toLowerCase();
+    const query = trackNameKey(trackQuery);
     if (!query) return tracks;
-    return tracks.filter((track) => track.name.toLowerCase().includes(query));
-  }, [tracks, trackQuery]);
+    return tracks.filter(
+      (track) =>
+        trackNameKey(track.name).includes(query) ||
+        (aliasKeysByTrack.get(track.id) ?? []).some((alias) => alias.includes(query)),
+    );
+  }, [tracks, trackQuery, aliasKeysByTrack]);
+
+  // The circuit the field currently names: the one picked, or failing that the
+  // one the typed text folds onto by name and then by alias - the same order,
+  // over the same data, that `resolveSessionTrack` applies on save. Without the
+  // typed half a rider who wrote "VIR" out in full would never be offered its
+  // layouts, though the session they save lands on VIR regardless.
+  const identifiedTrackId = useMemo(() => {
+    if (trackId) return trackId;
+    return (
+      findSavedTrackByName(trackQuery, tracks)?.id ??
+      findTrackByAlias(trackQuery, trackAliases, tracks)?.id ??
+      null
+    );
+  }, [trackId, trackQuery, tracks, trackAliases]);
+
+  const layoutOptions = identifiedTrackId ? (trackLayouts[identifiedTrackId] ?? []) : [];
+  // A layout only means something on the circuit it belongs to. Deriving the
+  // submitted value rather than clearing state on every keystroke means a rider
+  // who retypes the same circuit keeps the layout they had chosen.
+  const selectedLayoutId =
+    layoutId && layoutOptions.some((layout) => layout.id === layoutId) ? layoutId : null;
 
   // The listbox stays in the document so `aria-controls` resolves to something;
   // this is what `hidden` reads, and an empty list stays closed because there is
@@ -277,6 +332,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     setVehicleId(draft.vehicleId ?? '');
     setTrackQuery(draft.trackQuery ?? '');
     setTrackId(draft.trackId ?? null);
+    setLayoutId(draft.layoutId ?? null);
     setDate(draft.date || todayLocalDate());
     setStartTime(draft.startTime ?? '');
     setSessionNumber(draft.sessionNumber ?? '');
@@ -318,6 +374,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
       vehicleId,
       trackQuery,
       trackId,
+      layoutId,
       date,
       startTime,
       sessionNumber,
@@ -347,6 +404,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     vehicleId,
     trackQuery,
     trackId,
+    layoutId,
     date,
     startTime,
     sessionNumber,
@@ -480,6 +538,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
     const copied = copyLastSessionSetup(latestSessionForVehicle, selectedVehicleType);
     setTrackId(copied.trackId);
     setTrackQuery(copied.trackQuery);
+    setLayoutId(copied.layoutId);
     setTireCondition(copied.tireCondition);
     setFrontTire(copied.frontTire);
     setRearTire(copied.rearTire);
@@ -654,6 +713,7 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
         vehicle_id: vehicleId,
         track_id: trackId,
         track_name: normalizeTrackName(trackQuery),
+        layout_id: selectedLayoutId,
         date,
         start_time: startTime || null,
         session_number: parsedSessionNumber,
@@ -824,6 +884,28 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
             ))}
           </ul>
         </div>
+
+        {layoutOptions.length > 0 ? (
+          <div className="space-y-1">
+            <label htmlFor="session-layout" className="block text-sm font-medium text-ink-dim">
+              Layout <span className="font-normal text-ink-faint">(optional)</span>
+            </label>
+            {/* Native, like Vehicle above: see "UI Component Rules" in CLAUDE.md. */}
+            <select
+              id="session-layout"
+              className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+              value={selectedLayoutId ?? ''}
+              onChange={(event) => setLayoutId(event.target.value || null)}
+            >
+              <option value="">Not specified</option>
+              {layoutOptions.map((layout) => (
+                <option key={layout.id} value={layout.id}>
+                  {layout.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
 
         <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
         <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">

@@ -55,6 +55,8 @@ const session: Session = {
   vehicle_id: 'veh-1',
   track_id: null,
   track_name: 'Road America',
+  layout_id: null,
+  layout_name: null,
   date: '2026-05-01',
   start_time: '09:30:00',
   session_number: 1,

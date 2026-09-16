@@ -215,6 +215,7 @@ export type Database = {
           id: string;
           name: string;
           location: string | null;
+          slug: string | null;
           is_seeded: boolean;
           created_by: string | null;
           created_at: string;
@@ -223,6 +224,7 @@ export type Database = {
           id?: string;
           name: string;
           location?: string | null;
+          slug?: string | null;
           is_seeded?: boolean;
           created_by?: string | null;
           created_at?: string;
@@ -231,11 +233,68 @@ export type Database = {
           id?: string;
           name?: string;
           location?: string | null;
+          slug?: string | null;
           is_seeded?: boolean;
           created_by?: string | null;
           created_at?: string;
         };
         Relationships: [];
+      };
+      track_layouts: {
+        Row: {
+          id: string;
+          track_id: string;
+          slug: string;
+          name: string;
+          sort_order: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          track_id: string;
+          slug: string;
+          name: string;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          track_id?: string;
+          slug?: string;
+          name?: string;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      track_aliases: {
+        Row: {
+          id: string;
+          track_id: string;
+          alias: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          track_id: string;
+          alias: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          track_id?: string;
+          alias?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'track_aliases_track_id_fkey';
+            columns: ['track_id'];
+            isOneToOne: false;
+            referencedRelation: 'tracks';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       sessions: {
         Row: {
@@ -244,6 +303,8 @@ export type Database = {
           vehicle_id: string;
           track_id: string | null;
           track_name: string | null;
+          layout_id: string | null;
+          layout_name: string | null;
           date: string;
           start_time: string | null;
           session_number: number | null;
@@ -263,6 +324,8 @@ export type Database = {
           vehicle_id: string;
           track_id?: string | null;
           track_name?: string | null;
+          layout_id?: string | null;
+          layout_name?: string | null;
           date: string;
           start_time?: string | null;
           session_number?: number | null;
@@ -282,6 +345,8 @@ export type Database = {
           vehicle_id?: string;
           track_id?: string | null;
           track_name?: string | null;
+          layout_id?: string | null;
+          layout_name?: string | null;
           date?: string;
           start_time?: string | null;
           session_number?: number | null;

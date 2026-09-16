@@ -558,6 +558,16 @@ The same shape applies to anything derived rather than given:
   proves nothing - the session still saves with the name alone, and a row this
   code did create is deleted again when the session it was written for does not
   survive
+- **A circuit is an identity, not a spelling.** North American circuits are
+  seeded by a migration (20260916001600), not `supabase/seed.sql`, because the
+  hosted project only ever receives migrations. Each carries a `slug` and the
+  other names riders use (`track_aliases`), and a typed name is looked up by
+  name first and alias second, so a rider's own track keeps its name. Case and
+  spacing are the only fuzziness - no edit distance, because Road America and
+  Road Atlanta are four edits apart. Configurations are `track_layouts` of one
+  circuit and `sessions.layout_id` is optional. `lib/track-directory.ts` holds
+  the rules, and `lib/track-directory.test.ts` checks them against the rows the
+  migration ships. Existing custom tracks are not merged onto seeded ones
 
 ## Units
 

@@ -4,31 +4,51 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
 import { TrackDeleteForm } from '@/components/tracks/track-delete-form';
+import { trackNameKey } from '@/lib/session-track';
+import type { TrackAliasIndex, TrackLayoutIndex } from '@/lib/track-directory';
 import { cn } from '@/lib/utils';
 import type { Track } from '@/types';
 
 interface TrackListClientProps {
   tracks: Track[];
+  aliases?: TrackAliasIndex;
+  layouts?: TrackLayoutIndex;
   demoMode?: boolean;
 }
 
-function normalize(value: string) {
-  return value.trim().toLowerCase();
-}
+const noAliases: TrackAliasIndex = {};
+const noLayouts: TrackLayoutIndex = {};
 
-export function TrackListClient({ tracks, demoMode = false }: TrackListClientProps) {
+export function TrackListClient({
+  tracks,
+  aliases = noAliases,
+  layouts = noLayouts,
+  demoMode = false,
+}: TrackListClientProps) {
   const [query, setQuery] = useState('');
 
+  // Search finds a circuit by any name it is known by, the same way the New
+  // Session field does - a rider looking for "Mosport" is looking for Canadian
+  // Tire Motorsport Park. See lib/track-directory.ts.
+  const aliasKeysByTrack = useMemo(() => {
+    const byTrack = new Map<string, string[]>();
+    for (const [key, id] of Object.entries(aliases)) {
+      byTrack.set(id, [...(byTrack.get(id) ?? []), key]);
+    }
+    return byTrack;
+  }, [aliases]);
+
   const filteredTracks = useMemo(() => {
-    const q = normalize(query);
+    const q = trackNameKey(query);
     if (!q) return tracks;
 
     return tracks.filter((track) => {
-      const name = normalize(track.name);
-      const location = normalize(track.location ?? '');
-      return name.includes(q) || location.includes(q);
+      const name = trackNameKey(track.name);
+      const location = trackNameKey(track.location);
+      const known = aliasKeysByTrack.get(track.id) ?? [];
+      return name.includes(q) || location.includes(q) || known.some((alias) => alias.includes(q));
     });
-  }, [query, tracks]);
+  }, [query, tracks, aliasKeysByTrack]);
 
   const customTracks = filteredTracks.filter((track) => !track.is_seeded);
   const seededTracks = filteredTracks.filter((track) => track.is_seeded);
@@ -98,7 +118,9 @@ export function TrackListClient({ tracks, demoMode = false }: TrackListClientPro
         </div>
 
         {seededTracks.length === 0 ? (
-          <p className="mt-3 text-sm text-ink-faint">No seeded tracks match your search.</p>
+          <p className="mt-3 text-sm text-ink-faint">
+            {query ? 'No seeded tracks match your search.' : 'No seeded tracks yet.'}
+          </p>
         ) : (
           <ul className="mt-3 space-y-2">
             {seededTracks.map((track) => (
@@ -107,6 +129,11 @@ export function TrackListClient({ tracks, demoMode = false }: TrackListClientPro
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-ink">{track.name}</p>
                     {track.location ? <p className="text-xs text-ink-dim">{track.location}</p> : null}
+                    {layouts[track.id]?.length ? (
+                      <p className="mt-1 text-xs text-ink-faint">
+                        {layouts[track.id].map((layout) => layout.name).join(' · ')}
+                      </p>
+                    ) : null}
                   </div>
                   <span className="rounded-plate bg-surface-2 px-2 py-1 text-xs text-ink-dim">
                     Read-only

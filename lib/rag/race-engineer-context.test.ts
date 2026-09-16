@@ -8,6 +8,8 @@ const baseSession: Session = {
   vehicle_id: 'vehicle-1',
   track_id: 'track-1',
   track_name: 'Road America',
+  layout_id: null,
+  layout_name: null,
   date: '2026-04-22',
   start_time: '11:00:00',
   session_number: 2,

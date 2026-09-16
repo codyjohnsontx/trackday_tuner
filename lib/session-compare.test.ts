@@ -18,6 +18,8 @@ const baseSession: Session = {
   vehicle_id: 'vehicle-1',
   track_id: 'track-1',
   track_name: 'MSR Cresson',
+  layout_id: null,
+  layout_name: null,
   date: '2026-02-24',
   start_time: '09:00:00',
   session_number: 1,

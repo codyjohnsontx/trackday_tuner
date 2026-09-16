@@ -164,6 +164,18 @@ function createWildcardLookup(rows: { id: string; name: string }[] = []) {
 }
 
 /**
+ * A typed name that misses every track NAME is looked for among the circuits'
+ * other names next - exact pattern, then wildcard, the same two steps - before
+ * anything is created. See lib/track-directory.ts. The table is asserted so a
+ * chain that has drifted fails here rather than handing an alias query the
+ * insert mock that was meant for the step after it.
+ */
+function createAliasMiss(table: string) {
+  expect(table).toBe('track_aliases');
+  return createQuery({ base: { data: [], error: null } });
+}
+
+/**
  * The single `tracks` read a payload carrying a `track_id` costs.
  *
  * `resolveSessionTrack` resolves the id rather than trusting it, and returns as
@@ -213,6 +225,8 @@ const createdSession: Session = {
   vehicle_id: 'veh-1',
   track_id: 'track-1',
   track_name: 'MSR Cresson',
+  layout_id: null,
+  layout_name: null,
   date: '2026-02-24',
   start_time: '09:30:00',
   session_number: 2,
@@ -462,6 +476,221 @@ describe('sessions actions', () => {
     );
   });
 
+  it('lands a name the circuit is also known by on that circuit, not on a new one', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free' } as never);
+
+    // What the reproduction showed: "COTA" in May beside "Circuit of the
+    // Americas" in April was a second custom track. It is the seeded circuit.
+    const aliasHit = createQuery({
+      base: {
+        data: [{ alias: 'COTA', tracks: { id: 'track-cota', name: 'Circuit of the Americas' } }],
+        error: null,
+      },
+    });
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+    const tables: string[] = [];
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => createQuery({ base: { count: 0, data: null, error: null } }))
+      .mockImplementationOnce(() => createQuery({ base: { data: [], error: null } }))
+      .mockImplementationOnce(() => createWildcardLookup())
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('track_aliases');
+        return aliasHit;
+      })
+      .mockImplementationOnce((table: string) => {
+        tables.push(table);
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementation((table: string) => {
+        tables.push(table);
+        return createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } });
+      });
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({ ...validInput, track_id: null, track_name: 'cota ' });
+
+    expect(result.ok).toBe(true);
+    // The circuit's own name is stored, not the alias the rider typed.
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ track_id: 'track-cota', track_name: 'Circuit of the Americas' }),
+    );
+    // And nothing was created, so no free-plan track slot was spent.
+    expect(tables).not.toContain('tracks');
+    expect(revalidateTag).not.toHaveBeenCalledWith('tracks');
+  });
+
+  it("prefers the rider's own track over a seeded circuit an alias would name", async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const ownTrack = createQuery({ base: { data: [{ id: 'track-mine', name: 'Barber' }], error: null } });
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+    const tables: string[] = [];
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce((table: string) => {
+        tables.push(table);
+        return ownTrack;
+      })
+      .mockImplementationOnce((table: string) => {
+        tables.push(table);
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementation((table: string) => {
+        tables.push(table);
+        return createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } });
+      });
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({ ...validInput, track_id: null, track_name: 'Barber' });
+
+    expect(result.ok).toBe(true);
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ track_id: 'track-mine', track_name: 'Barber' }),
+    );
+    expect(tables).not.toContain('track_aliases');
+  });
+
+  it('saves the session under the typed name when the alias lookup fails', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+    const tables: string[] = [];
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => createQuery({ base: { data: [], error: null } }))
+      .mockImplementationOnce(() => createWildcardLookup())
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('track_aliases');
+        return createQuery({ base: { data: null, error: { message: 'boom' } } });
+      })
+      .mockImplementationOnce((table: string) => {
+        tables.push(table);
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementation((table: string) => {
+        tables.push(table);
+        return createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } });
+      });
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({ ...validInput, track_id: null, track_name: 'Some New Circuit' });
+
+    // A rider is never blocked by a lookup that could not answer - and a failed
+    // lookup is not "no such circuit", so no track is created behind it either.
+    expect(result.ok).toBe(true);
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ track_id: null, track_name: 'Some New Circuit', layout_id: null }),
+    );
+    expect(tables).not.toContain('tracks');
+  });
+
+  it('records the layout the rider chose on the circuit they chose', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const layoutLookup = createQuery({ single: { data: { id: 'layout-13', name: '1.3-Mile' }, error: null } });
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => createTrackIdLookup({ id: 'track-1', name: 'MotorSport Ranch' }))
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('track_layouts');
+        return layoutLookup;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementation(() =>
+        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
+      );
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({ ...validInput, layout_id: 'layout-13' });
+
+    expect(result.ok).toBe(true);
+    // Checked against the session's own circuit, not looked up on its own.
+    expect(layoutLookup.eq).toHaveBeenCalledWith('id', 'layout-13');
+    expect(layoutLookup.eq).toHaveBeenCalledWith('track_id', 'track-1');
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        track_id: 'track-1',
+        track_name: 'MotorSport Ranch',
+        layout_id: 'layout-13',
+        layout_name: '1.3-Mile',
+      }),
+    );
+  });
+
+  it('drops a layout that is not one of the circuit\'s, and still saves', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => createTrackIdLookup())
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('track_layouts');
+        // The id exists, but on another circuit - so the scoped read finds nothing.
+        return createQuery({ single: { data: null, error: null } });
+      })
+      .mockImplementationOnce(() => insertQuery)
+      .mockImplementation(() =>
+        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
+      );
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({ ...validInput, layout_id: 'layout-from-vir' });
+
+    expect(result.ok).toBe(true);
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ track_id: 'track-1', layout_id: null, layout_name: null }),
+    );
+  });
+
+  it('asks nothing about layouts when the rider chose none', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+    const tables: string[] = [];
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => createTrackIdLookup())
+      .mockImplementationOnce((table: string) => {
+        tables.push(table);
+        return insertQuery;
+      })
+      .mockImplementation((table: string) => {
+        tables.push(table);
+        return createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } });
+      });
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession(validInput);
+
+    expect(result.ok).toBe(true);
+    expect(tables).not.toContain('track_layouts');
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ layout_id: null, layout_name: null }),
+    );
+  });
+
   it('finds a doubled-space spelling on the exact-match fast path', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
@@ -660,6 +889,8 @@ describe('sessions actions', () => {
         expect(table).toBe('tracks');
         return createWildcardLookup();
       })
+      .mockImplementationOnce(createAliasMiss)
+      .mockImplementationOnce(createAliasMiss)
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('tracks');
         return trackInsert;
@@ -704,6 +935,8 @@ describe('sessions actions', () => {
       .fn()
       .mockImplementationOnce(() => visibleTracks)
       .mockImplementationOnce(() => createWildcardLookup())
+      .mockImplementationOnce(createAliasMiss)
+      .mockImplementationOnce(createAliasMiss)
       .mockImplementationOnce(() => trackInsert)
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
@@ -743,6 +976,8 @@ describe('sessions actions', () => {
       })
       .mockImplementationOnce(() => visibleTracks)
       .mockImplementationOnce(() => createWildcardLookup())
+      .mockImplementationOnce(createAliasMiss)
+      .mockImplementationOnce(createAliasMiss)
       .mockImplementationOnce(() => trackCount)
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
@@ -782,6 +1017,8 @@ describe('sessions actions', () => {
       .fn()
       .mockImplementationOnce(() => visibleTracks)
       .mockImplementationOnce(() => createWildcardLookup())
+      .mockImplementationOnce(createAliasMiss)
+      .mockImplementationOnce(createAliasMiss)
       .mockImplementationOnce(() => trackInsert)
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
@@ -974,6 +1211,8 @@ describe('sessions actions', () => {
       .mockImplementationOnce(() => trackLookup)
       .mockImplementationOnce(() => visibleTracks)
       .mockImplementationOnce(() => createWildcardLookup())
+      .mockImplementationOnce(createAliasMiss)
+      .mockImplementationOnce(createAliasMiss)
       .mockImplementationOnce(() => trackInsert)
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
@@ -1183,6 +1422,8 @@ describe('sessions actions', () => {
       .fn()
       .mockImplementationOnce(() => visibleTracks)
       .mockImplementationOnce(() => createWildcardLookup())
+      .mockImplementationOnce(createAliasMiss)
+      .mockImplementationOnce(createAliasMiss)
       .mockImplementationOnce(() => trackInsert)
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
@@ -1213,7 +1454,7 @@ describe('sessions actions', () => {
     // ON DELETE SET NULL, so deleting the track now would strip the circuit off a
     // session the rider still has.
     expect(trackRollback.delete).not.toHaveBeenCalled();
-    expect(from).toHaveBeenCalledTimes(6);
+    expect(from).toHaveBeenCalledTimes(8);
     expect(errorSpy).toHaveBeenCalledWith(
       '[sessions] session rollback failed',
       expect.objectContaining({ userId: 'user-1', sessionId: 'sess-1', error: 'no rows deleted' }),
@@ -1240,6 +1481,8 @@ describe('sessions actions', () => {
       .fn()
       .mockImplementationOnce(() => visibleTracks)
       .mockImplementationOnce(() => createWildcardLookup())
+      .mockImplementationOnce(createAliasMiss)
+      .mockImplementationOnce(createAliasMiss)
       .mockImplementationOnce(() => trackInsert)
       .mockImplementationOnce((table: string) => {
         expect(table).toBe('sessions');
@@ -1270,7 +1513,7 @@ describe('sessions actions', () => {
     // ON DELETE SET NULL, so removing the track now would strip the circuit off a
     // session the rider still has. A stray track is the lesser failure.
     expect(trackRollback.delete).not.toHaveBeenCalled();
-    expect(from).toHaveBeenCalledTimes(6);
+    expect(from).toHaveBeenCalledTimes(8);
     expect(errorSpy).toHaveBeenCalledWith(
       '[sessions] session rollback failed',
       expect.objectContaining({ userId: 'user-1', sessionId: 'sess-1', error: 'delete refused' }),
@@ -1469,6 +1712,8 @@ describe('sessions actions', () => {
       vehicle_id: 'veh-1',
       track_id: null,
       track_name: null,
+      layout_id: null,
+      layout_name: null,
       date: '2026-02-24',
       start_time: '12:00:00',
       session_number: 2,
@@ -1511,6 +1756,8 @@ describe('sessions actions', () => {
       vehicle_id: 'veh-1',
       track_id: 'track-1',
       track_name: 'MSR Cresson',
+      layout_id: null,
+      layout_name: null,
       date: '2026-02-24',
       start_time: '12:00:00',
       session_number: 2,

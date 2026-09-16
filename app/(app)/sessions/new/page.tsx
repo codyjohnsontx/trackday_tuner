@@ -4,7 +4,7 @@ import { PlanLimitNotice } from '@/components/billing/plan-limit-notice';
 import { DemoReadOnlyNotice } from '@/components/demo/read-only-notice';
 import { getLatestSessionsByVehicle, getSessionCount } from '@/lib/actions/sessions';
 import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
-import { getTracks } from '@/lib/actions/tracks';
+import { getTrackDirectory } from '@/lib/actions/tracks';
 import { isDemoMode } from '@/lib/demo/mode';
 import { resolveUserAccess } from '@/lib/access';
 import { isAtFreePlanLimit } from '@/lib/plans';
@@ -12,10 +12,10 @@ import { SessionForm } from '@/components/sessions/session-form';
 import { pageTitleClass } from '@/components/ui/page-header';
 
 export default async function NewSessionPage() {
-  const [vehicles, tracks, latestSessionsByVehicle, demoMode, profile, sessionCount] =
+  const [vehicles, trackDirectory, latestSessionsByVehicle, demoMode, profile, sessionCount] =
     await Promise.all([
       getVehicles(),
-      getTracks(),
+      getTrackDirectory(),
       getLatestSessionsByVehicle(),
       isDemoMode(),
       getUserProfile(),
@@ -60,7 +60,13 @@ export default async function NewSessionPage() {
           </Link>
         </div>
       </div>
-      <SessionForm vehicles={vehicles} tracks={tracks} latestSessionsByVehicle={latestSessionsByVehicle} />
+      <SessionForm
+        vehicles={vehicles}
+        tracks={trackDirectory.tracks}
+        trackAliases={trackDirectory.aliases}
+        trackLayouts={trackDirectory.layouts}
+        latestSessionsByVehicle={latestSessionsByVehicle}
+      />
     </div>
   );
 }
