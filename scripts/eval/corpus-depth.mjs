@@ -65,13 +65,13 @@ export function summarizeContext(retrieved, excerptOf) {
 export function aggregateContext(perCase) {
   const ran = perCase.filter((entry) => entry.contextDepth != null);
   if (ran.length === 0) {
-    return { cases: 0, words: null, chunks: null, sources: null, narrowest: null };
+    return { cases: 0, words: null, chunks: null, sources: null, thinnest: null };
   }
   const mean = (pick) => ran.reduce((sum, entry) => sum + pick(entry.contextDepth), 0) / ran.length;
   // The mean is what the claim was about; the floor is what a rider can
   // actually get, and it is the figure worth arguing over when deciding
   // whether the corpus is deep enough.
-  const narrowest = ran.reduce((worst, entry) =>
+  const thinnest = ran.reduce((worst, entry) =>
     entry.contextDepth.words < worst.contextDepth.words ? entry : worst,
   );
   return {
@@ -79,7 +79,7 @@ export function aggregateContext(perCase) {
     words: mean((g) => g.words),
     chunks: mean((g) => g.chunks),
     sources: mean((g) => g.sources),
-    narrowest: { id: narrowest.id, words: narrowest.contextDepth.words },
+    thinnest: { id: thinnest.id, words: thinnest.contextDepth.words },
   };
 }
 
@@ -123,7 +123,7 @@ export function tallyMissedSources(perCase) {
     }
   }
   return [...missed.entries()]
-    .map(([source, misses]) => ({ source, misses, labelled: expected.get(source) ?? misses }))
+    .map(([source, misses]) => ({ source, misses, labelled: expected.get(source) }))
     .sort((a, b) => b.misses - a.misses || a.source.localeCompare(b.source));
 }
 
@@ -138,18 +138,40 @@ export function tallyMissedSources(perCase) {
  * Offline replay spends none of it. The counts are still real on an offline
  * run, because they are read from the recorded responses, so the figure below
  * is what re-recording this set would cost.
+ *
+ * A call whose response carried no `usage` object is UNMEASURED rather than
+ * free - the same empty-is-not-zero rule the rest of this file applies. It
+ * counts toward `calls` and not toward `measured_calls`, its tokens are not
+ * summed, and a model no call reported usage for totals `null` rather than 0,
+ * because a confidently wrong cost is worse than an admittedly unknown one and
+ * a model change is exactly when a provider stops filling that field.
  */
 export function aggregateUsage(perCase) {
   const byModel = new Map();
   for (const entry of perCase) {
     if (entry.usage == null || entry.model == null) continue;
-    const totals = byModel.get(entry.model) ?? { calls: 0, prompt_tokens: 0, completion_tokens: 0 };
+    const totals = byModel.get(entry.model) ?? {
+      calls: 0,
+      measured_calls: 0,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+    };
     totals.calls += 1;
-    totals.prompt_tokens += entry.usage.prompt_tokens ?? 0;
-    totals.completion_tokens += entry.usage.completion_tokens ?? 0;
+    const prompt = entry.usage.prompt_tokens;
+    const completion = entry.usage.completion_tokens;
+    if (typeof prompt === 'number' && typeof completion === 'number') {
+      totals.measured_calls += 1;
+      totals.prompt_tokens += prompt;
+      totals.completion_tokens += completion;
+    }
     byModel.set(entry.model, totals);
   }
   return [...byModel.entries()]
-    .map(([model, totals]) => ({ model, ...totals }))
+    .map(([model, totals]) => ({
+      model,
+      ...totals,
+      prompt_tokens: totals.measured_calls === 0 ? null : totals.prompt_tokens,
+      completion_tokens: totals.measured_calls === 0 ? null : totals.completion_tokens,
+    }))
     .sort((a, b) => a.model.localeCompare(b.model));
 }

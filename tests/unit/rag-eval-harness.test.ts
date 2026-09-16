@@ -1363,7 +1363,7 @@ describe('grounding measurement', () => {
       words: null,
       chunks: null,
       sources: null,
-      narrowest: null,
+      thinnest: null,
     });
   });
 
@@ -1378,7 +1378,7 @@ describe('grounding measurement', () => {
     expect(agg.words).toBe(200);
     expect(agg.chunks).toBe(3);
     expect(agg.sources).toBe(2);
-    expect(agg.narrowest).toEqual({ id: 'thin', words: 100 });
+    expect(agg.thinnest).toEqual({ id: 'thin', words: 100 });
   });
 
   it('describes the index the answers were drawn from, and an empty one as unmeasured', () => {
@@ -1412,9 +1412,54 @@ describe('grounding measurement', () => {
     expect(
       aggregateUsage([
         { model: 'gpt-4o-mini', usage: { prompt_tokens: 100, completion_tokens: 20 } },
-        { model: 'gpt-4o-mini', usage: { prompt_tokens: 50, completion_tokens: null } },
+        { model: 'gpt-4o-mini', usage: { prompt_tokens: 50, completion_tokens: 10 } },
         { model: null, usage: null },
       ]),
-    ).toEqual([{ model: 'gpt-4o-mini', calls: 2, prompt_tokens: 150, completion_tokens: 20 }]);
+    ).toEqual([
+      {
+        model: 'gpt-4o-mini',
+        calls: 2,
+        measured_calls: 2,
+        prompt_tokens: 150,
+        completion_tokens: 30,
+      },
+    ]);
+  });
+
+  it('counts a call whose response reported no usage as unmeasured, not as zero tokens', () => {
+    // `generateTuningAdvice` nulls both fields when the completion carries no
+    // `usage` object. Summing that as 0 prints a confidently wrong cost with no
+    // signal it was never measured - which is exactly what a model or gateway
+    // change would produce.
+    expect(
+      aggregateUsage([
+        { model: 'gpt-4o-mini', usage: { prompt_tokens: 100, completion_tokens: 20 } },
+        { model: 'gpt-4o-mini', usage: { prompt_tokens: 50, completion_tokens: null } },
+      ]),
+    ).toEqual([
+      {
+        model: 'gpt-4o-mini',
+        calls: 2,
+        measured_calls: 1,
+        prompt_tokens: 100,
+        completion_tokens: 20,
+      },
+    ]);
+  });
+
+  it('reports null totals rather than zero when no call reported usage at all', () => {
+    expect(
+      aggregateUsage([
+        { model: 'next-model', usage: { prompt_tokens: null, completion_tokens: null } },
+      ]),
+    ).toEqual([
+      {
+        model: 'next-model',
+        calls: 1,
+        measured_calls: 0,
+        prompt_tokens: null,
+        completion_tokens: null,
+      },
+    ]);
   });
 });

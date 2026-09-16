@@ -2024,7 +2024,7 @@ async function report(ctx) {
       `of ${num(context.sources, 1)} sources  (mean over ${context.cases} retrieving cases)`,
   );
   console.log(
-    `  thinnest answer      ${context.narrowest == null ? 'n/a' : `${context.narrowest.words} words  (${context.narrowest.id})`}`,
+    `  thinnest answer      ${context.thinnest == null ? 'n/a' : `${context.thinnest.words} words  (${context.thinnest.id})`}`,
   );
   if (missedSources.length > 0) {
     console.log('  labelled sources the retriever did not reach:');
@@ -2043,9 +2043,13 @@ async function report(ctx) {
   if (usage.length > 0) {
     console.log('\nCost of one --live run  (offline replay spends none of it)');
     for (const entry of usage) {
+      const unmeasured = entry.calls - entry.measured_calls;
       console.log(
         `  ${entry.model.padEnd(24)} ${entry.calls} calls, ` +
-          `${entry.prompt_tokens} prompt + ${entry.completion_tokens} completion tokens`,
+          (entry.prompt_tokens == null
+            ? 'tokens unmeasured (no usage reported)'
+            : `${entry.prompt_tokens} prompt + ${entry.completion_tokens} completion tokens` +
+              (unmeasured > 0 ? ` over ${entry.measured_calls} measured` : '')),
       );
     }
   }
@@ -2144,7 +2148,7 @@ async function report(ctx) {
           words: round(context.words, 1),
           chunks: round(context.chunks, 2),
           sources: round(context.sources, 2),
-          thinnest: context.narrowest,
+          thinnest: context.thinnest,
         },
         missed_sources: missedSources,
       },
