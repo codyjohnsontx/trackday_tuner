@@ -35,8 +35,10 @@ import type { AiRecommendation, Session, SessionFeedback, Vehicle } from '@/type
  *   - a printed id the policy will not accept is bait for the same refusal.
  *
  * These tests build the prompt and the allowed set from ONE input, so the two
- * cannot drift apart again. The last test is the other half of the bar: the
- * guard must still refuse an id that was never shown.
+ * cannot drift apart again. The last two are the other half of the bar: the
+ * guard must still refuse an id that was never shown, and must still refuse the
+ * literal string "null" if one ever reaches it - which, since 2026-09-16, the
+ * parser sees to first. See that test for the ruling.
  */
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
@@ -311,11 +313,16 @@ describe('invalid_personal_evidence after the ids are printed', () => {
     expect(result.advice.recommended_changes).toEqual([]);
   });
 
-  it('STILL refuses the literal string "null" the model was recorded emitting', () => {
-    // `tests/fixtures/rag-eval/recordings/completions.json` has the model
-    // writing this into a field typed `string | null`. It is not a session id,
-    // so it is fabrication as far as the guard can tell, and coercing it to
-    // null would keep an unverified evidence entry in front of the rider.
+  it('STILL refuses the literal string "null" when it reaches the policy', () => {
+    // The recordings have the model writing this into a field typed
+    // `string | null`. The POLICY's answer to it is unchanged and pinned here,
+    // but production no longer asks the question: under the captain's ruling of
+    // 2026-09-16 `parseAdviceResponse` normalises a placeholder to null before
+    // the policy sees it (`PLACEHOLDER_SESSION_REFERENCES` in
+    // `lib/rag/schema.ts`), because a model declining to give a reference is not
+    // a model inventing one - and discarding a correct, cited answer over it
+    // cost the rider everything. This assertion is what still holds if that
+    // normalisation is ever removed.
     const result = evaluateAdvicePolicy({
       advice: adviceCiting('null'),
       fallbackDataUsed,

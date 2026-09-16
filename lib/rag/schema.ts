@@ -170,6 +170,72 @@ export const adviceResponseJsonSchema = {
   },
 } as const;
 
+/**
+ * Strings a model writes where a session reference belongs when it means it has
+ * no reference to give.
+ *
+ * `source_session_id` is typed `string | null`, so the four-character string
+ * "null" is a perfectly valid string and reaches `evaluateAdvicePolicy` wearing
+ * the costume of a real id. The policy cannot verify it against the session ids
+ * the prompt printed, reads it as fabricated evidence, and force-refuses the
+ * WHOLE response - the advice, the citations and the rest of the evidence go
+ * with it, and the rider is told only that the historical session evidence
+ * could not be verified. That is the right answer to a fabricated id and the
+ * wrong answer to a placeholder, and telling the two apart is this parser's job
+ * rather than the policy's.
+ *
+ * THE SET IS MEASURED, NOT GUESSED. Across the five committed generations of
+ * `tests/fixtures/rag-eval/recordings/completions.json` the model emitted 78
+ * `personal_evidence` entries: 77 carried a session id its own prompt had
+ * printed, and exactly one carried the string "null" (commit 5524a4c, tape key
+ * 5ea2f97b7872510ff6f6d355f4ca5c4d, the golden case `mc-gearing-slow-corner`).
+ * A JSON null was never emitted, and no other non-id value ever appeared.
+ *
+ * So "null" is the only member with a recording behind it. The other four are
+ * the same act spelled in another language - a null literal serialised as text,
+ * plus the empty string - and they are carried because this is a NORMALISATION
+ * rather than a judgement: every one of them says "nothing" instead of naming a
+ * session, and no session id is any of them, so widening to them costs nothing
+ * and narrowing to the one measured spelling would leave the next one to be
+ * found by a rider.
+ *
+ * What is deliberately NOT here is the English placeholders - "n/a", "unknown",
+ * "none of your sessions" and anything longer. None has ever been recorded, and
+ * a list that grows by plausibility rather than by evidence ends up normalising
+ * a value a rider might one day need refused. A shape that turns up is added
+ * with its recording.
+ *
+ * The same placeholder could in principle arrive in `refusal`, where the string
+ * "null" would refuse the rider with the word "null" as the reason. That has
+ * never been recorded - across those same tapes `refusal` was JSON null 120
+ * times and genuine prose 12 - and it is a different field with a different
+ * contract, so it is left alone rather than swept in here.
+ */
+const PLACEHOLDER_SESSION_REFERENCES: ReadonlySet<string> = new Set([
+  '',
+  'null',
+  'undefined',
+  'none',
+  'nil',
+]);
+
+/**
+ * `null` when the model wrote a placeholder rather than a session reference,
+ * and the value untouched otherwise. A string that is not a placeholder is
+ * returned exactly as it arrived, including one that is not a session id at
+ * all: fabricating an id and declining to give one are different acts, and only
+ * the second is normalised here. The first still reaches the policy and is
+ * still refused.
+ *
+ * Not exported. `parseAdviceResponse` is the boundary, and a second way in would
+ * be a way to normalise without parsing - which is a way to reach the policy
+ * with a response nothing has checked.
+ */
+function normalizeSessionReference(value: string | null): string | null {
+  if (value === null) return null;
+  return PLACEHOLDER_SESSION_REFERENCES.has(value.trim().toLowerCase()) ? null : value;
+}
+
 function isString(value: unknown): value is string {
   return typeof value === 'string';
 }
@@ -330,7 +396,10 @@ export function parseAdviceResponse(value: unknown): ParseResult<AdviceResponse>
       safety_notes: v.safety_notes,
       citations: v.citations as AdviceCitation[],
       prediction: (v.prediction ?? EMPTY_PREDICTION) as AdvicePrediction,
-      personal_evidence: (v.personal_evidence ?? []) as PersonalEvidence[],
+      personal_evidence: ((v.personal_evidence ?? []) as PersonalEvidence[]).map((entry) => ({
+        ...entry,
+        source_session_id: normalizeSessionReference(entry.source_session_id),
+      })),
       data_used: normalizedDataUsed,
       refusal: (v.refusal ?? null) as string | null,
     },
