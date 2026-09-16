@@ -21,6 +21,8 @@ import { OpenAiTape, UNKEYABLE_REQUEST_ERROR_TYPE } from '@/scripts/eval/openai-
 import { compareAgainstBaseline, describeCaseLabels, describeUnreadableBaseline, describeUnsoundRun, describeUnusableBaseline, diffLine, prepareOpenAiApiKey } from '@/scripts/eval/run.mjs';
 // @ts-expect-error - see above.
 import { resolve as resolveAlias } from '@/scripts/eval/ts-loader.mjs';
+// @ts-expect-error - see above.
+import { aggregateContext, aggregateUsage, countWords, describeCorpus, summarizeContext, tallyMissedSources } from '@/scripts/eval/corpus-depth.mjs';
 
 const repoRoot = process.cwd();
 const readJson = (relative: string) =>
@@ -1306,5 +1308,113 @@ describe('where the eval finds its OpenAI key', () => {
     expect(problem).toContain('.env.local');
     expect(problem).toMatch(/\.env(?!\.)/);
     expect(process.env.OPENAI_API_KEY).toBeUndefined();
+  });
+});
+
+/**
+ * The grounding measurement. It gates nothing, which is exactly why it is worth
+ * testing: a reported figure nobody compares against a baseline is one nobody
+ * would notice going wrong, and this one exists to inform a spending decision
+ * about the knowledge base.
+ */
+describe('grounding measurement', () => {
+  const excerptAt = (limit: number) => (text: string) => text.slice(0, limit);
+  const whole = (text: string) => text;
+
+  it('counts an empty chunk as no words rather than one', () => {
+    // `''.split(/\s+/)` is `['']`, so the naive count inflates every figure
+    // below by one word per empty or whitespace-only chunk.
+    expect(countWords('')).toBe(0);
+    expect(countWords('   \n  ')).toBe(0);
+    expect(countWords(' one  two \n three ')).toBe(3);
+  });
+
+  it('measures the excerpt the prompt prints, not the whole chunk', () => {
+    const retrieved = [{ chunk: { source: 'a.md', text: 'one two three four five' } }];
+
+    expect(summarizeContext(retrieved, whole)).toEqual({ chunks: 1, words: 5, sources: 1 });
+    // A chunk the prompt truncates contributes only what survived truncation,
+    // so raising EXCERPT_MAX_CHARS shows up here as more grounding rather than
+    // leaving the figure pinned to the index.
+    expect(summarizeContext(retrieved, excerptAt(7))).toEqual({ chunks: 1, words: 2, sources: 1 });
+  });
+
+  it('counts distinct sources, so four chunks of one file are one document', () => {
+    const retrieved = [
+      { chunk: { source: 'a.md', text: 'x' } },
+      { chunk: { source: 'a.md', text: 'x' } },
+      { chunk: { source: 'b.md', text: 'x' } },
+    ];
+
+    expect(summarizeContext(retrieved, whole)).toEqual({ chunks: 3, words: 3, sources: 2 });
+  });
+
+  it('reports null for a case the retriever never ran for', () => {
+    // A classifier refusal returns before `generateTuningAdvice`. Zero words
+    // would say the model was handed nothing; it was never asked.
+    expect(summarizeContext(null, whole)).toBeNull();
+  });
+
+  it('reports null rather than zero when no case retrieved at all', () => {
+    // The empty-collection rule this harness is built on. `0 words` would read
+    // as the most alarming possible result of a measurement that never ran.
+    expect(aggregateContext([{ id: 'refused', contextDepth: null }])).toEqual({
+      cases: 0,
+      words: null,
+      chunks: null,
+      sources: null,
+      narrowest: null,
+    });
+  });
+
+  it('averages over the cases that retrieved and names the thinnest answer', () => {
+    const agg = aggregateContext([
+      { id: 'wide', contextDepth: { chunks: 4, words: 300, sources: 3 } },
+      { id: 'thin', contextDepth: { chunks: 2, words: 100, sources: 1 } },
+      { id: 'refused', contextDepth: null },
+    ]);
+
+    expect(agg.cases).toBe(2);
+    expect(agg.words).toBe(200);
+    expect(agg.chunks).toBe(3);
+    expect(agg.sources).toBe(2);
+    expect(agg.narrowest).toEqual({ id: 'thin', words: 100 });
+  });
+
+  it('describes the index the answers were drawn from, and an empty one as unmeasured', () => {
+    const corpus = describeCorpus([
+      { source: 'a.md', text: 'one two three four' },
+      { source: 'a.md', text: 'one two' },
+    ]);
+
+    expect(corpus).toEqual({ chunks: 2, sources: 1, words: 6, words_per_chunk: 3 });
+    expect(describeCorpus([])).toEqual({ chunks: 0, sources: 0, words: 0, words_per_chunk: null });
+  });
+
+  it('counts a missed source against the cases that labelled it, not the whole set', () => {
+    const tally = tallyMissedSources([
+      {
+        retrieval: { applicable: true, missed: ['deep.md'] },
+        labels: { expected_sources: ['deep.md', 'found.md'] },
+      },
+      {
+        retrieval: { applicable: true, missed: ['deep.md'] },
+        labels: { expected_sources: ['deep.md'] },
+      },
+      // Unlabelled and unscoreable cases are not chances the source was given.
+      { retrieval: { applicable: false, missed: [] }, labels: { expected_sources: [] } },
+    ]);
+
+    expect(tally).toEqual([{ source: 'deep.md', misses: 2, labelled: 2 }]);
+  });
+
+  it('totals token spend per model and ignores cases that never called one', () => {
+    expect(
+      aggregateUsage([
+        { model: 'gpt-4o-mini', usage: { prompt_tokens: 100, completion_tokens: 20 } },
+        { model: 'gpt-4o-mini', usage: { prompt_tokens: 50, completion_tokens: null } },
+        { model: null, usage: null },
+      ]),
+    ).toEqual([{ model: 'gpt-4o-mini', calls: 2, prompt_tokens: 150, completion_tokens: 20 }]);
   });
 });

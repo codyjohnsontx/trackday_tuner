@@ -27,6 +27,13 @@ import {
   matchesExpectedDirection,
   scoreAdviceResponse,
 } from './scoring.mjs';
+import {
+  aggregateContext,
+  aggregateUsage,
+  describeCorpus,
+  summarizeContext,
+  tallyMissedSources,
+} from './corpus-depth.mjs';
 import { aggregateRetrieval, scoreRetrieval } from './retrieval.mjs';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -945,6 +952,7 @@ async function runCase(testCase, deps) {
     buildRefusalAdvice,
     collectTuningAdviceRiderText,
     dropScreenedSources,
+    excerptForPrompt,
     generateTuningAdvice,
     buildDayTrend,
     hasManualSessionData,
@@ -996,6 +1004,7 @@ async function runCase(testCase, deps) {
         dataUsed: fallbackDataUsed,
       }), premise),
       retrievedSources: null,
+      contextDepth: null,
       fallbackDataUsed,
       validSessionIds: [session.id],
     };
@@ -1028,6 +1037,7 @@ async function runCase(testCase, deps) {
         dataUsed: fallbackDataUsed,
       }), premise),
       retrievedSources: null,
+      contextDepth: null,
       fallbackDataUsed,
       validSessionIds: [session.id],
     };
@@ -1050,6 +1060,9 @@ async function runCase(testCase, deps) {
     stage: 'model',
     response: applyPremiseRejection(result.advice, premise),
     retrievedSources: result.retrieved.map(({ chunk }) => chunk.source),
+    // Measured through the prompt builder's own excerpt helper, so this is the
+    // knowledge text the model was handed rather than the raw chunk.
+    contextDepth: summarizeContext(result.retrieved, excerptForPrompt),
     usage: result.usage,
     latencyMs: result.latencyMs,
     model: result.model,
@@ -1072,6 +1085,11 @@ async function runCase(testCase, deps) {
  */
 function ratio(hits, total) {
   return total === 0 ? null : hits / total;
+}
+
+/** Committed figures are rounded so a baseline diff shows movement, not float noise. */
+function round(value, digits) {
+  return value == null ? null : Number(value.toFixed(digits));
 }
 
 function fmt(value) {
@@ -1830,6 +1848,8 @@ export async function main(argv) {
           error: null,
           scored,
           retrieval,
+          contextDepth: outcome.contextDepth,
+          usage: outcome.usage ?? null,
           confidence: outcome.response.confidence,
           componentMatch: modelAnswered
             ? matchesExpectedComponent(primary?.component, testCase.expected_component, vocabulary)
@@ -1983,6 +2003,53 @@ async function report(ctx) {
   console.log(`  component accuracy   ${fmt(metrics.component_accuracy)}  over ${coverage.component_cases} answered cases`);
   console.log(`  direction accuracy   ${fmt(metrics.direction_accuracy)}  over ${coverage.direction_cases} answered cases`);
 
+  /**
+   * What the corpus gives an answer to work with. Reported, never gated - the
+   * reasoning is in `corpus-depth.mjs`, and the short form is that no direction of
+   * movement here is a regression on its own and the remedy is a product
+   * investment rather than a code fix.
+   */
+  const corpus = describeCorpus(ctx.index.chunks);
+  const context = aggregateContext(scoredResults);
+  const missedSources = tallyMissedSources(scoredResults);
+  const num = (value, digits = 0) => (value == null ? 'n/a' : value.toFixed(digits));
+
+  console.log('\nCorpus depth  (reported, never gated)');
+  console.log(
+    `  corpus               ${corpus.chunks} chunks over ${corpus.sources} sources, ` +
+      `${num(corpus.words_per_chunk)} words per chunk, ${corpus.words} words in total`,
+  );
+  console.log(
+    `  context per answer   ${num(context.words)} words from ${num(context.chunks, 1)} chunks ` +
+      `of ${num(context.sources, 1)} sources  (mean over ${context.cases} retrieving cases)`,
+  );
+  console.log(
+    `  thinnest answer      ${context.narrowest == null ? 'n/a' : `${context.narrowest.words} words  (${context.narrowest.id})`}`,
+  );
+  if (missedSources.length > 0) {
+    console.log('  labelled sources the retriever did not reach:');
+    for (const { source, misses, labelled } of missedSources) {
+      console.log(`    ${source}  missed on ${misses} of ${labelled} labelled case(s)`);
+    }
+  }
+
+  /**
+   * What re-recording this set costs, in the only unit that cannot go stale
+   * here. Offline replay spends nothing; these counts are read back off the
+   * recordings, so they are what a `--live` re-record would pay for. AGENTS.md
+   * carries the dollar figure, its prices and the date they were read.
+   */
+  const usage = aggregateUsage(scoredResults);
+  if (usage.length > 0) {
+    console.log('\nCost of one --live run  (offline replay spends none of it)');
+    for (const entry of usage) {
+      console.log(
+        `  ${entry.model.padEnd(24)} ${entry.calls} calls, ` +
+          `${entry.prompt_tokens} prompt + ${entry.completion_tokens} completion tokens`,
+      );
+    }
+  }
+
   let baseline = null;
   let readProblem = null;
   try {
@@ -2055,6 +2122,32 @@ async function report(ctx) {
       cases: results.length,
       metrics,
       coverage,
+      /**
+       * Recorded so the corpus's contribution to answer quality is a committed
+       * measurement rather than a claim somebody made once, and so the model
+       * change landing after this can be read against the grounding it had.
+       * NOTHING HERE IS GATED, and `corpus-depth.mjs` says why: no direction of
+       * movement is a regression on its own, and the remedy for a thin corpus
+       * is a product decision a CI gate must not take on the owner's behalf.
+       * A baseline written before this key existed is therefore still usable -
+       * an ungated figure cannot ungate anything.
+       */
+      corpus_depth: {
+        corpus: {
+          chunks: corpus.chunks,
+          sources: corpus.sources,
+          words: corpus.words,
+          words_per_chunk: round(corpus.words_per_chunk, 1),
+        },
+        context_per_answer: {
+          cases: context.cases,
+          words: round(context.words, 1),
+          chunks: round(context.chunks, 2),
+          sources: round(context.sources, 2),
+          thinnest: context.narrowest,
+        },
+        missed_sources: missedSources,
+      },
       limitations: BASELINE_LIMITATIONS,
       live_rerecord: BASELINE_LIVE_RERECORDS,
       correction_record: BASELINE_CORRECTION_RECORD,

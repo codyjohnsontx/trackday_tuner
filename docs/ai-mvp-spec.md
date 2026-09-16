@@ -168,6 +168,11 @@ record - read it there rather than a copy here. Two entries carry it today:
 set, and `the-premise-guard-is-one-arm-and-seven-shapes-are-known-uncovered`,
 which records what the request-layer premise guard does and does not reach.
 
+The criterion is met by the committed baseline and was never evidenced by the
+100% the predecessor reported: that harness scored eleven constants and could
+not fail, so the two numbers are not comparable and no reading makes them so.
+Read the criterion against `eval-baseline.json` alone.
+
 The 85% is a target the harness prints and deliberately does not enforce; what
 gates CI is a metric regressing against the committed `eval-baseline.json`.
 AGENTS.md ("The RAG Eval Harness") owns the reasoning and the operating

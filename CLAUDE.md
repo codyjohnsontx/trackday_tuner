@@ -1486,6 +1486,45 @@ mode is consulted, so a `--live` run on an unchanged prompt makes no API call at
 all - the cleanup above ran as `52 replayed, 0 recorded, 0 missed`. Re-recording
 is only ever paid for by a prompt that actually moved.
 
+**THE OLD NUMBER AND THE NEW ONE ARE NOT COMPARABLE, and no reading makes them
+so.** The predecessor reported 100% over eleven constants it could not fail; the
+committed baseline is 0.94 over 33 real requests it can. Different inputs, a
+different rubric and one of them incapable of returning anything else - a
+difference of -6 points between those two measures nothing. So
+`docs/ai-mvp-spec.md`'s 85% exit criterion is met by the 0.94 here and was never
+evidenced by the 100%, and any claim about the Race Engineer improving or
+regressing starts from this baseline rather than from anything recorded before
+it.
+
+**The corpus's contribution is MEASURED and REPORTED, and gates nothing.**
+`scripts/eval/corpus-depth.mjs` counts what an answer was actually grounded in -
+through the prompt builder's own `excerptForPrompt`, so it is the text the model
+saw rather than the raw chunk - and every run prints it beside the aggregate.
+Today: 75 chunks over 15 sources, 3350 words in total, and a mean answer built
+on 206 words from 4 chunks of 2.4 distinct documents. That is the survey's
+finding 9 measured rather than multiplied out; its 45 x 4 = 180 was arithmetic
+over the index, and retrieval favours the longer chunks. The sharper figure is
+the miss tally beside it: `suspension/rebound-vs-compression.md` and
+`safety/disclaimers.md` are **never** retrieved on a case that expects them, 4 of
+4 and 2 of 2, so recall@4 of 0.79 is two documents the retriever cannot reach
+rather than a shortfall spread thinly. **None of it is gated**, on two grounds
+written out in that file: no direction of movement is a regression on its own -
+more words is not better - and the remedy for a thin corpus is a product
+investment decision, which a CI gate would take on the owner's behalf by
+refusing to go green until somebody spent the money.
+
+**One `--live` run costs about two cents, and the run says so in tokens.** The
+committed recordings carry the real usage, so the figure is measured rather than
+estimated: 28 completions at 68,905 prompt + 9,386 completion tokens, plus 28
+embeddings at 937 tokens. At the list prices read on 2026-09-16 - gpt-4o-mini
+$0.15/$0.60 per million, text-embedding-3-small $0.02 per million - that is
+$0.016, of which embeddings are under a hundredth of a cent. The report prints
+TOKENS and not dollars deliberately: a price table committed here is a number
+nobody re-checks, and the model is about to change, which is exactly when a stale
+one misleads most. Offline replay pays none of it, and `--live` replays a
+matching entry before the mode is consulted, so only a prompt that actually moved
+is ever paid for.
+
 **No build step and no dependency.** `scripts/eval/ts-loader.mjs` is a resolve
 hook that maps `@/`, adds the missing extension and stubs `server-only` (a
 webpack alias Next resolves at build time, not an installed package). Node >=
