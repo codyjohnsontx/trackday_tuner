@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "notes": "The self-check's other half: responses production MUST SERVE.\n\nadversarial-responses.json proves the harness can report a FAILURE. It cannot prove the\nharness can report a PASS on a response that a guard nearly threw away, and a guard that\nrefuses a good answer costs the rider exactly as much as one that serves a bad one - more,\nbecause nothing in the pipeline reports it.\n\nEach response here is a real recorded model output that production discarded, or would have.\nThe run scores every one of them and exits non-zero if any is refused, the mirror of the\nadversarial gate above it, and an EMPTY set is the absence of that proof rather than a pass.\n\nTHESE GO THROUGH parseAdviceResponse FIRST, and the adversarial fixtures deliberately do not.\nThat asymmetry is the point of this file: the adversarial set asks what the SCORER does with a\nwell-formed response, while these ask what the PARSER hands the scorer - which is where a\nplaceholder stops being a session reference. Scoring these raw would skip the only step under\ntest. None of the adversarial three carries a value the parser normalizes, so feeding them\nthrough it would change nothing and would quietly alter a gate with its own recorded\nprovenance.\n\nvalid_session_ids is [] for every case, the strictest setting the policy has: with no allowed\nids, ANY non-null source_session_id is unverifiable. A case that passes here passes because the\nreference is genuinely absent, not because it happened to match an id in a list.",
+  "cases": [
+    {
+      "id": "MUST-SERVE-placeholder-session-reference",
+      "scenario": "Motorcycle gearing: the model answers correctly and writes the string \"null\" where the session reference belongs.",
+      "provenance": "tests/fixtures/rag-eval/recordings/completions.json at commit 5524a4c, tape key 5ea2f97b7872510ff6f6d355f4ca5c4d - the golden case mc-gearing-slow-corner, recorded 2026-09-08. The response is verbatim.",
+      "what_it_costs_the_rider": "evaluateAdvicePolicy reads the four-character string \"null\" as a session id it cannot verify and force-refuses with invalid_personal_evidence, so a legitimate gearing question returns no advice, no citation and no evidence - only the line that the historical session evidence could not be verified. The answer itself was right: rear_sprocket, decrease, 1 tooth, cited to the gearing file, quoting the rider's own session notes.",
+      "response": {
+        "summary": "To address the issue of dropping out of the powerband exiting the second-gear corner, I recommend shortening the gearing by changing the rear sprocket. This should help keep the RPMs within the powerband during your exit.",
+        "recommended_changes": [
+          {
+            "component": "rear_sprocket",
+            "direction": "decrease",
+            "magnitude": "1 tooth",
+            "reason": "Shortening the gearing will help maintain RPMs in the powerband exiting the corner."
+          }
+        ],
+        "tradeoffs": [],
+        "confidence": "high",
+        "safety_notes": [
+          "This is informational only. You are responsible for vehicle safety and on-track conduct.",
+          "Make one change at a time and re-test for a full session before stacking another change."
+        ],
+        "citations": [
+          {
+            "source": "docs/knowledge-base/drivetrain/gearing-basics.md",
+            "snippet": "Second gear corner that drops RPM below the powerband: shorten gearing."
+          }
+        ],
+        "prediction": {
+          "expected_effect": "Improved acceleration out of the corner and better powerband engagement.",
+          "day_trend": "Monitor tire pressures and wear as the day progresses, especially with the current warm conditions.",
+          "watch_items": [
+            "hot pressures",
+            "tire wear",
+            "corner exit performance"
+          ]
+        },
+        "personal_evidence": [
+          {
+            "label": "Session notes",
+            "detail": "Falls out of the powerband on the drive out of the slow left. Second gear is too tall there.",
+            "source_session_id": "null"
+          }
+        ],
+        "data_used": {
+          "manual": true,
+          "weather": false,
+          "history": false,
+          "feedback": false,
+          "lap_data": false,
+          "telemetry": false
+        },
+        "refusal": null
+      }
+    }
+  ]
+}

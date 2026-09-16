@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
+import { parseAdviceResponse } from '@/lib/rag/schema';
 import * as vocabulary from '@/lib/rag/component-vocabulary';
 // The harness is plain JS on purpose; it runs under node with no build step so
 // that `npm run rag:eval` needs neither a bundler nor a new dependency. There
@@ -54,6 +55,18 @@ const adversarial = readJson('tests/fixtures/rag-eval/adversarial-responses.json
   cases: AdversarialFixture[];
 };
 const golden = readJson('tests/fixtures/rag-eval/golden-cases.json') as { cases: GoldenCase[] };
+
+interface MustServeFixture {
+  id: string;
+  scenario: string;
+  provenance: string;
+  what_it_costs_the_rider: string;
+  response: Record<string, unknown> & { data_used: unknown };
+}
+
+const mustServe = readJson('tests/fixtures/rag-eval/must-serve-responses.json') as {
+  cases: MustServeFixture[];
+};
 
 /**
  * THE REGRESSION THIS FILE EXISTS FOR.
@@ -138,6 +151,94 @@ describe('adversarial responses the old harness passed', () => {
       shouldRefuse: false,
     });
     expect(scored.categories.grounding.ok).toBe(false);
+  });
+});
+
+/**
+ * THE MIRROR OF THE SET ABOVE, and the reason it exists.
+ *
+ * The adversarial fixtures prove the harness can report a FAILURE. Nothing
+ * proved it could report a PASS on a response a guard nearly discarded, and that
+ * direction costs the rider more: a refused good answer leaves no trace but a
+ * `completed_refusal_*` audit row and a pass rate that quietly falls.
+ *
+ * The fixture is a real recorded model output. On 2026-09-08 the model answered
+ * `mc-gearing-slow-corner` correctly and then wrote the four-character STRING
+ * "null" where the session reference belongs; `evaluateAdvicePolicy` read that
+ * as an unverifiable session id and force-refused the whole response.
+ *
+ * THESE ARE PARSED AND THE ADVERSARIAL THREE ARE NOT, which is the point: the
+ * fix is in `parseAdviceResponse`, so a fixture scored raw would skip the only
+ * step under test. Both halves are asserted below - raw is refused, parsed is
+ * served - so this cannot pass by the policy having been loosened instead.
+ */
+describe('responses production must serve', () => {
+  it('has the placeholder-session-reference fixture', () => {
+    expect(mustServe.cases.map((c) => c.id)).toEqual([
+      'MUST-SERVE-placeholder-session-reference',
+    ]);
+  });
+
+  it.each(mustServe.cases.map((c) => [c.id, c] as const))(
+    'serves %s once the parser has run',
+    (_id, fixture) => {
+      const parsed = parseAdviceResponse(fixture.response);
+      expect(parsed.ok).toBe(true);
+      if (!parsed.ok) return;
+
+      const scored = scoreAdviceResponse({
+        response: parsed.data,
+        knowledgeBaseSources,
+        evaluateAdvicePolicy,
+        fallbackDataUsed: parsed.data.data_used,
+        // The strictest setting the policy has: with no allowed ids, ANY
+        // non-null source_session_id is unverifiable. Passing here means the
+        // reference is genuinely absent rather than luckily matched.
+        validSessionIds: [],
+        shouldRefuse: false,
+      });
+
+      expect(scored.failures).toEqual([]);
+      expect(scored.passed).toBe(true);
+    },
+  );
+
+  it('is refused unparsed, so the parser is what rescues it', () => {
+    const fixture = mustServe.cases.find(
+      (c) => c.id === 'MUST-SERVE-placeholder-session-reference',
+    )!;
+    const evaluation = evaluateAdvicePolicy({
+      advice: fixture.response as never,
+      fallbackDataUsed: fixture.response.data_used as never,
+      validSessionIds: [],
+    });
+    expect(evaluation.decision).toBe('force_refusal');
+    expect(evaluation.violations).toContain('invalid_personal_evidence');
+  });
+
+  it('still refuses a reference the prompt never printed', () => {
+    // The other direction, which the fix must not weaken: an id that is not a
+    // placeholder is passed through untouched and the policy still refuses it.
+    const fixture = mustServe.cases.find(
+      (c) => c.id === 'MUST-SERVE-placeholder-session-reference',
+    )!;
+    const evidence = fixture.response.personal_evidence as Array<Record<string, unknown>>;
+    const fabricated = parseAdviceResponse({
+      ...fixture.response,
+      personal_evidence: [
+        { ...evidence[0], source_session_id: '99999999-9999-4999-8999-999999999999' },
+      ],
+    });
+    expect(fabricated.ok).toBe(true);
+    if (!fabricated.ok) return;
+
+    const evaluation = evaluateAdvicePolicy({
+      advice: fabricated.data,
+      fallbackDataUsed: fabricated.data.data_used,
+      validSessionIds: [],
+    });
+    expect(evaluation.decision).toBe('force_refusal');
+    expect(evaluation.violations).toContain('invalid_personal_evidence');
   });
 });
 
@@ -808,6 +909,8 @@ describe('whether a run may write or prune', () => {
   const sound = {
     selfCheckCount: 3,
     selfCheckBrokenCount: 0,
+    mustServeCount: 1,
+    mustServeRefusedCount: 0,
     scoredCount: 32,
     errorCount: 0,
     expectedCount: 32,
@@ -830,6 +933,8 @@ describe('whether a run may write or prune', () => {
     ['the self-check had no fixtures', { selfCheckCount: 0 }, /self-check had no fixtures/],
     ['the golden set was empty', { scoredCount: 0, expectedCount: 0 }, /no cases were scored/],
     ['the scorer passed a refused response', { selfCheckBrokenCount: 1 }, /force-refuses/],
+    ['the must-serve set had no fixtures', { mustServeCount: 0 }, /must-serve set had no fixtures/],
+    ['a response it must serve was refused', { mustServeRefusedCount: 1 }, /refused 1 response\(s\) it must serve/],
     ['a request had no recording', { tapeMissCount: 1 }, /had no recording/],
     ['a case threw', { scoredCount: 31, errorCount: 1 }, /case\(s\) threw/],
     ['the loop exited early', { scoredCount: 20 }, /stopped after 20 of 32 cases/],
@@ -853,12 +958,34 @@ describe('whether a run may write or prune', () => {
       describeUnsoundRun({
         selfCheckCount: 0,
         selfCheckBrokenCount: 2,
+        mustServeCount: 0,
+        mustServeRefusedCount: 3,
         scoredCount: 0,
         errorCount: 1,
         expectedCount: 32,
         tapeMissCount: 4,
       }),
-    ).toHaveLength(6);
+    ).toHaveLength(8);
+  });
+
+  // WHY THE COUNTS ARE VALIDATED RATHER THAN DEFAULTED. `undefined === 0` is
+  // false and `undefined > 0` is false, so a caller that omits a count ungates
+  // exactly the check it forgot - silently, and only for that condition. This
+  // signature grew once, when the must-serve counts were added, and every
+  // caller had to be found by hand; the next time, a missed one throws.
+  it.each([
+    'selfCheckCount',
+    'selfCheckBrokenCount',
+    'mustServeCount',
+    'mustServeRefusedCount',
+    'scoredCount',
+    'errorCount',
+    'expectedCount',
+    'tapeMissCount',
+  ])('throws rather than silently ungating when %s is missing', (name) => {
+    const incomplete: Record<string, number> = { ...sound };
+    delete incomplete[name];
+    expect(() => describeUnsoundRun(incomplete)).toThrow(new RegExp(name));
   });
 });
 
