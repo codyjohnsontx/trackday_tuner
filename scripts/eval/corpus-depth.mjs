@@ -22,7 +22,7 @@
  *
  * The words counted are the EXCERPT the prompt prints, not the raw chunk, and
  * `excerptOf` is passed in by the caller so it can be production's own
- * `truncateAtWordBoundary` at production's own `EXCERPT_MAX_CHARS`. A hand copy
+ * `excerptForPrompt` (`lib/rag/prompt.ts`), which owns `EXCERPT_MAX_CHARS`. A hand copy
  * of that limit is the mistake `retrieval.mjs` records having made with `topK`:
  * it agrees on the day it is written and silently stops agreeing on the edit
  * this harness exists to support.
@@ -146,8 +146,8 @@ export function tallyMissedSources(perCase) {
  * snapshot and an embedding model are separate rows rather than one sum over
  * two price tiers.
  *
- * MEASURED IS PER CALL, AND THE SIGNAL IS THE `usage` OBJECT, not a field
- * inside it. An embeddings response reports `prompt_tokens` and `total_tokens`
+ * MEASURED IS PER CALL, AND THE SIGNAL IS `usage.prompt_tokens`, which both
+ * endpoints report. An embeddings response reports `prompt_tokens` and `total_tokens`
  * and no `completion_tokens`, which is zero completion rather than an
  * unmeasured one; a response carrying no usage at all is unmeasured, counts
  * toward `calls` and not `measured_calls`, and contributes nothing. A model no
