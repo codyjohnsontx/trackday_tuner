@@ -1060,15 +1060,18 @@ THAT PART WAS WRONG.** Captain's ruling, 2026-09-16: a rider asking a legitimate
 question must not lose a good answer to the model's own placeholder text. The
 string `"null"` is not a fabricated reference, it is the model declining to give
 one, and `PLACEHOLDER_SESSION_REFERENCES` in `lib/rag/schema.ts` now normalises
-it - with `undefined`, `none`, `nil` and the empty string - to the JSON null the
-field already allows. The old argument was that coercing it leaves unverified
-evidence in front of the rider; it does not, because a null reference counts
+it to the JSON null the field already allows. The old argument was that
+coercing it leaves unverified evidence in front of the rider; it does not, because a null reference counts
 toward neither `grounded` nor `hasSupportForHighConfidence`, so the entry reads
 as the observation it is and can prop up nothing. **The set is measured**: across
 the five committed generations of the completions tape the model emitted 78
 `personal_evidence` entries, 77 carrying an id its own prompt printed and exactly
-one carrying the string `"null"`; the other four spellings are the same act in
-another language and are carried because no session id is any of them. What is
+one carrying the string `"null"`. **The set has exactly two members, on two
+different grounds**: `"null"` is the recorded token (the trim-and-lowercase fold
+is not extrapolation - `"NULL"` is the same token), and the empty string is
+semantics rather than a guess about the model, since an empty reference carries
+no information under any reading. **A new member needs a recording behind it**,
+because every member turns a policy refusal into a served answer. What is
 NOT normalised is anything else, whatever its shape - declining to give a
 reference and inventing one are different acts, and a fabricated id still reaches
 the policy and is still refused.
@@ -1149,23 +1152,6 @@ that reports a pass rate has also just proved it can report a failure.
 `tests/unit/rag-eval-harness.test.ts` locks that in the required checks, because
 `rag:eval` failing is not the same as `test:unit` failing.
 
-**THE SELF-CHECK HAS A SECOND HALF, AND IT RUNS THE OTHER WAY.**
-`tests/fixtures/rag-eval/must-serve-responses.json` holds real recorded model
-outputs that production discarded and should not have; the run scores every one
-and exits non-zero if any is REFUSED, before the tape is opened. Proving the
-harness can report a failure says nothing about whether it can report a pass on a
-response a guard nearly threw away, and that direction costs the rider more,
-because it leaves nothing behind but a `completed_refusal_*` audit row and a pass
-rate that quietly falls. **These fixtures go through `parseAdviceResponse` first
-and the adversarial three deliberately do not**: the adversarial set asks what the
-SCORER does with a well-formed response, this one asks what the PARSER hands the
-scorer, and scoring it raw would skip the only step under test. Every case is
-scored with `validSessionIds: []`, the strictest setting the policy has. The empty
-set is a failure here on the same rule as everywhere else, and
-`describeUnsoundRun` carries both counts - it now THROWS on a missing count rather
-than reading `undefined` as zero, because an omitted count ungates exactly the
-check that was forgotten.
-
 **The general rule behind that, and the one to apply to anything added here: a
 conclusion drawn from a collection has to say what the EMPTY collection
 reports.** Three gates were found one at a time whose empty case was the passing
@@ -1179,6 +1165,16 @@ unlabelled case, `aggregateRetrieval` reports a null `k` when nothing retrieved,
 and an absent tape fails by construction because every request then misses. The
 one unguarded case is the `METRICS` table itself, deliberately: emptying it is
 deleting the gate, and no guard in the same file survives that edit.
+
+**Responses production must SERVE are a unit-suite fixture, not a `rag:eval`
+gate.** `tests/fixtures/rag-eval/must-serve-responses.json` holds real recorded
+model outputs that production discarded and should not have, and
+`tests/unit/rag-eval-harness.test.ts` scores every one through
+`parseAdviceResponse` and the policy with `validSessionIds: []`, asserting each is
+served parsed and refused raw. `npm run rag:eval` does not read the file. **Eval
+measurements stay reported and are not gated until a bar has been set**, so a new
+pass/fail condition in the run is a decision for the owner, never a side effect of
+the change that motivated it.
 
 **Offline replays committed tapes; the tape key is the request.** The intercept
 is `globalThis.fetch` (`scripts/eval/openai-tape.mjs`), not a mock of

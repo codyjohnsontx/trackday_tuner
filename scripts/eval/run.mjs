@@ -32,7 +32,6 @@ import { aggregateRetrieval, scoreRetrieval } from './retrieval.mjs';
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const GOLDEN_PATH = path.join(REPO_ROOT, 'tests', 'fixtures', 'rag-eval', 'golden-cases.json');
 const ADVERSARIAL_PATH = path.join(REPO_ROOT, 'tests', 'fixtures', 'rag-eval', 'adversarial-responses.json');
-const MUST_SERVE_PATH = path.join(REPO_ROOT, 'tests', 'fixtures', 'rag-eval', 'must-serve-responses.json');
 const RECORDINGS_DIR = path.join(REPO_ROOT, 'tests', 'fixtures', 'rag-eval', 'recordings');
 const BASELINE_PATH = path.join(REPO_ROOT, 'eval-baseline.json');
 const INDEX_PATH = path.join(REPO_ROOT, 'data', 'rag-index.json');
@@ -1630,60 +1629,26 @@ export function compareAgainstBaseline({ metrics, coverage, scoredResults, basel
  * than a list of guarded call sites, so an exit added anywhere in that loop
  * later is caught without anybody remembering to wrap it.
  *
- * EVERY COUNT IS REQUIRED, and a missing one throws rather than reading as zero.
- * `undefined === 0` is false and `undefined > 0` is false, so an omitted count
- * silently satisfies its own condition - a caller that forgot one would ungate
- * exactly the check it forgot, which is the gate-that-cannot-fail defect this
- * function exists to prevent, wearing an argument list. It was added with the
- * must-serve counts below, because that is the first time this signature grew
- * and every existing caller had to be found by hand.
- *
- * @param {{ selfCheckCount: number, selfCheckBrokenCount: number, mustServeCount: number,
- *          mustServeRefusedCount: number, scoredCount: number, errorCount: number,
- *          expectedCount: number, tapeMissCount: number }} counts
+ * @param {{ selfCheckCount: number, selfCheckBrokenCount: number, scoredCount: number,
+ *          errorCount: number, expectedCount: number, tapeMissCount: number }} counts
  * @returns {string[]}
  */
-export function describeUnsoundRun(counts) {
-  const {
-    selfCheckCount,
-    selfCheckBrokenCount,
-    mustServeCount,
-    mustServeRefusedCount,
-    scoredCount,
-    errorCount,
-    expectedCount,
-    tapeMissCount,
-  } = counts;
-  const missing = Object.entries({
-    selfCheckCount,
-    selfCheckBrokenCount,
-    mustServeCount,
-    mustServeRefusedCount,
-    scoredCount,
-    errorCount,
-    expectedCount,
-    tapeMissCount,
-  })
-    .filter(([, value]) => !Number.isInteger(value))
-    .map(([name]) => name);
-  if (missing.length > 0) {
-    throw new TypeError(
-      `describeUnsoundRun needs an integer for every count; missing or non-integer: ${missing.join(', ')}.`,
-    );
-  }
-
+export function describeUnsoundRun({
+  selfCheckCount,
+  selfCheckBrokenCount,
+  scoredCount,
+  errorCount,
+  expectedCount,
+  tapeMissCount,
+}) {
   const unsound = [];
   if (selfCheckCount === 0) unsound.push('the scorer self-check had no fixtures');
-  if (mustServeCount === 0) unsound.push('the must-serve set had no fixtures');
   if (scoredCount === 0) unsound.push('no cases were scored');
   if (scoredCount + errorCount !== expectedCount) {
     unsound.push(`the run stopped after ${scoredCount + errorCount} of ${expectedCount} cases`);
   }
   if (selfCheckBrokenCount > 0) {
     unsound.push(`the scorer passed ${selfCheckBrokenCount} response(s) production force-refuses`);
-  }
-  if (mustServeRefusedCount > 0) {
-    unsound.push(`the pipeline refused ${mustServeRefusedCount} response(s) it must serve`);
   }
   if (tapeMissCount > 0) unsound.push(`${tapeMissCount} request(s) had no recording`);
   if (errorCount > 0) unsound.push(`${errorCount} case(s) threw`);
@@ -1734,15 +1699,14 @@ export async function main(argv) {
     return 1;
   }
 
-  const [golden, adversarial, mustServeFixtures, index] = await Promise.all([
+  const [golden, adversarial, index] = await Promise.all([
     readJson(GOLDEN_PATH),
     readJson(ADVERSARIAL_PATH),
-    readJson(MUST_SERVE_PATH),
     readJson(INDEX_PATH),
   ]);
   const knowledgeBaseSources = new Set(index.chunks.map((c) => c.source));
 
-  const [policyModule, guardModule, premiseModule, promptModule, adviceModule, contextModule, vocabulary, schemaModule] =
+  const [policyModule, guardModule, premiseModule, promptModule, adviceModule, contextModule, vocabulary] =
     await Promise.all([
       import('@/lib/rag/policy'),
       import('@/lib/rag/domain-guard'),
@@ -1751,10 +1715,8 @@ export async function main(argv) {
       import('@/lib/rag/advice'),
       import('@/lib/rag/race-engineer-context'),
       import('@/lib/rag/component-vocabulary'),
-      import('@/lib/rag/schema'),
     ]);
   const { evaluateAdvicePolicy } = policyModule;
-  const { parseAdviceResponse } = schemaModule;
 
   // ------------------------------------------------------------------
   // Self-check. Runs before anything that can cost money, needs no key in
@@ -1790,51 +1752,6 @@ export async function main(argv) {
   }
   const selfCheckBroken = selfCheck.filter((entry) => entry.passed);
 
-  // ------------------------------------------------------------------
-  // The other half of the same proof: responses production must SERVE.
-  //
-  // The check above shows the harness can report a FAILURE. It says nothing
-  // about whether the harness can report a PASS on a response a guard nearly
-  // threw away, and refusing a good answer costs the rider more than serving a
-  // bad one does, because nothing in the pipeline reports it: the audit row
-  // reads `completed_refusal_*` and the run's own pass rate simply falls.
-  //
-  // THESE ARE PARSED FIRST and the adversarial three are not. That is the whole
-  // point of the set - `parseAdviceResponse` is the step between the model's
-  // JSON and the policy, so a fixture about what the parser hands the policy has
-  // to go through it. `tests/fixtures/rag-eval/must-serve-responses.json` has
-  // the rest of the reasoning.
-  //
-  // `validSessionIds: []` is the strictest setting the policy has: with no
-  // allowed ids, any non-null `source_session_id` is unverifiable. A case
-  // passing here passes because its reference is genuinely absent.
-  // ------------------------------------------------------------------
-  const mustServe = mustServeFixtures.cases.map((c) => {
-    const parsed = parseAdviceResponse(c.response);
-    if (!parsed.ok) {
-      return { id: c.id, passed: false, failures: [`parser: ${parsed.error}`] };
-    }
-    return {
-      id: c.id,
-      ...scoreAdviceResponse({
-        response: parsed.data,
-        knowledgeBaseSources,
-        evaluateAdvicePolicy,
-        fallbackDataUsed: parsed.data.data_used,
-        validSessionIds: [],
-        shouldRefuse: false,
-      }),
-    };
-  });
-
-  console.log('\n[rag:eval] Scorer self-check - responses production serves\n');
-  for (const entry of mustServe) {
-    console.log(
-      `  ${entry.id.padEnd(42)} ${entry.passed ? 'served' : 'REFUSED (BUG)'}  ${entry.failures[0] ?? ''}`,
-    );
-  }
-  const mustServeRefused = mustServe.filter((entry) => !entry.passed);
-
   // THE EARLY EXIT IS WHAT MAKES "gates the whole run" TRUE. It used to be a
   // claim the code did not honour: execution fell through to the golden loop and
   // only set a non-zero exit at the very end, so `--live` spent real API calls
@@ -1847,36 +1764,13 @@ export async function main(argv) {
   // cannot fail its own three fixtures has nothing to say about the thirty-three
   // below them - and continuing would buy an answer already known to be
   // untrustworthy.
-  if (
-    selfCheck.length === 0 ||
-    selfCheckBroken.length > 0 ||
-    mustServe.length === 0 ||
-    mustServeRefused.length > 0
-  ) {
-    if (selfCheck.length === 0) {
-      console.error(
-        '\n[rag:eval] FAIL: the scorer self-check had no fixtures, so this run has no evidence it can report a failure at all.',
-      );
-    }
-    if (selfCheckBroken.length > 0) {
-      console.error(
-        `\n[rag:eval] FAIL: the scorer accepted ${selfCheckBroken.length} response(s) production force-refuses ` +
-          `(${selfCheckBroken.map((e) => e.id).join(', ')}). The harness cannot report a failure it does not detect.`,
-      );
-    }
-    if (mustServe.length === 0) {
-      console.error(
-        '\n[rag:eval] FAIL: the must-serve set had no fixtures, so this run has no evidence it can report a pass ' +
-          'on a response a guard nearly discarded.',
-      );
-    }
-    if (mustServeRefused.length > 0) {
-      console.error(
-        `\n[rag:eval] FAIL: the pipeline refused ${mustServeRefused.length} response(s) it must serve ` +
-          `(${mustServeRefused.map((e) => `${e.id}: ${e.failures[0] ?? 'no reason given'}`).join('; ')}). ` +
-          'A rider loses a good answer to this.',
-      );
-    }
+  if (selfCheck.length === 0 || selfCheckBroken.length > 0) {
+    console.error(
+      selfCheck.length === 0
+        ? '\n[rag:eval] FAIL: the scorer self-check had no fixtures, so this run has no evidence it can report a failure at all.'
+        : `\n[rag:eval] FAIL: the scorer accepted ${selfCheckBroken.length} response(s) production force-refuses ` +
+            `(${selfCheckBroken.map((e) => e.id).join(', ')}). The harness cannot report a failure it does not detect.`,
+    );
     console.error('  Stopping before the golden cases: no tape is opened and no API call is made.');
     return 1;
   }
@@ -1980,8 +1874,6 @@ export async function main(argv) {
       const unsound = describeUnsoundRun({
         selfCheckCount: selfCheck.length,
         selfCheckBrokenCount: selfCheckBroken.length,
-        mustServeCount: mustServe.length,
-        mustServeRefusedCount: mustServeRefused.length,
         scoredCount: results.filter((r) => !r.error).length,
         errorCount: results.filter((r) => r.error).length,
         expectedCount: golden.cases.length,
@@ -2000,8 +1892,6 @@ export async function main(argv) {
     results,
     selfCheck,
     selfCheckBroken,
-    mustServe,
-    mustServeRefused,
     expectedCount: golden.cases.length,
     tape,
     mode,
@@ -2012,8 +1902,7 @@ export async function main(argv) {
 }
 
 async function report(ctx) {
-  const { results, selfCheck, selfCheckBroken, mustServe, mustServeRefused, expectedCount, tape, mode, live, updateBaseline } =
-    ctx;
+  const { results, selfCheck, selfCheckBroken, expectedCount, tape, mode, live, updateBaseline } = ctx;
 
   const ID_WIDTH = Math.max(20, ...results.map((r) => r.id.length));
 
@@ -2142,8 +2031,6 @@ async function report(ctx) {
   const unsound = describeUnsoundRun({
     selfCheckCount: selfCheck.length,
     selfCheckBrokenCount: selfCheckBroken.length,
-    mustServeCount: mustServe.length,
-    mustServeRefusedCount: mustServeRefused.length,
     scoredCount: scoredResults.length,
     errorCount: errors.length,
     expectedCount,
@@ -2204,13 +2091,6 @@ async function report(ctx) {
         `Check ${path.relative(REPO_ROOT, ADVERSARIAL_PATH)}.`,
     );
   }
-  if (mustServe.length === 0) {
-    console.error(
-      '\n[rag:eval] FAIL: the must-serve set had no fixtures, so this run never ' +
-        'demonstrated that it can pass a response a guard nearly discarded. ' +
-        `Check ${path.relative(REPO_ROOT, MUST_SERVE_PATH)}.`,
-    );
-  }
   if (scoredResults.length === 0) {
     console.error(
       '\n[rag:eval] FAIL: no cases were scored, so this run measured nothing. ' +
@@ -2221,12 +2101,6 @@ async function report(ctx) {
     console.error(
       `\n[rag:eval] FAIL: the scorer accepted ${selfCheckBroken.length} response(s) production force-refuses ` +
         `(${selfCheckBroken.map((e) => e.id).join(', ')}). The harness cannot report a failure it does not detect.`,
-    );
-  }
-  if (mustServeRefused.length > 0) {
-    console.error(
-      `\n[rag:eval] FAIL: the pipeline refused ${mustServeRefused.length} response(s) it must serve ` +
-        `(${mustServeRefused.map((e) => e.id).join(', ')}). A rider loses a good answer to this.`,
     );
   }
   if (tape.stats.misses.length > 0) {

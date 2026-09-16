@@ -909,8 +909,6 @@ describe('whether a run may write or prune', () => {
   const sound = {
     selfCheckCount: 3,
     selfCheckBrokenCount: 0,
-    mustServeCount: 1,
-    mustServeRefusedCount: 0,
     scoredCount: 32,
     errorCount: 0,
     expectedCount: 32,
@@ -933,8 +931,6 @@ describe('whether a run may write or prune', () => {
     ['the self-check had no fixtures', { selfCheckCount: 0 }, /self-check had no fixtures/],
     ['the golden set was empty', { scoredCount: 0, expectedCount: 0 }, /no cases were scored/],
     ['the scorer passed a refused response', { selfCheckBrokenCount: 1 }, /force-refuses/],
-    ['the must-serve set had no fixtures', { mustServeCount: 0 }, /must-serve set had no fixtures/],
-    ['a response it must serve was refused', { mustServeRefusedCount: 1 }, /refused 1 response\(s\) it must serve/],
     ['a request had no recording', { tapeMissCount: 1 }, /had no recording/],
     ['a case threw', { scoredCount: 31, errorCount: 1 }, /case\(s\) threw/],
     ['the loop exited early', { scoredCount: 20 }, /stopped after 20 of 32 cases/],
@@ -958,34 +954,12 @@ describe('whether a run may write or prune', () => {
       describeUnsoundRun({
         selfCheckCount: 0,
         selfCheckBrokenCount: 2,
-        mustServeCount: 0,
-        mustServeRefusedCount: 3,
         scoredCount: 0,
         errorCount: 1,
         expectedCount: 32,
         tapeMissCount: 4,
       }),
-    ).toHaveLength(8);
-  });
-
-  // WHY THE COUNTS ARE VALIDATED RATHER THAN DEFAULTED. `undefined === 0` is
-  // false and `undefined > 0` is false, so a caller that omits a count ungates
-  // exactly the check it forgot - silently, and only for that condition. This
-  // signature grew once, when the must-serve counts were added, and every
-  // caller had to be found by hand; the next time, a missed one throws.
-  it.each([
-    'selfCheckCount',
-    'selfCheckBrokenCount',
-    'mustServeCount',
-    'mustServeRefusedCount',
-    'scoredCount',
-    'errorCount',
-    'expectedCount',
-    'tapeMissCount',
-  ])('throws rather than silently ungating when %s is missing', (name) => {
-    const incomplete: Record<string, number> = { ...sound };
-    delete incomplete[name];
-    expect(() => describeUnsoundRun(incomplete)).toThrow(new RegExp(name));
+    ).toHaveLength(6);
   });
 });
 

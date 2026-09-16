@@ -191,19 +191,21 @@ export const adviceResponseJsonSchema = {
  * 5ea2f97b7872510ff6f6d355f4ca5c4d, the golden case `mc-gearing-slow-corner`).
  * A JSON null was never emitted, and no other non-id value ever appeared.
  *
- * So "null" is the only member with a recording behind it. The other four are
- * the same act spelled in another language - a null literal serialised as text,
- * plus the empty string - and they are carried because this is a NORMALISATION
- * rather than a judgement: every one of them says "nothing" instead of naming a
- * session, and no session id is any of them, so widening to them costs nothing
- * and narrowing to the one measured spelling would leave the next one to be
- * found by a rider.
+ * The set holds exactly two members, on two different grounds:
  *
- * What is deliberately NOT here is the English placeholders - "n/a", "unknown",
- * "none of your sessions" and anything longer. None has ever been recorded, and
- * a list that grows by plausibility rather than by evidence ends up normalising
- * a value a rider might one day need refused. A shape that turns up is added
- * with its recording.
+ * - "null" is the recorded token. The comparison trims and lowercases first,
+ *   and that folding is not extrapolation: "NULL" and "null" are the same token,
+ *   and the recording supports the token rather than one casing of it.
+ * - "" is semantics, not a guess about model behaviour: an empty reference
+ *   carries no information and is not a reference under any reading, so
+ *   treating it as absent needs no recording. A whitespace-only string trims to
+ *   it and is absent for the same reason.
+ *
+ * A NEW MEMBER NEEDS A RECORDING BEHIND IT. Every member turns a policy refusal
+ * into a served answer, so this set is extended from evidence and never from a
+ * plausible spelling. A value that is not a placeholder passes through untouched
+ * whatever its shape, so a fabricated id still reaches the policy and is still
+ * refused.
  *
  * The same placeholder could in principle arrive in `refusal`, where the string
  * "null" would refuse the rider with the word "null" as the reason. That has
@@ -211,13 +213,7 @@ export const adviceResponseJsonSchema = {
  * times and genuine prose 12 - and it is a different field with a different
  * contract, so it is left alone rather than swept in here.
  */
-const PLACEHOLDER_SESSION_REFERENCES: ReadonlySet<string> = new Set([
-  '',
-  'null',
-  'undefined',
-  'none',
-  'nil',
-]);
+const PLACEHOLDER_SESSION_REFERENCES: ReadonlySet<string> = new Set(['', 'null']);
 
 /**
  * `null` when the model wrote a placeholder rather than a session reference,

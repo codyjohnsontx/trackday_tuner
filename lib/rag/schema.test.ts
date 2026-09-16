@@ -147,8 +147,8 @@ function parsedReference(sourceSessionId: unknown) {
 
 describe('parseAdviceResponse normalizes a placeholder session reference', () => {
   // "null" is the measured one - the 2026-09-08 recording of
-  // `mc-gearing-slow-corner`. The rest are the same act in another spelling.
-  it.each(['null', 'NULL', ' null ', 'undefined', 'none', 'None', 'nil', '', '   '])(
+  // `mc-gearing-slow-corner`. An empty reference is no reference at all.
+  it.each(['null', 'NULL', ' null ', '', ' '])(
     'reads %j as no reference rather than as an unverifiable one',
     (placeholder) => {
       expect(parsedReference(placeholder)).toBeNull();
@@ -176,6 +176,9 @@ describe('parseAdviceResponse normalizes a placeholder session reference', () =>
   // still refused - narrowing that here would hide fabrication, not placeholders.
   it('leaves a value that is not a placeholder alone, whatever its shape', () => {
     expect(parsedReference('the session from last month')).toBe('the session from last month');
+    for (const unrecorded of ['undefined', 'none', 'None', 'nil']) {
+      expect(parsedReference(unrecorded)).toBe(unrecorded);
+    }
     expect(parsedReference('99999999-9999-4999-8999-999999999999')).toBe(
       '99999999-9999-4999-8999-999999999999',
     );
