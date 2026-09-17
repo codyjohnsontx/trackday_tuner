@@ -122,20 +122,3 @@ export function findTrackByAlias<T extends { id: string }>(
 
   return tracks.find((track) => track.id === trackId) ?? null;
 }
-
-/**
- * Whether a circuit's list of layouts offers this one.
- *
- * A layout belongs to exactly one track, so a layout id that came from a
- * different circuit is not a narrower answer - it is a session that says it ran
- * a configuration the track does not have. The caller drops it rather than
- * storing it.
- */
-export function findLayoutForTrack(
-  layoutId: string | null | undefined,
-  trackId: string | null | undefined,
-  layouts: TrackLayoutIndex,
-): TrackLayout | null {
-  if (!layoutId || !trackId) return null;
-  return layouts[trackId]?.find((layout) => layout.id === layoutId) ?? null;
-}

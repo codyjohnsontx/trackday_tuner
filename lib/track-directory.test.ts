@@ -5,7 +5,6 @@ import { findSavedTrackByName, trackNameKey } from '@/lib/session-track';
 import {
   buildTrackAliasIndex,
   buildTrackLayoutIndex,
-  findLayoutForTrack,
   findTrackByAlias,
   findTrackByName,
 } from '@/lib/track-directory';
@@ -76,13 +75,6 @@ describe('track layouts', () => {
   it('groups each circuit\'s layouts in their offered order', () => {
     expect(index.msr.map((row) => row.name)).toEqual(['1.7-Mile', '1.3-Mile', '3.1-Mile']);
     expect(index.vir.map((row) => row.name)).toEqual(['Full Course']);
-  });
-
-  it('only answers with a layout that belongs to the circuit asked about', () => {
-    expect(findLayoutForTrack('msr-13', 'msr', index)?.name).toBe('1.3-Mile');
-    expect(findLayoutForTrack('vir-full', 'msr', index)).toBeNull();
-    expect(findLayoutForTrack('msr-13', null, index)).toBeNull();
-    expect(findLayoutForTrack(null, 'msr', index)).toBeNull();
   });
 });
 
