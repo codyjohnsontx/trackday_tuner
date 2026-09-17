@@ -1069,10 +1069,10 @@ one, and `PLACEHOLDER_SESSION_REFERENCES` in `lib/rag/schema.ts` now normalises
 it to the JSON null the field already allows. The old argument was that
 coercing it leaves unverified evidence in front of the rider; it does not, because a null reference counts
 toward neither `grounded` nor `hasSupportForHighConfidence`, so the entry reads
-as the observation it is and can prop up nothing. **The set is measured**: across
-the five committed generations of the completions tape the model emitted 78
-`personal_evidence` entries, 77 carrying an id its own prompt printed and exactly
-one carrying the string `"null"`. **The set has exactly two members, on two
+as the observation it is and can prop up nothing. **The set is measured**, and the
+count that measures it lives on `PLACEHOLDER_SESSION_REFERENCES` in
+`lib/rag/schema.ts`, per committed generation of the completions tape, rather
+than in a second copy here. **The set has exactly two members, on two
 different grounds**: `"null"` is the recorded token (the trim-and-lowercase fold
 is not extrapolation - `"NULL"` is the same token), and the empty string is
 semantics rather than a guess about the model, since an empty reference carries

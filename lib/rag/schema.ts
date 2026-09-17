@@ -184,12 +184,20 @@ export const adviceResponseJsonSchema = {
  * wrong answer to a placeholder, and telling the two apart is this parser's job
  * rather than the policy's.
  *
- * THE SET IS MEASURED, NOT GUESSED. Across the five committed generations of
- * `tests/fixtures/rag-eval/recordings/completions.json` the model emitted 78
- * `personal_evidence` entries: 77 carried a session id its own prompt had
- * printed, and exactly one carried the string "null" (commit 5524a4c, tape key
+ * THE SET IS MEASURED, NOT GUESSED. Across the five generations of
+ * `tests/fixtures/rag-eval/recordings/completions.json` recorded on gpt-4o-mini
+ * (git history up to 2b16e05) the model emitted 78 `personal_evidence` entries:
+ * 77 carried a session id its own prompt had printed, and exactly one carried
+ * the string "null" (commit 5524a4c, tape key
  * 5ea2f97b7872510ff6f6d355f4ca5c4d, the golden case `mc-gearing-slow-corner`).
  * A JSON null was never emitted, and no other non-id value ever appeared.
+ *
+ * THE gpt-5.4-mini RE-RECORD DID NOT ADD A MEMBER. The generation committed
+ * beside this file carries 34 `personal_evidence` entries: 33 with a session id
+ * its own prompt printed, one with a JSON null - the absent value the field
+ * already declares, which reaches the policy as absent and needs no normalising
+ * - and not one placeholder string. So the recorded token is still the single
+ * gpt-4o-mini response above, and the set is unchanged by the model swap.
  *
  * The set holds exactly two members, on two different grounds:
  *
@@ -210,7 +218,8 @@ export const adviceResponseJsonSchema = {
  * The same placeholder could in principle arrive in `refusal`, where the string
  * "null" would refuse the rider with the word "null" as the reason. That has
  * never been recorded - across those same tapes `refusal` was JSON null 120
- * times and genuine prose 12 - and it is a different field with a different
+ * times and genuine prose 12, and the gpt-5.4-mini generation adds no
+ * placeholder there either - and it is a different field with a different
  * contract, so it is left alone rather than swept in here.
  */
 const PLACEHOLDER_SESSION_REFERENCES: ReadonlySet<string> = new Set(['', 'null']);
