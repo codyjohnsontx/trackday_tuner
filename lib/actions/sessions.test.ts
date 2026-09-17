@@ -766,6 +766,45 @@ describe('sessions actions', () => {
     );
   });
 
+  it('keeps looking for the rider\'s own track when the exact pattern only reaches a seeded one', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const rows = [
+      { id: 'track-0-seeded', name: 'Road America', is_seeded: true },
+      { id: 'track-9-own', name: 'Road  America', is_seeded: false },
+    ];
+    const exactLookup = createTrackNameQuery(rows);
+    const wildcardLookup = createTrackNameQuery(rows);
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return exactLookup;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return wildcardLookup;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementation(() =>
+        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
+      );
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({ ...validInput, track_id: null, track_name: 'Road America' });
+
+    expect(result.ok).toBe(true);
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ track_id: 'track-9-own', track_name: 'Road  America' }),
+    );
+  });
+
   it('falls back to the wildcard pattern for a stored spelling the fold reaches', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);

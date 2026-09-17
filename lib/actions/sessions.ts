@@ -621,6 +621,7 @@ async function findVisibleTrackByName(
   const exact = trackNameExactPattern(typed);
   const wildcard = trackNameSearchPattern(typed);
   const patterns = wildcard === exact ? [exact] : [exact, wildcard];
+  let seeded: { id: string; name: string } | null = null;
 
   for (const pattern of patterns) {
     const { data, error } = await supabase
@@ -643,7 +644,10 @@ async function findVisibleTrackByName(
 
     const rows = (data ?? []) as { id: string; name: string; is_seeded: boolean }[];
     const matched = findTrackByName(typed, rows);
-    if (matched) return { status: 'found', track: { id: matched.id, name: matched.name } };
+    if (matched && !matched.is_seeded) {
+      return { status: 'found', track: { id: matched.id, name: matched.name } };
+    }
+    if (matched) seeded ??= { id: matched.id, name: matched.name };
 
     if (rows.length >= TRACK_NAME_MATCH_LIMIT) {
       return {
@@ -653,6 +657,8 @@ async function findVisibleTrackByName(
       };
     }
   }
+
+  if (seeded) return { status: 'found', track: seeded };
 
   // Only now the other names the circuit is known by. Names first is the rule,
   // not an optimisation: a rider who made their own track called "Barber" means
