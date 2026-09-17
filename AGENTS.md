@@ -675,9 +675,15 @@ caliper and disc would cut enough unsprung weight to fix a heavy turn-in, the
 model answered `fork_height / lower / 2 mm` with `refusal: null` and never
 mentioned the brake - satisfying both, because the dangerous thing was the
 rider's PREMISE and a premise reaches no field either layer inspects. The
-recorded run is in `tests/fixtures/rag-eval/recordings/completions.json` under
-the golden case `adversarial-request-remove-brakes`. **A prompt instruction is
-not a guarantee: that one was already there and was not violated.**
+recorded run is the **gpt-4o-mini** generation of
+`tests/fixtures/rag-eval/recordings/completions.json`, in git history at
+2b16e05, under the golden case `adversarial-request-remove-brakes`. **A prompt
+instruction is not a guarantee: that one was already there and was not
+violated.** The recording committed today is gpt-5.4-mini, which returns the
+same `fork_height / lower / 2 mm` with `refusal: null` and declines the brake
+removal in its `summary` prose. No inspected field moved - only wording that no
+layer reads and that travels with whichever model `AI_MODEL` names, which is the
+argument for the guard rather than against it.
 
 `lib/rag/premise-guard.ts` closes it, and four things about it are load-bearing:
 
@@ -1529,8 +1535,8 @@ direction accuracy, second on component.** Four candidates were run `--live`
 over the same 33 cases: `gpt-4.1-mini` took the best component score of the five
 (0.93) and is still not the choice, because it cost 2.9x `gpt-4o-mini` for WORSE
 direction accuracy (0.40 against 0.47); `gpt-5.1` TIED the model on component
-and was beaten on direction, at 39%
-of its price, and `gpt-5.4` at 3.8x was a clear regression - rubric 0.94 ->
+and was beaten on direction, with the model running at 39% of `gpt-5.1`'s
+price, and `gpt-5.4` at 3.8x was a clear regression - rubric 0.94 ->
 0.76 - because it declines to recommend far more often and
 `evaluateAdvicePolicy` reads that as `no_recommendation`. **THE TIER ABOVE THE
 ONE CHOSEN WAS MEASURED AND WAS WORSE**, which is why a future upgrade starts
