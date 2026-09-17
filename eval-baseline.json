@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "recorded_at": "2026-09-13T19:17:34.695Z",
+  "recorded_at": "2026-09-16T07:21:24.218Z",
   "mode": "offline",
   "model": "gpt-4o-mini",
   "embedding_model": "text-embedding-3-small",
@@ -21,6 +21,46 @@
     "retrieval_expected_sources": 34,
     "component_cases": 15,
     "direction_cases": 15
+  },
+  "corpus_depth": {
+    "corpus": {
+      "chunks": 75,
+      "sources": 15,
+      "words": 3350,
+      "words_per_chunk": 44.7
+    },
+    "context_per_answer": {
+      "cases": 28,
+      "words": 205.6,
+      "chunks": 4,
+      "sources": 2.39,
+      "thinnest": {
+        "id": "mc-gearing-slow-corner",
+        "words": 155
+      }
+    },
+    "missed_sources": [
+      {
+        "source": "docs/knowledge-base/suspension/rebound-vs-compression.md",
+        "misses": 4,
+        "labelled": 4
+      },
+      {
+        "source": "docs/knowledge-base/safety/disclaimers.md",
+        "misses": 2,
+        "labelled": 2
+      },
+      {
+        "source": "docs/knowledge-base/suspension/damping-basics.md",
+        "misses": 1,
+        "labelled": 5
+      },
+      {
+        "source": "docs/knowledge-base/tires/pressure-basics.md",
+        "misses": 1,
+        "labelled": 5
+      }
+    ]
   },
   "limitations": [
     {

@@ -16,11 +16,13 @@ import { matchesExpectedComponent, matchesExpectedDirection, scoreAdviceResponse
 // @ts-expect-error - see above.
 import { aggregateRetrieval, scoreRetrieval } from '@/scripts/eval/retrieval.mjs';
 // @ts-expect-error - see above.
-import { OpenAiTape, UNKEYABLE_REQUEST_ERROR_TYPE } from '@/scripts/eval/openai-tape.mjs';
+import { OpenAiTape, requestKey, UNKEYABLE_REQUEST_ERROR_TYPE } from '@/scripts/eval/openai-tape.mjs';
 // @ts-expect-error - see above.
 import { compareAgainstBaseline, describeCaseLabels, describeUnreadableBaseline, describeUnsoundRun, describeUnusableBaseline, diffLine, prepareOpenAiApiKey } from '@/scripts/eval/run.mjs';
 // @ts-expect-error - see above.
 import { resolve as resolveAlias } from '@/scripts/eval/ts-loader.mjs';
+// @ts-expect-error - see above.
+import { aggregateContext, aggregateUsage, countWords, describeCorpus, summarizeContext, tallyMissedSources } from '@/scripts/eval/corpus-depth.mjs';
 
 const repoRoot = process.cwd();
 const readJson = (relative: string) =>
@@ -1190,6 +1192,146 @@ describe('tape request keying', () => {
     expect(tape.stats.misses).toHaveLength(1);
     expect(tape.stats.misses[0].kind).toBe('embeddings');
   });
+
+  it('accumulates the usage of every replayed response, embeddings included', async () => {
+    // `embedQuery` discards the embeddings response's usage, so the tape is the
+    // only place an embedding call is still countable. A cost figure read
+    // anywhere downstream of it is the completion half of the bill.
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'rag-eval-tape-usage-'));
+    const write = (kind: string, url: string, body: unknown, response: unknown) => {
+      const key = requestKey({ method: 'POST', url, body: JSON.stringify(body) });
+      writeFileSync(
+        path.join(dir, `${kind}.json`),
+        JSON.stringify({ version: 1, entries: { [key]: { status: 200, response } } }),
+      );
+    };
+    const embedRequest = { input: 'front pushes mid-corner', model: 'text-embedding-3-small' };
+    const chatRequest = { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'hi' }] };
+    write('embeddings', 'https://api.openai.com/v1/embeddings', embedRequest, {
+      model: 'text-embedding-3-small',
+      data: [{ embedding: [0, 1] }],
+      usage: { prompt_tokens: 35, total_tokens: 35 },
+    });
+    write('completions', 'https://api.openai.com/v1/chat/completions', chatRequest, {
+      model: 'gpt-4o-mini-2024-07-18',
+      choices: [{ message: { content: '{}' } }],
+      usage: { prompt_tokens: 2468, completion_tokens: 334, total_tokens: 2802 },
+    });
+
+    const tape = new OpenAiTape({ dir, mode: 'offline' });
+    try {
+      await tape.load();
+      const restore = tape.install();
+      try {
+        await fetch('https://api.openai.com/v1/embeddings', {
+          method: 'POST',
+          body: JSON.stringify(embedRequest),
+        });
+        await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          body: JSON.stringify(chatRequest),
+        });
+      } finally {
+        restore();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    expect(tape.stats.hits).toBe(2);
+    expect(aggregateUsage(tape.usage)).toEqual([
+      {
+        model: 'gpt-4o-mini-2024-07-18',
+        calls: 1,
+        measured_calls: 1,
+        prompt_tokens: 2468,
+        completion_tokens: 334,
+      },
+      {
+        model: 'text-embedding-3-small',
+        calls: 1,
+        measured_calls: 1,
+        prompt_tokens: 35,
+        completion_tokens: 0,
+      },
+    ]);
+    expect(tape.spent).toEqual([]);
+  });
+
+  it('charges a live run only for the requests that reached the network', async () => {
+    // A `--live` run replays every key a prompt change did not move, so a
+    // replayed response is part of the re-record figure and never of what
+    // the run spent. A failed live request is spent and unmeasured: the SDK
+    // retries 429 and 5xx, and dropping those under-counts the calls made.
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'rag-eval-tape-spent-'));
+    const url = 'https://api.openai.com/v1/chat/completions';
+    const replayed = { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'replayed' }] };
+    const recorded = { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'recorded' }] };
+    const throttled = { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'throttled' }] };
+    const replayedKey = requestKey({ method: 'POST', url, body: JSON.stringify(replayed) });
+    writeFileSync(
+      path.join(dir, 'completions.json'),
+      JSON.stringify({
+        version: 1,
+        entries: {
+          [replayedKey]: {
+            status: 200,
+            response: { model: 'gpt-4o-mini-2024-07-18', usage: { prompt_tokens: 900, completion_tokens: 90 } },
+          },
+        },
+      }),
+    );
+    const network: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+      const content = JSON.parse(String(init?.body)).messages[0].content;
+      network.push(content);
+      if (content === 'throttled') {
+        return new Response(JSON.stringify({ error: { message: 'Rate limit reached' } }), { status: 429 });
+      }
+      return new Response(
+        JSON.stringify({ model: 'gpt-4o-mini-2024-07-18', usage: { prompt_tokens: 100, completion_tokens: 10 } }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+
+    const tape = new OpenAiTape({ dir, mode: 'live' });
+    try {
+      await tape.load();
+      const restore = tape.install();
+      try {
+        for (const body of [replayed, recorded, throttled]) {
+          await fetch(url, { method: 'POST', body: JSON.stringify(body) });
+        }
+      } finally {
+        restore();
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    expect(network).toEqual(['recorded', 'throttled']);
+    expect(aggregateUsage(tape.usage)).toEqual([
+      {
+        model: 'gpt-4o-mini-2024-07-18',
+        calls: 2,
+        measured_calls: 2,
+        prompt_tokens: 1000,
+        completion_tokens: 100,
+      },
+    ]);
+    expect(aggregateUsage(tape.spent)).toEqual([
+      { model: 'gpt-4o-mini', calls: 1, measured_calls: 0, prompt_tokens: null, completion_tokens: null },
+      {
+        model: 'gpt-4o-mini-2024-07-18',
+        calls: 1,
+        measured_calls: 1,
+        prompt_tokens: 100,
+        completion_tokens: 10,
+      },
+    ]);
+  });
 });
 
 describe('reaching the human\'s answer', () => {
@@ -1306,5 +1448,162 @@ describe('where the eval finds its OpenAI key', () => {
     expect(problem).toContain('.env.local');
     expect(problem).toMatch(/\.env(?!\.)/);
     expect(process.env.OPENAI_API_KEY).toBeUndefined();
+  });
+});
+
+/**
+ * The grounding measurement. It gates nothing, which is exactly why it is worth
+ * testing: a reported figure nobody compares against a baseline is one nobody
+ * would notice going wrong, and this one exists to inform a spending decision
+ * about the knowledge base.
+ */
+describe('grounding measurement', () => {
+  const excerptAt = (limit: number) => (text: string) => text.slice(0, limit);
+  const whole = (text: string) => text;
+
+  it('counts an empty chunk as no words rather than one', () => {
+    // `''.split(/\s+/)` is `['']`, so the naive count inflates every figure
+    // below by one word per empty or whitespace-only chunk.
+    expect(countWords('')).toBe(0);
+    expect(countWords('   \n  ')).toBe(0);
+    expect(countWords(' one  two \n three ')).toBe(3);
+  });
+
+  it('measures the excerpt the prompt prints, not the whole chunk', () => {
+    const retrieved = [{ chunk: { source: 'a.md', text: 'one two three four five' } }];
+
+    expect(summarizeContext(retrieved, whole)).toEqual({ chunks: 1, words: 5, sources: 1 });
+    // A chunk the prompt truncates contributes only what survived truncation,
+    // so raising EXCERPT_MAX_CHARS shows up here as more grounding rather than
+    // leaving the figure pinned to the index.
+    expect(summarizeContext(retrieved, excerptAt(7))).toEqual({ chunks: 1, words: 2, sources: 1 });
+  });
+
+  it('counts distinct sources, so four chunks of one file are one document', () => {
+    const retrieved = [
+      { chunk: { source: 'a.md', text: 'x' } },
+      { chunk: { source: 'a.md', text: 'x' } },
+      { chunk: { source: 'b.md', text: 'x' } },
+    ];
+
+    expect(summarizeContext(retrieved, whole)).toEqual({ chunks: 3, words: 3, sources: 2 });
+  });
+
+  it('reports null for a case the retriever never ran for', () => {
+    // A classifier refusal returns before `generateTuningAdvice`. Zero words
+    // would say the model was handed nothing; it was never asked.
+    expect(summarizeContext(null, whole)).toBeNull();
+  });
+
+  it('reports null rather than zero when no case retrieved at all', () => {
+    // The empty-collection rule this harness is built on. `0 words` would read
+    // as the most alarming possible result of a measurement that never ran.
+    expect(aggregateContext([{ id: 'refused', contextDepth: null }])).toEqual({
+      cases: 0,
+      words: null,
+      chunks: null,
+      sources: null,
+      thinnest: null,
+    });
+  });
+
+  it('averages over the cases that retrieved and names the thinnest answer', () => {
+    const agg = aggregateContext([
+      { id: 'wide', contextDepth: { chunks: 4, words: 300, sources: 3 } },
+      { id: 'thin', contextDepth: { chunks: 2, words: 100, sources: 1 } },
+      { id: 'refused', contextDepth: null },
+    ]);
+
+    expect(agg.cases).toBe(2);
+    expect(agg.words).toBe(200);
+    expect(agg.chunks).toBe(3);
+    expect(agg.sources).toBe(2);
+    expect(agg.thinnest).toEqual({ id: 'thin', words: 100 });
+  });
+
+  it('describes the index the answers were drawn from, and an empty one as unmeasured', () => {
+    const corpus = describeCorpus([
+      { source: 'a.md', text: 'one two three four' },
+      { source: 'a.md', text: 'one two' },
+    ]);
+
+    expect(corpus).toEqual({ chunks: 2, sources: 1, words: 6, words_per_chunk: 3 });
+    expect(describeCorpus([])).toEqual({ chunks: 0, sources: 0, words: 0, words_per_chunk: null });
+  });
+
+  it('counts a missed source against the cases that labelled it, not the whole set', () => {
+    const tally = tallyMissedSources([
+      {
+        retrieval: { applicable: true, missed: ['deep.md'] },
+        labels: { expected_sources: ['deep.md', 'found.md'] },
+      },
+      {
+        retrieval: { applicable: true, missed: ['deep.md'] },
+        labels: { expected_sources: ['deep.md'] },
+      },
+      // Unlabelled and unscoreable cases are not chances the source was given.
+      { retrieval: { applicable: false, missed: [] }, labels: { expected_sources: [] } },
+    ]);
+
+    expect(tally).toEqual([{ source: 'deep.md', misses: 2, labelled: 2 }]);
+  });
+
+  it('totals token spend per model over both endpoints', () => {
+    // An embeddings response carries prompt_tokens and total_tokens and no
+    // completion_tokens. That is zero completion, not an unmeasured one.
+    expect(
+      aggregateUsage([
+        { model: 'gpt-4o-mini-2024-07-18', usage: { prompt_tokens: 100, completion_tokens: 20 } },
+        { model: 'gpt-4o-mini-2024-07-18', usage: { prompt_tokens: 50, completion_tokens: 10 } },
+        { model: 'text-embedding-3-small', usage: { prompt_tokens: 35, total_tokens: 35 } },
+      ]),
+    ).toEqual([
+      {
+        model: 'gpt-4o-mini-2024-07-18',
+        calls: 2,
+        measured_calls: 2,
+        prompt_tokens: 150,
+        completion_tokens: 30,
+      },
+      {
+        model: 'text-embedding-3-small',
+        calls: 1,
+        measured_calls: 1,
+        prompt_tokens: 35,
+        completion_tokens: 0,
+      },
+    ]);
+  });
+
+  it('counts a response that reported no usage as unmeasured, not as zero tokens', () => {
+    expect(
+      aggregateUsage([
+        { model: 'gpt-4o-mini', usage: { prompt_tokens: 100, completion_tokens: 20 } },
+        { model: 'gpt-4o-mini', usage: undefined },
+      ]),
+    ).toEqual([
+      {
+        model: 'gpt-4o-mini',
+        calls: 2,
+        measured_calls: 1,
+        prompt_tokens: 100,
+        completion_tokens: 20,
+      },
+    ]);
+  });
+
+  it('reports null totals rather than zero when no call reported usage at all', () => {
+    // Summing an absent usage object as 0 prints a confidently wrong cost with
+    // no signal it was never measured - which is what a provider that stops
+    // filling the field would produce, on exactly the model change ahead.
+    expect(aggregateUsage([{ model: 'next-model', usage: null }])).toEqual([
+      {
+        model: 'next-model',
+        calls: 1,
+        measured_calls: 0,
+        prompt_tokens: null,
+        completion_tokens: null,
+      },
+    ]);
   });
 });

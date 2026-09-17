@@ -210,6 +210,19 @@ function formatVehicleBlock(vehicle: Vehicle): string {
 
 const EXCERPT_MAX_CHARS = 800;
 
+/**
+ * The knowledge-base text one retrieved chunk contributes to the prompt.
+ *
+ * Exported so the eval harness can measure how many words an answer was
+ * actually grounded in by calling this rather than by re-applying the limit -
+ * a hand copy of `EXCERPT_MAX_CHARS` would agree today and stop agreeing the
+ * moment the limit moves, which is the edit such a measurement exists to
+ * support.
+ */
+export function excerptForPrompt(text: string): string {
+  return truncateAtWordBoundary(text, EXCERPT_MAX_CHARS);
+}
+
 function formatRetrievedBlock(retrieved: RetrievedChunk[]): string {
   if (retrieved.length === 0) {
     return 'Knowledge snippets:\n  (none matched the query)';
@@ -219,7 +232,7 @@ function formatRetrievedBlock(retrieved: RetrievedChunk[]): string {
     lines.push(
       `  [${idx + 1}] source=${chunk.source} heading="${chunk.heading}" vehicle=${chunk.vehicle_type} score=${score.toFixed(3)}`,
     );
-    const excerpt = truncateAtWordBoundary(chunk.text, EXCERPT_MAX_CHARS);
+    const excerpt = excerptForPrompt(chunk.text);
     lines.push(excerpt.split('\n').map((line) => `      ${line}`).join('\n'));
   });
   return lines.join('\n');
