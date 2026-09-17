@@ -18,11 +18,23 @@ vi.mock('@/lib/actions/vehicles', () => ({
   getUserProfile: vi.fn(),
 }));
 
+vi.mock('@/lib/monitoring/report-error', () => ({
+  reportError: vi.fn(),
+}));
+
 import { revalidatePath } from 'next/cache';
 import { getRealUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { createClient } from '@/lib/supabase/server';
-import { createTrack, deleteTrack, getTrack, getTracks, updateTrack } from '@/lib/actions/tracks';
+import { reportError } from '@/lib/monitoring/report-error';
+import {
+  createTrack,
+  deleteTrack,
+  getTrack,
+  getTrackDirectory,
+  getTracks,
+  updateTrack,
+} from '@/lib/actions/tracks';
 
 type QueryResponse = {
   base?: { data?: unknown; error?: { message: string } | null; count?: number | null };
@@ -125,6 +137,33 @@ describe('tracks actions', () => {
     expect(result).toHaveLength(2);
     expect(listQuery.or).toHaveBeenCalledWith('is_seeded.eq.true,created_by.eq.user-1');
     expect(listQuery.order).toHaveBeenCalledWith('name', { ascending: true });
+  });
+
+  it('degrades a failed alias or layout read to an empty index and reports it', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-2' } as never);
+
+    const trackRow = { id: 'seeded-1', name: 'Road America', is_seeded: true, created_by: null, location: null, created_at: '2026-03-01T00:00:00Z' };
+    const from = vi.fn((table: string) => {
+      if (table === 'tracks') return createQuery({ base: { data: [trackRow], error: null } });
+      return createQuery({ base: { data: null, error: { message: `permission denied for table ${table}` } } });
+    });
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await getTrackDirectory();
+
+    expect(result.tracks).toHaveLength(1);
+    expect(result.aliases).toEqual({});
+    expect(result.layouts).toEqual({});
+    expect(reportError).toHaveBeenCalledWith(
+      'track-directory',
+      expect.any(Error),
+      expect.objectContaining({ table: 'track_aliases' }),
+    );
+    expect(reportError).toHaveBeenCalledWith(
+      'track-directory',
+      expect.any(Error),
+      expect.objectContaining({ table: 'track_layouts' }),
+    );
   });
 
   it('enforces free tier track limit', async () => {

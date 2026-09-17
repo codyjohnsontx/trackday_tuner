@@ -141,6 +141,69 @@ alter table public.sessions add column if not exists layout_id uuid
   references public.track_layouts(id) on delete set null;
 alter table public.sessions add column if not exists layout_name text;
 
+-- The foreign key proves a layout EXISTS, not that it belongs to the session's
+-- circuit, and `authenticated` writes `sessions` directly - RLS picks the row,
+-- not what its columns say. So a direct write could file a VIR session under a
+-- Cresson layout, bypassing the scoped lookup in `createSession`. This makes the
+-- pairing a database fact, and makes `layout_name` the layout row's own name
+-- whenever an id is set, exactly as the application canonicalises it.
+--
+-- `security invoker`, so the lookup runs under the caller's RLS and a layout the
+-- rider cannot see is refused like one that does not exist. Not a
+-- `security definer` function, so execute is not the access control here.
+--
+-- A session with no circuit loses its layout id rather than being refused,
+-- because that is how the cascades arrive: deleting a track sets
+-- `sessions.track_id` null and deletes its layouts, which sets `layout_id` null,
+-- in an order this function does not choose - refusing would make the track
+-- delete fail. `layout_name` is left alone whenever `layout_id` is null, since it
+-- is the snapshot that outlives the layout row.
+create or replace function public.sessions_check_layout()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  layout_track_id uuid;
+  layout_row_name text;
+begin
+  if new.layout_id is null then
+    return new;
+  end if;
+
+  if new.track_id is null then
+    new.layout_id := null;
+    return new;
+  end if;
+
+  if tg_op = 'UPDATE'
+    and new.layout_id is not distinct from old.layout_id
+    and new.track_id is not distinct from old.track_id
+    and new.layout_name is not distinct from old.layout_name then
+    return new;
+  end if;
+
+  select l.track_id, l.name
+    into layout_track_id, layout_row_name
+    from public.track_layouts l
+   where l.id = new.layout_id;
+
+  if not found or layout_track_id is distinct from new.track_id then
+    raise exception 'layout % is not a layout of track %', new.layout_id, new.track_id
+      using errcode = '23514';
+  end if;
+
+  new.layout_name := layout_row_name;
+  return new;
+end;
+$$;
+
+drop trigger if exists sessions_check_layout on public.sessions;
+create trigger sessions_check_layout
+  before insert or update of layout_id, track_id, layout_name on public.sessions
+  for each row execute function public.sessions_check_layout();
+
 -- Grants, per table and per role, as 20260719001100 requires of every table a
 -- later migration adds. Both tables are reference data the application only
 -- reads: a rider names a circuit through sessions.track_name, never by writing

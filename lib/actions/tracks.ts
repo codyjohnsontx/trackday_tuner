@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { getFreePlanLimitMessage, getFreePlanLimit } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
+import { reportError } from '@/lib/monitoring/report-error';
 import { buildTrackAliasIndex, buildTrackLayoutIndex, type TrackDirectory } from '@/lib/track-directory';
 import type { TableInsert } from '@/types/supabase';
 import type { ActionResult, Track, TrackAlias, TrackLayout } from '@/types';
@@ -69,11 +70,20 @@ export async function getTrackDirectory(): Promise<TrackDirectory> {
     supabase.from('track_layouts').select('*'),
   ]);
 
+  // Degraded, not refused - but a swallowed failure still has to reach
+  // monitoring, or a missing migration or grant leaves the typeahead blind
+  // with nothing but a log line to say so.
   if (aliasResult.error) {
-    console.error('[tracks] alias read failed', { error: aliasResult.error.message });
+    reportError('track-directory', new Error(aliasResult.error.message), {
+      reason: aliasResult.error.code,
+      table: 'track_aliases',
+    });
   }
   if (layoutResult.error) {
-    console.error('[tracks] layout read failed', { error: layoutResult.error.message });
+    reportError('track-directory', new Error(layoutResult.error.message), {
+      reason: layoutResult.error.code,
+      table: 'track_layouts',
+    });
   }
 
   return {

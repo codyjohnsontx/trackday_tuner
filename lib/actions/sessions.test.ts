@@ -662,6 +662,39 @@ describe('sessions actions', () => {
     );
   });
 
+  it('refuses the save, and reports it, when the layout lookup fails', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    vi.mocked(reportError).mockClear();
+
+    const tables: string[] = [];
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => createTrackIdLookup())
+      .mockImplementationOnce((table: string) => {
+        tables.push(table);
+        return createQuery({ single: { data: null, error: { message: 'connection reset', code: '08006' } } });
+      })
+      .mockImplementation((table: string) => {
+        tables.push(table);
+        return createQuery({ base: { data: [], error: null }, single: { data: null, error: null } });
+      });
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({ ...validInput, layout_id: 'layout-13' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/not saved/);
+    // A failed read is not "no such layout": nothing is inserted with the
+    // rider's choice silently dropped.
+    expect(tables).toEqual(['track_layouts']);
+    expect(reportError).toHaveBeenCalledWith(
+      'session-layout',
+      expect.any(Error),
+      expect.objectContaining({ table: 'track_layouts' }),
+    );
+  });
+
   it('asks nothing about layouts when the rider chose none', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);

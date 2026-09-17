@@ -127,6 +127,14 @@ const SESSION_LAPS_SAVE_FAILED_MESSAGE =
  * So it names what is certain (the save did not finish, and the fault is ours),
  * and sends them to look before re-entering rather than promising a clean slate.
  */
+/**
+ * The layout lookup failed, so nothing was written - the check runs before the
+ * session insert, and a track row this save created is rolled back. Unlike the
+ * message below, "not saved" is therefore certain here.
+ */
+const SESSION_LAYOUT_LOOKUP_FAILED_MESSAGE =
+  'Your session was not saved - we could not check the layout you picked, and the fault is ours, not what you entered. Everything you typed is still on this page, so try saving again in a few minutes.';
+
 const SESSION_CREATE_SAVE_FAILED_MESSAGE =
   'Your session did not save completely - something is wrong on our end, not with what you entered. Check your sessions list before you enter it again, in case a partial one was left behind. What you typed is still on this page, so copy anything you need before you leave.';
 
@@ -536,6 +544,12 @@ interface ResolvedSessionTrack {
   layoutName: string | null;
   /** A new `tracks` row was written, so the tracks list changed. */
   createdTrack: boolean;
+  /**
+   * The rider chose a layout and the read that checks it failed. The save has to
+   * stop: an unanswered lookup is not "no such layout", and saving with a null
+   * layout would discard a choice the rider made because of our fault.
+   */
+  layoutLookupFailed: boolean;
 }
 
 /**
@@ -544,17 +558,22 @@ interface ResolvedSessionTrack {
  * A layout id is checked against the track it was submitted with rather than
  * read on its own, because a layout belongs to exactly one circuit: an id from
  * a different one is not a narrower answer, it is a session claiming a
- * configuration its track does not have. Anything that does not check out is
+ * configuration its track does not have. A layout that does not check out is
  * dropped and the session still saves - the layout is optional, so there is
  * nothing here worth refusing a rider's session over. The row's own name wins
  * over anything submitted, exactly as `resolveSessionTrack` treats a track name.
+ *
+ * A FAILED read is different from a layout that does not check out: it answers
+ * nothing, so it is reported and flagged for `createSession` to refuse the save
+ * rather than silently storing the session without the layout the rider chose.
  */
 async function resolveSessionLayout(
   supabase: Awaited<ReturnType<typeof createClient>>,
   trackId: string | null,
   layoutId: string | null | undefined,
-): Promise<{ layoutId: string | null; layoutName: string | null }> {
-  if (!layoutId || !trackId) return { layoutId: null, layoutName: null };
+): Promise<Pick<ResolvedSessionTrack, 'layoutId' | 'layoutName' | 'layoutLookupFailed'>> {
+  const none = { layoutId: null, layoutName: null, layoutLookupFailed: false };
+  if (!layoutId || !trackId) return none;
 
   const { data, error } = await supabase
     .from('track_layouts')
@@ -564,14 +583,19 @@ async function resolveSessionLayout(
     .maybeSingle();
 
   if (error) {
-    console.error('[sessions] layout lookup failed', { trackId, layoutId, error: error.message });
-    return { layoutId: null, layoutName: null };
+    reportError('session-layout', new Error(error.message), {
+      reason: error.code,
+      table: 'track_layouts',
+      trackId,
+      layoutId,
+    });
+    return { ...none, layoutLookupFailed: true };
   }
 
   const row = data as { id: string; name: string } | null;
-  if (!row) return { layoutId: null, layoutName: null };
+  if (!row) return none;
 
-  return { layoutId: row.id, layoutName: row.name };
+  return { layoutId: row.id, layoutName: row.name, layoutLookupFailed: false };
 }
 
 /**
@@ -747,7 +771,7 @@ async function resolveSessionTrack(
   const typed = normalizeTrackName(trackName);
   // The layout is resolved against whichever circuit resolution settles on, so
   // every exit below routes through this rather than returning a bare object.
-  const withLayout = async (track: Omit<ResolvedSessionTrack, 'layoutId' | 'layoutName'>) => ({
+  const withLayout = async (track: Omit<ResolvedSessionTrack, 'layoutId' | 'layoutName' | 'layoutLookupFailed'>) => ({
     ...track,
     ...(await resolveSessionLayout(supabase, track.trackId, layoutId)),
   });
@@ -778,7 +802,16 @@ async function resolveSessionTrack(
     // of saving a link the rider cannot follow.
   }
 
-  if (!typed) return { trackId: null, trackName: null, layoutId: null, layoutName: null, createdTrack: false };
+  if (!typed) {
+    return {
+      trackId: null,
+      trackName: null,
+      layoutId: null,
+      layoutName: null,
+      createdTrack: false,
+      layoutLookupFailed: false,
+    };
+  }
 
   // A name typed out in full lands on the row it names rather than beside it.
   const lookup = await findVisibleTrackByName(supabase, userId, typed);
@@ -892,6 +925,11 @@ export async function createSession(
   if (!track.trackName) {
     await rollbackAutoCreatedTrack(supabase, user.id, track);
     return { ok: false, error: MISSING_TRACK_MESSAGE };
+  }
+
+  if (track.layoutLookupFailed) {
+    await rollbackAutoCreatedTrack(supabase, user.id, track);
+    return { ok: false, error: SESSION_LAYOUT_LOOKUP_FAILED_MESSAGE };
   }
 
   const payload: TableInsert<'sessions'> = {

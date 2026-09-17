@@ -171,6 +171,25 @@ describe('session export helpers', () => {
     expect(row.ambient_temperature_c).toBeNull();
   });
 
+  it('exports which layout of the circuit a session ran', () => {
+    const csv = buildSessionExportCsv([
+      {
+        session: session({ track_name: 'MotorSport Ranch', layout_id: 'layout-13', layout_name: '1.3-Mile' }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: null,
+      },
+      { session: session({ id: 'session-2' }), vehicle: motorcycle, environment: null, telemetry: null },
+    ]);
+
+    const [header, withLayout, withoutLayout] = csv.trim().split(/\r?\n/).map((line) => line.split(','));
+    const layoutName = header.indexOf('layout_name');
+    const layoutId = header.indexOf('layout_id');
+    expect(header[header.indexOf('track_name') + 1]).toBe('layout_id');
+    expect([withLayout[layoutId], withLayout[layoutName]]).toEqual(['layout-13', '1.3-Mile']);
+    expect([withoutLayout[layoutId], withoutLayout[layoutName]]).toEqual(['', '']);
+  });
+
   it('builds csv with headers and escaped note values', () => {
     const csv = buildSessionExportCsv([
       {
