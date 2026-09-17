@@ -647,10 +647,14 @@ const BASELINE_LIVE_RERECORDS = [{
     'not a golden case, not a label.',
   how_the_model_was_chosen:
     'BY MEASUREMENT OVER THIS SAME SET, NOT BY TIER. Four candidates were run live over all ' +
-    '33 cases and scored against the gpt-4o-mini baseline. gpt-4.1-mini: rubric 0.91, ' +
-    'component 0.93, direction 0.40 - 2.9x the per-request cost for WORSE direction accuracy. ' +
-    'gpt-5.1: rubric 0.94, component 0.87, direction 0.73 - better than gpt-4o-mini but beaten ' +
-    'by gpt-5.4-mini on both, at 2.5x its cost. gpt-5.4: rubric 0.76, component 0.73, ' +
+    '33 cases and scored against the gpt-4o-mini baseline. THE CHOICE IS A TRADEOFF AND NOT A ' +
+    'SWEEP: gpt-5.4-mini scored BEST on direction accuracy and SECOND on component. ' +
+    'gpt-4.1-mini: rubric 0.91, component 0.93, direction 0.40 - the BEST component score of ' +
+    'the five, and still not the choice, because 2.9x the per-request cost bought direction ' +
+    'accuracy WORSE than the gpt-4o-mini it would replace. ' +
+    'gpt-5.1: rubric 0.94, component 0.87, direction 0.73 - better than gpt-4o-mini, TIED with ' +
+    'gpt-5.4-mini on component and beaten by it on direction, at 2.5x its cost. ' +
+    'gpt-5.4: rubric 0.76, component 0.73, ' +
     'direction 0.73 - a clear REGRESSION at 3.8x the cost, because it declines to recommend ' +
     'far more often and evaluateAdvicePolicy reads that as no_recommendation. gpt-5-mini was ' +
     'never scored: it rejects the temperature 0.2 that lib/rag/advice.ts sends, so it is ' +

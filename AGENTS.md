@@ -1524,9 +1524,12 @@ $0.115, of which embeddings are under a hundredth of a cent.
 
 **The model is `gpt-5.4-mini` and it was picked by running this harness, not by
 tier.** `getAiModel` (`lib/env.server.ts`) carries the choice and the comment
-carries the numbers. Four candidates were run `--live` over the same 33 cases:
-`gpt-4.1-mini` cost 2.9x `gpt-4o-mini` for WORSE direction accuracy (0.40
-against 0.47), `gpt-5.1` was beaten on both accuracy metrics by the model at 39%
+carries the numbers. **The chosen model won a TRADEOFF, not a sweep: best on
+direction accuracy, second on component.** Four candidates were run `--live`
+over the same 33 cases: `gpt-4.1-mini` took the best component score of the five
+(0.93) and is still not the choice, because it cost 2.9x `gpt-4o-mini` for WORSE
+direction accuracy (0.40 against 0.47); `gpt-5.1` TIED the model on component
+and was beaten on direction, at 39%
 of its price, and `gpt-5.4` at 3.8x was a clear regression - rubric 0.94 ->
 0.76 - because it declines to recommend far more often and
 `evaluateAdvicePolicy` reads that as `no_recommendation`. **THE TIER ABOVE THE
