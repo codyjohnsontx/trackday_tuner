@@ -38,8 +38,13 @@ export function getAiRequestFingerprintSecret(): string {
  *
  * `gpt-5.4-mini` was chosen by measurement rather than by tier: `npm run rag:eval
  * -- --live` was run over the same 33 golden cases on four candidates, and this
- * one scored best. Against the `gpt-4o-mini` it replaces, direction accuracy went
- * 0.47 -> 0.87 and component accuracy 0.80 -> 0.87. It beat `gpt-5.1` on both at
+ * one scored best on the two accuracy metrics. Against the `gpt-4o-mini` it
+ * replaces, direction accuracy went 0.47 -> 0.87 and component accuracy
+ * 0.80 -> 0.87 - while the GATED `rubric_pass_rate` and `refusal_accuracy` both
+ * FELL, 0.94 -> 0.91, on the single case `sparse-no-history-comparison`, which
+ * every candidate force-refused as `no_recommendation` and which carries a
+ * contested label of its own. The choice is that tradeoff plus cost, not a sweep.
+ * It beat `gpt-5.1` on both accuracy metrics at
  * 39% of its per-request cost, and `gpt-5.4` at 3.8x the cost was a clear
  * REGRESSION (rubric 0.94 -> 0.76, component 0.80 -> 0.73), which is why the
  * newest name is not the answer here. `gpt-5-mini` never reached the set: it

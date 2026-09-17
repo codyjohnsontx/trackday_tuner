@@ -1488,10 +1488,10 @@ is only ever paid for by a prompt that actually moved.
 
 **THE OLD NUMBER AND THE NEW ONE ARE NOT COMPARABLE, and no reading makes them
 so.** The predecessor reported 100% over eleven constants it could not fail; the
-committed baseline is 0.94 over 33 real requests it can. Different inputs, a
+committed baseline is 0.91 over 33 real requests it can. Different inputs, a
 different rubric and one of them incapable of returning anything else - a
-difference of -6 points between those two measures nothing. So
-`docs/ai-mvp-spec.md`'s 85% exit criterion is met by the 0.94 here and was never
+difference of -9 points between those two measures nothing. So
+`docs/ai-mvp-spec.md`'s 85% exit criterion is met by the 0.91 here and was never
 evidenced by the 100%, and any claim about the Race Engineer improving or
 regressing starts from this baseline rather than from anything recorded before
 it.
@@ -1534,8 +1534,9 @@ ONE CHOSEN WAS MEASURED AND WAS WORSE**, which is why a future upgrade starts
 with a live run rather than with a release announcement. `gpt-5-mini` never
 reached the set: it rejects the `temperature: 0.2` that `lib/rag/advice.ts`
 sends, and it bills reasoning tokens as output, so a sticker price below
-`gpt-5.4-mini`'s is not the bill. The fifth entry in `live_rerecord`
-(`eval-baseline.json`) is the before-and-after; the per-request cost went
+`gpt-5.4-mini`'s is not the bill. The fourth entry in `live_rerecord`
+(`eval-baseline.json`), which records the fifth movement, is the
+before-and-after; the per-request cost went
 $0.00057 -> $0.00408, against a $2.99/month plan.
 
 Changing `AI_MODEL`'s default puts the model name in the request body, so it
