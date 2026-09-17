@@ -184,13 +184,16 @@ export const adviceResponseJsonSchema = {
  * wrong answer to a placeholder, and telling the two apart is this parser's job
  * rather than the policy's.
  *
- * THE SET IS MEASURED, NOT GUESSED. Across the five generations of
+ * THE SET IS MEASURED, NOT GUESSED. Across the four DISTINCT generations of
  * `tests/fixtures/rag-eval/recordings/completions.json` recorded on gpt-4o-mini
- * (git history up to 2b16e05) the model emitted 78 `personal_evidence` entries:
- * 77 carried a session id its own prompt had printed, and exactly one carried
+ * (git history up to 2b16e05) the model emitted 53 `personal_evidence` entries:
+ * 52 carried a session id its own prompt had printed, and exactly one carried
  * the string "null" (commit 5524a4c, tape key
  * 5ea2f97b7872510ff6f6d355f4ca5c4d, the golden case `mc-gearing-slow-corner`).
- * A JSON null was never emitted, and no other non-id value ever appeared.
+ * A JSON null was never emitted, and no other non-id value ever appeared. The
+ * count is over distinct blobs: this comment once said "five committed
+ * generations", which reconciled only by counting the d56381f blob twice, since
+ * it also appears at merge c065492.
  *
  * THE gpt-5.4-mini RE-RECORD DID NOT ADD A MEMBER. The generation committed
  * beside this file carries 34 `personal_evidence` entries: 33 with a session id
@@ -217,8 +220,8 @@ export const adviceResponseJsonSchema = {
  *
  * The same placeholder could in principle arrive in `refusal`, where the string
  * "null" would refuse the rider with the word "null" as the reason. That has
- * never been recorded - across those same tapes `refusal` was JSON null 120
- * times and genuine prose 12, and the gpt-5.4-mini generation adds no
+ * never been recorded - across those same tapes `refusal` was JSON null 96
+ * times and genuine prose 10, and the gpt-5.4-mini generation adds no
  * placeholder there either - and it is a different field with a different
  * contract, so it is left alone rather than swept in here.
  */
