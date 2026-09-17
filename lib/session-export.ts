@@ -249,15 +249,15 @@ export type AnalyticsCoverageKey = keyof SessionEnabledModules | 'environment' |
  * The fastest lap one vehicle logged on one course - a circuit, and the layout
  * of it when the session named one (see `buildSessionCourseKeys`).
  *
- * A lap time only compares against another lap ridden at the same track on the
+ * A lap time only compares against another lap ridden on the same course on the
  * same vehicle - the rule `getComparableSessions` enforces, filtering on
- * `vehicle_id` before applying `sessionsMatchTrack` - so a season best is a
+ * `vehicle_id` before ranking with `courseMatchRank` - so a season best is a
  * board and never a single number. Keying on the circuit alone made a bike and
  * a car at one track compete for one row, and the slower of the two had no
  * personal best anywhere on the panel.
  */
 export interface AnalyticsTrackBest {
-  /** `buildSessionTrackKeys` grouping key and the vehicle, so a typed name folds into the saved row and the two vehicles do not. */
+  /** `buildSessionCourseKeys` grouping key and the vehicle, so a typed name folds into the saved row and the two vehicles do not. */
   key: string;
   trackName: string;
   /** The layout the row is for, or null for the circuit's sessions that named none. */
