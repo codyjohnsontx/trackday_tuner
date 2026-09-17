@@ -257,7 +257,8 @@ it ends on the card actually rendering: `next/image` serves only hosts named in
 from `NEXT_PUBLIC_SUPABASE_URL` when `next.config.ts` loads - so a local stack
 renders its own photos and the rule is not a second copy of the URL. It once named
 `*.supabase.co` alone, and the garage threw on every local photo while the spec
-passed, because nothing looked at the card. No tracks are seeded.
+passed, because nothing looked at the card. Seeded tracks are a migration too -
+see "A circuit is an identity" under "What a Rider Told You".
 
 Functions are deliberately *not* granted schema-wide. RLS contains a table; it does
 not contain a `security definer` function, which runs as its owner and bypasses
