@@ -1660,7 +1660,8 @@ export function describeUnsoundRun({
  * the same `loadEnvFiles` that `rag:index` and the beta scripts use, so a key kept
  * in `.env.local` or `.env` reaches `--live` without being exported by hand.
  * `loadEnvFiles` never overrides a variable that is already set, so a key exported
- * in the shell still wins.
+ * in the shell still wins. A blank `OPENAI_API_KEY=` line counts as no line, so
+ * one left in `.env.local` does not hide the key in `.env`.
  *
  * The whole files are loaded, not the key alone, on purpose. `AI_MODEL` and
  * `AI_EMBEDDING_MODEL` go into the request body, which is the tape key, and
