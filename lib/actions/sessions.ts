@@ -936,8 +936,9 @@ export async function createSession(
     vehicle_id: input.vehicle_id,
     track_id: track.trackId,
     track_name: track.trackName,
-    layout_id: track.layoutId,
-    layout_name: track.layoutName,
+    ...(track.layoutId
+      ? { layout_id: track.layoutId, layout_name: track.layoutName }
+      : {}),
     date: input.date,
     start_time: input.start_time ?? null,
     session_number: input.session_number ?? null,

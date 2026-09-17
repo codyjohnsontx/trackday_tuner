@@ -61,6 +61,10 @@ create unique index if not exists tracks_slug_key
   on public.tracks(slug)
   where slug is not null;
 
+alter table public.tracks drop constraint if exists tracks_slug_seeded_only;
+alter table public.tracks
+  add constraint tracks_slug_seeded_only check (slug is null or is_seeded);
+
 -- A circuit configuration is a layout of one track, not a track of its own.
 -- MotorSport Ranch at Cresson runs three; seeding them as three circuits would
 -- mean a rider's Cresson season lived in three places and compared against
@@ -268,7 +272,8 @@ insert into public.tracks (slug, name, location, is_seeded, created_by) values
 on conflict (slug) where slug is not null do update
   set name = excluded.name,
       location = excluded.location,
-      is_seeded = true;
+      is_seeded = true,
+      created_by = null;
 
 -- layouts
 insert into public.track_layouts (track_id, slug, name, sort_order)

@@ -590,8 +590,9 @@ describe('sessions actions', () => {
     // lookup is not "no such circuit", so no track is created behind it either.
     expect(result.ok).toBe(true);
     expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: null, track_name: 'Some New Circuit', layout_id: null }),
+      expect.objectContaining({ track_id: null, track_name: 'Some New Circuit' }),
     );
+    expect(vi.mocked(insertQuery.insert as (row: unknown) => unknown).mock.calls[0][0]).not.toHaveProperty('layout_id');
     expect(tables).not.toContain('tracks');
   });
 
@@ -658,8 +659,10 @@ describe('sessions actions', () => {
 
     expect(result.ok).toBe(true);
     expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: 'track-1', layout_id: null, layout_name: null }),
+      expect.objectContaining({ track_id: 'track-1' }),
     );
+    expect(vi.mocked(insertQuery.insert as (row: unknown) => unknown).mock.calls[0][0]).not.toHaveProperty('layout_id');
+    expect(vi.mocked(insertQuery.insert as (row: unknown) => unknown).mock.calls[0][0]).not.toHaveProperty('layout_name');
   });
 
   it('refuses the save, and reports it, when the layout lookup fails', async () => {
@@ -719,9 +722,9 @@ describe('sessions actions', () => {
 
     expect(result.ok).toBe(true);
     expect(tables).not.toContain('track_layouts');
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ layout_id: null, layout_name: null }),
-    );
+    expect(insertQuery.insert).toHaveBeenCalled();
+    expect(vi.mocked(insertQuery.insert as (row: unknown) => unknown).mock.calls[0][0]).not.toHaveProperty('layout_id');
+    expect(vi.mocked(insertQuery.insert as (row: unknown) => unknown).mock.calls[0][0]).not.toHaveProperty('layout_name');
   });
 
   it('finds a doubled-space spelling on the exact-match fast path', async () => {
