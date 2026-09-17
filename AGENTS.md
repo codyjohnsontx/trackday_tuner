@@ -1034,7 +1034,7 @@ referenced in that response" - firing on the session the app had just handed the
 model. `formatSessionBlock` printed no `session_id`, so the current session, the
 previous session and every day-plan recent session reached the model anonymous,
 while the allowed set was built from those very ids. Asked for personal evidence
-about a session it had no id for, the model invented one: the committed recording
+about a session it had no id for, the model wrote a placeholder: the committed recording
 for `mc-gearing-slow-corner` cites the rider's own session notes with
 `source_session_id: "null"` and has its whole answer discarded. No account could
 avoid it, because the three blocks that DID print ids - `similar_sessions`,
@@ -1053,9 +1053,35 @@ the prompt and the id set from one input and fails on either direction;
 `app/api/ai/tuning-advice/route.session-evidence.test.ts` runs the real policy
 through the route, which is the only place that can catch the route substituting a
 set of its own. **This widened nothing:** every accepted id belongs to a row read
-under the rider's own RLS scope, an id from anywhere else is still refused, and so
-is the literal string `"null"` - coercing that to null would leave an unverified
-evidence entry in front of the rider, which is the class the guard exists for.
+under the rider's own RLS scope, and an id from anywhere else is still refused.
+
+**THAT PARAGRAPH USED TO END BY REFUSING THE LITERAL STRING `"null"` TOO, AND
+THAT PART WAS WRONG.** Captain's ruling, 2026-09-16: a rider asking a legitimate
+question must not lose a good answer to the model's own placeholder text. The
+string `"null"` is not a fabricated reference, it is the model declining to give
+one, and `PLACEHOLDER_SESSION_REFERENCES` in `lib/rag/schema.ts` now normalises
+it to the JSON null the field already allows. The old argument was that
+coercing it leaves unverified evidence in front of the rider; it does not, because a null reference counts
+toward neither `grounded` nor `hasSupportForHighConfidence`, so the entry reads
+as the observation it is and can prop up nothing. **The set is measured**: across
+the five committed generations of the completions tape the model emitted 78
+`personal_evidence` entries, 77 carrying an id its own prompt printed and exactly
+one carrying the string `"null"`. **The set has exactly two members, on two
+different grounds**: `"null"` is the recorded token (the trim-and-lowercase fold
+is not extrapolation - `"NULL"` is the same token), and the empty string is
+semantics rather than a guess about the model, since an empty reference carries
+no information under any reading. **A new member needs a recording behind it**,
+because every member turns a policy refusal into a served answer. What is
+NOT normalised is anything else, whatever its shape - declining to give a
+reference and inventing one are different acts, and a fabricated id still reaches
+the policy and is still refused.
+
+The fix is at the PARSER and not at the policy, and that boundary is the whole
+design: `parseAdviceResponse` decides what the model actually said, and
+`evaluateAdvicePolicy` decides whether what it said may be served. A placeholder
+is a question about the first. **Whether ONE unverifiable citation should discard
+the WHOLE response, or only that evidence item, is a separate product call and is
+deliberately still open** - the parser fix must not quietly become it.
 
 **An `AdviceResponse` is rendered in exactly one place, and that is the guard.**
 `components/ai/advice-report.tsx` prints the whole payload; the Race Engineer and
@@ -1139,6 +1165,16 @@ unlabelled case, `aggregateRetrieval` reports a null `k` when nothing retrieved,
 and an absent tape fails by construction because every request then misses. The
 one unguarded case is the `METRICS` table itself, deliberately: emptying it is
 deleting the gate, and no guard in the same file survives that edit.
+
+**Responses production must SERVE are a unit-suite fixture, not a `rag:eval`
+gate.** `tests/fixtures/rag-eval/must-serve-responses.json` holds real recorded
+model outputs that production discarded and should not have, and
+`tests/unit/rag-eval-harness.test.ts` scores every one through
+`parseAdviceResponse` and the policy with `validSessionIds: []`, asserting each is
+served parsed and refused raw. `npm run rag:eval` does not read the file. **Eval
+measurements stay reported and are not gated until a bar has been set**, so a new
+pass/fail condition in the run is a decision for the owner, never a side effect of
+the change that motivated it.
 
 **Offline replays committed tapes; the tape key is the request.** The intercept
 is `globalThis.fetch` (`scripts/eval/openai-tape.mjs`), not a mock of
@@ -1311,8 +1347,8 @@ where both flags already read what production would have printed.
 **The live numbers are the baseline whatever they say, in both directions.** On
 that re-record `rubric_pass_rate` and `refusal_accuracy` both FELL, 27/32 ->
 26/32, over one case - `mc-gearing-slow-corner`, where the model returned a
-`source_session_id` of the STRING `"null"` and `evaluateAdvicePolicy` correctly
-discarded the whole response. Keeping the older, higher tape because it flattered
+`source_session_id` of the STRING `"null"` and `evaluateAdvicePolicy` discarded
+the whole response - a placeholder the parser now normalises (above). Keeping the older, higher tape because it flattered
 the harness would rebuild the exact defect this harness exists to remove: a
 number chosen for how it reads rather than for being true.
 
@@ -1328,7 +1364,7 @@ model sampling on an unrelated mechanism. `direction_accuracy` fell 7/13 -> 6/13
 and is committed as measured. Claiming both rises for the fix would be the same
 defect wearing the opposite sign. The acceptance evidence is counted off the
 recordings rather than argued: before, 1 of 26 responses carried personal
-evidence at all and its id was the fabricated `"null"`; after, 25 of 26 cite the
+evidence at all and its id was the placeholder `"null"`; after, 25 of 26 cite the
 exact id printed in their own prompt, none fabricated.
 
 `live_rerecord` in `eval-baseline.json` is a LIST of these movements, oldest

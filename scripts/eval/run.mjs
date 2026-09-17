@@ -339,6 +339,17 @@ function buildVehicle(caseInput, ids) {
  * one nobody wrote, because the reader after that cannot know it existed.
  * Nothing reads this field - it is written into `eval-baseline.json` and never
  * gated on - so the shape was free to fix. APPEND here; do not replace.
+ *
+ * ONE SENTENCE IN THE THIRD ENTRY IS SUPERSEDED AND IS LEFT STANDING ANYWAY.
+ * Its `closes` field says the literal string "null" is still refused by
+ * `evaluateAdvicePolicy` if it reappears, because coercing it would leave an
+ * unverified evidence entry in front of the rider. Captain's ruling, 2026-09-16,
+ * reverses that: a placeholder is the model declining to give a reference rather
+ * than inventing one, and `PLACEHOLDER_SESSION_REFERENCES` in `lib/rag/schema.ts`
+ * now normalises it to null at the parser. The entry is a record of what was
+ * true on the day it was written and is append-only, so the correction lives
+ * here and in CLAUDE.md rather than inside it - read the two together. No metric
+ * moved, so there was no re-baseline to carry it into `eval-baseline.json`.
  */
 const BASELINE_LIVE_RERECORDS = [{
   what_this_is:

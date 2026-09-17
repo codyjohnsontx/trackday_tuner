@@ -115,3 +115,76 @@ describe('parseAdviceResponse', () => {
     if (result.ok) expect(result.data.refusal).toBe('Insufficient session data.');
   });
 });
+
+/**
+ * `source_session_id` is `string | null`, so the string "null" is a valid string
+ * and reaches `evaluateAdvicePolicy` as a session id it cannot verify - which
+ * force-refuses the whole response and costs the rider a good answer over the
+ * model's own placeholder. The parser is where the two are told apart.
+ *
+ * `app/api/ai/tuning-advice/route.placeholder-session-id.test.ts` is the same
+ * defect walked through the route with the recording that produced it.
+ */
+function evidence(sourceSessionId: unknown) {
+  return {
+    ...validResponse,
+    personal_evidence: [
+      {
+        label: 'Session notes',
+        detail: 'Second gear is too tall out of the slow left.',
+        source_session_id: sourceSessionId,
+      },
+    ],
+  };
+}
+
+function parsedReference(sourceSessionId: unknown) {
+  const result = parseAdviceResponse(evidence(sourceSessionId));
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(result.error);
+  return result.data.personal_evidence[0].source_session_id;
+}
+
+describe('parseAdviceResponse normalizes a placeholder session reference', () => {
+  // "null" is the measured one - the 2026-09-08 recording of
+  // `mc-gearing-slow-corner`. An empty reference is no reference at all.
+  it.each(['null', 'NULL', ' null ', '', ' '])(
+    'reads %j as no reference rather than as an unverifiable one',
+    (placeholder) => {
+      expect(parsedReference(placeholder)).toBeNull();
+    },
+  );
+
+  it('keeps the evidence itself, so only the reference is dropped', () => {
+    const result = parseAdviceResponse(evidence('null'));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.personal_evidence).toHaveLength(1);
+    expect(result.data.personal_evidence[0].detail).toBe(
+      'Second gear is too tall out of the slow left.',
+    );
+  });
+
+  it('leaves a real session id alone', () => {
+    expect(parsedReference('33333333-3333-3333-3333-333333333333')).toBe(
+      '33333333-3333-3333-3333-333333333333',
+    );
+  });
+
+  // Declining to give a reference and inventing one are different acts, and only
+  // the first is a placeholder. A fabricated id still reaches the policy and is
+  // still refused - narrowing that here would hide fabrication, not placeholders.
+  it('leaves a value that is not a placeholder alone, whatever its shape', () => {
+    expect(parsedReference('the session from last month')).toBe('the session from last month');
+    for (const unrecorded of ['undefined', 'none', 'None', 'nil']) {
+      expect(parsedReference(unrecorded)).toBe(unrecorded);
+    }
+    expect(parsedReference('99999999-9999-4999-8999-999999999999')).toBe(
+      '99999999-9999-4999-8999-999999999999',
+    );
+  });
+
+  it('still rejects a non-string, non-null reference', () => {
+    expect(parseAdviceResponse(evidence(42)).ok).toBe(false);
+  });
+});

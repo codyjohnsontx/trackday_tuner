@@ -307,21 +307,23 @@ describe('the race engineer answers the questions it suggests', () => {
     expect(rows.at(-1)?.status).toBe('ok');
   });
 
-  it('is the refusal the captain saw: the model cites this session and names no id it was shown', async () => {
-    // THE REPRODUCTION, not a hypothetical. This payload is the shape the model
-    // actually returned in the committed recording for `mc-gearing-slow-corner`
-    // (tests/fixtures/rag-eval/recordings/completions.json): it cites the
-    // rider's OWN session notes and writes the string "null" where a
-    // `source_session_id` belongs, because the prompt printed no id for the
-    // session it was reasoning about. `evaluateAdvicePolicy` discards the whole
-    // answer - a correct, cited recommendation included - and the rider is told
-    // the historical session evidence could not be verified.
+  it('refuses the string "null" when it reaches the policy without passing the parser', async () => {
+    // THE BELT TO THE PARSER'S BRACES, and the comment here used to say the
+    // opposite. This payload is the shape the model actually returned in the
+    // recording for `mc-gearing-slow-corner`: it cites the rider's OWN session
+    // notes and writes the string "null" where a `source_session_id` belongs.
+    // It cost the rider the whole answer, and under the captain's ruling of
+    // 2026-09-16 it no longer does - `PLACEHOLDER_SESSION_REFERENCES` in
+    // `lib/rag/schema.ts` normalises it to null at the parser, because
+    // declining to give a reference is not the same act as inventing one.
     //
-    // The value is still refused after the fix and must stay refused: "null" is
-    // not a session id, so it is fabrication as far as the guard can tell, and
-    // coercing it to null would leave an unverified evidence entry in front of
-    // the rider. What the fix changes is that the model is now given a real id
-    // to copy instead, which is the test above.
+    // THIS SUITE MOCKS `generateTuningAdvice`, so the object below never passes
+    // `parseAdviceResponse`, and that is the only reason it still refuses. What
+    // is asserted here is therefore a fact about the POLICY, not about what a
+    // rider now gets: the second line holds if the first is ever removed. The
+    // rider's path is
+    // `app/api/ai/tuning-advice/route.placeholder-session-id.test.ts`, which
+    // stubs the model transport instead and leaves the parser real.
     const recorded = adviceCiting('null');
     recorded.personal_evidence = [
       {

@@ -12,6 +12,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
+      // `server-only` is a webpack alias Next resolves at build time, not an
+      // installed package, so a suite that imports a real server module -
+      // `lib/rag/advice.ts`, say - cannot load without a stand-in. The eval
+      // harness needs the same thing and its loader points at the same stub.
+      'server-only': path.resolve(__dirname, 'scripts/eval/server-only-stub.mjs'),
     },
   },
   test: {
