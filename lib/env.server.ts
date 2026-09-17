@@ -33,9 +33,32 @@ export function getAiRequestFingerprintSecret(): string {
   return readEnv('AI_REQUEST_FINGERPRINT_SECRET');
 }
 
+/**
+ * The chat model the Race Engineer and the day planner run on.
+ *
+ * `gpt-5.4-mini` was chosen by measurement rather than by tier: `npm run rag:eval
+ * -- --live` was run over the same 33 golden cases on four candidates, and this
+ * one scored best. Against the `gpt-4o-mini` it replaces, direction accuracy went
+ * 0.47 -> 0.87 and component accuracy 0.80 -> 0.87. It beat `gpt-5.1` on both at
+ * 39% of its per-request cost, and `gpt-5.4` at 3.8x the cost was a clear
+ * REGRESSION (rubric 0.94 -> 0.76, component 0.80 -> 0.73), which is why the
+ * newest name is not the answer here. `gpt-5-mini` never reached the set: it
+ * rejects the `temperature: 0.2` that `lib/rag/advice.ts` sends and bills
+ * reasoning tokens as output, so it is excluded on compatibility, not on score.
+ *
+ * COMPONENT ACCURACY IS A 15-CASE RATE AND IT MOVES ON A RE-SAMPLE. Two live
+ * runs of this model on an unchanged prompt scored it 1.00 and 0.87; the
+ * committed tape is the second, because the baseline is whatever the run that
+ * produced the committed recordings measured. Direction accuracy scored 0.87 on
+ * both. Read a one-case difference here as sampling, not as a trend.
+ *
+ * Changing this moves every completion tape key in
+ * `tests/fixtures/rag-eval/recordings/`, so a change here needs a
+ * `--live` re-record and a deliberate `--update-baseline`.
+ */
 export function getAiModel(): string {
   const value = process.env.AI_MODEL?.trim();
-  return value && value.length > 0 ? value : 'gpt-4o-mini';
+  return value && value.length > 0 ? value : 'gpt-5.4-mini';
 }
 
 export function getAiEmbeddingModel(): string {

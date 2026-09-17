@@ -636,6 +636,107 @@ const BASELINE_LIVE_RERECORDS = [{
         'and soften does not match stiffen.',
     },
   ],
+},
+{
+  what_this_is:
+    'The FIFTH movement, and the first caused by changing the MODEL rather than the prompt, ' +
+    'the classifier or the harness. AI_MODEL\'s default in lib/env.server.ts went from ' +
+    'gpt-4o-mini to gpt-5.4-mini. The model name is part of the request body, so every ' +
+    'completion tape key moved and the recordings were refreshed with one ' +
+    '`npm run rag:eval -- --live`. Nothing else changed: not a prompt, not a retrieved chunk, ' +
+    'not a golden case, not a label.',
+  how_the_model_was_chosen:
+    'BY MEASUREMENT OVER THIS SAME SET, NOT BY TIER. Four candidates were run live over all ' +
+    '33 cases and scored against the gpt-4o-mini baseline. gpt-4.1-mini: rubric 0.91, ' +
+    'component 0.93, direction 0.40 - 2.9x the per-request cost for WORSE direction accuracy. ' +
+    'gpt-5.1: rubric 0.94, component 0.87, direction 0.73 - better than gpt-4o-mini but beaten ' +
+    'by gpt-5.4-mini on both, at 2.5x its cost. gpt-5.4: rubric 0.76, component 0.73, ' +
+    'direction 0.73 - a clear REGRESSION at 3.8x the cost, because it declines to recommend ' +
+    'far more often and evaluateAdvicePolicy reads that as no_recommendation. gpt-5-mini was ' +
+    'never scored: it rejects the temperature 0.2 that lib/rag/advice.ts sends, so it is ' +
+    'excluded on compatibility rather than on quality. The tier above the one chosen was ' +
+    'measured and was worse, which is the part worth keeping.',
+  blast_radius:
+    'All 28 completion keys moved, which is the model name entering the request body rather ' +
+    'than anything about the prompt. All 28 EMBEDDING keys replayed untouched, so retrieval ' +
+    'ran on byte-identical input and recall@k and MRR could not move; they did not. That is ' +
+    'the standing claim about retrieval demonstrated a third time. AI_EMBEDDING_MODEL is ' +
+    'unchanged at text-embedding-3-small and no corpus or retrieval code was touched.',
+  a_component_rate_over_15_cases_moves_on_a_re_sample:
+    'TWO live runs of gpt-5.4-mini on an unchanged prompt scored component_accuracy 1.00 and ' +
+    '0.87 - one case of fifteen. The committed tape is the SECOND, and the baseline is what ' +
+    'that run measured, because the recordings and the numbers have to be the same run or the ' +
+    'file describes nothing. The first, higher figure is recorded here rather than dropped, ' +
+    'because a reader comparing a future re-sample against 0.87 needs to know a one-case ' +
+    'difference here is sampling. direction_accuracy scored 0.87 on both runs.',
+  these_numbers_are_the_baseline_whatever_they_say:
+    'Both gated rates FELL, 31/33 -> 30/33, on ONE case: sparse-no-history-comparison, ' +
+    'force-refused as no_recommendation. That case carries a CONTESTED LABEL note in ' +
+    'golden-cases.json saying should_refuse:true may be the right label for it, because ' +
+    'declining on missing data is the safe degradation this product claims. It is NOT ' +
+    'relabelled here. Relabelling a case after seeing the score is the act the label gate ' +
+    'exists to refuse, and doing it in the same change that picks the model would make this ' +
+    'measurement worthless in exactly the way the previous harness was worthless. The ' +
+    'contested decision stays open and stays the captain\'s.',
+  what_the_upgrade_actually_bought:
+    'Direction accuracy 7/15 -> 13/15. That is the metric that asks whether the model reaches ' +
+    'the human\'s answer on which WAY to move a component, and it was the weakest number in ' +
+    'the file. Component accuracy 12/15 -> 13/15. Both are REPORTED, never gated, so neither ' +
+    'can turn a sampling wobble into a red build.',
+  metrics: [
+    {
+      metric: 'rubric_pass_rate',
+      before: 0.9393939393939394,
+      after: 0.9090909090909091,
+      fraction: '31/33 -> 30/33',
+      cause:
+        'ONE case, sparse-no-history-comparison, force-refused as no_recommendation. It failed ' +
+        'the same way on gpt-4.1-mini, gpt-5.1 and gpt-5.4, so it is what a more conservative ' +
+        'model does on a rider with no history rather than sampling on this one. Its own ' +
+        'CONTESTED LABEL note argues that declining there is correct behaviour scored as a ' +
+        'failure. Left as measured, both the score and the label.',
+    },
+    {
+      metric: 'refusal_accuracy',
+      before: 0.9393939393939394,
+      after: 0.9090909090909091,
+      fraction: '31/33 -> 30/33',
+      cause: 'The same single case. These two rates share a numerator over the same 33 cases.',
+    },
+    {
+      metric: 'recall_at_k',
+      before: 0.7857142857142857,
+      after: 0.7857142857142857,
+      fraction: '22/28 -> 22/28',
+      cause: 'DID NOT MOVE, and could not have: every embedding key replayed.',
+    },
+    {
+      metric: 'mrr',
+      before: 0.7410714285714286,
+      after: 0.7410714285714286,
+      fraction: '20.75/28 -> 20.75/28',
+      cause: 'DID NOT MOVE, for the same reason.',
+    },
+    {
+      metric: 'component_accuracy',
+      before: 0.8,
+      after: 0.8666666666666667,
+      fraction: '12/15 -> 13/15',
+      cause:
+        'ROSE by one answered case. Reported, never gated. See the re-sample note above ' +
+        'before reading one case here as a trend in either direction.',
+    },
+    {
+      metric: 'direction_accuracy',
+      before: 0.4666666666666667,
+      after: 0.8666666666666667,
+      fraction: '7/15 -> 13/15',
+      cause:
+        'ROSE by six answered cases, the largest movement in this file and the reason the ' +
+        'upgrade was worth its cost. Reported, never gated. Six of fifteen is well outside ' +
+        'the one-case wobble the two gpt-5.4-mini samples showed on component_accuracy.',
+    },
+  ],
 }];
 
 /**

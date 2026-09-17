@@ -1513,14 +1513,35 @@ more words is not better - and the remedy for a thin corpus is a product
 investment decision, which a CI gate would take on the owner's behalf by
 refusing to go green until somebody spent the money.
 
-**Re-recording the whole set costs about two cents, and the run says so in
+**Re-recording the whole set costs about eleven cents, and the run says so in
 tokens - BOTH endpoints, which took counting them somewhere neither could
-hide.** That figure is every response the set needs: 28 completions at 68,905
-prompt + 9,386 completion tokens on `gpt-4o-mini-2024-07-18`, plus 28 embeddings at 937 prompt
+hide.** That figure is every response the set needs: 28 completions at 68,849
+prompt + 13,929 completion tokens on `gpt-5.4-mini-2026-03-17`, plus 28 embeddings at 937 prompt
 tokens on `text-embedding-3-small`, one row per model because they bill at
-different rates. At the list prices read on 2026-09-16 - gpt-4o-mini
-$0.15/$0.60 per million, text-embedding-3-small $0.02 per million - that is
-$0.016, of which embeddings are under a hundredth of a cent.
+different rates. At the list prices read on 2026-09-17 - gpt-5.4-mini
+$0.75/$4.50 per million, text-embedding-3-small $0.02 per million - that is
+$0.115, of which embeddings are under a hundredth of a cent.
+
+**The model is `gpt-5.4-mini` and it was picked by running this harness, not by
+tier.** `getAiModel` (`lib/env.server.ts`) carries the choice and the comment
+carries the numbers. Four candidates were run `--live` over the same 33 cases:
+`gpt-4.1-mini` cost 2.9x `gpt-4o-mini` for WORSE direction accuracy (0.40
+against 0.47), `gpt-5.1` was beaten on both accuracy metrics by the model at 39%
+of its price, and `gpt-5.4` at 3.8x was a clear regression - rubric 0.94 ->
+0.76 - because it declines to recommend far more often and
+`evaluateAdvicePolicy` reads that as `no_recommendation`. **THE TIER ABOVE THE
+ONE CHOSEN WAS MEASURED AND WAS WORSE**, which is why a future upgrade starts
+with a live run rather than with a release announcement. `gpt-5-mini` never
+reached the set: it rejects the `temperature: 0.2` that `lib/rag/advice.ts`
+sends, and it bills reasoning tokens as output, so a sticker price below
+`gpt-5.4-mini`'s is not the bill. The fifth entry in `live_rerecord`
+(`eval-baseline.json`) is the before-and-after; the per-request cost went
+$0.00057 -> $0.00408, against a $2.99/month plan.
+
+Changing `AI_MODEL`'s default puts the model name in the request body, so it
+moves every completion tape key and needs a `--live` re-record and a deliberate
+`--update-baseline`. Every EMBEDDING key replays untouched, so `recall@k` and
+MRR cannot move on a model change - a run where they do is a bug in the run.
 
 It is totalled in `OpenAiTape` (`scripts/eval/openai-tape.mjs`) rather than
 alongside the scores, because that is the only place BOTH kinds are visible:
