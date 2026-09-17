@@ -128,16 +128,18 @@ export function tallyMissedSources(perCase) {
 }
 
 /**
- * What a `--live` run spends, in the only unit this repository can measure
+ * Token spend per model, in the only unit this repository can measure
  * without going stale: tokens. A price table committed here would be a number
  * nobody re-checks, drifting silently against the vendor's - and the model is
  * about to change, which is exactly when a stale price misleads most. The
  * dollar figure, its prices and the date they were read live in AGENTS.md,
  * derived from these counts.
  *
- * Offline replay spends none of it. The counts are still real on an offline
- * run, because they are read from the recorded responses, so the figure below
- * is what re-recording this set would cost.
+ * The caller picks the ledger. `OpenAiTape.usage` totals every response the
+ * run replayed or recorded, so it is what re-recording this set would cost and
+ * is real on an offline run too; `OpenAiTape.spent` totals only the requests
+ * that reached the network, which is what the run itself paid - nothing
+ * offline, and on `--live` only the keys a prompt change moved.
  *
  * The observations come from `OpenAiTape`, which is the only place that sees
  * BOTH endpoints: `embedQuery` discards the embeddings response's usage, so

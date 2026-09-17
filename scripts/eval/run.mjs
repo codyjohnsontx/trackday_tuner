@@ -2033,18 +2033,21 @@ async function report(ctx) {
   }
 
   /**
-   * What re-recording this set costs, in the only unit that cannot go stale
-   * here. Both endpoints are counted - the tape is the one place an embedding
-   * call is still visible, since `embedQuery` discards its usage - so this is
-   * the whole bill rather than the completion half of it. Offline replay spends
-   * nothing; these counts are read back off the recordings, so they are what a
-   * `--live` re-record would pay for. AGENTS.md carries the dollar figure, its
-   * prices and the date they were read.
+   * Two figures, in the only unit that cannot go stale here, and they are
+   * kept apart because a `--live` run replays every request whose key did not
+   * move and pays only for the ones that did.
+   *
+   * The first is what re-recording the whole set costs: every successful
+   * response this run replayed or recorded, read back off the bodies, so an
+   * offline run reports it too. The second is what THIS run paid: only the
+   * requests that went to the network, failed ones included as unmeasured
+   * calls. Both endpoints are counted - the tape is the one place an
+   * embedding call is still visible, since `embedQuery` discards its usage -
+   * so each is the whole bill rather than the completion half of it. AGENTS.md
+   * carries the dollar figure, its prices and the date they were read.
    */
-  const usage = aggregateUsage(tape.usage);
-  if (usage.length > 0) {
-    console.log('\nCost of one --live run  (offline replay spends none of it)');
-    for (const entry of usage) {
+  const printUsage = (rows) => {
+    for (const entry of rows) {
       const unmeasured = entry.calls - entry.measured_calls;
       console.log(
         `  ${entry.model.padEnd(24)} ${entry.calls} calls, ` +
@@ -2054,7 +2057,16 @@ async function report(ctx) {
               (unmeasured > 0 ? ` over ${entry.measured_calls} measured` : '')),
       );
     }
+  };
+  const fullSet = aggregateUsage(tape.usage);
+  if (fullSet.length > 0) {
+    console.log('\nCost of re-recording this set  (every response replayed or recorded)');
+    printUsage(fullSet);
   }
+  const spent = aggregateUsage(tape.spent);
+  console.log('\nSpent by this run  (requests that reached the API)');
+  if (spent.length === 0) console.log('  none - every response was replayed');
+  else printUsage(spent);
 
   let baseline = null;
   let readProblem = null;

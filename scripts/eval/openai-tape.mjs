@@ -80,16 +80,28 @@ export class OpenAiTape {
     this.tapes = { embeddings: null, completions: null };
     this.stats = { hits: 0, recorded: 0, misses: [] };
     /**
-     * One entry per response this run replayed or recorded, of BOTH kinds.
+     * Two ledgers, of BOTH kinds, because they answer different questions.
      * This is the only place that sees every request the pipeline makes:
      * `embedQuery` discards the embeddings response's usage, so an embedding
      * call is invisible to anything downstream of it, and a cost figure read
-     * further up the stack is the completion half of the bill only. The
-     * `model` is the response's own, so a completion snapshot and an embedding
-     * model stay separate rows. Replay and record both accumulate, so an
-     * offline run and a live one report the same totals.
+     * further up the stack is the completion half of the bill only.
+     *
+     * `usage` is one entry per successful response this run replayed or
+     * recorded - what re-recording the whole set costs. Replay and record both
+     * accumulate, so an offline run and a live one report the same totals.
+     *
+     * `spent` is one entry per request that actually went to the network -
+     * what THIS run paid. A replayed response costs nothing whatever mode the
+     * run is in, so it is never here; a live request that failed is, with no
+     * usage, so a run of 429s and retries reads as unmeasured calls rather
+     * than as calls that never happened. Offline, it stays empty.
+     *
+     * The `model` is the response's own, so a completion snapshot and an
+     * embedding model stay separate rows; a failed response names none, so
+     * that entry falls back to the model the request asked for.
      */
     this.usage = [];
+    this.spent = [];
     // The keys this run actually replayed or recorded. `save({ prune: true })`
     // keeps only these, so it is correct ONLY after a run that reached every
     // case - see the soundness gate at its call site.
@@ -212,8 +224,17 @@ export class OpenAiTape {
     try {
       parsed = JSON.parse(text);
     } catch {
+      // Recorded before the throw: the request reached the provider either way.
+      this.spent.push({ model: requestedModel(body), usage: null });
       throw new Error(`[rag:eval] ${kind} response was not JSON (status ${response.status}).`);
     }
+    // Outside the success branch on purpose. A non-2xx is still a provider
+    // call, and the SDK retries 429 and 5xx, so a run that hit them made more
+    // calls than it recorded.
+    this.spent.push({
+      model: parsed?.model ?? requestedModel(body),
+      usage: response.ok ? parsed?.usage : null,
+    });
 
     if (response.ok) {
       this.tapes[kind].entries[key] = {
@@ -259,6 +280,14 @@ export function tapeMissMessage(kind, key) {
     '.env.local or .env, and commit ' +
     'tests/fixtures/rag-eval/recordings/ alongside the change.'
   );
+}
+
+function requestedModel(body) {
+  try {
+    return JSON.parse(body).model;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

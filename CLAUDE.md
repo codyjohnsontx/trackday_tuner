@@ -1513,10 +1513,10 @@ more words is not better - and the remedy for a thin corpus is a product
 investment decision, which a CI gate would take on the owner's behalf by
 refusing to go green until somebody spent the money.
 
-**One `--live` run costs about two cents, and the run says so in tokens - BOTH
-endpoints, which took counting them somewhere neither could hide.** The report's
-figure is every request the run made: 28 completions at 68,905 prompt + 9,386
-completion tokens on `gpt-4o-mini-2024-07-18`, plus 28 embeddings at 937 prompt
+**Re-recording the whole set costs about two cents, and the run says so in
+tokens - BOTH endpoints, which took counting them somewhere neither could
+hide.** That figure is every response the set needs: 28 completions at 68,905
+prompt + 9,386 completion tokens on `gpt-4o-mini-2024-07-18`, plus 28 embeddings at 937 prompt
 tokens on `text-embedding-3-small`, one row per model because they bill at
 different rates. At the list prices read on 2026-09-16 - gpt-4o-mini
 $0.15/$0.60 per million, text-embedding-3-small $0.02 per million - that is
@@ -1526,9 +1526,13 @@ It is totalled in `OpenAiTape` (`scripts/eval/openai-tape.mjs`) rather than
 alongside the scores, because that is the only place BOTH kinds are visible:
 `embedQuery` discards the embeddings response's usage, so a figure read anywhere
 downstream of it is the completion half of the bill printed as though it were
-the run. The tape sees whole response bodies on both the replay and the record
-path, so an offline run and a live one report the same totals, and attribution
-is the response's OWN `model` - the resolved snapshot, which is what was
+the run. The report prints TWO ledgers, because a `--live` run replays every
+key that did not move: the re-record figure above, totalled over every
+response replayed or recorded, so an offline run and a live one report the
+same; and what THIS run spent, totalled only over requests that reached the
+network - nothing offline, and failed live requests (a 429 the SDK retries)
+counted as unmeasured calls rather than dropped. Attribution is the response's
+OWN `model` - the resolved snapshot, which is what was
 actually billed, rather than the name the request asked for. A response carrying
 no `usage` object counts as an unmeasured CALL and contributes no tokens, and a
 model none of whose calls reported usage totals `null` rather than 0: a

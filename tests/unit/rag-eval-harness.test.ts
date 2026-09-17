@@ -1255,6 +1255,82 @@ describe('tape request keying', () => {
         completion_tokens: 0,
       },
     ]);
+    expect(tape.spent).toEqual([]);
+  });
+
+  it('charges a live run only for the requests that reached the network', async () => {
+    // A `--live` run replays every key a prompt change did not move, so a
+    // replayed response is part of the re-record figure and never of what
+    // the run spent. A failed live request is spent and unmeasured: the SDK
+    // retries 429 and 5xx, and dropping those under-counts the calls made.
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'rag-eval-tape-spent-'));
+    const url = 'https://api.openai.com/v1/chat/completions';
+    const replayed = { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'replayed' }] };
+    const recorded = { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'recorded' }] };
+    const throttled = { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'throttled' }] };
+    const replayedKey = requestKey({ method: 'POST', url, body: JSON.stringify(replayed) });
+    writeFileSync(
+      path.join(dir, 'completions.json'),
+      JSON.stringify({
+        version: 1,
+        entries: {
+          [replayedKey]: {
+            status: 200,
+            response: { model: 'gpt-4o-mini-2024-07-18', usage: { prompt_tokens: 900, completion_tokens: 90 } },
+          },
+        },
+      }),
+    );
+    const network: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+      const content = JSON.parse(String(init?.body)).messages[0].content;
+      network.push(content);
+      if (content === 'throttled') {
+        return new Response(JSON.stringify({ error: { message: 'Rate limit reached' } }), { status: 429 });
+      }
+      return new Response(
+        JSON.stringify({ model: 'gpt-4o-mini-2024-07-18', usage: { prompt_tokens: 100, completion_tokens: 10 } }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+
+    const tape = new OpenAiTape({ dir, mode: 'live' });
+    try {
+      await tape.load();
+      const restore = tape.install();
+      try {
+        for (const body of [replayed, recorded, throttled]) {
+          await fetch(url, { method: 'POST', body: JSON.stringify(body) });
+        }
+      } finally {
+        restore();
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    expect(network).toEqual(['recorded', 'throttled']);
+    expect(aggregateUsage(tape.usage)).toEqual([
+      {
+        model: 'gpt-4o-mini-2024-07-18',
+        calls: 2,
+        measured_calls: 2,
+        prompt_tokens: 1000,
+        completion_tokens: 100,
+      },
+    ]);
+    expect(aggregateUsage(tape.spent)).toEqual([
+      { model: 'gpt-4o-mini', calls: 1, measured_calls: 0, prompt_tokens: null, completion_tokens: null },
+      {
+        model: 'gpt-4o-mini-2024-07-18',
+        calls: 1,
+        measured_calls: 1,
+        prompt_tokens: 100,
+        completion_tokens: 10,
+      },
+    ]);
   });
 });
 
