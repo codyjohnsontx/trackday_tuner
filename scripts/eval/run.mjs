@@ -284,6 +284,31 @@ const BASELINE_LIMITATIONS = [
       'needs an API key. It would be a second layer over a deterministic guarantee rather ' +
       'than the guarantee itself.',
   },
+  {
+    id: 'the-golden-set-covers-tuning-advice-only-and-day-plan-takes-the-same-model',
+    what:
+      'All 33 golden cases are Race Engineer tuning-advice requests, and runCase builds only ' +
+      'the tuning-advice prompt. /api/ai/day-plan reaches the model through the same ' +
+      'getAiModel() and the same shared completeAdvice path in lib/rag/advice.ts, so the day ' +
+      'planner takes the same model swap and the same ~7x per-request cost rise - and nothing ' +
+      'in this file measures it.',
+    what_is_specifically_unmeasured:
+      'Two things. The before-and-after numbers here say nothing about the day planner. And no ' +
+      'case in this set exercises evaluateAdvicePolicy under allowEmptyRecommendations, which ' +
+      '/api/ai/day-plan alone passes: that path checks the SUMMARY as prose for an instructed ' +
+      'delta, every widening of that pattern has cost a false refusal on a paid route, and the ' +
+      'model this set just adopted writes 48% more completion tokens and volunteers prose the ' +
+      'old one did not. A more verbose model is the input class that check is weakest against, ' +
+      'and the measurement either way does not exist.',
+    why_it_is_not_closed_here:
+      'Closing it means day-plan golden cases, which is a new eval surface rather than a ' +
+      'correction to this one, and this change is a model swap scored against the existing ' +
+      'set. It is recorded so the gap is a STATED limitation rather than something a reader ' +
+      'has to infer from the absence of day-plan case ids - the same reason every other entry ' +
+      'in this array exists.',
+    closed_by:
+      'separate work: day-plan golden cases, so the set covers both routes that reach a model.',
+  },
 ];
 
 const readJson = async (p) => JSON.parse(await fs.readFile(p, 'utf8'));
@@ -737,8 +762,15 @@ const BASELINE_LIVE_RERECORDS = [{
       after: 0.8666666666666667,
       fraction: '12/15 -> 13/15',
       cause:
-        'ROSE by one answered case. Reported, never gated. See the re-sample note above ' +
-        'before reading one case here as a trend in either direction.',
+        'NET +1, and the net is not what happened. TWO cases GAINED the component - ' +
+        'mc-rear-wallow-rebound and mc-rear-wallow-inflected-phrasing, both rear_compression ' +
+        'before and rear rebound now - while ONE LOST it: mc-slow-steering-fork-height ' +
+        'answered fork_height / lower before and rear ride height / raise now, which is ' +
+        'arguably an alternative correct answer to the same symptom rather than a worse one. ' +
+        'A RATE CANNOT SHOW A SWAP, which is why this line names the cases: component and ' +
+        'direction outcomes are not stored per case, so nothing else in this file records it. ' +
+        'Reported, never gated. See the re-sample note above before reading one case here as ' +
+        'a trend in either direction.',
     },
     {
       metric: 'direction_accuracy',
