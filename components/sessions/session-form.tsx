@@ -26,8 +26,8 @@ import {
 } from '@/lib/session-answers';
 import { trackProductEvent } from '@/lib/product-events.client';
 import { copyLastSessionSetup } from '@/lib/session-copy';
-import { MISSING_TRACK_MESSAGE, findSavedTrackByName, hasTrackName, normalizeTrackName, trackNameKey } from '@/lib/session-track';
-import { findTrackByAlias, type TrackAliasIndex, type TrackLayoutIndex } from '@/lib/track-directory';
+import { MISSING_TRACK_MESSAGE, hasTrackName, normalizeTrackName, trackNameKey } from '@/lib/session-track';
+import { findTrackByAlias, findTrackByName, type TrackAliasIndex, type TrackLayoutIndex } from '@/lib/track-directory';
 import {
   getAvailableSessionModules,
   getDefaultAdvancedVisibility,
@@ -286,7 +286,7 @@ export function SessionForm({
   const identifiedTrackId = useMemo(() => {
     if (trackId) return trackId;
     return (
-      findSavedTrackByName(trackQuery, tracks)?.id ??
+      findTrackByName(trackQuery, tracks)?.id ??
       findTrackByAlias(trackQuery, trackAliases, tracks)?.id ??
       null
     );
@@ -880,6 +880,7 @@ export function SessionForm({
               >
                 <span className="font-medium">{track.name}</span>
                 {track.location ? <span className="ml-1 text-ink-faint">{track.location}</span> : null}
+                {!track.is_seeded ? <span className="ml-1 text-ink-faint">· Custom</span> : null}
               </li>
             ))}
           </ul>

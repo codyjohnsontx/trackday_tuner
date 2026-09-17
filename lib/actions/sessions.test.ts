@@ -126,7 +126,7 @@ function likeExpression(pattern: string): RegExp {
  * fold - matching the raw typed string, say - silently stops finding circuits the
  * rider already has. Only a query mock that applies the filter can catch that.
  */
-function createTrackNameQuery(rows: { id: string; name: string }[]) {
+function createTrackNameQuery(rows: { id: string; name: string; is_seeded?: boolean }[]) {
   let matched = rows;
   const query: Record<string, unknown> = {};
 
@@ -731,6 +731,39 @@ describe('sessions actions', () => {
     expect(visibleTracks.ilike).toHaveBeenCalledWith('name', 'eagles canyon raceway');
     expect(visibleTracks.order).toHaveBeenCalled();
     expect(visibleTracks.limit).toHaveBeenCalled();
+  });
+
+  it('saves to the rider\'s own track when a seeded circuit shares its name', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const visibleTracks = createTrackNameQuery([
+      { id: 'track-0-seeded', name: 'Road America', is_seeded: true },
+      { id: 'track-9-own', name: 'road america', is_seeded: false },
+    ]);
+    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('tracks');
+        return visibleTracks;
+      })
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('sessions');
+        return insertQuery;
+      })
+      .mockImplementation(() =>
+        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
+      );
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession({ ...validInput, track_id: null, track_name: 'Road America' });
+
+    expect(result.ok).toBe(true);
+    expect(insertQuery.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ track_id: 'track-9-own', track_name: 'road america' }),
+    );
   });
 
   it('falls back to the wildcard pattern for a stored spelling the fold reaches', async () => {

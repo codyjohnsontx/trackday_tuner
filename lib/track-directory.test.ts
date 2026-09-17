@@ -7,6 +7,7 @@ import {
   buildTrackLayoutIndex,
   findLayoutForTrack,
   findTrackByAlias,
+  findTrackByName,
 } from '@/lib/track-directory';
 import type { Track, TrackAlias, TrackLayout } from '@/types';
 
@@ -49,6 +50,18 @@ describe('track aliases', () => {
 
   it('keeps an alias repeated for the same circuit', () => {
     expect(buildTrackAliasIndex([alias('cota', 'COTA'), alias('cota', 'cota')])).toEqual({ cota: 'cota' });
+  });
+});
+
+describe('track names', () => {
+  it('prefers the rider\'s own track over a seeded one with the same name, in either order', () => {
+    const seeded = track('seeded-road-america', 'Road America');
+    const own = { ...track('own-road-america', 'road  america'), is_seeded: false, created_by: 'user-1', slug: null };
+
+    expect(findTrackByName('Road America', [seeded, own])?.id).toBe('own-road-america');
+    expect(findTrackByName('Road America', [own, seeded])?.id).toBe('own-road-america');
+    expect(findTrackByName('Road America', [seeded])?.id).toBe('seeded-road-america');
+    expect(findTrackByName('Road Atlanta', [seeded, own])).toBeNull();
   });
 });
 

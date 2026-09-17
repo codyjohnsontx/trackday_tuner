@@ -21,6 +21,7 @@ import {
   sessionsMatchTrack,
 } from '@/lib/session-compare';
 import { fetchPreviousSession } from '@/lib/session-previous';
+import { findTrackByName } from '@/lib/track-directory';
 import { reportError } from '@/lib/monitoring/report-error';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
@@ -610,7 +611,7 @@ type VisibleTrackLookup =
  *
  * Which is why reaching the limit is `unproven` and not `absent`. The rows come
  * back ordered so the same request cannot answer differently twice, and
- * `findSavedTrackByName` still decides on whatever came back.
+ * `findTrackByName` still decides on whatever came back.
  */
 async function findVisibleTrackByName(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -624,9 +625,10 @@ async function findVisibleTrackByName(
   for (const pattern of patterns) {
     const { data, error } = await supabase
       .from('tracks')
-      .select('id, name')
+      .select('id, name, is_seeded')
       .or(visibleTracksFilter(userId))
       .ilike('name', pattern)
+      .order('is_seeded', { ascending: true })
       .order('name', { ascending: true })
       .order('id', { ascending: true })
       .limit(TRACK_NAME_MATCH_LIMIT);
@@ -639,9 +641,9 @@ async function findVisibleTrackByName(
       };
     }
 
-    const rows = (data ?? []) as { id: string; name: string }[];
-    const matched = findSavedTrackByName(typed, rows);
-    if (matched) return { status: 'found', track: matched };
+    const rows = (data ?? []) as { id: string; name: string; is_seeded: boolean }[];
+    const matched = findTrackByName(typed, rows);
+    if (matched) return { status: 'found', track: { id: matched.id, name: matched.name } };
 
     if (rows.length >= TRACK_NAME_MATCH_LIMIT) {
       return {

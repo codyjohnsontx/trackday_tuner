@@ -22,7 +22,7 @@
  * not the seeded Barber Motorsports Park an alias would otherwise redirect them
  * to. Their own naming wins.
  */
-import { trackNameKey } from '@/lib/session-track';
+import { findSavedTrackByName, trackNameKey } from '@/lib/session-track';
 import type { Track, TrackAlias, TrackLayout } from '@/types';
 
 /** A circuit's alternate spellings, keyed the way `trackNameKey` keys a name. */
@@ -87,6 +87,25 @@ export function buildTrackLayoutIndex(rows: readonly TrackLayout[]): TrackLayout
   }
 
   return index;
+}
+
+/**
+ * The visible track a typed name means, the rider's own before a seeded one.
+ *
+ * A rider who logged "Road America" as a custom track before the seed arrived
+ * now sees two rows with that name. Taking whichever came back first would split
+ * their history across both, so their own row wins, as it does over an alias.
+ */
+export function findTrackByName<T extends { name: string; is_seeded: boolean }>(
+  name: string | null | undefined,
+  tracks: readonly T[],
+): T | null {
+  return (
+    findSavedTrackByName(
+      name,
+      tracks.filter((track) => !track.is_seeded),
+    ) ?? findSavedTrackByName(name, tracks)
+  );
 }
 
 /** The circuit an alias names, or null when the name is not one. */
