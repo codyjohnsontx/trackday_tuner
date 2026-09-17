@@ -651,7 +651,10 @@ const BASELINE_LIVE_RERECORDS = [{
     'gpt-4o-mini to gpt-5.4-mini. The model name is part of the request body, so every ' +
     'completion tape key moved and the recordings were refreshed with one ' +
     '`npm run rag:eval -- --live`. Nothing else changed: not a prompt, not a retrieved chunk, ' +
-    'not a golden case, not a label.',
+    'not a scored case input, not a label. A later review round did reword the CONTESTED ' +
+    'LABEL prose notes on sparse-empty-setup-fields and sparse-no-history-comparison in ' +
+    'golden-cases.json - a note reaches neither the prompt nor the tape key, so nothing ' +
+    'scored moved.',
   how_the_model_was_chosen:
     'BY MEASUREMENT OVER THIS SAME SET, NOT BY TIER. Four candidates were run live over all ' +
     '33 cases and scored against the gpt-4o-mini baseline. THE CHOICE IS A TRADEOFF AND NOT A ' +

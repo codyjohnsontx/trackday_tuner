@@ -47,8 +47,8 @@ export function getAiRequestFingerprintSecret(): string {
  * contested label of its own. `gpt-4.1-mini` took the best component score of
  * the five at 0.93 and is still not the choice, because its direction accuracy
  * was 0.40 - below the `gpt-4o-mini` it would replace - at 2.9x that model's
- * cost. It TIED `gpt-5.1` on component and beat it on direction at
- * 39% of its per-request cost, and `gpt-5.4` at 3.8x the cost was a clear
+ * cost. `gpt-5.4-mini` tied `gpt-5.1` on component and beat it on direction at
+ * 39% of `gpt-5.1`'s per-request cost, and `gpt-5.4` at 3.8x the cost was a clear
  * REGRESSION (rubric 0.94 -> 0.76, component 0.80 -> 0.73), which is why the
  * newest name is not the answer here. `gpt-5-mini` never reached the set: it
  * rejects the `temperature: 0.2` that `lib/rag/advice.ts` sends and bills

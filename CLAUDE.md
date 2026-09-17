@@ -1526,7 +1526,7 @@ prompt + 13,929 completion tokens on `gpt-5.4-mini-2026-03-17`, plus 28 embeddin
 tokens on `text-embedding-3-small`, one row per model because they bill at
 different rates. At the list prices read on 2026-09-17 - gpt-5.4-mini
 $0.75/$4.50 per million, text-embedding-3-small $0.02 per million - that is
-$0.115, of which embeddings are under a hundredth of a cent.
+$0.114, of which embeddings are under a hundredth of a cent.
 
 **The model is `gpt-5.4-mini` and it was picked by running this harness, not by
 tier.** `getAiModel` (`lib/env.server.ts`) carries the choice and the comment
