@@ -9,9 +9,19 @@ export interface SessionComparePickerOption {
   sessionLabel: string;
   conditionLabel: string;
   bestLapLabel: string | null;
-  sameTrack: boolean;
+  /**
+   * Where the candidate ran relative to the current session: the same course
+   * (circuit and layout), the same circuit on another layout, or another track.
+   */
+  match: 'course' | 'layout' | 'track';
   isVehicleBaseline?: boolean;
 }
+
+const MATCH_LABELS: Record<SessionComparePickerOption['match'], string> = {
+  course: 'Same track · ',
+  layout: 'Other layout · ',
+  track: 'Other track · ',
+};
 
 interface SessionComparePickerProps {
   options: SessionComparePickerOption[];
@@ -38,7 +48,7 @@ export function SessionComparePicker({ options, selectedId }: SessionComparePick
     <section className="rounded-card bg-surface p-4">
       <div className="mb-3">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Baseline session</h2>
-        <p className="mt-1 text-sm text-ink-dim">Same-vehicle sessions are listed with same-track sessions first.</p>
+        <p className="mt-1 text-sm text-ink-dim">Same-vehicle sessions are listed with same-track, same-layout sessions first.</p>
       </div>
 
       {options.length > 0 ? (
@@ -52,7 +62,7 @@ export function SessionComparePicker({ options, selectedId }: SessionComparePick
           {options.map((option) => (
             <option key={option.id} value={option.id}>
               {option.isVehicleBaseline ? 'Vehicle baseline · ' : ''}
-              {option.sameTrack ? 'Same track · ' : 'Other track · '}
+              {MATCH_LABELS[option.match]}
               {option.trackName} · {option.dateLabel} · {option.sessionLabel} · {option.conditionLabel}
               {option.bestLapLabel ? ` · Best ${option.bestLapLabel}` : ''}
             </option>

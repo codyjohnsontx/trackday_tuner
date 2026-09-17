@@ -113,13 +113,17 @@ export function SessionAnalyticsPanel({ analytics, tier }: SessionAnalyticsPanel
 
       <div className="grid gap-3 md:grid-cols-2">
         {/* First list on the panel: a lap time is the number the session was
-            logged for. It is per circuit and per vehicle because that is the
-            pair a lap compares against, the same one the compare page uses. */}
+            logged for. It is per course (circuit and layout) and per vehicle
+            because that is what a lap compares against, the same rule the
+            compare page uses. */}
         <CountList
           title="Best Lap By Track"
           items={analytics.bestLapByTrack.map((item) => ({
             id: item.key,
-            label: multipleVehicles ? `${item.trackName} · ${item.vehicleLabel}` : item.trackName,
+            label: [
+              item.layoutName ? `${item.trackName} (${item.layoutName})` : item.trackName,
+              ...(multipleVehicles ? [item.vehicleLabel] : []),
+            ].join(' · '),
             detail: item.bestLap,
           }))}
           emptyMessage="No lap times logged yet."

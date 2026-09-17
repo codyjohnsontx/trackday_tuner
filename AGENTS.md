@@ -569,7 +569,13 @@ The same shape applies to anything derived rather than given:
   edits apart. Configurations are `track_layouts` of one circuit and
   `sessions.layout_id` is optional; the `sessions_check_layout` trigger refuses a
   layout of a different circuit and keeps `layout_name` the layout row's own,
-  because `authenticated` writes `sessions` directly. `lib/track-directory.ts` holds
+  because `authenticated` writes `sessions` directly. A lap compares within a
+  course - circuit AND layout - so comparisons and personal bests go through
+  `sessionsMatchCourse` / `courseMatchRank` (`lib/session-compare.ts`), where an
+  unspecified layout is its own group and never joins a named one;
+  `sessionsMatchTrack` alone only says two sessions were at the same place.
+  Race Engineer similar-session scoring is not layout-aware yet.
+  `lib/track-directory.ts` holds
   the rules, and `lib/track-directory.test.ts` checks them against the rows the
   migration ships. Existing custom tracks are not merged onto seeded ones
 

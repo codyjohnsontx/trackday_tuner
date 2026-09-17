@@ -5,7 +5,7 @@ import {
   computeSetupChanges,
   sessionReferenceLabel,
 } from '@/lib/session-changes';
-import { compareSessionsDesc, isSessionBefore, sessionsMatchTrack } from '@/lib/session-compare';
+import { compareSessionsDesc, courseMatchRank, isSessionBefore } from '@/lib/session-compare';
 import type {
   Profile,
   Session,
@@ -549,9 +549,8 @@ export function getDemoComparableSessions(currentSession: Session): Session[] {
   return DEMO_SESSIONS
     .filter((session) => session.vehicle_id === currentSession.vehicle_id && session.id !== currentSession.id)
     .sort((a, b) => {
-      const aSameTrack = sessionsMatchTrack(a, currentSession);
-      const bSameTrack = sessionsMatchTrack(b, currentSession);
-      if (aSameTrack !== bSameTrack) return aSameTrack ? -1 : 1;
+      const rank = courseMatchRank(a, currentSession) - courseMatchRank(b, currentSession);
+      if (rank !== 0) return rank;
       return compareSessionsDesc(a, b);
     })
     .map(clone);

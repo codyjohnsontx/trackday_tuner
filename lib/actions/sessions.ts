@@ -18,7 +18,7 @@ import {
   COMPARABLE_SESSION_FETCH_LIMIT,
   COMPARABLE_SESSION_LIMIT,
   compareSessionsDesc,
-  sessionsMatchTrack,
+  courseMatchRank,
 } from '@/lib/session-compare';
 import { fetchPreviousSession } from '@/lib/session-previous';
 import { findTrackByName } from '@/lib/track-directory';
@@ -427,9 +427,8 @@ export async function getComparableSessions(currentSession: Session): Promise<Se
     .limit(COMPARABLE_SESSION_FETCH_LIMIT);
 
   return ((data ?? []) as Session[]).sort((a, b) => {
-    const aSameTrack = sessionsMatchTrack(a, currentSession);
-    const bSameTrack = sessionsMatchTrack(b, currentSession);
-    if (aSameTrack !== bSameTrack) return aSameTrack ? -1 : 1;
+    const rank = courseMatchRank(a, currentSession) - courseMatchRank(b, currentSession);
+    if (rank !== 0) return rank;
     return compareSessionsDesc(a, b);
   }).slice(0, COMPARABLE_SESSION_LIMIT);
 }
