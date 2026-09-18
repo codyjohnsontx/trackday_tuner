@@ -240,6 +240,25 @@ describe('session compare helpers', () => {
     expect(buildSetupCompareRows(currentSession, baselineSession).find((row) => row.label === 'Track')?.changed).toBe(true);
   });
 
+  // Two track rows are two circuits - two layouts at one venue can share a name -
+  // so the Track row has to agree with the flag rather than with the name fold.
+  it('marks the Track row changed for different track rows whose names fold together', () => {
+    const currentSession = session({ id: 'current', track_id: 'track-full', track_name: 'MSR Cresson' });
+    const baselineSession = session({ id: 'baseline', track_id: 'track-short', track_name: 'msr  cresson' });
+
+    expect(sessionsMatchTrack(currentSession, baselineSession)).toBe(false);
+    const flags = buildContextFlags({ currentSession, baselineSession }, extractLapMetrics(null), extractLapMetrics(null));
+    expect(flags.find((flag) => flag.key === 'track-mismatch')?.severity).toBe('critical');
+    expect(buildSetupCompareRows(currentSession, baselineSession).find((row) => row.label === 'Track')?.changed).toBe(true);
+  });
+
+  it('does not mark the Track row changed when neither session names a circuit', () => {
+    const currentSession = session({ id: 'current', track_id: null, track_name: null });
+    const baselineSession = session({ id: 'baseline', track_id: null, track_name: null });
+
+    expect(buildSetupCompareRows(currentSession, baselineSession).find((row) => row.label === 'Track')?.changed).toBe(false);
+  });
+
   it('does not match sessions with no track metadata', () => {
     expect(
       sessionsMatchTrack(
