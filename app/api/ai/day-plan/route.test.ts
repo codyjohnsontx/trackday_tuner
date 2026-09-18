@@ -47,6 +47,7 @@ vi.mock('@/lib/rag/prompt', async (importOriginal) => {
 import { POST } from '@/app/api/ai/day-plan/route';
 import { DayPlanAdviceResult } from '@/components/ai/day-plan-panel';
 import type { AdviceResponse } from '@/lib/rag/schema';
+import { createTrackNameQuery } from '@/tests/unit/helpers/track-name-query';
 
 const USER_ID = '11111111-1111-1111-1111-111111111111';
 // A genuine v4 UUID, five groups: 8-4-4-4-12. The route's own hand-rolled
@@ -136,6 +137,10 @@ function createServerClient({
   sessionTireCondition = 'used',
   malformedSessionJson = false,
   memorySummary,
+  memoryTrackId = null,
+  sessionTrackId = null,
+  olderSessions = [],
+  trackRows = [],
 }: {
   vehicleFound?: boolean;
   vehicleNickname?: string;
@@ -145,6 +150,10 @@ function createServerClient({
   sessionTireCondition?: string;
   malformedSessionJson?: boolean;
   memorySummary?: string;
+  memoryTrackId?: string | null;
+  sessionTrackId?: string | null;
+  olderSessions?: Array<Partial<Omit<typeof RECENT_SESSION, 'track_id'>> & { id: string; track_id?: string | null }>;
+  trackRows?: { id: string; name: string }[];
 } = {}) {
   const vehiclesQuery = {
     eq: vi.fn(() => vehiclesQuery),
@@ -167,6 +176,7 @@ function createServerClient({
             { ...RECENT_SESSION, tires: {}, suspension: {} }
           : {
               ...RECENT_SESSION,
+              track_id: sessionTrackId,
               notes: sessionNotes,
               tires: {
                 ...RECENT_SESSION.tires,
@@ -180,6 +190,7 @@ function createServerClient({
                 rear: RECENT_SESSION.suspension.rear,
               },
             },
+        ...olderSessions.map((session) => ({ ...RECENT_SESSION, ...session })),
       ],
       error: null,
     })),
@@ -199,26 +210,30 @@ function createServerClient({
     in: vi.fn(async () => ({ data: [], error: null })),
   };
 
-  const tracksQuery = {
-    eq: vi.fn(() => tracksQuery),
-    or: vi.fn(() => tracksQuery),
-    limit: vi.fn(async () => ({ data: [], error: null })),
-  };
-
+  // Memory is read track-scoped first and vehicle-wide second, so the mock
+  // applies the `track_id` filter: which row comes back is what shows whether
+  // the typed circuit resolved to its track.
+  let memoryMatchesTrack: (trackId: string | null) => boolean = () => true;
   const memoryQuery = {
-    eq: vi.fn(() => memoryQuery),
-    is: vi.fn(() => memoryQuery),
+    eq: vi.fn((column: string, value: string) => {
+      if (column === 'track_id') memoryMatchesTrack = (trackId) => trackId === value;
+      return memoryQuery;
+    }),
+    is: vi.fn((column: string) => {
+      if (column === 'track_id') memoryMatchesTrack = (trackId) => trackId === null;
+      return memoryQuery;
+    }),
     order: vi.fn(() => memoryQuery),
     limit: vi.fn(async () => ({
       data:
-        memorySummary === undefined
+        memorySummary === undefined || !memoryMatchesTrack(memoryTrackId)
           ? []
           : [
               {
                 id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
                 user_id: USER_ID,
                 vehicle_id: VEHICLE_ID,
-                track_id: null,
+                track_id: memoryTrackId,
                 summary: memorySummary,
                 patterns: null,
                 evidence_count: 3,
@@ -242,7 +257,7 @@ function createServerClient({
         case 'session_environment':
           return { select: vi.fn(() => environmentQuery) };
         case 'tracks':
-          return { select: vi.fn(() => tracksQuery) };
+          return createTrackNameQuery(trackRows);
         case 'race_engineer_memory':
           return { select: vi.fn(() => memoryQuery) };
         default:
@@ -1290,3 +1305,49 @@ describe('POST /api/ai/day-plan enforced vocabulary matches what the model is to
   });
 });
 
+// lib/session-track.ts: case, spacing and accent composition do not make a
+// different circuit, and a rider typing the circuit they are going to is
+// typing it however they happen to.
+describe('POST /api/ai/day-plan resolves the typed circuit through the track-name fold', () => {
+  const TRACK_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+
+  function dayPlanContext() {
+    const [input] = generateDayPlan.mock.calls[0] as [
+      { raceEngineerContext: { memory: { summary: string } | null; similarSessions: Array<{ session: { id: string }; reasons: string[] }> } },
+    ];
+    return input.raceEngineerContext;
+  }
+
+  it('finds the track-scoped memory for a circuit typed in a different case', async () => {
+    createClient.mockResolvedValue(
+      createServerClient({
+        trackRows: [{ id: TRACK_ID, name: 'COTA' }],
+        memoryTrackId: TRACK_ID,
+        memorySummary: 'Front pressure held best at COTA.',
+      }),
+    );
+
+    const response = await post({ vehicle_id: VEHICLE_ID, track_name: 'cota' });
+
+    expect(response.status).toBe(200);
+    expect(dayPlanContext().memory?.summary).toBe('Front pressure held best at COTA.');
+  });
+
+  it('keeps the latest session\'s track when the typed name differs only by case and spacing', async () => {
+    const OLDER_SESSION_ID = '66666666-6666-6666-6666-666666666666';
+    createClient.mockResolvedValue(
+      createServerClient({
+        sessionTrackId: TRACK_ID,
+        // Logged under the name the track row had before it was renamed, so only
+        // the track id says it is the same circuit.
+        olderSessions: [{ id: OLDER_SESSION_ID, track_id: TRACK_ID, track_name: 'Test Circuit', date: '2026-07-01' }],
+      }),
+    );
+
+    const response = await post({ vehicle_id: VEHICLE_ID, track_name: 'TEST  track' });
+
+    expect(response.status).toBe(200);
+    const older = dayPlanContext().similarSessions.find((item) => item.session.id === OLDER_SESSION_ID);
+    expect(older?.reasons).toContain('same track');
+  });
+});

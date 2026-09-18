@@ -1,4 +1,5 @@
 import type { createClient } from '@/lib/supabase/server';
+import { trackNameKey } from '@/lib/session-track';
 import type {
   AiRecommendation,
   Json,
@@ -89,8 +90,8 @@ export function selectSimilarSessions(params: {
       const sameTrackId = params.current.track_id && params.current.track_id === candidate.track_id;
       const sameTrackName =
         !sameTrackId &&
-        normalize(params.current.track_name) !== '' &&
-        normalize(params.current.track_name) === normalize(candidate.track_name);
+        trackNameKey(params.current.track_name) !== '' &&
+        trackNameKey(params.current.track_name) === trackNameKey(candidate.track_name);
       if (sameTrackId || sameTrackName) {
         score += 4;
         reasons.push('same track');

@@ -28,6 +28,8 @@ import {
 import { collectDayPlanRiderText, collectDayPlanSessionIds } from '@/lib/rag/prompt';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
 import { isUuid } from '@/lib/rag/validation';
+import { trackNameKey } from '@/lib/session-track';
+import { findVisibleTrackByName } from '@/lib/track-lookup';
 import {
   buildDayTrend,
   hasManualSessionData,
@@ -303,9 +305,7 @@ function buildContext(params: {
   const baseline = params.recentSessions[0];
   const normalizedTrackName = params.trackName?.trim();
   const matchesBaselineTrack =
-    normalizedTrackName &&
-    baseline.track_name &&
-    normalizedTrackName.toLowerCase() === baseline.track_name.trim().toLowerCase();
+    normalizedTrackName && trackNameKey(normalizedTrackName) === trackNameKey(baseline.track_name);
   const planningSession: Session = {
     ...baseline,
     id: planningSessionId,
@@ -352,23 +352,17 @@ async function findTargetTrackId(params: {
   const trackName = params.trackName?.trim();
   if (!trackName) return null;
 
-  const { data, error } = await params.supabase
-    .from('tracks')
-    .select('id')
-    .eq('name', trackName)
-    .or(`is_seeded.eq.true,created_by.eq.${params.userId}`)
-    .limit(1);
-
-  if (error) {
-    console.error('[ai/day-plan] track lookup failed', {
-      userId: params.userId,
-      trackName,
-      error: error.message,
-    });
+  // The same folded lookup `createSession` resolves a typed circuit with, so
+  // "cota" finds the COTA row here as it did when the session was saved. An
+  // unproven answer only costs the track-scoped memory, never a write, so it
+  // is logged and read as no track.
+  const lookup = await findVisibleTrackByName(params.supabase, params.userId, trackName);
+  if (lookup.status === 'unproven') {
+    console.error('[ai/day-plan] track lookup could not answer', { reason: lookup.log, ...lookup.detail });
     return null;
   }
 
-  return data?.[0]?.id ?? null;
+  return lookup.status === 'found' ? lookup.track.id : null;
 }
 
 async function loadPreferredMemory(params: {

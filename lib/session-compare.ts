@@ -1,4 +1,5 @@
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
+import { trackNameKey } from '@/lib/session-track';
 import type { Session, SessionEnvironment, TelemetrySummary, VehicleType } from '@/types';
 
 export const COMPARABLE_SESSION_LIMIT = 20;
@@ -68,12 +69,17 @@ function validNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 }
 
+/**
+ * Whether two sessions ran at the same circuit: by `track_id` when both carry one,
+ * otherwise by name folded through `trackNameKey`, so `cota` and `COTA` are one
+ * circuit here exactly as they are everywhere else in lib/session-track.ts.
+ * A session naming no circuit matches nothing.
+ */
 export function sessionsMatchTrack(a: Session, b: Session): boolean {
   if (a.track_id && b.track_id) return a.track_id === b.track_id;
 
-  const aTrackName = a.track_name?.trim();
-  const bTrackName = b.track_name?.trim();
-  return Boolean(aTrackName && bTrackName && aTrackName === bTrackName);
+  const aKey = trackNameKey(a.track_name);
+  return aKey !== '' && aKey === trackNameKey(b.track_name);
 }
 
 function sessionTimeValue(session: Session): string {
@@ -117,13 +123,20 @@ function moduleValue(enabled: boolean, valueToShow: string | null | undefined): 
   return enabled ? value(valueToShow) : '';
 }
 
-function addRow(rows: SetupCompareRow[], group: string, label: string, current: string, baseline: string) {
+function addRow(
+  rows: SetupCompareRow[],
+  group: string,
+  label: string,
+  current: string,
+  baseline: string,
+  changed = current !== baseline,
+) {
   rows.push({
     group,
     label,
     current,
     baseline,
-    changed: current !== baseline,
+    changed,
   });
 }
 
@@ -207,7 +220,16 @@ export function buildSetupCompareRows(
   const currentEnabled = resolveSessionEnabledModules(current, vehicleType);
   const baselineEnabled = resolveSessionEnabledModules(baseline, vehicleType);
 
-  addRow(rows, 'Session info', 'Track', value(current.track_name), value(baseline.track_name));
+  // Both spellings are shown as typed, but `cota` against `COTA` is not a change
+  // of circuit, so the row is not marked as one.
+  addRow(
+    rows,
+    'Session info',
+    'Track',
+    value(current.track_name),
+    value(baseline.track_name),
+    trackNameKey(current.track_name) !== trackNameKey(baseline.track_name),
+  );
   addRow(rows, 'Session info', 'Date', current.date, baseline.date);
   addRow(rows, 'Session info', 'Session number', value(current.session_number), value(baseline.session_number));
   addRow(rows, 'Session info', 'Conditions', current.conditions, baseline.conditions);
