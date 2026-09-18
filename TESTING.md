@@ -98,6 +98,15 @@ spec rather than skipping it - on `20260901001400` alone the calls naming
 `p_expected_laps` get `PGRST202` instead. Two of those ten are the equal-count
 saves a count comparison lets through, and they were watched failing against one
 wearing this same signature.
+`tests/e2e/session-delete.spec.ts`, `tests/e2e/vehicle-delete.spec.ts`,
+`tests/e2e/track-recent-sessions.spec.ts` and
+`tests/e2e/session-lap-visibility.spec.ts` each sign in as a throwaway rider from
+`createThrowawayRider` (`tests/e2e/helpers/throwaway-rider.ts`), because they
+count or delete rows and the shared account is signed into by six projects at
+once. They need the service-role key and a running app, no `E2E_EMAIL`,
+`E2E_PASSWORD` or `BETA_INVITE_ONLY`; the lap-visibility spec also needs
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`, because it saves its laps through
+`replace_session_laps` as the rider.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a
