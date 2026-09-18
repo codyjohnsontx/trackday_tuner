@@ -262,15 +262,20 @@ export function buildSetupCompareRows(
   const currentEnabled = resolveSessionEnabledModules(current, vehicleType);
   const baselineEnabled = resolveSessionEnabledModules(baseline, vehicleType);
 
-  // Both spellings are shown as typed, but `cota` against `COTA` is not a change
-  // of circuit, so the row is not marked as one.
+  // The row agrees with the track-mismatch flag: both spellings are shown as
+  // typed, but `cota` against `COTA` is not a change of circuit, while two
+  // different track rows are a change even when their names fold together. Two
+  // sessions naming no circuit at all read "— / —", which is not a change
+  // either; the flag already says they cannot be matched.
+  const neitherNamesATrack =
+    !current.track_id && !baseline.track_id && !trackNameKey(current.track_name) && !trackNameKey(baseline.track_name);
   addRow(
     rows,
     'Session info',
     'Track',
     value(current.track_name),
     value(baseline.track_name),
-    trackNameKey(current.track_name) !== trackNameKey(baseline.track_name),
+    !neitherNamesATrack && !sessionsMatchTrack(current, baseline),
   );
   addRow(rows, 'Session info', 'Date', current.date, baseline.date);
   addRow(rows, 'Session info', 'Session number', value(current.session_number), value(baseline.session_number));

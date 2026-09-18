@@ -103,6 +103,15 @@ describe('selectSimilarSessions', () => {
     expect(match.reasons).toContain('same track');
   });
 
+  it('does not score different track rows as the same track when their names fold together', () => {
+    const current = { ...baseSession, track_id: 'track-full', track_name: 'Road America' };
+    const candidate = { ...baseSession, id: 'other-layout', track_id: 'track-short', track_name: 'road  america', date: '2026-04-21' };
+
+    const [match] = selectSimilarSessions({ current, candidates: [candidate] });
+
+    expect(match.reasons).not.toContain('same track');
+  });
+
   it('returns no matches when there are no candidates', () => {
     const result = selectSimilarSessions({
       current: baseSession,
