@@ -39,6 +39,7 @@ import {
   getPreviousSession,
   getSessionEnvironments,
   getSessionLaps,
+  getSessionsAtTrack,
   getTelemetrySummaries,
   replaceSessionLaps,
 } from '@/lib/actions/sessions';
@@ -85,6 +86,7 @@ function createQuery(response: QueryResponse = {}) {
   query.neq = vi.fn(() => query);
   query.or = vi.fn(() => query);
   query.ilike = vi.fn(() => query);
+  query.is = vi.fn(() => query);
   query.lt = vi.fn(() => query);
   query.lte = vi.fn(() => query);
   query.order = vi.fn(() => query);
@@ -1970,6 +1972,39 @@ describe('sessions actions', () => {
 
     expect(result).toEqual({ ok: false, error: 'Not authenticated.' });
     expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it('lists the sessions at a track by id and by an unlinked matching name, newest first', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const linked = { id: 's-linked', track_id: 'track-1', track_name: 'Barber', date: '2026-05-01', start_time: null, created_at: '2026-05-01T10:00:00Z' };
+    const legacy = { id: 's-legacy', track_id: null, track_name: 'barber ', date: '2026-06-01', start_time: null, created_at: '2026-06-01T10:00:00Z' };
+    const otherCircuit = { id: 's-other', track_id: null, track_name: 'Barber North', date: '2026-07-01', start_time: null, created_at: '2026-07-01T10:00:00Z' };
+    const byId = createQuery({ base: { data: [linked], error: null } });
+    // The name read is a wildcard narrowing, so it can return a circuit the fold rejects.
+    const byName = createQuery({ base: { data: [legacy, otherCircuit], error: null } });
+    const from = vi.fn().mockReturnValueOnce(byId).mockReturnValueOnce(byName);
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await getSessionsAtTrack({ id: 'track-1', name: 'Barber' });
+
+    expect(result.ok && result.data.map((session) => session.id)).toEqual(['s-legacy', 's-linked']);
+    expect(byId.eq).toHaveBeenCalledWith('user_id', 'user-1');
+    expect(byId.eq).toHaveBeenCalledWith('track_id', 'track-1');
+    expect(byName.eq).toHaveBeenCalledWith('user_id', 'user-1');
+  });
+
+  it('reports a failed track-sessions read rather than an empty history', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const byId = createQuery({ base: { data: null, error: { message: 'boom', code: '500' } } });
+    const byName = createQuery({ base: { data: [], error: null } });
+    vi.mocked(createClient).mockResolvedValue({
+      from: vi.fn().mockReturnValueOnce(byId).mockReturnValueOnce(byName),
+    } as never);
+
+    const result = await getSessionsAtTrack({ id: 'track-1', name: 'Barber' });
+
+    expect(result.ok).toBe(false);
+    expect(reportError).toHaveBeenCalled();
   });
 
   // A console.error spy is installed inline by several tests above and, before
