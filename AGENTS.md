@@ -550,7 +550,9 @@ The same shape applies to anything derived rather than given:
   but never pressed "Add" on used to be dropped silently
 - **Track names** are resolved server-side by `resolveSessionTrack` in
   `lib/actions/sessions.ts`, using `lib/session-track.ts` to fold case, spacing
-  and accent composition. A supplied `track_id` is looked up in the same
+  and accent composition. Any other comparison of two track names goes through
+  `trackNameKey` too, and a typed-name lookup of `tracks` through
+  `findVisibleTrackByName` (`lib/track-lookup.ts`), never a raw `===` or `.eq('name')`. A supplied `track_id` is looked up in the same
   seeded-or-own scope the picker offers rather than trusted, and the row's own
   name wins over what was typed, so a session cannot store an id and a name that
   point at different circuits. Creating a row for a name that matches none is
