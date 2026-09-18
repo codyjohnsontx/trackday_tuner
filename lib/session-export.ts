@@ -590,8 +590,9 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
 
     const circuit = trackKeys.get(input.session.id);
     if (circuit) {
-      const tally = byTrack.get(circuit.key);
-      byTrack.set(circuit.key, { trackName: circuit.trackName, count: (tally?.count ?? 0) + 1 });
+      const tallyTrack = circuit.key.startsWith('unknown:') ? { key: 'unknown', trackName: UNNAMED_TRACK } : circuit;
+      const tally = byTrack.get(tallyTrack.key);
+      byTrack.set(tallyTrack.key, { trackName: tallyTrack.trackName, count: (tally?.count ?? 0) + 1 });
     }
 
     const track = courseKeys.get(input.session.id);

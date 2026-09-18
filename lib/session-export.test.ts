@@ -243,6 +243,19 @@ describe('session export helpers', () => {
     expect(analytics.topTracks).toEqual([{ trackName: 'COTA', count: 3 }]);
   });
 
+  it('rolls sessions with no track into one top-tracks row', () => {
+    const analytics = deriveSessionAnalytics([
+      { session: session({ id: 's1', date: '2026-05-01', track_id: null, track_name: null }), vehicle: motorcycle, environment: null, telemetry: null },
+      { session: session({ id: 's2', date: '2026-05-02', track_id: null, track_name: '' }), vehicle: motorcycle, environment: null, telemetry: null },
+      { session: session({ id: 's3', date: '2026-05-03', track_id: null, track_name: 'COTA' }), vehicle: motorcycle, environment: null, telemetry: null },
+    ]);
+
+    expect(analytics.topTracks).toEqual([
+      { trackName: 'Unknown Track', count: 2 },
+      { trackName: 'COTA', count: 1 },
+    ]);
+  });
+
   /**
    * The panel labelled Analytics is handed every session's telemetry and used
    * to throw it away, so it answered with session counts, module coverage and
