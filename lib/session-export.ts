@@ -520,8 +520,9 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
 
     const track = trackKeys.get(input.session.id);
     if (track) {
-      const tally = byTrack.get(track.key);
-      byTrack.set(track.key, { trackName: track.trackName, count: (tally?.count ?? 0) + 1 });
+      const tallyTrack = track.key.startsWith('unknown:') ? { key: 'unknown', trackName: UNNAMED_TRACK } : track;
+      const tally = byTrack.get(tallyTrack.key);
+      byTrack.set(tallyTrack.key, { trackName: tallyTrack.trackName, count: (tally?.count ?? 0) + 1 });
 
       // A row is one vehicle at one circuit, because that is the pair the app
       // already calls comparable. Sharing a row across vehicles hid the slower
