@@ -15,8 +15,11 @@ import { addVehicle, seedTrack, typeRunQuery } from '@/tests/e2e/helpers/track-p
  *
  * The row listens for `click` now, and only `click`. A real pointer ends its
  * mousedown/mouseup pair in one too, so the two paths arrive at a single handler
- * and neither can select twice - a property no browser can observe, so it is
- * locked in tests/unit/track-picker-keyboard.test.ts instead. The listbox still
+ * and neither can select twice. Selecting twice is idempotent, so the END state
+ * cannot show a second handler - the pointer test below passed unchanged with
+ * the row bound to mousedown and click together. What does show it is WHEN the
+ * row selects: the press-and-hold test stops between mousedown and mouseup, where
+ * a row that also listened for mousedown has already picked. The listbox still
  * refuses mousedown's default so focus never leaves the input, which is what
  * keeps the list open long enough for the pointer's click to land and what keeps
  * Tab working afterwards.
@@ -148,9 +151,9 @@ test.describe('activating a track suggestion', () => {
     await expect(trackField).toHaveValue(trackName);
     await expect(listbox).toBeHidden();
     // Open, then closed on the circuit, and never reopened. This does NOT prove
-    // a single handler: selecting twice is idempotent, and this spec passed
-    // unchanged with the row bound to mousedown and click together. That
-    // guarantee is held by tests/unit/track-picker-keyboard.test.ts.
+    // a single handler: selecting twice is idempotent, and this test passed
+    // unchanged with the row bound to mousedown and click together. The
+    // press-and-hold test below is what tells the two apart.
     expect(await pickerChanges(page)).toEqual([`true|${runId}`, `false|${trackName}`]);
 
     // The listbox refuses mousedown's default, so the press never took focus out
@@ -162,6 +165,31 @@ test.describe('activating a track suggestion', () => {
     // Leaving did not reopen the list or disturb the pick.
     await expect(listbox).toBeHidden();
     await expect(trackField).toHaveValue(trackName);
+  });
+
+  test('a press selects nothing until it is released, so one press cannot select twice', async ({
+    page,
+  }, testInfo: TestInfo) => {
+    const { trackField, listbox, trackName } = await openPicker(page, testInfo, 'Held Press Circuit');
+
+    const box = await listbox.getByRole('option').first().boundingBox();
+    if (!box) throw new Error('the suggestion row has no box to press');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+
+    // Held between mousedown and mouseup. A row that also selected on mousedown -
+    // the two-handler fix this design rules out - has picked the circuit by now
+    // and would go on to fire again on the click.
+    await page.mouse.down();
+    await expect(trackField).toBeFocused();
+    await expect(listbox).toBeVisible();
+    await expect(trackField).toHaveValue(runId);
+    expect(await pickerChanges(page)).toEqual([`true|${runId}`]);
+
+    // Released on the same row: the click is the one event that selects.
+    await page.mouse.up();
+    await expect(trackField).toHaveValue(trackName);
+    await expect(listbox).toBeHidden();
+    expect(await pickerChanges(page)).toEqual([`true|${runId}`, `false|${trackName}`]);
   });
 
   test('a touch tap picks the circuit and keeps focus in the field', async ({
