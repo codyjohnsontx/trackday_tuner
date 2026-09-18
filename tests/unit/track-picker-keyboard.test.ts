@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -113,5 +115,34 @@ describe('the Track picker as a combobox', () => {
     // the input's blur handler removes. Focus has to stay in the input.
     expect(list).not.toContain('<button');
     expect(list).not.toContain('tabindex');
+  });
+});
+
+// A screen reader's virtual cursor (NVDA and JAWS browse mode) activates a row
+// with a lone `click` - no mousedown, no mouseup - so a row bound to
+// `onMouseDown` could not be picked by it at all. A real pointer ends in a
+// `click` as well, so that one event is where every non-keyboard activation
+// converges, and binding it alone is what makes a second fire impossible.
+//
+// Read off the source because nothing else can see it: static markup carries no
+// handlers, and selecting twice is idempotent, so a row bound to both events
+// looks identical to a browser. tests/e2e/session-track-activation.spec.ts passed
+// unchanged against exactly that, which is why the guarantee is held here.
+describe('how a suggestion row activates', () => {
+  const source = readFileSync(join(process.cwd(), 'components/sessions/session-form.tsx'), 'utf8');
+  const row = source.match(/<li\b[^>]*?role="option"[\s\S]*?>\n/)?.[0] ?? '';
+  const handlers = [...row.matchAll(/\bon[A-Z][A-Za-z]*(?==)/g)].map((match) => match[0]);
+
+  it('selects on click, which a virtual cursor and a pointer both send', () => {
+    expect(row).toMatch(/onClick=\{\(\) => handleTrackSelect\(track\)\}/);
+  });
+
+  it('binds no other event, so one activation cannot select twice', () => {
+    expect(handlers).toEqual(['onClick']);
+  });
+
+  it('still refuses mousedown on the listbox, which is what keeps focus in the input', () => {
+    const list = source.match(/<ul\b[\s\S]*?id="session-track-listbox"[\s\S]*?>\n/)?.[0] ?? '';
+    expect(list).toMatch(/onMouseDown=\{\(event\) => event\.preventDefault\(\)\}/);
   });
 });

@@ -803,7 +803,9 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
             // Keeps the pointer path working now that blur closes the list
             // immediately: mousedown runs before blur, so refusing its default
             // focus change means neither picking an option nor dragging the
-            // scrollbar pulls the list out from under the click.
+            // scrollbar pulls the list out from under the click. It refuses the
+            // focus change and nothing else - the click still arrives, and the
+            // row is still there to receive it.
             onMouseDown={(event) => event.preventDefault()}
           >
             {filteredTracks.map((track, index) => (
@@ -816,7 +818,13 @@ export function SessionForm({ vehicles, tracks, latestSessionsByVehicle = {} }: 
                   'min-h-11 cursor-pointer px-3 py-3 text-left text-sm text-ink hover:bg-surface-3',
                   index === activeTrackIndex && 'bg-surface-3',
                 )}
-                onMouseDown={() => handleTrackSelect(track)}
+                // `click` and nothing else. A screen reader's virtual cursor
+                // (NVDA and JAWS browse mode) activates a row with a lone click
+                // and no mousedown, so a row bound to mousedown could never be
+                // picked by it; a pointer's mousedown and mouseup end in a click
+                // too. Both arrive here, so neither can select twice - which a
+                // second handler on mousedown would do on every pointer press.
+                onClick={() => handleTrackSelect(track)}
               >
                 <span className="font-medium">{track.name}</span>
                 {track.location ? <span className="ml-1 text-ink-faint">{track.location}</span> : null}
