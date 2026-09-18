@@ -1,4 +1,5 @@
 import type { createClient } from '@/lib/supabase/server';
+import { sessionsMatchTrack } from '@/lib/session-compare';
 import type {
   AiRecommendation,
   Json,
@@ -86,12 +87,10 @@ export function selectSimilarSessions(params: {
       const reasons: string[] = [];
       let score = 0;
 
-      const sameTrackId = params.current.track_id && params.current.track_id === candidate.track_id;
-      const sameTrackName =
-        !sameTrackId &&
-        normalize(params.current.track_name) !== '' &&
-        normalize(params.current.track_name) === normalize(candidate.track_name);
-      if (sameTrackId || sameTrackName) {
+      // The one same-circuit rule: two different track rows are different
+      // circuits (two layouts can share a name), and the folded name decides
+      // only when a session has no row.
+      if (sessionsMatchTrack(params.current, candidate)) {
         score += 4;
         reasons.push('same track');
       }

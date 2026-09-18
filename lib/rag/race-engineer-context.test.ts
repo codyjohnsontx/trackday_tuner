@@ -85,6 +85,31 @@ describe('selectSimilarSessions', () => {
     expect(result[0].reasons).toContain('similar ambient temperature');
   });
 
+  // Name-only sessions are the same circuit when their names fold to one key
+  // (lib/session-track.ts), so case, spacing and accent composition must not
+  // cost a candidate its "same track" match.
+  it.each([
+    ['case', 'Road America', 'ROAD AMERICA'],
+    ['spacing', 'Road America', ' Road  America'],
+    ['accent composition', 'Aut\u00f3dromo Hermanos Rodr\u00edguez', 'Auto\u0301dromo Hermanos Rodri\u0301guez'],
+  ])('matches name-only sessions whose track names differ only by %s', (_kind, currentName, candidateName) => {
+    const current = { ...baseSession, track_id: null, track_name: currentName };
+    const candidate = { ...baseSession, id: 'variant', track_id: null, track_name: candidateName, date: '2026-04-21' };
+
+    const [match] = selectSimilarSessions({ current, candidates: [candidate] });
+
+    expect(match.reasons).toContain('same track');
+  });
+
+  it('does not score different track rows as the same track when their names fold together', () => {
+    const current = { ...baseSession, track_id: 'track-full', track_name: 'Road America' };
+    const candidate = { ...baseSession, id: 'other-layout', track_id: 'track-short', track_name: 'road  america', date: '2026-04-21' };
+
+    const [match] = selectSimilarSessions({ current, candidates: [candidate] });
+
+    expect(match.reasons).not.toContain('same track');
+  });
+
   it('returns no matches when there are no candidates', () => {
     const result = selectSimilarSessions({
       current: baseSession,
