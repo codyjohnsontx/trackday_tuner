@@ -68,6 +68,13 @@ function baselineCount(count: number) {
   return createQuery({ base: { data: null, error: null, count } });
 }
 
+function aiRecords(recommendations = 0, memories = 0) {
+  return {
+    ai_recommendations: [baselineCount(recommendations)],
+    race_engineer_memory: [baselineCount(memories)],
+  };
+}
+
 function sessionIdPage(count: number, offset = 0) {
   return createQuery({
     base: { data: Array.from({ length: count }, (_, index) => ({ id: `sess-${offset + index}` })), error: null },
@@ -177,11 +184,20 @@ describe('vehicles actions', () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     const sessions = sessionIdPage(2);
     const laps = createQuery({ base: { data: null, error: null, count: 7 } });
-    clientFor({ sessions: [sessions], session_laps: [laps], vehicle_baselines: [baselineCount(1)] });
+    const records = aiRecords(4, 1);
+    const recommendations = records.ai_recommendations[0];
+    const memory = records.race_engineer_memory[0];
+    clientFor({ sessions: [sessions], session_laps: [laps], vehicle_baselines: [baselineCount(1)], ...records });
 
     const result = await getVehicleDeletionCounts('veh-1');
 
-    expect(result).toEqual({ ok: true, data: { sessionCount: 2, lapCount: 7, hasBaseline: true } });
+    expect(result).toEqual({
+      ok: true,
+      data: { sessionCount: 2, lapCount: 7, hasBaseline: true, recommendationCount: 4, hasRaceEngineerMemory: true },
+    });
+    expect(recommendations.eq).toHaveBeenCalledWith('user_id', 'user-1');
+    expect(recommendations.eq).toHaveBeenCalledWith('vehicle_id', 'veh-1');
+    expect(memory.eq).toHaveBeenCalledWith('vehicle_id', 'veh-1');
     expect(sessions.eq).toHaveBeenCalledWith('user_id', 'user-1');
     expect(sessions.eq).toHaveBeenCalledWith('vehicle_id', 'veh-1');
     expect(laps.in).toHaveBeenCalledWith('session_id', ['sess-0', 'sess-1']);
@@ -194,16 +210,34 @@ describe('vehicles actions', () => {
       sessions: [sessionIdPage(1000), sessionIdPage(1, 1000)],
       session_laps: lapBatches,
       vehicle_baselines: [baselineCount(0)],
+      ...aiRecords(),
     });
 
     const result = await getVehicleDeletionCounts('veh-1');
 
-    expect(result).toEqual({ ok: true, data: { sessionCount: 1001, lapCount: 33, hasBaseline: false } });
+    expect(result).toEqual({
+      ok: true,
+      data: { sessionCount: 1001, lapCount: 33, hasBaseline: false, recommendationCount: 0, hasRaceEngineerMemory: false },
+    });
   });
 
   it('reports a failed count instead of claiming the bike has no sessions', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     clientFor({ sessions: [createQuery({ base: { data: null, error: { message: 'boom', code: '500' } } })] });
+
+    const result = await getVehicleDeletionCounts('veh-1');
+
+    expect(result).toEqual({ ok: false, error: VEHICLE_DELETE_COUNT_FAILED_MESSAGE });
+    expect(reportError).toHaveBeenCalled();
+  });
+
+  it('reports a failed Race Engineer count instead of leaving it out of the confirmation', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    clientFor({
+      sessions: [sessionIdPage(0)],
+      vehicle_baselines: [baselineCount(0)],
+      ai_recommendations: [createQuery({ base: { data: null, error: { message: 'boom', code: '500' } } })],
+    });
 
     const result = await getVehicleDeletionCounts('veh-1');
 
@@ -218,6 +252,7 @@ describe('vehicles actions', () => {
       sessions: [sessionIdPage(2)],
       session_laps: [createQuery({ base: { data: null, error: null, count: 5 } })],
       vehicle_baselines: [baselineCount(0)],
+      ...aiRecords(),
       vehicles: [deleteQuery],
     });
 
@@ -238,6 +273,7 @@ describe('vehicles actions', () => {
       sessions: [sessionIdPage(3)],
       session_laps: [createQuery({ base: { data: null, error: null, count: 5 } })],
       vehicle_baselines: [baselineCount(0)],
+      ...aiRecords(),
     });
 
     const result = await deleteVehicle('veh-1', 2);
@@ -252,6 +288,7 @@ describe('vehicles actions', () => {
     clientFor({
       sessions: [sessionIdPage(0)],
       vehicle_baselines: [baselineCount(0)],
+      ...aiRecords(),
       vehicles: [createQuery({ base: { data: [], error: null } })],
     });
 
@@ -266,6 +303,7 @@ describe('vehicles actions', () => {
     clientFor({
       sessions: [sessionIdPage(0)],
       vehicle_baselines: [baselineCount(0)],
+      ...aiRecords(),
       vehicles: [createQuery({ base: { data: null, error: { message: 'Delete failed', code: '42501' } } })],
     });
 

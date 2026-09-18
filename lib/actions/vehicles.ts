@@ -161,7 +161,8 @@ type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 type CountError = { message: string; code?: string; details?: string | null; hint?: string | null };
 
 /**
- * Every session and lap the cascade would take with this vehicle.
+ * Every session, lap and Race Engineer record the cascade would take with this
+ * vehicle.
  *
  * `session_laps` carries no vehicle id, so the laps are counted over the
  * vehicle's session ids. Both reads are paged: PostgREST truncates a select at
@@ -207,7 +208,33 @@ async function countVehicleCascade(
     .eq('vehicle_id', vehicleId);
   if (baselineError) return { ok: false, error: baselineError };
 
-  return { ok: true, counts: { sessionCount: sessionIds.length, lapCount, hasBaseline: (baselineCount ?? 0) > 0 } };
+  const { count: recommendationCount, error: recommendationError } = await supabase
+    .from('ai_recommendations')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('vehicle_id', vehicleId);
+  if (recommendationError) return { ok: false, error: recommendationError };
+  if (recommendationCount == null) {
+    return { ok: false, error: { message: 'ai_recommendations count came back empty' } };
+  }
+
+  const { count: memoryCount, error: memoryError } = await supabase
+    .from('race_engineer_memory')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('vehicle_id', vehicleId);
+  if (memoryError) return { ok: false, error: memoryError };
+
+  return {
+    ok: true,
+    counts: {
+      sessionCount: sessionIds.length,
+      lapCount,
+      hasBaseline: (baselineCount ?? 0) > 0,
+      recommendationCount,
+      hasRaceEngineerMemory: (memoryCount ?? 0) > 0,
+    },
+  };
 }
 
 function reportCountFailure(error: CountError, userId: string, vehicleId: string) {
