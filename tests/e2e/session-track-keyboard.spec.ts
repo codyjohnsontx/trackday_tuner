@@ -122,6 +122,9 @@ test.describe('picking a track with the keyboard', () => {
     runId = runResourceId(testInfo);
 
     await seedTrack(page, `${runId} Escape Circuit`);
+    // `/sessions/new` sends a rider with no vehicle to `/garage/new`, so this
+    // walk cannot lean on the account already owning one.
+    createdVehicleId = await addVehicle(page, `PW Track Escape ${runId}`);
 
     await page.goto('/sessions/new');
     await expect(page.getByRole('heading', { name: 'New Session' })).toBeVisible({ timeout: 20_000 });
