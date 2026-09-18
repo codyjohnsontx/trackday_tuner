@@ -486,7 +486,7 @@ function buildSessionTrackKeys(sessions: readonly Session[]): Map<string, Resolv
 export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAnalyticsSummary {
   const byVehicle = new Map<string, number>();
   const vehicleLabels = new Map<string, string>();
-  const byTrack = new Map<string, number>();
+  const byTrack = new Map<string, { trackName: string; count: number }>();
   const moduleCounts = new Map<keyof SessionEnabledModules, number>();
   const ambientTemps: number[] = [];
   const trackTemps: number[] = [];
@@ -506,7 +506,6 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
     const label = input.vehicle?.nickname ?? 'Unknown Vehicle';
     vehicleLabels.set(input.session.vehicle_id, label);
     increment(byVehicle, input.session.vehicle_id);
-    increment(byTrack, input.session.track_name ?? 'Unknown Track');
 
     const enabled = getEnabledModules(input.session, input.vehicle);
     for (const [module, isEnabled] of Object.entries(enabled) as [keyof SessionEnabledModules, boolean][]) {
@@ -521,6 +520,9 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
 
     const track = trackKeys.get(input.session.id);
     if (track) {
+      const tally = byTrack.get(track.key);
+      byTrack.set(track.key, { trackName: track.trackName, count: (tally?.count ?? 0) + 1 });
+
       // A row is one vehicle at one circuit, because that is the pair the app
       // already calls comparable. Sharing a row across vehicles hid the slower
       // one's personal best entirely.
@@ -593,8 +595,7 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
     sessionsByVehicle: [...byVehicle.entries()]
       .map(([vehicleId, count]) => ({ vehicleId, label: vehicleLabels.get(vehicleId) ?? 'Unknown Vehicle', count }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
-    topTracks: [...byTrack.entries()]
-      .map(([trackName, count]) => ({ trackName, count }))
+    topTracks: [...byTrack.values()]
       .sort((a, b) => b.count - a.count || a.trackName.localeCompare(b.trackName))
       .slice(0, 5),
     moduleCoverage: coverageRows(
