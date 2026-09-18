@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { LapMetricsStrip } from '@/components/sessions/lap-metrics-strip';
 import {
   aggregateLaps,
   appendPastedLaps,
@@ -105,12 +106,7 @@ export function LapTimeEditor({ value, onChange }: LapTimeEditorProps) {
 
       {laps.length > 0 ? (
         <>
-          <div className="grid grid-cols-4 gap-2 border-y border-white/5 py-3 text-center">
-            <div><p className="text-[10px] uppercase text-ink-faint">Count</p><p className="text-sm font-semibold">{metrics.lap_count}</p></div>
-            <div><p className="text-[10px] uppercase text-ink-faint">Best</p><p className="text-sm font-semibold">{metrics.best_lap_ms ? formatLapTimeInput(metrics.best_lap_ms) : '—'}</p></div>
-            <div><p className="text-[10px] uppercase text-ink-faint">Average</p><p className="text-sm font-semibold">{metrics.average_lap_ms ? formatLapTimeInput(metrics.average_lap_ms) : '—'}</p></div>
-            <div><p className="text-[10px] uppercase text-ink-faint">Spread</p><p className="text-sm font-semibold">{metrics.consistency_spread_ms == null ? '—' : `${(metrics.consistency_spread_ms / 1000).toFixed(3)}s`}</p></div>
-          </div>
+          <LapMetricsStrip metrics={metrics} className="border-y border-white/5 py-3" />
           <ul className="divide-y divide-white/5">
             {laps.map((lap, index) => (
               // lap_number is unique by construction: appends take max+1 and

@@ -11,6 +11,7 @@ import { deriveSessionAnalytics } from '@/lib/session-export';
 import { SessionAnalyticsPanel } from '@/components/sessions/session-analytics-panel';
 import { SessionExportPanel } from '@/components/sessions/session-export-panel';
 import { SessionHistoryList } from '@/components/sessions/session-history-list';
+import { buildLapSummaryLabel } from '@/lib/session-compare';
 import { effectiveTier, resolveUserAccess } from '@/lib/access';
 import { getFreePlanLimit, getFreePlanLimitTitle, isAtFreePlanLimit } from '@/lib/plans';
 
@@ -97,6 +98,7 @@ export default async function SessionsPage() {
             session,
             vehicleNickname: vehicleMap.get(session.vehicle_id) ?? 'Unknown Vehicle',
             environment: environmentMap.get(session.id) ?? null,
+            lapSummary: buildLapSummaryLabel(telemetryMap.get(session.id)),
           }))}
         />
       )}
