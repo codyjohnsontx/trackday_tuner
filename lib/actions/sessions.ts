@@ -21,6 +21,7 @@ import {
   courseMatchRank,
 } from '@/lib/session-compare';
 import { fetchPreviousSession } from '@/lib/session-previous';
+import { SESSION_DELETE_FAILED_MESSAGE, SESSION_DELETE_NOT_FOUND_MESSAGE } from '@/lib/session-delete';
 import { reportError } from '@/lib/monitoring/report-error';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
@@ -1040,14 +1041,31 @@ export async function deleteSession(id: string): Promise<ActionResult> {
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const supabase = await createClient();
-  const { error } = await supabase
+  // The deleted rows are selected back because RLS and the user_id filter turn
+  // another rider's id, or one already gone, into zero rows rather than an error.
+  // Without the count that is a success the page would navigate away on.
+  const { data, error } = await supabase
     .from('sessions')
     .delete()
     .eq('id', id)
-    .eq('user_id', user.id);
+    .eq('user_id', user.id)
+    .select('id');
 
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    reportError('session-delete', new Error(error.message), {
+      reason: error.code,
+      table: 'sessions',
+      details: error.details,
+      hint: error.hint,
+      userId: user.id,
+      sessionId: id,
+    });
+    return { ok: false, error: SESSION_DELETE_FAILED_MESSAGE };
+  }
+  if ((data ?? []).length === 0) return { ok: false, error: SESSION_DELETE_NOT_FOUND_MESSAGE };
 
   revalidatePath('/sessions');
+  revalidatePath('/dashboard');
+  revalidatePath(`/sessions/${id}`);
   return { ok: true, data: undefined };
 }
