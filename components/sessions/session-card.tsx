@@ -6,6 +6,8 @@ import { Eyebrow } from '@/components/ui/surface';
 interface SessionCardProps {
   session: Session;
   vehicleNickname: string;
+  /** `Best 1:43.980 · 6 laps`, or null when this session has no lap data. */
+  lapSummary?: string | null;
 }
 
 function formatTime12h(t: string): string {
@@ -22,7 +24,7 @@ function formatTime12h(t: string): string {
  * shares a track name, and what you are hunting for is which run it was. The
  * plate on the right carries that number and the weather in one glance.
  */
-export function SessionCard({ session, vehicleNickname }: SessionCardProps) {
+export function SessionCard({ session, vehicleNickname, lapSummary = null }: SessionCardProps) {
   // Append time to avoid timezone date shift
   const date = new Date(`${session.date}T00:00:00`);
   const formattedDate = date.toLocaleDateString('en-US', {
@@ -46,6 +48,7 @@ export function SessionCard({ session, vehicleNickname }: SessionCardProps) {
           {session.layout_name ? <span className="font-normal text-ink-dim"> · {session.layout_name}</span> : null}
         </p>
         <p className="mt-0.5 truncate text-sm text-ink-dim">{vehicleNickname}</p>
+        {lapSummary ? <p className="mt-0.5 truncate text-xs text-ink-faint tabular-nums">{lapSummary}</p> : null}
       </div>
       <DataPlate
         value={session.session_number ? `S${session.session_number}` : null}

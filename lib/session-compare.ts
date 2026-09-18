@@ -251,6 +251,24 @@ export function extractLapMetrics(summary: TelemetrySummary | null | undefined):
   };
 }
 
+/**
+ * The one-line lap headline for a session row: `Best 1:43.980 · 6 laps`.
+ *
+ * Null when the session carries no lap data, so a row without any omits the
+ * line rather than printing a dash. Lap time is the point of a track session,
+ * and every list of sessions used to leave it out.
+ */
+export function buildLapSummaryLabel(summary: TelemetrySummary | null | undefined): string | null {
+  const metrics = extractLapMetrics(summary);
+  if (metrics.bestLapMs === null) return null;
+
+  const parts = [`Best ${formatLapTime(metrics.bestLapMs)}`];
+  if (metrics.lapCount !== null) {
+    parts.push(`${metrics.lapCount} lap${metrics.lapCount === 1 ? '' : 's'}`);
+  }
+  return parts.join(' · ');
+}
+
 export function buildSetupCompareRows(
   current: Session,
   baseline: Session,
