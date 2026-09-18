@@ -34,6 +34,7 @@ import { reportError } from '@/lib/monitoring/report-error';
 import { DEMO_COOKIE_NAME } from '@/lib/demo/mode';
 import {
   createSession,
+  deleteSession,
   getComparableSessions,
   getPreviousSession,
   getSessionEnvironments,
@@ -42,6 +43,7 @@ import {
   replaceSessionLaps,
 } from '@/lib/actions/sessions';
 import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
+import { SESSION_DELETE_FAILED_MESSAGE, SESSION_DELETE_NOT_FOUND_MESSAGE } from '@/lib/session-delete';
 import { COMPARABLE_SESSION_FETCH_LIMIT, COMPARABLE_SESSION_LIMIT } from '@/lib/session-compare';
 import { MISSING_TRACK_MESSAGE, TRACK_NAME_MATCH_LIMIT } from '@/lib/session-track';
 import type {
@@ -1899,6 +1901,74 @@ describe('sessions actions', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.session_id).toBe('demo-session-4');
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it('deletes only the caller own session and refreshes the screens that list it', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const deleteQuery = createQuery({ base: { data: [{ id: 'sess-1' }], error: null } });
+    const from = vi.fn(() => deleteQuery);
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await deleteSession('sess-1');
+
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(from).toHaveBeenCalledWith('sessions');
+    expect(deleteQuery.delete).toHaveBeenCalled();
+    expect(deleteQuery.eq).toHaveBeenCalledWith('id', 'sess-1');
+    expect(deleteQuery.eq).toHaveBeenCalledWith('user_id', 'user-1');
+    expect(revalidatePath).toHaveBeenCalledWith('/sessions');
+    expect(revalidatePath).toHaveBeenCalledWith('/dashboard');
+    expect(revalidatePath).toHaveBeenCalledWith('/sessions/sess-1');
+  });
+
+  it('reports a failure when the delete matched no session', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    // RLS plus the user_id filter make another rider's id delete zero rows rather
+    // than error, so the row count is the only signal that nothing happened.
+    const deleteQuery = createQuery({ base: { data: [], error: null } });
+    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => deleteQuery) } as never);
+
+    const result = await deleteSession('someone-elses-session');
+
+    expect(result).toEqual({ ok: false, error: SESSION_DELETE_NOT_FOUND_MESSAGE });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('tells the rider nothing was removed and reports the error when the delete fails', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const deleteQuery = createQuery({
+      base: { data: null, error: { message: 'permission denied for table sessions', code: '42501' } },
+    });
+    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => deleteQuery) } as never);
+
+    const result = await deleteSession('sess-1');
+
+    // The database's own words are for the log, not the rider.
+    expect(result).toEqual({ ok: false, error: SESSION_DELETE_FAILED_MESSAGE });
+    expect(reportError).toHaveBeenCalledWith(
+      'session-delete',
+      expect.any(Error),
+      expect.objectContaining({ reason: '42501', table: 'sessions' }),
+    );
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('refuses to delete a session in demo mode', async () => {
+    vi.mocked(cookies).mockResolvedValue({ get: vi.fn(() => ({ value: '1', name: DEMO_COOKIE_NAME })) } as never);
+
+    const result = await deleteSession('demo-session-4');
+
+    expect(result.ok).toBe(false);
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it('returns auth error when deleting a session while logged out', async () => {
+    vi.mocked(getRealUser).mockResolvedValue(null);
+
+    const result = await deleteSession('sess-1');
+
+    expect(result).toEqual({ ok: false, error: 'Not authenticated.' });
     expect(createClient).not.toHaveBeenCalled();
   });
 
