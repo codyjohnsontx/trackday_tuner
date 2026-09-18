@@ -78,10 +78,12 @@ interface SessionFormProps {
   trackLayouts?: TrackLayoutIndex;
   latestSessionsByVehicle?: Record<string, Session>;
   /**
-   * A free rider already holding their custom-track cap. A circuit they type that
-   * is none of `tracks` cannot become a track row, so the session keeps the name
-   * alone - and the form says so before Save rather than after. See
-   * `describeSessionTrackGap` in lib/session-track.ts.
+   * A free rider already holding their custom-track cap, as of page load. A
+   * circuit they type that is none of `tracks` is then predicted not to become a
+   * track row, so the session would keep the name alone - and the form says so
+   * before Save rather than after. It is a prediction: `resolveSessionTrack`
+   * counts again at Save, so a track added or removed in another tab can move the
+   * answer. See `describeSessionTrackGap` in lib/session-track.ts.
    */
   atTrackLimit?: boolean;
 }
@@ -218,6 +220,9 @@ export function SessionForm({
   // Null means "not specified", which is the answer most riders give and never
   // has to be chosen: the picker only appears for a circuit that has layouts.
   const [layoutId, setLayoutId] = useState<string | null>(null);
+  // The typed name a Save was already held back for, so the rider is stopped once
+  // to read the track-limit note and not every time. See handleSubmit.
+  const [heldTrackLimitName, setHeldTrackLimitName] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   // Which suggestion the arrow keys have travelled to. Focus stays in the input
   // the whole time and this index becomes `aria-activedescendant`, which is what
@@ -319,13 +324,23 @@ export function SessionForm({
   // nothing in it to announce or arrow to.
   const trackListOpen = showDropdown && filteredTracks.length > 0;
 
-  // Resolved by name even when a circuit was picked: `createSession` falls back
-  // to the typed name when the id no longer resolves, so the name is what decides
-  // whether a track row can be written. Held back while the list is open, so a
-  // rider part-way through typing a saved circuit is shown the circuit and not a
-  // warning about the fragment they have typed so far.
+  // An id is only as good as the list it is in. `Copy last setup` and a restored
+  // draft carry the id beside the name the old session stored, which is stale
+  // once the track is renamed - and `createSession` resolves a visible id to the
+  // row's current name, so judging the stale name would warn about a save that
+  // links fine. An id missing from the list is one `createSession` cannot resolve
+  // either: it falls back to the typed name, so the name is what decides then.
+  // Held back while the list is open, so a rider part-way through typing a saved
+  // circuit is shown the circuit and not a warning about the fragment typed so
+  // far - which is why handleSubmit refuses to let that hiding reach a save.
+  // The typed name falls back to an alias as well, as `resolveSessionTrack` does,
+  // so "VIR" links rather than warning.
+  const resolvableTrackId =
+    (trackId && tracks.some((track) => track.id === trackId) ? trackId : null) ??
+    findTrackByAlias(trackQuery, trackAliases, tracks)?.id ??
+    null;
   const trackGap = describeSessionTrackGap({
-    trackId: null,
+    trackId: resolvableTrackId,
     trackName: trackQuery,
     savedTracks: tracks,
     atTrackLimit,
@@ -663,6 +678,29 @@ export function SessionForm({
     if (!hasTrackName(trackQuery)) {
       setErrorMessage(MISSING_TRACK_MESSAGE);
       trackInputRef.current?.focus();
+      return;
+    }
+
+    // The track-limit note under the field is hidden while the suggestion list is
+    // open, and Enter with nothing highlighted still submits - so a rider typing
+    // "Thunderhill" with "Thunderhill East" saved could save by name only without
+    // ever being shown it. A tap on Save closes the list on blur first, which
+    // shows the note a moment before the save it was meant to come before. So the
+    // first Save for a name the list could have hidden it behind is held back:
+    // the list closes, the note shows, and the next Save keeps the name.
+    if (
+      trackGap?.kind === 'track_limit' &&
+      filteredTracks.length > 0 &&
+      heldTrackLimitName !== trackGap.name
+    ) {
+      setHeldTrackLimitName(trackGap.name);
+      closeTrackList();
+      setErrorMessage(trackGap.holdSaveMessage);
+      // Scrolled to rather than focused: focusing the field reopens the list
+      // (`onFocus`), which would hide the note again.
+      requestAnimationFrame(() => {
+        document.getElementById('session-track-limit')?.scrollIntoView({ block: 'center' });
+      });
       return;
     }
 

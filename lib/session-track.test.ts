@@ -175,6 +175,11 @@ describe('telling a rider what their session\'s circuit is missing', () => {
     expect(gap.message).toContain('"Thunderhill West" is not one of your saved tracks');
     expect(gap.message).toContain('cannot be added to them');
     expect(gap.message).toContain(getFreePlanLimitMessage('tracks'));
+    // The name the form holds a Save back for, trimmed the way it is stored, and
+    // the line that says why the Save did nothing and how to get past it.
+    expect(gap.name).toBe('Thunderhill West');
+    expect(gap.holdSaveMessage).toContain('"Thunderhill West" is not one of your saved tracks');
+    expect(gap.holdSaveMessage).toContain('tap Save again');
   });
 
   it('still reports a session that names no circuit as trackless, cap or not', () => {

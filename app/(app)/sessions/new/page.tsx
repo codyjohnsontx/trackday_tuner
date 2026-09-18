@@ -67,9 +67,10 @@ export default async function NewSessionPage() {
         trackAliases={trackDirectory.aliases}
         trackLayouts={trackDirectory.layouts}
         latestSessionsByVehicle={latestSessionsByVehicle}
-        // The count `resolveSessionTrack` checks before it inserts a track row:
+        // The count `resolveSessionTrack` checks before it inserts a track row -
         // the rider's own custom tracks, which are exactly the unseeded ones in
-        // this list.
+        // this list - taken at page load. The action counts again at Save, so
+        // this is the form's prediction, not the save's answer.
         atTrackLimit={isAtFreePlanLimit(
           'tracks',
           trackDirectory.tracks.filter((track) => !track.is_seeded).length,

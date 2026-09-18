@@ -560,8 +560,9 @@ The same shape applies to anything derived rather than given:
   code did create is deleted again when the session it was written for does not
   survive. The cap case is the one a rider is told about, on the form before
   Save and on the session page after: `describeSessionTrackGap`
-  (`lib/session-track.ts`) is the one rule both read, worked out from the current
-  tracks and cap rather than from anything stored at save time
+  (`lib/session-track.ts`) is the one rule both read, worked out from the tracks
+  and cap it is handed rather than from anything stored at save time. On the form
+  that is a prediction as of page load, since Save counts again
 - **A circuit is an identity, not a spelling.** North American circuits are
   seeded by a migration (20260916001600), not `supabase/seed.sql`, because the
   hosted project only ever receives migrations. Each carries a `slug` and the
