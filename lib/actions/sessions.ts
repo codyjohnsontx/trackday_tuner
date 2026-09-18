@@ -29,7 +29,13 @@ import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
 import { validateLaps } from '@/lib/lap-times';
 import { MISSING_CONDITIONS_MESSAGE, isSessionCondition } from '@/lib/session-answers';
-import { MISSING_TRACK_MESSAGE, hasTrackName, normalizeTrackName } from '@/lib/session-track';
+import {
+  MISSING_TRACK_MESSAGE,
+  hasTrackName,
+  normalizeTrackName,
+  sessionIsAtTrack,
+  trackNameSearchPattern,
+} from '@/lib/session-track';
 import { findVisibleTrackByName, visibleTracksFilter } from '@/lib/track-lookup';
 import {
   baselineReferenceLabel,
@@ -276,6 +282,58 @@ export async function getSessions(vehicleId?: string, limit?: number): Promise<S
 
   const { data } = await query;
   return (data ?? []) as Session[];
+}
+
+/**
+ * Every session the rider logged at one track, newest first.
+ *
+ * Two reads rather than one `or(...)`: a track name is free text that can hold
+ * the commas and parentheses PostgREST's `or` grammar reserves. The name read is
+ * for sessions saved before every typed circuit was linked to a track row; its
+ * pattern only narrows, and `sessionIsAtTrack` decides.
+ *
+ * A failed read is reported rather than returned as `[]`, which the track page
+ * would print as "no sessions here yet" to a rider who has logged a season there.
+ */
+export async function getSessionsAtTrack(track: { id: string; name: string }): Promise<ActionResult<Session[]>> {
+  if (await isDemoMode()) {
+    return { ok: true, data: getDemoSessions().filter((session) => sessionIsAtTrack(session, track)) };
+  }
+
+  const user = await getRealUser();
+  if (!user) return { ok: false, error: 'Not authenticated.' };
+
+  const supabase = await createClient();
+  const orderedSessions = () =>
+    supabase
+      .from('sessions')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('date', { ascending: false })
+      .order('start_time', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false });
+
+  const [byId, byName] = await Promise.all([
+    orderedSessions().eq('track_id', track.id),
+    orderedSessions().is('track_id', null).ilike('track_name', trackNameSearchPattern(track.name)),
+  ]);
+
+  const error = byId.error ?? byName.error;
+  if (error) {
+    reportError('track-sessions', new Error(error.message), {
+      reason: error.code,
+      table: 'sessions',
+      details: error.details,
+      hint: error.hint,
+      userId: user.id,
+    });
+    return { ok: false, error: 'Your sessions at this track could not be loaded. Try again in a moment.' };
+  }
+
+  const sessions = [...((byId.data ?? []) as Session[]), ...((byName.data ?? []) as Session[])]
+    .filter((session) => sessionIsAtTrack(session, track))
+    .sort(compareSessionsDesc);
+  return { ok: true, data: sessions };
 }
 
 export async function getLatestSessionsByVehicle(): Promise<Record<string, Session>> {
