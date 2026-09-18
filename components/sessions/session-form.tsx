@@ -8,6 +8,7 @@ import { ChoiceRow } from '@/components/ui/choice-row';
 import { Input } from '@/components/ui/input';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { LapTimeEditor } from '@/components/sessions/lap-time-editor';
+import { TrackLimitNotice } from '@/components/sessions/track-limit-notice';
 import {
   EMPTY_LAP_EDITOR_VALUE,
   commitLapEditorValue,
@@ -26,7 +27,13 @@ import {
 } from '@/lib/session-answers';
 import { trackProductEvent } from '@/lib/product-events.client';
 import { copyLastSessionSetup } from '@/lib/session-copy';
-import { MISSING_TRACK_MESSAGE, hasTrackName, normalizeTrackName, trackNameKey } from '@/lib/session-track';
+import {
+  MISSING_TRACK_MESSAGE,
+  describeSessionTrackGap,
+  hasTrackName,
+  normalizeTrackName,
+  trackNameKey,
+} from '@/lib/session-track';
 import { findTrackByAlias, findTrackByName, type TrackAliasIndex, type TrackLayoutIndex } from '@/lib/track-directory';
 import {
   getAvailableSessionModules,
@@ -70,6 +77,13 @@ interface SessionFormProps {
   /** Each circuit's configurations; a circuit absent here has none to offer. */
   trackLayouts?: TrackLayoutIndex;
   latestSessionsByVehicle?: Record<string, Session>;
+  /**
+   * A free rider already holding their custom-track cap. A circuit they type that
+   * is none of `tracks` cannot become a track row, so the session keeps the name
+   * alone - and the form says so before Save rather than after. See
+   * `describeSessionTrackGap` in lib/session-track.ts.
+   */
+  atTrackLimit?: boolean;
 }
 
 const noAliases: TrackAliasIndex = {};
@@ -183,6 +197,7 @@ export function SessionForm({
   trackAliases = noAliases,
   trackLayouts = noLayouts,
   latestSessionsByVehicle = {},
+  atTrackLimit = false,
 }: SessionFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -303,6 +318,19 @@ export function SessionForm({
   // this is what `hidden` reads, and an empty list stays closed because there is
   // nothing in it to announce or arrow to.
   const trackListOpen = showDropdown && filteredTracks.length > 0;
+
+  // Resolved by name even when a circuit was picked: `createSession` falls back
+  // to the typed name when the id no longer resolves, so the name is what decides
+  // whether a track row can be written. Held back while the list is open, so a
+  // rider part-way through typing a saved circuit is shown the circuit and not a
+  // warning about the fragment they have typed so far.
+  const trackGap = describeSessionTrackGap({
+    trackId: null,
+    trackName: trackQuery,
+    savedTracks: tracks,
+    atTrackLimit,
+  });
+  const trackLimitNotice = !trackListOpen && trackGap?.kind === 'track_limit' ? trackGap : null;
   const activeTrackOptionId =
     trackListOpen && activeTrackIndex !== null ? `session-track-option-${activeTrackIndex}` : undefined;
 
@@ -850,6 +878,7 @@ export function SessionForm({
             onClick={() => setShowDropdown(true)}
             onKeyDown={handleTrackKeyDown}
             onBlur={closeTrackList}
+            aria-describedby={trackLimitNotice ? 'session-track-limit' : undefined}
           />
           <ul
             id="session-track-listbox"
@@ -884,6 +913,13 @@ export function SessionForm({
               </li>
             ))}
           </ul>
+          {trackLimitNotice ? (
+            <TrackLimitNotice
+              id="session-track-limit"
+              title={trackLimitNotice.title}
+              message={trackLimitNotice.message}
+            />
+          ) : null}
         </div>
 
         {layoutOptions.length > 0 ? (

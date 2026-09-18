@@ -558,7 +558,10 @@ The same shape applies to anything derived rather than given:
   lookup could not answer - it failed, or filled `TRACK_NAME_MATCH_LIMIT` and so
   proves nothing - the session still saves with the name alone, and a row this
   code did create is deleted again when the session it was written for does not
-  survive
+  survive. The cap case is the one a rider is told about, on the form before
+  Save and on the session page after: `describeSessionTrackGap`
+  (`lib/session-track.ts`) is the one rule both read, worked out from the current
+  tracks and cap rather than from anything stored at save time
 - **A circuit is an identity, not a spelling.** North American circuits are
   seeded by a migration (20260916001600), not `supabase/seed.sql`, because the
   hosted project only ever receives migrations. Each carries a `slug` and the

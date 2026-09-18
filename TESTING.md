@@ -85,6 +85,9 @@ anon key and no `BETA_INVITE_ONLY`. Its second half is a different subject - tha
 a tap at the middle of "Save Session" reaches the button rather than the floating
 nav - and drives the shared account like everything else, so that half also skips
 without `E2E_EMAIL` and `E2E_PASSWORD`.
+`tests/e2e/session-track-cap-notice.spec.ts` makes one for the same reason, seeded
+to the custom-track limit instead, and needs the same: the service-role key and a
+running app.
 `tests/e2e/session-laps-stale-read-guard.spec.ts` makes one through the admin API
 as well. `replace_session_laps` is `security invoker` and checks `auth.uid()`, so
 its calls have to carry a real session, and the laps it plants must not land in
