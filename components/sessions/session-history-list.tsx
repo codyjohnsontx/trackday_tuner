@@ -15,6 +15,8 @@ export interface SessionHistoryListItem {
   session: Session;
   vehicleNickname: string;
   environment: SessionEnvironment | null;
+  /** `Best 1:43.980 · 6 laps`, or null when this session has no lap data. */
+  lapSummary?: string | null;
 }
 
 interface SessionHistoryListProps {
@@ -37,7 +39,7 @@ export function SessionHistoryList({ items }: SessionHistoryListProps) {
 
   return (
     <ul className="space-y-3">
-      {items.map(({ session, vehicleNickname, environment }) => {
+      {items.map(({ session, vehicleNickname, environment, lapSummary = null }) => {
         const summary = buildSessionHistorySummary(session, environment, temperatureUnit);
         const isOpen = openSessionId === session.id;
         const contentId = `${listId}-${session.id}`;
@@ -66,6 +68,7 @@ export function SessionHistoryList({ items }: SessionHistoryListProps) {
                   {session.track_name ?? 'Unknown Track'}
                 </p>
                 <p className="mt-0.5 truncate text-sm text-ink-dim">{vehicleNickname}</p>
+                {lapSummary ? <p className="mt-0.5 truncate text-xs text-ink-faint tabular-nums">{lapSummary}</p> : null}
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 {/* Same plate as the dashboard rows — one session reads the same

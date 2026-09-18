@@ -21,6 +21,7 @@ import {
   sessionsMatchTrack,
 } from '@/lib/session-compare';
 import { fetchPreviousSession } from '@/lib/session-previous';
+import { SESSION_DELETE_FAILED_MESSAGE, SESSION_DELETE_NOT_FOUND_MESSAGE } from '@/lib/session-delete';
 import { reportError } from '@/lib/monitoring/report-error';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
@@ -34,6 +35,7 @@ import {
   findSavedTrackByName,
   hasTrackName,
   normalizeTrackName,
+  sessionIsAtTrack,
   trackNameExactPattern,
   trackNameSearchPattern,
 } from '@/lib/session-track';
@@ -274,6 +276,58 @@ export async function getSessions(vehicleId?: string, limit?: number): Promise<S
 
   const { data } = await query;
   return (data ?? []) as Session[];
+}
+
+/**
+ * Every session the rider logged at one track, newest first.
+ *
+ * Two reads rather than one `or(...)`: a track name is free text that can hold
+ * the commas and parentheses PostgREST's `or` grammar reserves. The name read is
+ * for sessions saved before every typed circuit was linked to a track row; its
+ * pattern only narrows, and `sessionIsAtTrack` decides.
+ *
+ * A failed read is reported rather than returned as `[]`, which the track page
+ * would print as "no sessions here yet" to a rider who has logged a season there.
+ */
+export async function getSessionsAtTrack(track: { id: string; name: string }): Promise<ActionResult<Session[]>> {
+  if (await isDemoMode()) {
+    return { ok: true, data: getDemoSessions().filter((session) => sessionIsAtTrack(session, track)) };
+  }
+
+  const user = await getRealUser();
+  if (!user) return { ok: false, error: 'Not authenticated.' };
+
+  const supabase = await createClient();
+  const orderedSessions = () =>
+    supabase
+      .from('sessions')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('date', { ascending: false })
+      .order('start_time', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false });
+
+  const [byId, byName] = await Promise.all([
+    orderedSessions().eq('track_id', track.id),
+    orderedSessions().is('track_id', null).ilike('track_name', trackNameSearchPattern(track.name)),
+  ]);
+
+  const error = byId.error ?? byName.error;
+  if (error) {
+    reportError('track-sessions', new Error(error.message), {
+      reason: error.code,
+      table: 'sessions',
+      details: error.details,
+      hint: error.hint,
+      userId: user.id,
+    });
+    return { ok: false, error: 'Your sessions at this track could not be loaded. Try again in a moment.' };
+  }
+
+  const sessions = [...((byId.data ?? []) as Session[]), ...((byName.data ?? []) as Session[])]
+    .filter((session) => sessionIsAtTrack(session, track))
+    .sort(compareSessionsDesc);
+  return { ok: true, data: sessions };
 }
 
 export async function getLatestSessionsByVehicle(): Promise<Record<string, Session>> {
@@ -1029,14 +1083,31 @@ export async function deleteSession(id: string): Promise<ActionResult> {
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const supabase = await createClient();
-  const { error } = await supabase
+  // The deleted rows are selected back because RLS and the user_id filter turn
+  // another rider's id, or one already gone, into zero rows rather than an error.
+  // Without the count that is a success the page would navigate away on.
+  const { data, error } = await supabase
     .from('sessions')
     .delete()
     .eq('id', id)
-    .eq('user_id', user.id);
+    .eq('user_id', user.id)
+    .select('id');
 
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    reportError('session-delete', new Error(error.message), {
+      reason: error.code,
+      table: 'sessions',
+      details: error.details,
+      hint: error.hint,
+      userId: user.id,
+      sessionId: id,
+    });
+    return { ok: false, error: SESSION_DELETE_FAILED_MESSAGE };
+  }
+  if ((data ?? []).length === 0) return { ok: false, error: SESSION_DELETE_NOT_FOUND_MESSAGE };
 
   revalidatePath('/sessions');
+  revalidatePath('/dashboard');
+  revalidatePath(`/sessions/${id}`);
   return { ok: true, data: undefined };
 }

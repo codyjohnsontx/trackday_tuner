@@ -28,7 +28,7 @@ export default async function NewVehiclePage() {
         resource="vehicles"
         backHref="/garage"
         backLabel="Back to Garage"
-        hint="You can still edit the vehicle already in your garage."
+        hint="You can edit the vehicle already in your garage, or delete it from its edit page to free the slot."
       />
     );
   }

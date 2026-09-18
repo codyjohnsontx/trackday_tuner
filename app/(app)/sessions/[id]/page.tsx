@@ -15,6 +15,7 @@ import { SessionCompare, type CompareRow } from '@/components/sessions/session-c
 import { SetupSections } from '@/components/sessions/setup-sections';
 import { SessionBaselinePanel } from '@/components/sessions/session-baseline-panel';
 import { SessionChangesPanel } from '@/components/sessions/session-changes-panel';
+import { SessionDeleteForm } from '@/components/sessions/session-delete-form';
 import { TuningAdvicePanel } from '@/components/ai/tuning-advice-panel';
 import { SessionLapsPanel } from '@/components/sessions/session-laps-panel';
 import { SessionOutcomePanel } from '@/components/sessions/session-outcome-panel';
@@ -24,6 +25,7 @@ import { resolveChangeSets } from '@/lib/session-changes';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import { buildSetupView } from '@/lib/setup-view';
 import { isSessionBefore } from '@/lib/session-compare';
+import { describeSessionDeletion } from '@/lib/session-delete';
 import type { Session } from '@/types';
 import { pageTitleClass } from '@/components/ui/page-header';
 
@@ -439,6 +441,24 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
 
       <SetupSections view={setupView} />
 
+      <section className="rounded-card bg-surface p-4">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Delete Session</h2>
+        <p className="mt-2 text-sm leading-6 text-ink">
+          Delete your {session.track_name ?? 'untitled'} session from {formattedDate} on {vehicleNickname}.
+        </p>
+        <p className="mt-1 text-sm leading-6 text-ink-dim">
+          {describeSessionDeletion({
+            lapCount: sessionLaps.ok ? sessionLaps.data.length : null,
+            hasOutcome: existingOutcome != null,
+            changeCount: changeRecords.length,
+            hasEnvironment: environment != null,
+          })}
+        </p>
+        {demoMode ? <p className="mt-3 text-xs text-ink-faint">Demo mode is read-only.</p> : null}
+        <div className="mt-4">
+          <SessionDeleteForm sessionId={session.id} disabled={demoMode} />
+        </div>
+      </section>
     </div>
   );
 }
