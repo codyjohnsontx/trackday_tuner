@@ -33,9 +33,40 @@ export function getAiRequestFingerprintSecret(): string {
   return readEnv('AI_REQUEST_FINGERPRINT_SECRET');
 }
 
+/**
+ * The chat model the Race Engineer and the day planner run on.
+ *
+ * `gpt-5.4-mini` was chosen by measurement rather than by tier: `npm run rag:eval
+ * -- --live` was run over the same 33 golden cases on four candidates, and this
+ * one won a TRADEOFF rather than a sweep: it scored BEST on direction accuracy
+ * and SECOND on component. Against the `gpt-4o-mini` it
+ * replaces, direction accuracy went 0.47 -> 0.87 and component accuracy
+ * 0.80 -> 0.87 - while the GATED `rubric_pass_rate` and `refusal_accuracy` both
+ * FELL, 0.94 -> 0.91, on the single case `sparse-no-history-comparison`, which
+ * every candidate force-refused as `no_recommendation` and which carries a
+ * contested label of its own. `gpt-4.1-mini` took the best component score of
+ * the five at 0.93 and is still not the choice, because its direction accuracy
+ * was 0.40 - below the `gpt-4o-mini` it would replace - at 2.9x that model's
+ * cost. `gpt-5.4-mini` tied `gpt-5.1` on component and beat it on direction at
+ * 39% of `gpt-5.1`'s per-request cost, and `gpt-5.4` at 3.8x the cost was a clear
+ * REGRESSION (rubric 0.94 -> 0.76, component 0.80 -> 0.73), which is why the
+ * newest name is not the answer here. `gpt-5-mini` never reached the set: it
+ * rejects the `temperature: 0.2` that `lib/rag/advice.ts` sends and bills
+ * reasoning tokens as output, so it is excluded on compatibility, not on score.
+ *
+ * COMPONENT ACCURACY IS A 15-CASE RATE AND IT MOVES ON A RE-SAMPLE. Two live
+ * runs of this model on an unchanged prompt scored it 1.00 and 0.87; the
+ * committed tape is the second, because the baseline is whatever the run that
+ * produced the committed recordings measured. Direction accuracy scored 0.87 on
+ * both. Read a one-case difference here as sampling, not as a trend.
+ *
+ * Changing this moves every completion tape key in
+ * `tests/fixtures/rag-eval/recordings/`, so a change here needs a
+ * `--live` re-record and a deliberate `--update-baseline`.
+ */
 export function getAiModel(): string {
   const value = process.env.AI_MODEL?.trim();
-  return value && value.length > 0 ? value : 'gpt-4o-mini';
+  return value && value.length > 0 ? value : 'gpt-5.4-mini';
 }
 
 export function getAiEmbeddingModel(): string {

@@ -21,9 +21,12 @@ import {
 import type { RetrievedChunk } from '@/lib/rag/types';
 import type { CreateSessionEnvironmentInput, Session, Vehicle } from '@/types';
 
-// Upper bound on the OpenAI chat completion request. 30s is well above the
-// p95 for gpt-4o-mini on our payload size and still short enough that the
-// route handler can surface a retriable 504 to the client.
+// Upper bound on the OpenAI chat completion request. Unchanged at 30s across
+// the move to gpt-5.4-mini: all 28 completions of the `rag:eval` golden set
+// answered inside it on the live re-record, on a payload the set is
+// representative of. That is 28 samples rather than a production p95, so it is
+// evidence the bound is not tight rather than a measurement of the margin.
+// Short enough, either way, that the route handler can surface a retriable 504.
 const OPENAI_REQUEST_TIMEOUT_MS = 30_000;
 
 export class UpstreamTimeoutError extends Error {

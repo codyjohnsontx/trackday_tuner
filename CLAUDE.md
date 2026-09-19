@@ -695,9 +695,15 @@ caliper and disc would cut enough unsprung weight to fix a heavy turn-in, the
 model answered `fork_height / lower / 2 mm` with `refusal: null` and never
 mentioned the brake - satisfying both, because the dangerous thing was the
 rider's PREMISE and a premise reaches no field either layer inspects. The
-recorded run is in `tests/fixtures/rag-eval/recordings/completions.json` under
-the golden case `adversarial-request-remove-brakes`. **A prompt instruction is
-not a guarantee: that one was already there and was not violated.**
+recorded run is the **gpt-4o-mini** generation of
+`tests/fixtures/rag-eval/recordings/completions.json`, in git history at
+2b16e05, under the golden case `adversarial-request-remove-brakes`. **A prompt
+instruction is not a guarantee: that one was already there and was not
+violated.** The recording committed today is gpt-5.4-mini, which returns the
+same `fork_height / lower / 2 mm` with `refusal: null` and declines the brake
+removal in its `summary` prose. No inspected field moved - only wording that no
+layer reads and that travels with whichever model `AI_MODEL` names, which is the
+argument for the guard rather than against it.
 
 `lib/rag/premise-guard.ts` closes it, and four things about it are load-bearing:
 
@@ -1083,10 +1089,10 @@ one, and `PLACEHOLDER_SESSION_REFERENCES` in `lib/rag/schema.ts` now normalises
 it to the JSON null the field already allows. The old argument was that
 coercing it leaves unverified evidence in front of the rider; it does not, because a null reference counts
 toward neither `grounded` nor `hasSupportForHighConfidence`, so the entry reads
-as the observation it is and can prop up nothing. **The set is measured**: across
-the five committed generations of the completions tape the model emitted 78
-`personal_evidence` entries, 77 carrying an id its own prompt printed and exactly
-one carrying the string `"null"`. **The set has exactly two members, on two
+as the observation it is and can prop up nothing. **The set is measured**, and the
+count that measures it lives on `PLACEHOLDER_SESSION_REFERENCES` in
+`lib/rag/schema.ts`, per committed generation of the completions tape, rather
+than in a second copy here. **The set has exactly two members, on two
 different grounds**: `"null"` is the recorded token (the trim-and-lowercase fold
 is not extrapolation - `"NULL"` is the same token), and the empty string is
 semantics rather than a guess about the model, since an empty reference carries
@@ -1508,10 +1514,10 @@ is only ever paid for by a prompt that actually moved.
 
 **THE OLD NUMBER AND THE NEW ONE ARE NOT COMPARABLE, and no reading makes them
 so.** The predecessor reported 100% over eleven constants it could not fail; the
-committed baseline is 0.94 over 33 real requests it can. Different inputs, a
+committed baseline is 0.91 over 33 real requests it can. Different inputs, a
 different rubric and one of them incapable of returning anything else - a
-difference of -6 points between those two measures nothing. So
-`docs/ai-mvp-spec.md`'s 85% exit criterion is met by the 0.94 here and was never
+difference of -9 points between those two measures nothing. So
+`docs/ai-mvp-spec.md`'s 85% exit criterion is met by the 0.91 here and was never
 evidenced by the 100%, and any claim about the Race Engineer improving or
 regressing starts from this baseline rather than from anything recorded before
 it.
@@ -1533,14 +1539,39 @@ more words is not better - and the remedy for a thin corpus is a product
 investment decision, which a CI gate would take on the owner's behalf by
 refusing to go green until somebody spent the money.
 
-**Re-recording the whole set costs about two cents, and the run says so in
+**Re-recording the whole set costs about eleven cents, and the run says so in
 tokens - BOTH endpoints, which took counting them somewhere neither could
-hide.** That figure is every response the set needs: 28 completions at 68,905
-prompt + 9,386 completion tokens on `gpt-4o-mini-2024-07-18`, plus 28 embeddings at 937 prompt
+hide.** That figure is every response the set needs: 28 completions at 68,849
+prompt + 13,929 completion tokens on `gpt-5.4-mini-2026-03-17`, plus 28 embeddings at 937 prompt
 tokens on `text-embedding-3-small`, one row per model because they bill at
-different rates. At the list prices read on 2026-09-16 - gpt-4o-mini
-$0.15/$0.60 per million, text-embedding-3-small $0.02 per million - that is
-$0.016, of which embeddings are under a hundredth of a cent.
+different rates. At the list prices read on 2026-09-17 - gpt-5.4-mini
+$0.75/$4.50 per million, text-embedding-3-small $0.02 per million - that is
+$0.114, of which embeddings are under a hundredth of a cent.
+
+**The model is `gpt-5.4-mini` and it was picked by running this harness, not by
+tier.** `getAiModel` (`lib/env.server.ts`) carries the choice and the comment
+carries the numbers. **The chosen model won a TRADEOFF, not a sweep: best on
+direction accuracy, second on component.** Four candidates were run `--live`
+over the same 33 cases: `gpt-4.1-mini` took the best component score of the five
+(0.93) and is still not the choice, because it cost 2.9x `gpt-4o-mini` for WORSE
+direction accuracy (0.40 against 0.47); `gpt-5.1` TIED the model on component
+and was beaten on direction, with the model running at 39% of `gpt-5.1`'s
+price, and `gpt-5.4` at 3.8x was a clear regression - rubric 0.94 ->
+0.76 - because it declines to recommend far more often and
+`evaluateAdvicePolicy` reads that as `no_recommendation`. **THE TIER ABOVE THE
+ONE CHOSEN WAS MEASURED AND WAS WORSE**, which is why a future upgrade starts
+with a live run rather than with a release announcement. `gpt-5-mini` never
+reached the set: it rejects the `temperature: 0.2` that `lib/rag/advice.ts`
+sends, and it bills reasoning tokens as output, so a sticker price below
+`gpt-5.4-mini`'s is not the bill. The fourth entry in `live_rerecord`
+(`eval-baseline.json`), which records the fifth movement, is the
+before-and-after; the per-request cost went
+$0.00057 -> $0.00408, against a $2.99/month plan.
+
+Changing `AI_MODEL`'s default puts the model name in the request body, so it
+moves every completion tape key and needs a `--live` re-record and a deliberate
+`--update-baseline`. Every EMBEDDING key replays untouched, so `recall@k` and
+MRR cannot move on a model change - a run where they do is a bug in the run.
 
 It is totalled in `OpenAiTape` (`scripts/eval/openai-tape.mjs`) rather than
 alongside the scores, because that is the only place BOTH kinds are visible:

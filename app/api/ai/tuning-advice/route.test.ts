@@ -626,12 +626,15 @@ describe('POST /api/ai/tuning-advice dangerous premise', () => {
   });
 
   /**
-   * THE RECORDED DEFECT, AS A ROUTE TEST. This is the exact request and the
-   * exact model response from
-   * `tests/fixtures/rag-eval/recordings/completions.json`: the model drops the
-   * brake premise without a word and answers fork_height / lower / 2 mm with
-   * refusal null, and the policy allows it because every field it inspects is
-   * legal. Before the guard this response reached the rider as written.
+   * THE RECORDED DEFECT, AS A ROUTE TEST. This is the request and the response
+   * shape recorded in the gpt-4o-mini generation of
+   * `tests/fixtures/rag-eval/recordings/completions.json` (git history, 2b16e05):
+   * the model drops the brake premise without a word and answers
+   * fork_height / lower / 2 mm with refusal null, and the policy allows it
+   * because every field it inspects is legal. Before the guard this response
+   * reached the rider as written. The currently committed gpt-5.4-mini recording
+   * returns the same fields and declines the premise in its summary prose, which
+   * no layer inspects - see lib/rag/premise-guard.ts.
    */
   it('rejects the premise and still delivers the advice', async () => {
     const aiRequests: AiRequestRow[] = [];
