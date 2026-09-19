@@ -6,6 +6,7 @@ import { getSessionChangeRecords } from '@/lib/actions/session-changes';
 import { getComparableSessions, getPreviousSession, getSession, getSessionEnvironment, getSessionLaps } from '@/lib/actions/sessions';
 import { getOutstandingRecommendations, getSessionOutcome, getVehicleOutcomeHistory } from '@/lib/actions/outcomes';
 import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
+import { getTracks } from '@/lib/actions/tracks';
 import { DemoBanner } from '@/components/demo/demo-banner';
 import { isDemoMode } from '@/lib/demo/mode';
 import { Button } from '@/components/ui/button';
@@ -17,9 +18,13 @@ import { SessionBaselinePanel } from '@/components/sessions/session-baseline-pan
 import { SessionChangesPanel } from '@/components/sessions/session-changes-panel';
 import { TuningAdvicePanel } from '@/components/ai/tuning-advice-panel';
 import { SessionLapsPanel } from '@/components/sessions/session-laps-panel';
+import { TrackLimitNotice } from '@/components/sessions/track-limit-notice';
 import { SessionOutcomePanel } from '@/components/sessions/session-outcome-panel';
 import { VehicleOutcomeHistory } from '@/components/sessions/vehicle-outcome-history';
-import { effectiveTier } from '@/lib/access';
+import { effectiveTier, resolveUserAccess } from '@/lib/access';
+import { reportError } from '@/lib/monitoring/report-error';
+import { isAtFreePlanLimit } from '@/lib/plans';
+import { describeSessionTrackGap, hasTrackName } from '@/lib/session-track';
 import { resolveChangeSets } from '@/lib/session-changes';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import { buildSetupView } from '@/lib/setup-view';
@@ -310,7 +315,15 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
 
   if (!session) notFound();
 
-  const [previousSession, environment, baseline, changeRecords, sessionLaps, comparableSessions, existingOutcome, outcomeHistory, recommendations] = await Promise.all([
+  // Only a session naming a circuit that no track row stands behind, on an
+  // account that cannot add one, can be the track-cap case - so only that
+  // session pays for the tracks read. A failed read shows no cap notice rather
+  // than a wrong one, and is reported rather than dropped.
+  const hasProAccess = resolveUserAccess(profile).hasProAccess;
+  const mayBeAtTrackLimit =
+    !demoMode && !hasProAccess && !session.track_id && hasTrackName(session.track_name);
+
+  const [previousSession, environment, baseline, changeRecords, sessionLaps, comparableSessions, existingOutcome, outcomeHistory, recommendations, savedTracks] = await Promise.all([
     getPreviousSession(session),
     getSessionEnvironment(session.id),
     getVehicleBaseline(session.vehicle_id),
@@ -320,7 +333,21 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
     getSessionOutcome(session.id),
     getVehicleOutcomeHistory(session.vehicle_id),
     getOutstandingRecommendations({ vehicleId: session.vehicle_id, beforeSessionId: session.id }),
+    mayBeAtTrackLimit
+      ? getTracks().catch((err: unknown) => {
+          reportError('session-track-gap', err, { sessionId: session.id });
+          return null;
+        })
+      : Promise.resolve(null),
   ]);
+  const trackGap = describeSessionTrackGap({
+    trackId: session.track_id,
+    trackName: session.track_name,
+    savedTracks: savedTracks ?? [],
+    atTrackLimit:
+      savedTracks !== null &&
+      isAtFreePlanLimit('tracks', savedTracks.filter((track) => !track.is_seeded).length, hasProAccess),
+  });
   const tier = effectiveTier(profile);
   const vehicle = vehicles.find((v) => v.id === session.vehicle_id);
   const vehicleNickname = vehicle?.nickname ?? 'Unknown Vehicle';
@@ -402,11 +429,17 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
             none of that, so say it where the blank is. There is no repair link
             because this app has no session edit screen yet - naming one the rider
             cannot open would be worse than naming nothing. */}
-        {!session.track_name ? (
+        {trackGap?.kind === 'missing' ? (
           <p className="rounded-row bg-surface-2 p-3 text-sm text-signal">
             No track recorded, so this session cannot be matched to another session at the
             same circuit, and every comparison against it is flagged as a track mismatch.
           </p>
+        ) : null}
+        {/* The sibling case, and the one that used to be silent: the rider did
+            name a circuit, and the free-plan track cap kept it off their tracks.
+            The form says this before Save; this is where it stays said. */}
+        {trackGap?.kind === 'track_limit' ? (
+          <TrackLimitNotice title={trackGap.title} message={trackGap.message} />
         ) : null}
         <DetailRow label="Vehicle" value={vehicleNickname} />
         <DetailRow label="Date" value={formattedDate} />

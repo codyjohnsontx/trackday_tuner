@@ -26,6 +26,8 @@
  * `createSession` both check, so the two cannot disagree about it.
  */
 
+import { getFreePlanLimitMessage, getFreePlanLimitTitle } from '@/lib/plans';
+
 /** The stored form of a typed track name: trimmed, or null when nothing was typed. */
 export function normalizeTrackName(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -149,4 +151,58 @@ export function findSavedTrackByName<T extends { name: string }>(
   if (!key) return null;
 
   return tracks.find((track) => trackNameKey(track.name) === key) ?? null;
+}
+
+/**
+ * What a session's circuit is missing, when the rider has to be told.
+ *
+ * `missing` is a session that names no circuit at all. `track_limit` is the one
+ * that was silent: a free rider already at their custom-track cap types a circuit
+ * that is none of their saved tracks, `resolveSessionTrack` cannot add it, and the
+ * session keeps the name with `track_id` null - so it is not on their Tracks
+ * screen, and `sessionsMatchTrack` pairs it with another session only by that
+ * exact name. The save used to succeed without a word about any of it.
+ *
+ * It is worked out from the tracks and plan it is handed rather than from what
+ * happened at save time, which nothing stores: a name no saved track matches, on
+ * an account that cannot add one. That is what makes it honest on the session
+ * page long after the save - the sentence says what is so, not why it once was.
+ * On the form it is a PREDICTION as of page load, not a guarantee: the tracks and
+ * cap it is handed are read when the page renders, and `resolveSessionTrack`
+ * counts again at Save, so a track added or deleted in another tab, or a plan
+ * that changed, can make the two disagree until the page is reloaded. A name-only
+ * session with any other cause (an older session, a pro rider whose insert
+ * failed) gets no notice here, because this cannot say why.
+ */
+export type SessionTrackGap =
+  | { kind: 'missing' }
+  | {
+      kind: 'track_limit';
+      name: string;
+      title: string;
+      message: string;
+      /** What the form says when it holds back a Save to show `message` first. */
+      holdSaveMessage: string;
+    };
+
+export function describeSessionTrackGap(params: {
+  trackId: string | null;
+  trackName: string | null | undefined;
+  savedTracks: readonly { name: string }[];
+  atTrackLimit: boolean;
+}): SessionTrackGap | null {
+  const name = normalizeTrackName(params.trackName);
+  // Checked before the id, as the session page always did: a row carrying an id
+  // and no name still reads "Unknown Track" everywhere it is listed.
+  if (!name) return { kind: 'missing' };
+  if (params.trackId) return null;
+  if (!params.atTrackLimit || findSavedTrackByName(name, params.savedTracks)) return null;
+
+  return {
+    kind: 'track_limit',
+    name,
+    title: getFreePlanLimitTitle('tracks'),
+    message: `"${name}" is not one of your saved tracks and cannot be added to them, so this session keeps it as a name only and is matched to other sessions only by that exact name. ${getFreePlanLimitMessage('tracks')}`,
+    holdSaveMessage: `Not saved yet: "${name}" is not one of your saved tracks - see the note under Track. Pick one of your saved tracks, or tap Save again to keep the name.`,
+  };
 }

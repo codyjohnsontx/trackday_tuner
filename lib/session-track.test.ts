@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  describeSessionTrackGap,
   findSavedTrackByName,
   normalizeTrackName,
   trackNameExactPattern,
   trackNameKey,
   trackNameSearchPattern,
 } from '@/lib/session-track';
+import { getFreePlanLimitMessage, getFreePlanLimitTitle } from '@/lib/plans';
 
 describe('naming a circuit', () => {
   it('treats blank input as no track at all', () => {
@@ -145,5 +147,72 @@ describe('narrowing a track query to a typed name', () => {
     );
     expect(trackNameExactPattern('Turn *3 Kart Track')).not.toContain('*');
     expect(matches(trackNameExactPattern('Turn *3 Kart Track'), 'Turn *3 Kart Track')).toBe(true);
+  });
+});
+
+describe('telling a rider what their session\'s circuit is missing', () => {
+  // A free rider holding their three custom tracks.
+  const savedTracks = [
+    { name: 'Circuit of the Americas' },
+    { name: 'Home Kart Loop' },
+    { name: 'Club Circuit' },
+    { name: 'Airfield Course' },
+  ];
+
+  it('explains a typed circuit the free-plan track cap kept off their tracks', () => {
+    const gap = describeSessionTrackGap({
+      trackId: null,
+      trackName: '  Thunderhill West ',
+      savedTracks,
+      atTrackLimit: true,
+    });
+
+    expect(gap?.kind).toBe('track_limit');
+    if (gap?.kind !== 'track_limit') return;
+    // In the app's own cap vocabulary, naming what was typed, what it costs and
+    // what to do - not a code.
+    expect(gap.title).toBe(getFreePlanLimitTitle('tracks'));
+    expect(gap.message).toContain('"Thunderhill West" is not one of your saved tracks');
+    expect(gap.message).toContain('cannot be added to them');
+    expect(gap.message).toContain(getFreePlanLimitMessage('tracks'));
+    // The name the form holds a Save back for, trimmed the way it is stored, and
+    // the line that says why the Save did nothing and how to get past it.
+    expect(gap.name).toBe('Thunderhill West');
+    expect(gap.holdSaveMessage).toContain('"Thunderhill West" is not one of your saved tracks');
+    expect(gap.holdSaveMessage).toContain('tap Save again');
+  });
+
+  it('still reports a session that names no circuit as trackless, cap or not', () => {
+    for (const atTrackLimit of [true, false]) {
+      for (const trackName of [null, '', '   ']) {
+        expect(describeSessionTrackGap({ trackId: null, trackName, savedTracks, atTrackLimit })).toEqual({
+          kind: 'missing',
+        });
+      }
+    }
+    // As the session page always had it: a name is what it keyed on, not the id.
+    expect(
+      describeSessionTrackGap({ trackId: 'mine-1', trackName: null, savedTracks, atTrackLimit: false }),
+    ).toEqual({ kind: 'missing' });
+  });
+
+  it('says nothing when the circuit has a track row behind it', () => {
+    expect(
+      describeSessionTrackGap({ trackId: 'mine-1', trackName: 'Thunderhill West', savedTracks, atTrackLimit: true }),
+    ).toBeNull();
+  });
+
+  it('says nothing about the cap for a circuit that is already one of their tracks', () => {
+    // Retyped with different capitals and spacing: still the saved row, which
+    // `resolveSessionTrack` links without spending a slot.
+    expect(
+      describeSessionTrackGap({ trackId: null, trackName: 'club  CIRCUIT', savedTracks, atTrackLimit: true }),
+    ).toBeNull();
+  });
+
+  it('says nothing about the cap to a rider who can still add a track', () => {
+    expect(
+      describeSessionTrackGap({ trackId: null, trackName: 'Thunderhill West', savedTracks, atTrackLimit: false }),
+    ).toBeNull();
   });
 });

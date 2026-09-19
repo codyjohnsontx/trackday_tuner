@@ -35,7 +35,8 @@ export default async function NewSessionPage() {
   // answers with lands thousands of pixels below the sticky Save button they
   // tapped. The same count the action enforces decides it, through the one
   // helper in lib/plans.ts.
-  if (isAtFreePlanLimit('sessions', sessionCount, resolveUserAccess(profile).hasProAccess)) {
+  const hasProAccess = resolveUserAccess(profile).hasProAccess;
+  if (isAtFreePlanLimit('sessions', sessionCount, hasProAccess)) {
     return (
       <PlanLimitNotice
         resource="sessions"
@@ -66,6 +67,15 @@ export default async function NewSessionPage() {
         trackAliases={trackDirectory.aliases}
         trackLayouts={trackDirectory.layouts}
         latestSessionsByVehicle={latestSessionsByVehicle}
+        // The count `resolveSessionTrack` checks before it inserts a track row -
+        // the rider's own custom tracks, which are exactly the unseeded ones in
+        // this list - taken at page load. The action counts again at Save, so
+        // this is the form's prediction, not the save's answer.
+        atTrackLimit={isAtFreePlanLimit(
+          'tracks',
+          trackDirectory.tracks.filter((track) => !track.is_seeded).length,
+          hasProAccess,
+        )}
       />
     </div>
   );
