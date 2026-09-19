@@ -257,7 +257,8 @@ it ends on the card actually rendering: `next/image` serves only hosts named in
 from `NEXT_PUBLIC_SUPABASE_URL` when `next.config.ts` loads - so a local stack
 renders its own photos and the rule is not a second copy of the URL. It once named
 `*.supabase.co` alone, and the garage threw on every local photo while the spec
-passed, because nothing looked at the card. No tracks are seeded.
+passed, because nothing looked at the card. Seeded tracks are a migration too -
+see "A circuit is an identity" under "What a Rider Told You".
 
 Functions are deliberately *not* granted schema-wide. RLS contains a table; it does
 not contain a `security definer` function, which runs as its owner and bypasses
@@ -558,6 +559,25 @@ The same shape applies to anything derived rather than given:
   proves nothing - the session still saves with the name alone, and a row this
   code did create is deleted again when the session it was written for does not
   survive
+- **A circuit is an identity, not a spelling.** North American circuits are
+  seeded by a migration (20260916001600), not `supabase/seed.sql`, because the
+  hosted project only ever receives migrations. Each carries a `slug` and the
+  other names riders use (`track_aliases`), and a typed name is looked up by
+  name first and alias second, so a rider's own track keeps its name. Case,
+  spacing and Unicode composition (NFC - not accent removal) are the only
+  fuzziness - no edit distance, because Road America and Road Atlanta are four
+  edits apart. Configurations are `track_layouts` of one circuit and
+  `sessions.layout_id` is optional; the `sessions_check_layout` trigger refuses a
+  layout of a different circuit and keeps `layout_name` the layout row's own,
+  because `authenticated` writes `sessions` directly. A lap compares within a
+  course - circuit AND layout - so comparisons and personal bests go through
+  `sessionsMatchCourse` / `courseMatchRank` (`lib/session-compare.ts`), where an
+  unspecified layout is its own group and never joins a named one;
+  `sessionsMatchTrack` alone only says two sessions were at the same place.
+  Race Engineer similar-session scoring is not layout-aware yet.
+  `lib/track-directory.ts` holds
+  the rules, and `lib/track-directory.test.ts` checks them against the rows the
+  migration ships. Existing custom tracks are not merged onto seeded ones
 
 ## Units
 

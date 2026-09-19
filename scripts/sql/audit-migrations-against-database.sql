@@ -109,7 +109,15 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   (17, '20260903001500_replace_session_laps_compares_lap_content', 'function',
       'public.session_laps_identity(jsonb)',
       to_regprocedure('public.replace_session_laps(uuid,uuid,jsonb,jsonb)') is not null
-      and to_regprocedure('public.session_laps_identity(jsonb)') is not null)
+      and to_regprocedure('public.session_laps_identity(jsonb)') is not null),
+  -- The seeded rows themselves: select count(*) from public.tracks where slug is not null (50).
+  (18, '20260916001600_seed_north_america_tracks', 'table',
+      'public.track_aliases',
+      to_regclass('public.track_aliases') is not null
+      and to_regclass('public.track_layouts') is not null
+      and exists (select 1 from information_schema.columns
+              where table_schema='public' and table_name='sessions'
+                and column_name='layout_id'))
 )
 select ordinality as "#",
        migration,

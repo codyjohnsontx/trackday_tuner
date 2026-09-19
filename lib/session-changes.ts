@@ -65,6 +65,10 @@ export function baselineToComparableSession(baseline: VehicleBaseline): Session 
     vehicle_id: baseline.vehicle_id,
     track_id: baseline.source_track_id,
     track_name: baseline.source_track_name,
+    // A baseline records the circuit it was taken at but not the configuration,
+    // so it compares as "layout unknown" rather than as any one of them.
+    layout_id: null,
+    layout_name: null,
     date: baseline.source_date,
     start_time: baseline.source_start_time,
     session_number: baseline.source_session_number,

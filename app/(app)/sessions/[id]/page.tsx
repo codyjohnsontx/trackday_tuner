@@ -391,6 +391,9 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
 
       <SectionCard title="Session Info">
         <DetailRow label="Track" value={session.track_name ?? '—'} />
+        {/* Only when the rider chose one - "not specified" is the common answer
+            and a row saying so on every session is noise. */}
+        {session.layout_name ? <DetailRow label="Layout" value={session.layout_name} /> : null}
         {/* Track is required now, but sessions logged before it was are still out
             here, and the consequence is silent: naming no circuit, this one is
             never a match for another session, so `sessionsMatchTrack` pairs it

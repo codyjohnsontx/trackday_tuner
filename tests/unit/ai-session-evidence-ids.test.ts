@@ -69,6 +69,8 @@ function session(id: string, date: string, frontPressure: string): Session {
     vehicle_id: VEHICLE.id,
     track_id: null,
     track_name: 'Barber Motorsports Park',
+    layout_id: null,
+    layout_name: null,
     date,
     start_time: '11:20:00',
     session_number: 3,

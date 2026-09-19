@@ -35,6 +35,8 @@ export const sessionExportColumns = [
   'vehicle_model',
   'track_id',
   'track_name',
+  'layout_id',
+  'layout_name',
   'date',
   'start_time',
   'session_number',
@@ -149,6 +151,8 @@ export function flattenSessionForExport({
     vehicle_model: vehicle?.model ?? null,
     track_id: session.track_id,
     track_name: session.track_name,
+    layout_id: session.layout_id,
+    layout_name: session.layout_name,
     date: session.date,
     start_time: session.start_time,
     session_number: session.session_number,
@@ -242,19 +246,22 @@ export function buildSessionExportCsv(inputs: SessionExportInput[]): string {
 export type AnalyticsCoverageKey = keyof SessionEnabledModules | 'environment' | 'lap_times';
 
 /**
- * The fastest lap one vehicle logged at one circuit.
+ * The fastest lap one vehicle logged on one course - a circuit, and the layout
+ * of it when the session named one (see `buildSessionCourseKeys`).
  *
- * A lap time only compares against another lap ridden at the same track on the
+ * A lap time only compares against another lap ridden on the same course on the
  * same vehicle - the rule `getComparableSessions` enforces, filtering on
- * `vehicle_id` before applying `sessionsMatchTrack` - so a season best is a
+ * `vehicle_id` before ranking with `courseMatchRank` - so a season best is a
  * board and never a single number. Keying on the circuit alone made a bike and
  * a car at one track compete for one row, and the slower of the two had no
  * personal best anywhere on the panel.
  */
 export interface AnalyticsTrackBest {
-  /** `buildSessionTrackKeys` grouping key and the vehicle, so a typed name folds into the saved row and the two vehicles do not. */
+  /** `buildSessionCourseKeys` grouping key and the vehicle, so a typed name folds into the saved row and the two vehicles do not. */
   key: string;
   trackName: string;
+  /** The layout the row is for, or null for the circuit's sessions that named none. */
+  layoutName: string | null;
   bestLapMs: number;
   /** Already formatted as `1:43.640`, so every surface reads the same string. */
   bestLap: string;
@@ -412,6 +419,67 @@ interface ResolvedTrack {
   trackName: string;
 }
 
+/** The circuit and the layout of it a session ran - the unit a lap time compares within. */
+interface ResolvedCourse extends ResolvedTrack {
+  layoutName: string | null;
+}
+
+/**
+ * Which course - circuit plus layout - each session belongs to, keyed by
+ * session id.
+ *
+ * `sessionsMatchLayout` turned into a grouping rule on top of the circuit keys:
+ * the layout id decides it when the session carries one, the stored layout
+ * name is the fallback and folds into an id-carrying session's key when the
+ * names agree, and a session with neither is the circuit's "not specified"
+ * group. Unspecified never joins a named layout, so a lap of a shorter layout
+ * cannot become the best of the circuit's other layouts, and a rider who never
+ * picks a layout keeps one row per circuit exactly as before.
+ */
+function buildSessionCourseKeys(sessions: readonly Session[]): Map<string, ResolvedCourse> {
+  const trackKeys = buildSessionTrackKeys(sessions);
+  const resolved = new Map<string, ResolvedCourse>();
+  const byLayoutName = new Map<string, ResolvedCourse>();
+
+  // Sessions carrying a layout row first, so a name-only snapshot has somewhere to fold into.
+  for (const session of sessions) {
+    const track = trackKeys.get(session.id);
+    if (!track || !session.layout_id) continue;
+
+    const layoutName = session.layout_name?.trim() || null;
+    const course = { key: `${track.key}|layout:${session.layout_id}`, trackName: track.trackName, layoutName };
+    resolved.set(session.id, course);
+
+    const nameKey = `${track.key}|${trackNameKey(layoutName)}`;
+    if (layoutName && !byLayoutName.has(nameKey)) byLayoutName.set(nameKey, course);
+  }
+
+  for (const session of sessions) {
+    const track = trackKeys.get(session.id);
+    if (!track || session.layout_id) continue;
+
+    const layoutKey = trackNameKey(session.layout_name);
+    if (!layoutKey) {
+      resolved.set(session.id, { key: `${track.key}|layout:none`, trackName: track.trackName, layoutName: null });
+      continue;
+    }
+
+    const nameKey = `${track.key}|${layoutKey}`;
+    let course = byLayoutName.get(nameKey);
+    if (!course) {
+      course = {
+        key: `${track.key}|layout-name:${layoutKey}`,
+        trackName: track.trackName,
+        layoutName: session.layout_name?.trim() || null,
+      };
+      byLayoutName.set(nameKey, course);
+    }
+    resolved.set(session.id, course);
+  }
+
+  return resolved;
+}
+
 /**
  * Which circuit each session belongs to, keyed by session id.
  *
@@ -496,7 +564,7 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
   let totalLaps = 0;
   let sessionsWithLaps = 0;
 
-  const trackKeys = buildSessionTrackKeys(inputs.map((input) => input.session));
+  const courseKeys = buildSessionCourseKeys(inputs.map((input) => input.session));
 
   const ordered = [...inputs].sort((a, b) =>
     `${a.session.date} ${a.session.start_time ?? ''}`.localeCompare(`${b.session.date} ${b.session.start_time ?? ''}`),
@@ -519,11 +587,12 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
       sessionsWithLaps += 1;
     }
 
-    const track = trackKeys.get(input.session.id);
+    const track = courseKeys.get(input.session.id);
     if (track) {
-      // A row is one vehicle at one circuit, because that is the pair the app
-      // already calls comparable. Sharing a row across vehicles hid the slower
-      // one's personal best entirely.
+      // A row is one vehicle on one course - circuit and layout - because that
+      // is the pair the app already calls comparable. Sharing a row across
+      // vehicles hid the slower one's personal best entirely, and sharing one
+      // across layouts crowned the shortest layout the best of every other.
       const rowKey = `${track.key}|${input.session.vehicle_id}`;
 
       // The board is ordered by when the rider was last out on that vehicle at
@@ -539,6 +608,7 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
         trackBests.set(rowKey, {
           key: rowKey,
           trackName: track.trackName,
+          layoutName: track.layoutName,
           bestLapMs,
           bestLap: formatLapTime(bestLapMs),
           sessionId: input.session.id,

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getTracks } from '@/lib/actions/tracks';
+import { getTrackDirectory } from '@/lib/actions/tracks';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { DemoBanner } from '@/components/demo/demo-banner';
@@ -15,7 +15,11 @@ import {
 } from '@/lib/plans';
 
 export default async function TracksPage() {
-  const [tracks, profile, demoMode] = await Promise.all([getTracks(), getUserProfile(), isDemoMode()]);
+  const [{ tracks, aliases, layouts }, profile, demoMode] = await Promise.all([
+    getTrackDirectory(),
+    getUserProfile(),
+    isDemoMode(),
+  ]);
   const customTracks = tracks.filter((track) => !track.is_seeded);
   const atTrackLimit = isAtFreePlanLimit(
     'tracks',
@@ -49,7 +53,7 @@ export default async function TracksPage() {
         </section>
       ) : null}
 
-      <TrackListClient tracks={tracks} demoMode={demoMode} />
+      <TrackListClient tracks={tracks} aliases={aliases} layouts={layouts} demoMode={demoMode} />
 
       <Link
         href="/sessions/new"

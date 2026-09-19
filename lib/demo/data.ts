@@ -5,7 +5,7 @@ import {
   computeSetupChanges,
   sessionReferenceLabel,
 } from '@/lib/session-changes';
-import { compareSessionsDesc, isSessionBefore, sessionsMatchTrack } from '@/lib/session-compare';
+import { compareSessionsDesc, courseMatchRank, isSessionBefore } from '@/lib/session-compare';
 import type {
   Profile,
   Session,
@@ -14,6 +14,7 @@ import type {
   SessionEnabledModules,
   TelemetrySummary,
   Track,
+  TrackLayout,
   Vehicle,
   VehicleBaseline,
 } from '@/types';
@@ -57,19 +58,32 @@ export const DEMO_VEHICLES: Vehicle[] = [
   },
 ];
 
+const DEMO_LAYOUT_MSR_1_7: TrackLayout = {
+  id: 'demo-layout-msr-1-7',
+  track_id: 'demo-track-msr-cresson',
+  slug: '1-7-mile',
+  name: '1.7-Mile',
+  sort_order: 0,
+  created_at: createdAt,
+};
+
 export const DEMO_TRACKS: Track[] = [
   {
+    // One circuit with its configurations as layouts, the way the seeded data
+    // models it (20260916001600) - not "MSR Cresson 1.7" as a track of its own.
     id: 'demo-track-msr-cresson',
-    name: 'MSR Cresson 1.7',
-    location: 'Cresson, TX',
+    name: 'MotorSport Ranch',
+    location: 'Cresson, Texas',
+    slug: 'motorsport-ranch',
     is_seeded: true,
     created_by: null,
     created_at: createdAt,
   },
   {
     id: 'demo-track-cota',
-    name: 'Circuit of The Americas',
-    location: 'Austin, TX',
+    name: 'Circuit of the Americas',
+    location: 'Austin, Texas',
+    slug: 'circuit-of-the-americas',
     is_seeded: true,
     created_by: null,
     created_at: createdAt,
@@ -77,7 +91,8 @@ export const DEMO_TRACKS: Track[] = [
   {
     id: 'demo-track-ecr',
     name: 'Eagles Canyon Raceway',
-    location: 'Decatur, TX',
+    location: 'Decatur, Texas',
+    slug: 'eagles-canyon-raceway',
     is_seeded: true,
     created_by: null,
     created_at: createdAt,
@@ -90,7 +105,9 @@ export const DEMO_SESSIONS: Session[] = [
     user_id: DEMO_USER_ID,
     vehicle_id: 'demo-r6',
     track_id: 'demo-track-msr-cresson',
-    track_name: 'MSR Cresson 1.7',
+    track_name: 'MotorSport Ranch',
+    layout_id: DEMO_LAYOUT_MSR_1_7.id,
+    layout_name: DEMO_LAYOUT_MSR_1_7.name,
     date: '2026-05-18',
     start_time: '14:20:00',
     session_number: 4,
@@ -131,7 +148,9 @@ export const DEMO_SESSIONS: Session[] = [
     user_id: DEMO_USER_ID,
     vehicle_id: 'demo-r6',
     track_id: 'demo-track-msr-cresson',
-    track_name: 'MSR Cresson 1.7',
+    track_name: 'MotorSport Ranch',
+    layout_id: DEMO_LAYOUT_MSR_1_7.id,
+    layout_name: DEMO_LAYOUT_MSR_1_7.name,
     date: '2026-05-18',
     start_time: '11:30:00',
     session_number: 3,
@@ -172,7 +191,9 @@ export const DEMO_SESSIONS: Session[] = [
     user_id: DEMO_USER_ID,
     vehicle_id: 'demo-r6',
     track_id: 'demo-track-msr-cresson',
-    track_name: 'MSR Cresson 1.7',
+    track_name: 'MotorSport Ranch',
+    layout_id: DEMO_LAYOUT_MSR_1_7.id,
+    layout_name: DEMO_LAYOUT_MSR_1_7.name,
     date: '2026-05-18',
     start_time: '10:10:00',
     session_number: 2,
@@ -213,7 +234,9 @@ export const DEMO_SESSIONS: Session[] = [
     user_id: DEMO_USER_ID,
     vehicle_id: 'demo-r6',
     track_id: 'demo-track-msr-cresson',
-    track_name: 'MSR Cresson 1.7',
+    track_name: 'MotorSport Ranch',
+    layout_id: DEMO_LAYOUT_MSR_1_7.id,
+    layout_name: DEMO_LAYOUT_MSR_1_7.name,
     date: '2026-05-18',
     start_time: '08:40:00',
     session_number: 1,
@@ -241,7 +264,7 @@ export const DEMO_SESSIONS: Session[] = [
         front_sprocket: '15T',
         rear_sprocket: '45T',
         chain_length: '116 links',
-        notes: 'Known-good gearing for MSR Cresson 1.7.',
+        notes: 'Known-good gearing for the MotorSport Ranch 1.7-Mile.',
       },
     },
     notes:
@@ -490,6 +513,10 @@ export function getDemoTracks(): Track[] {
   return [...DEMO_TRACKS].sort((a, b) => a.name.localeCompare(b.name)).map(clone);
 }
 
+export function getDemoTrackLayouts(): TrackLayout[] {
+  return [DEMO_LAYOUT_MSR_1_7].map(clone);
+}
+
 export function getDemoSessions(vehicleId?: string, limit?: number): Session[] {
   const sessions = DEMO_SESSIONS
     .filter((session) => !vehicleId || session.vehicle_id === vehicleId)
@@ -522,9 +549,8 @@ export function getDemoComparableSessions(currentSession: Session): Session[] {
   return DEMO_SESSIONS
     .filter((session) => session.vehicle_id === currentSession.vehicle_id && session.id !== currentSession.id)
     .sort((a, b) => {
-      const aSameTrack = sessionsMatchTrack(a, currentSession);
-      const bSameTrack = sessionsMatchTrack(b, currentSession);
-      if (aSameTrack !== bSameTrack) return aSameTrack ? -1 : 1;
+      const rank = courseMatchRank(a, currentSession) - courseMatchRank(b, currentSession);
+      if (rank !== 0) return rank;
       return compareSessionsDesc(a, b);
     })
     .map(clone);

@@ -43,6 +43,7 @@ export function SessionCard({ session, vehicleNickname }: SessionCardProps) {
         </Eyebrow>
         <p className="mt-1.5 truncate font-semibold text-ink">
           {session.track_name ?? 'Unknown Track'}
+          {session.layout_name ? <span className="font-normal text-ink-dim"> · {session.layout_name}</span> : null}
         </p>
         <p className="mt-0.5 truncate text-sm text-ink-dim">{vehicleNickname}</p>
       </div>

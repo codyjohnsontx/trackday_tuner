@@ -17,10 +17,10 @@ import { SessionCompareStrengthBanner } from '@/components/sessions/session-comp
 import { SessionCompareUpgradeCard } from '@/components/sessions/session-compare-upgrade-card';
 import {
   buildSessionComparisonModel,
+  courseMatchRank,
   extractLapMetrics,
   formatLapTime,
   isSessionBefore,
-  sessionsMatchTrack,
 } from '@/lib/session-compare';
 import { isDemoMode } from '@/lib/demo/mode';
 import type { Session, SessionEnvironment, TelemetrySummary, VehicleBaseline } from '@/types';
@@ -59,10 +59,13 @@ function getBaselineParam(value: string | string[] | undefined): string | null {
   return value ?? null;
 }
 
+/** `courseMatchRank` as the picker labels it, indexed by rank. */
+const COURSE_MATCHES = ['course', 'layout', 'track'] as const satisfies readonly SessionComparePickerOption['match'][];
+
 function chooseDefaultBaseline(current: Session, candidates: Session[]): Session | null {
   const previousCandidates = candidates.filter((candidate) => isSessionBefore(candidate, current));
   return (
-    previousCandidates.find((candidate) => sessionsMatchTrack(candidate, current)) ??
+    previousCandidates.find((candidate) => courseMatchRank(candidate, current) === 0) ??
     previousCandidates[0] ??
     null
   );
@@ -84,17 +87,20 @@ function buildPickerOptions(
     const bestLapMs = extractLapMetrics(telemetryBySessionId.get(candidate.id)).bestLapMs;
     return {
       id: candidate.id,
-      trackName: candidate.track_name ?? 'Unknown Track',
+      trackName: candidate.layout_name
+        ? `${candidate.track_name ?? 'Unknown Track'} (${candidate.layout_name})`
+        : (candidate.track_name ?? 'Unknown Track'),
       dateLabel: formatDateLabel(candidate.date),
       sessionLabel: sessionLabel(candidate, current.id),
       conditionLabel: conditionLabel[candidate.conditions] ?? candidate.conditions,
       bestLapLabel: bestLapMs !== null ? formatLapTime(bestLapMs) : null,
-      sameTrack: sessionsMatchTrack(candidate, current),
+      match: COURSE_MATCHES[courseMatchRank(candidate, current)],
       isVehicleBaseline: baseline?.source_session_id === candidate.id,
     };
   }).sort((a, b) => {
-    if (a.sameTrack !== b.sameTrack) return a.sameTrack ? -1 : 1;
-    if (a.sameTrack && a.isVehicleBaseline !== b.isVehicleBaseline) {
+    const rank = COURSE_MATCHES.indexOf(a.match) - COURSE_MATCHES.indexOf(b.match);
+    if (rank !== 0) return rank;
+    if (a.match === 'course' && a.isVehicleBaseline !== b.isVehicleBaseline) {
       return a.isVehicleBaseline ? -1 : 1;
     }
     return (originalOrder.get(a.id) ?? 0) - (originalOrder.get(b.id) ?? 0);

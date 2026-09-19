@@ -18,9 +18,10 @@ import {
   COMPARABLE_SESSION_FETCH_LIMIT,
   COMPARABLE_SESSION_LIMIT,
   compareSessionsDesc,
-  sessionsMatchTrack,
+  courseMatchRank,
 } from '@/lib/session-compare';
 import { fetchPreviousSession } from '@/lib/session-previous';
+import { findTrackByName } from '@/lib/track-directory';
 import { reportError } from '@/lib/monitoring/report-error';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
@@ -126,6 +127,14 @@ const SESSION_LAPS_SAVE_FAILED_MESSAGE =
  * So it names what is certain (the save did not finish, and the fault is ours),
  * and sends them to look before re-entering rather than promising a clean slate.
  */
+/**
+ * The layout lookup failed, so nothing was written - the check runs before the
+ * session insert, and a track row this save created is rolled back. Unlike the
+ * message below, "not saved" is therefore certain here.
+ */
+const SESSION_LAYOUT_LOOKUP_FAILED_MESSAGE =
+  'Your session was not saved - we could not check the layout you picked, and the fault is ours, not what you entered. Everything you typed is still on this page, so try saving again in a few minutes.';
+
 const SESSION_CREATE_SAVE_FAILED_MESSAGE =
   'Your session did not save completely - something is wrong on our end, not with what you entered. Check your sessions list before you enter it again, in case a partial one was left behind. What you typed is still on this page, so copy anything you need before you leave.';
 
@@ -418,9 +427,8 @@ export async function getComparableSessions(currentSession: Session): Promise<Se
     .limit(COMPARABLE_SESSION_FETCH_LIMIT);
 
   return ((data ?? []) as Session[]).sort((a, b) => {
-    const aSameTrack = sessionsMatchTrack(a, currentSession);
-    const bSameTrack = sessionsMatchTrack(b, currentSession);
-    if (aSameTrack !== bSameTrack) return aSameTrack ? -1 : 1;
+    const rank = courseMatchRank(a, currentSession) - courseMatchRank(b, currentSession);
+    if (rank !== 0) return rank;
     return compareSessionsDesc(a, b);
   }).slice(0, COMPARABLE_SESSION_LIMIT);
 }
@@ -525,8 +533,68 @@ export async function getSessionLaps(sessionId: string): Promise<ActionResult<Se
 interface ResolvedSessionTrack {
   trackId: string | null;
   trackName: string | null;
+  /**
+   * Which configuration of that circuit, resolved rather than trusted, and null
+   * whenever the rider did not choose one - which is most of the time and is the
+   * point. `layoutName` is denormalised beside it for the same reason
+   * `trackName` is: `sessions.layout_id` is `on delete set null`.
+   */
+  layoutId: string | null;
+  layoutName: string | null;
   /** A new `tracks` row was written, so the tracks list changed. */
   createdTrack: boolean;
+  /**
+   * The rider chose a layout and the read that checks it failed. The save has to
+   * stop: an unanswered lookup is not "no such layout", and saving with a null
+   * layout would discard a choice the rider made because of our fault.
+   */
+  layoutLookupFailed: boolean;
+}
+
+/**
+ * The layout a session ran, or null.
+ *
+ * A layout id is checked against the track it was submitted with rather than
+ * read on its own, because a layout belongs to exactly one circuit: an id from
+ * a different one is not a narrower answer, it is a session claiming a
+ * configuration its track does not have. A layout that does not check out is
+ * dropped and the session still saves - the layout is optional, so there is
+ * nothing here worth refusing a rider's session over. The row's own name wins
+ * over anything submitted, exactly as `resolveSessionTrack` treats a track name.
+ *
+ * A FAILED read is different from a layout that does not check out: it answers
+ * nothing, so it is reported and flagged for `createSession` to refuse the save
+ * rather than silently storing the session without the layout the rider chose.
+ */
+async function resolveSessionLayout(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  trackId: string | null,
+  layoutId: string | null | undefined,
+): Promise<Pick<ResolvedSessionTrack, 'layoutId' | 'layoutName' | 'layoutLookupFailed'>> {
+  const none = { layoutId: null, layoutName: null, layoutLookupFailed: false };
+  if (!layoutId || !trackId) return none;
+
+  const { data, error } = await supabase
+    .from('track_layouts')
+    .select('id, name')
+    .eq('id', layoutId)
+    .eq('track_id', trackId)
+    .maybeSingle();
+
+  if (error) {
+    reportError('session-layout', new Error(error.message), {
+      reason: error.code,
+      table: 'track_layouts',
+      trackId,
+      layoutId,
+    });
+    return { ...none, layoutLookupFailed: true };
+  }
+
+  const row = data as { id: string; name: string } | null;
+  if (!row) return none;
+
+  return { layoutId: row.id, layoutName: row.name, layoutLookupFailed: false };
 }
 
 /**
@@ -566,7 +634,7 @@ type VisibleTrackLookup =
  *
  * Which is why reaching the limit is `unproven` and not `absent`. The rows come
  * back ordered so the same request cannot answer differently twice, and
- * `findSavedTrackByName` still decides on whatever came back.
+ * `findTrackByName` still decides on whatever came back.
  */
 async function findVisibleTrackByName(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -576,13 +644,15 @@ async function findVisibleTrackByName(
   const exact = trackNameExactPattern(typed);
   const wildcard = trackNameSearchPattern(typed);
   const patterns = wildcard === exact ? [exact] : [exact, wildcard];
+  let seeded: { id: string; name: string } | null = null;
 
   for (const pattern of patterns) {
     const { data, error } = await supabase
       .from('tracks')
-      .select('id, name')
+      .select('id, name, is_seeded')
       .or(visibleTracksFilter(userId))
       .ilike('name', pattern)
+      .order('is_seeded', { ascending: true })
       .order('name', { ascending: true })
       .order('id', { ascending: true })
       .limit(TRACK_NAME_MATCH_LIMIT);
@@ -595,14 +665,79 @@ async function findVisibleTrackByName(
       };
     }
 
-    const rows = (data ?? []) as { id: string; name: string }[];
-    const matched = findSavedTrackByName(typed, rows);
-    if (matched) return { status: 'found', track: matched };
+    const rows = (data ?? []) as { id: string; name: string; is_seeded: boolean }[];
+    const matched = findTrackByName(typed, rows);
+    if (matched && !matched.is_seeded) {
+      return { status: 'found', track: { id: matched.id, name: matched.name } };
+    }
+    if (matched) seeded ??= { id: matched.id, name: matched.name };
 
     if (rows.length >= TRACK_NAME_MATCH_LIMIT) {
       return {
         status: 'unproven',
         log: '[sessions] visible tracks lookup truncated',
+        detail: { userId, trackName: typed, pattern, limit: TRACK_NAME_MATCH_LIMIT },
+      };
+    }
+  }
+
+  if (seeded) return { status: 'found', track: seeded };
+
+  // Only now the other names the circuit is known by. Names first is the rule,
+  // not an optimisation: a rider who made their own track called "Barber" means
+  // that one, and an alias consulted first would send their session to the
+  // seeded Barber Motorsports Park instead. See lib/track-directory.ts.
+  return findVisibleTrackByAlias(supabase, userId, typed);
+}
+
+/**
+ * The circuit an alias names, under the same bound and the same three answers as
+ * the name lookup above.
+ *
+ * The two patterns and the `unproven` reading are deliberately identical,
+ * because the consequence of getting it wrong is identical: a truncated read
+ * that answers "absent" creates a second row for a circuit the rider already
+ * has. The alias table is small today, and a bound that is never reached is
+ * exactly the kind that is quietly wrong later.
+ */
+async function findVisibleTrackByAlias(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  typed: string,
+): Promise<VisibleTrackLookup> {
+  const exact = trackNameExactPattern(typed);
+  const wildcard = trackNameSearchPattern(typed);
+  const patterns = wildcard === exact ? [exact] : [exact, wildcard];
+
+  for (const pattern of patterns) {
+    const { data, error } = await supabase
+      .from('track_aliases')
+      .select('alias, tracks!inner(id, name)')
+      .ilike('alias', pattern)
+      .order('alias', { ascending: true })
+      .limit(TRACK_NAME_MATCH_LIMIT);
+
+    if (error) {
+      return {
+        status: 'unproven',
+        log: '[sessions] track alias lookup failed',
+        detail: { userId, error: error.message },
+      };
+    }
+
+    const rows = (data ?? []) as { alias: string; tracks: { id: string; name: string } }[];
+    // Folded on `alias`, then answered with the TRACK's own name - the alias is
+    // how the rider found the circuit, not what the circuit is called.
+    const matched = findSavedTrackByName(
+      typed,
+      rows.map((row) => ({ name: row.alias, track: row.tracks })),
+    );
+    if (matched) return { status: 'found', track: matched.track };
+
+    if (rows.length >= TRACK_NAME_MATCH_LIMIT) {
+      return {
+        status: 'unproven',
+        log: '[sessions] track alias lookup truncated',
         detail: { userId, trackName: typed, pattern, limit: TRACK_NAME_MATCH_LIMIT },
       };
     }
@@ -630,8 +765,15 @@ async function resolveSessionTrack(
   hasProAccess: boolean,
   trackId: string | null,
   trackName: string | null,
+  layoutId: string | null | undefined,
 ): Promise<ResolvedSessionTrack> {
   const typed = normalizeTrackName(trackName);
+  // The layout is resolved against whichever circuit resolution settles on, so
+  // every exit below routes through this rather than returning a bare object.
+  const withLayout = async (track: Omit<ResolvedSessionTrack, 'layoutId' | 'layoutName' | 'layoutLookupFailed'>) => ({
+    ...track,
+    ...(await resolveSessionLayout(supabase, track.trackId, layoutId)),
+  });
 
   if (trackId) {
     // The id is resolved rather than trusted. A `track_id` the rider cannot see
@@ -650,16 +792,25 @@ async function resolveSessionTrack(
       // create a second row for a circuit the rider already has and spend one of
       // their custom-track slots on it, so the id they picked is kept instead.
       console.error('[sessions] track lookup failed', { userId, trackId, error: error.message });
-      return { trackId, trackName: typed, createdTrack: false };
+      return withLayout({ trackId, trackName: typed, createdTrack: false });
     }
 
     const resolvedName = normalizeTrackName((data as { name?: string } | null)?.name);
-    if (data && resolvedName) return { trackId, trackName: resolvedName, createdTrack: false };
+    if (data && resolvedName) return withLayout({ trackId, trackName: resolvedName, createdTrack: false });
     // Unreachable or unknown id: fall through and resolve the typed name instead
     // of saving a link the rider cannot follow.
   }
 
-  if (!typed) return { trackId: null, trackName: null, createdTrack: false };
+  if (!typed) {
+    return {
+      trackId: null,
+      trackName: null,
+      layoutId: null,
+      layoutName: null,
+      createdTrack: false,
+      layoutLookupFailed: false,
+    };
+  }
 
   // A name typed out in full lands on the row it names rather than beside it.
   const lookup = await findVisibleTrackByName(supabase, userId, typed);
@@ -672,11 +823,11 @@ async function resolveSessionTrack(
     // surface still matches - a missing link is recoverable and a second row on a
     // three-slot plan is not.
     console.error(lookup.log, lookup.detail);
-    return { trackId: null, trackName: typed, createdTrack: false };
+    return withLayout({ trackId: null, trackName: typed, createdTrack: false });
   }
 
   if (lookup.status === 'found') {
-    return { trackId: lookup.track.id, trackName: lookup.track.name, createdTrack: false };
+    return withLayout({ trackId: lookup.track.id, trackName: lookup.track.name, createdTrack: false });
   }
 
   if (!hasProAccess) {
@@ -687,7 +838,7 @@ async function resolveSessionTrack(
       .eq('is_seeded', false);
 
     if ((count ?? 0) >= getFreePlanLimit('tracks')) {
-      return { trackId: null, trackName: typed, createdTrack: false };
+      return withLayout({ trackId: null, trackName: typed, createdTrack: false });
     }
   }
 
@@ -703,10 +854,12 @@ async function resolveSessionTrack(
       trackName: typed,
       error: error?.message ?? 'no row returned',
     });
-    return { trackId: null, trackName: typed, createdTrack: false };
+    return withLayout({ trackId: null, trackName: typed, createdTrack: false });
   }
 
-  return { trackId: created.id, trackName: created.name, createdTrack: true };
+  // A track this call just created has no layouts, so nothing submitted can
+  // resolve against it - `withLayout` says so rather than this comment assuming it.
+  return withLayout({ trackId: created.id, trackName: created.name, createdTrack: true });
 }
 
 export async function createSession(
@@ -754,7 +907,14 @@ export async function createSession(
     }
   }
 
-  const track = await resolveSessionTrack(supabase, user.id, hasProAccess, input.track_id, input.track_name);
+  const track = await resolveSessionTrack(
+    supabase,
+    user.id,
+    hasProAccess,
+    input.track_id,
+    input.track_name,
+    input.layout_id,
+  );
 
   // A `track_id` the rider cannot see resolves to nothing, and with no typed name
   // beside it the session would still store no circuit. Rolling the auto-created
@@ -766,11 +926,19 @@ export async function createSession(
     return { ok: false, error: MISSING_TRACK_MESSAGE };
   }
 
+  if (track.layoutLookupFailed) {
+    await rollbackAutoCreatedTrack(supabase, user.id, track);
+    return { ok: false, error: SESSION_LAYOUT_LOOKUP_FAILED_MESSAGE };
+  }
+
   const payload: TableInsert<'sessions'> = {
     user_id: user.id,
     vehicle_id: input.vehicle_id,
     track_id: track.trackId,
     track_name: track.trackName,
+    ...(track.layoutId
+      ? { layout_id: track.layoutId, layout_name: track.layoutName }
+      : {}),
     date: input.date,
     start_time: input.start_time ?? null,
     session_number: input.session_number ?? null,

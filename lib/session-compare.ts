@@ -1,4 +1,5 @@
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
+import { trackNameKey } from '@/lib/session-track';
 import type { Session, SessionEnvironment, TelemetrySummary, VehicleType } from '@/types';
 
 export const COMPARABLE_SESSION_LIMIT = 20;
@@ -74,6 +75,48 @@ export function sessionsMatchTrack(a: Session, b: Session): boolean {
   const aTrackName = a.track_name?.trim();
   const bTrackName = b.track_name?.trim();
   return Boolean(aTrackName && bTrackName && aTrackName === bTrackName);
+}
+
+/**
+ * Whether two sessions ran the same configuration of their circuit.
+ *
+ * A layout is part of what makes two laps comparable: a lap of MotorSport
+ * Ranch's 1.3-Mile course is not a slow lap of its 3.1-Mile one. A session
+ * with no layout is its own answer, "not specified", which matches only
+ * another session that did not specify one - never any layout - so a rider who
+ * never picks a layout compares exactly as before, and an unspecified lap
+ * cannot become the best of a layout it may not have been ridden on.
+ *
+ * Ids decide it when both sessions carry one. Otherwise the stored names do,
+ * folded the way track names are, because `layout_name` is the snapshot that
+ * survives `sessions.layout_id` being set null when its layout row goes.
+ */
+export function sessionsMatchLayout(a: Session, b: Session): boolean {
+  if (a.layout_id && b.layout_id) return a.layout_id === b.layout_id;
+  return trackNameKey(a.layout_name) === trackNameKey(b.layout_name);
+}
+
+/**
+ * Same circuit AND same layout - the pair a lap time compares against. Use this
+ * wherever laps are compared; `sessionsMatchTrack` alone answers only whether
+ * two sessions were at the same place.
+ */
+export function sessionsMatchCourse(a: Session, b: Session): boolean {
+  return sessionsMatchTrack(a, b) && sessionsMatchLayout(a, b);
+}
+
+/**
+ * How good a baseline `candidate` is for `current` by place alone, lower first:
+ * the same course, then the same circuit on another layout, then anywhere else.
+ */
+export function courseMatchRank(candidate: Session, current: Session): 0 | 1 | 2 {
+  if (!sessionsMatchTrack(candidate, current)) return 2;
+  return sessionsMatchLayout(candidate, current) ? 0 : 1;
+}
+
+/** A session's layout as a rider reads it in a comparison. */
+export function layoutLabel(session: Session): string {
+  return session.layout_name?.trim() || 'layout not specified';
 }
 
 function sessionTimeValue(session: Session): string {
@@ -306,6 +349,13 @@ export function buildContextFlags(context: BuildContext, currentLapMetrics: LapM
       label: 'Track mismatch',
       detail: 'Different tracks make this a weak comparison signal.',
     });
+  } else if (!sessionsMatchLayout(currentSession, baselineSession)) {
+    flags.push({
+      key: 'layout-mismatch',
+      severity: 'critical',
+      label: 'Layout mismatch',
+      detail: `Different layouts of this circuit (${layoutLabel(currentSession)} vs ${layoutLabel(baselineSession)}) make this a weak comparison signal.`,
+    });
   }
 
   if (currentSession.conditions !== baselineSession.conditions) {
@@ -410,7 +460,7 @@ export function buildContextFlags(context: BuildContext, currentLapMetrics: LapM
 }
 
 export function assignComparisonStrength(context: BuildContext, flags: ContextFlag[]): ComparisonStrength {
-  if (!sessionsMatchTrack(context.currentSession, context.baselineSession)) return 'weak';
+  if (!sessionsMatchCourse(context.currentSession, context.baselineSession)) return 'weak';
 
   const criticalCount = flags.filter((flag) => flag.severity === 'critical').length;
   const warningCount = flags.filter((flag) => flag.severity === 'warning').length;

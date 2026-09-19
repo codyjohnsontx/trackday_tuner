@@ -9,6 +9,8 @@ function session(partial: Partial<Session> = {}): Session {
     vehicle_id: 'vehicle-1',
     track_id: null,
     track_name: 'Road America',
+    layout_id: null,
+    layout_name: null,
     date: '2026-04-23',
     start_time: '13:15:00',
     session_number: 2,

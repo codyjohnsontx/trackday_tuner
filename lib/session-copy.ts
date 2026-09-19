@@ -21,6 +21,9 @@ import type {
 export interface CopiedSessionSetup {
   trackId: string | null;
   trackQuery: string;
+  // The configuration comes over with the circuit: a rider copying last week's
+  // setup is usually back on the same layout, and it is still one tap to change.
+  layoutId: string | null;
   tireCondition: TireCondition | null;
   frontTire: { brand: string; compound: string; pressure: string };
   rearTire: { brand: string; compound: string; pressure: string };
@@ -68,6 +71,7 @@ export function copyLastSessionSetup(session: Session, vehicleType: VehicleType)
   return {
     trackId: session.track_id,
     trackQuery: session.track_name ?? '',
+    layoutId: session.layout_id,
     tireCondition: session.tires.condition,
     frontTire: { ...session.tires.front },
     rearTire: { ...session.tires.rear },

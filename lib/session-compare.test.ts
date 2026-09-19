@@ -5,9 +5,11 @@ import {
   buildSessionComparisonModel,
   buildSetupCompareRows,
   compareSessionsDesc,
+  courseMatchRank,
   extractLapMetrics,
   formatLapTime,
   isSessionBefore,
+  sessionsMatchCourse,
   sessionsMatchTrack,
 } from '@/lib/session-compare';
 import type { Session, SessionEnvironment, TelemetrySummary } from '@/types';
@@ -18,6 +20,8 @@ const baseSession: Session = {
   vehicle_id: 'vehicle-1',
   track_id: 'track-1',
   track_name: 'MSR Cresson',
+  layout_id: null,
+  layout_name: null,
   date: '2026-02-24',
   start_time: '09:00:00',
   session_number: 1,
@@ -193,6 +197,45 @@ describe('session compare helpers', () => {
       baselineMetrics,
     );
     expect(assignComparisonStrength({ currentSession: current, baselineSession: session({ track_id: 'track-2' }) }, weakFlags)).toBe('weak');
+  });
+
+  it('compares laps within a layout, and treats an unspecified layout as its own', () => {
+    const current = session({ id: 'current', track_id: 'track-msr', layout_id: 'layout-13', layout_name: '1.3-Mile' });
+    const sameLayout = session({ id: 'same', track_id: 'track-msr', layout_id: 'layout-13', layout_name: '1.3-Mile' });
+    const snapshot = session({ id: 'snapshot', track_id: 'track-msr', layout_id: null, layout_name: '1.3-mile' });
+    const otherLayout = session({ id: 'other', track_id: 'track-msr', layout_id: 'layout-31', layout_name: '3.1-Mile' });
+    const unspecified = session({ id: 'none', track_id: 'track-msr', layout_id: null, layout_name: null });
+    const otherTrack = session({ id: 'vir', track_id: 'track-vir', layout_id: null, layout_name: null });
+
+    expect([sameLayout, snapshot, otherLayout, unspecified, otherTrack].map((s) => sessionsMatchCourse(current, s))).toEqual([
+      true,
+      true,
+      false,
+      false,
+      false,
+    ]);
+    expect(sessionsMatchCourse(unspecified, session({ id: 'none-2', track_id: 'track-msr' }))).toBe(true);
+    expect([sameLayout, otherLayout, unspecified, otherTrack].map((s) => courseMatchRank(s, current))).toEqual([0, 1, 1, 2]);
+  });
+
+  it('flags a different layout of the same circuit as a weak comparison', () => {
+    const current = session({ id: 'current', track_id: 'track-msr', layout_id: 'layout-13', layout_name: '1.3-Mile' });
+    const baseline = session({ id: 'baseline', track_id: 'track-msr', layout_id: 'layout-31', layout_name: '3.1-Mile' });
+    const context = { currentSession: current, baselineSession: baseline };
+    const metrics = { bestLapMs: 60000, averageLapMs: 61000, lapCount: 5, consistencySpreadMs: 500 };
+
+    const flags = buildContextFlags(context, metrics, metrics);
+    expect(flags.map((flag) => flag.key)).toContain('layout-mismatch');
+    expect(flags.map((flag) => flag.key)).not.toContain('track-mismatch');
+    expect(flags.find((flag) => flag.key === 'layout-mismatch')?.detail).toContain('1.3-Mile vs 3.1-Mile');
+    expect(assignComparisonStrength(context, [])).toBe('weak');
+
+    const sameLayoutFlags = buildContextFlags(
+      { currentSession: current, baselineSession: { ...baseline, layout_id: 'layout-13', layout_name: '1.3-Mile' } },
+      metrics,
+      metrics,
+    );
+    expect(sameLayoutFlags.map((flag) => flag.key)).not.toContain('layout-mismatch');
   });
 
   it('matches tracks by name when only one session has track_id', () => {

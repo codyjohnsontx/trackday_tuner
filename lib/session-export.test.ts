@@ -36,6 +36,8 @@ function session(overrides: Partial<Session> = {}): Session {
     vehicle_id: 'bike-1',
     track_id: 'track-1',
     track_name: 'Road America',
+    layout_id: null,
+    layout_name: null,
     date: '2026-05-01',
     start_time: '09:30:00',
     session_number: 1,
@@ -167,6 +169,25 @@ describe('session export helpers', () => {
     expect(row.front_camber).toBe('-2.5');
     expect(row.wing_angle).toBe('4');
     expect(row.ambient_temperature_c).toBeNull();
+  });
+
+  it('exports which layout of the circuit a session ran', () => {
+    const csv = buildSessionExportCsv([
+      {
+        session: session({ track_name: 'MotorSport Ranch', layout_id: 'layout-13', layout_name: '1.3-Mile' }),
+        vehicle: motorcycle,
+        environment: null,
+        telemetry: null,
+      },
+      { session: session({ id: 'session-2' }), vehicle: motorcycle, environment: null, telemetry: null },
+    ]);
+
+    const [header, withLayout, withoutLayout] = csv.trim().split(/\r?\n/).map((line) => line.split(','));
+    const layoutName = header.indexOf('layout_name');
+    const layoutId = header.indexOf('layout_id');
+    expect(header[header.indexOf('track_name') + 1]).toBe('layout_id');
+    expect([withLayout[layoutId], withLayout[layoutName]]).toEqual(['layout-13', '1.3-Mile']);
+    expect([withoutLayout[layoutId], withoutLayout[layoutName]]).toEqual(['', '']);
   });
 
   it('builds csv with headers and escaped note values', () => {
@@ -332,6 +353,45 @@ describe('session export helpers', () => {
    * one track, so they share one personal best. `sessionsMatchTrack` says so;
    * the board has to agree or a rider reads two records for one place.
    */
+  it('keeps a personal best to the layout it was ridden on', () => {
+    const cresson = { track_id: 'track-msr', track_name: 'MotorSport Ranch' };
+    const lap = (id: string, date: string, ms: number, layout: Partial<Session>) => ({
+      session: session({ id, date, ...cresson, ...layout }),
+      vehicle: motorcycle,
+      environment: null,
+      telemetry: telemetry({ lap_times_ms: [ms] }, { session_id: id }),
+    });
+
+    const analytics = deriveSessionAnalytics([
+      lap('long', '2026-05-01', 150000, { layout_id: 'layout-31', layout_name: '3.1-Mile' }),
+      lap('short', '2026-05-02', 62000, { layout_id: 'layout-13', layout_name: '1.3-Mile' }),
+      // The 1.3-Mile layout row has since gone: the snapshot name still files it there.
+      lap('short-snapshot', '2026-05-03', 61000, { layout_id: null, layout_name: '1.3-mile' }),
+      // No layout named: its own group, never folded into either layout.
+      lap('unspecified', '2026-05-04', 58000, { layout_id: null, layout_name: null }),
+    ]);
+
+    expect(
+      analytics.bestLapByTrack
+        .map((best) => [best.trackName, best.layoutName, best.bestLap])
+        .sort((a, b) => String(a[1]).localeCompare(String(b[1]))),
+    ).toEqual([
+      ['MotorSport Ranch', '1.3-Mile', '1:01.000'],
+      ['MotorSport Ranch', '3.1-Mile', '2:30.000'],
+      ['MotorSport Ranch', null, '58.000'],
+    ]);
+  });
+
+  it('keeps one row per circuit for a rider who never picks a layout', () => {
+    const analytics = deriveSessionAnalytics([
+      { session: session({ id: 's1', date: '2026-05-01' }), vehicle: motorcycle, environment: null, telemetry: telemetry({ lap_times_ms: [104620] }) },
+      { session: session({ id: 's2', date: '2026-05-02' }), vehicle: motorcycle, environment: null, telemetry: telemetry({ lap_times_ms: [103500] }, { session_id: 's2' }) },
+    ]);
+
+    expect(analytics.bestLapByTrack).toHaveLength(1);
+    expect(analytics.bestLapByTrack[0]).toMatchObject({ layoutName: null, bestLap: '1:43.500' });
+  });
+
   it('folds a typed track name into the saved row it names', () => {
     const analytics = deriveSessionAnalytics([
       {

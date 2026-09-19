@@ -124,7 +124,7 @@ Track list (pre-seeded + user-added)
 
 Track detail page
 
-(Later: location + layouts)
+Circuit configurations are layouts of one track, picked per session
 
 D) Sessions (the heart)
 
@@ -420,8 +420,8 @@ touches. `supabase start` (and `db reset`) seed the `vehicle-photos` bucket from
 `Creating Storage bucket: vehicle-photos`; the policies that let a rider write
 their own folder are a migration like any other. Before that block existed a
 fresh database applied every migration cleanly and answered the first photo with
-"Photo upload failed: Bucket not found". No tracks are seeded, so a fresh
-database starts with none to pick from.
+"Photo upload failed: Bucket not found". The North American circuits a rider
+picks from are seeded by a migration, so a fresh database has them too.
 
 The bucket is the one thing `db push` does not carry to the hosted project, because
 the CLI provisions buckets from `config.toml` rather than from migrations. A

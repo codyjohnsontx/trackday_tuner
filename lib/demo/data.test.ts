@@ -68,7 +68,7 @@ describe('demo data', () => {
 
     expect(baseline?.vehicle_id).toBe('demo-r6');
     expect(baseline?.source_session_id).toBe('demo-session-3');
-    expect(baseline?.source_track_name).toBe('MSR Cresson 1.7');
+    expect(baseline?.source_track_name).toBe('MotorSport Ranch');
   });
 
   it('filters demo baselines by vehicle ids', () => {
