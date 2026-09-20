@@ -53,16 +53,25 @@ function createQuery(response: QueryResponse = {}) {
   return query;
 }
 
+type StorageRemove = ReturnType<typeof vi.fn>;
+
 /** A client whose `from(table)` hands out that table's queries in call order. */
-function clientFor(tables: Record<string, ReturnType<typeof createQuery>[]>) {
+function clientFor(
+  tables: Record<string, ReturnType<typeof createQuery>[]>,
+  storageRemove: StorageRemove = vi.fn(async () => ({ data: [], error: null })),
+) {
   const from = vi.fn((table: string) => {
     const next = tables[table]?.shift();
     if (!next) throw new Error(`unexpected query on ${table}`);
     return next;
   });
-  vi.mocked(createClient).mockResolvedValue({ from } as never);
+  const storageFrom = vi.fn(() => ({ remove: storageRemove }));
+  vi.mocked(createClient).mockResolvedValue({ from, storage: { from: storageFrom } } as never);
+  lastStorageFrom = storageFrom;
   return from;
 }
+
+let lastStorageFrom: ReturnType<typeof vi.fn>;
 
 function baselineCount(count: number) {
   return createQuery({ base: { data: null, error: null, count } });
@@ -265,6 +274,75 @@ describe('vehicles actions', () => {
     for (const path of ['/garage', '/dashboard', '/sessions', '/sessions/new', '/tracks']) {
       expect(revalidatePath).toHaveBeenCalledWith(path);
     }
+  });
+
+  it("removes the bike's photo from the public bucket once the row is gone", async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const remove = vi.fn(async () => ({ data: [{ name: 'user-1/1700_my bike.jpg' }], error: null }));
+    clientFor(
+      {
+        sessions: [sessionIdPage(0)],
+        vehicle_baselines: [baselineCount(0)],
+        ...aiRecords(),
+        vehicles: [
+          createQuery({
+            base: {
+              data: [
+                {
+                  id: 'veh-1',
+                  photo_url:
+                    'https://project.supabase.co/storage/v1/object/public/vehicle-photos/user-1/1700_my%20bike.jpg',
+                },
+              ],
+              error: null,
+            },
+          }),
+        ],
+      },
+      remove,
+    );
+
+    const result = await deleteVehicle('veh-1', 0);
+
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(lastStorageFrom).toHaveBeenCalledWith('vehicle-photos');
+    expect(remove).toHaveBeenCalledWith(['user-1/1700_my bike.jpg']);
+  });
+
+  it('keeps the delete and reports the photo when storage refuses to remove it', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const remove = vi.fn(async () => ({ data: null, error: { message: 'storage down' } }));
+    clientFor(
+      {
+        sessions: [sessionIdPage(0)],
+        vehicle_baselines: [baselineCount(0)],
+        ...aiRecords(),
+        vehicles: [
+          createQuery({
+            base: {
+              data: [
+                {
+                  id: 'veh-1',
+                  photo_url: 'https://project.supabase.co/storage/v1/object/public/vehicle-photos/user-1/1700.jpg',
+                },
+              ],
+              error: null,
+            },
+          }),
+        ],
+      },
+      remove,
+    );
+
+    const result = await deleteVehicle('veh-1', 0);
+
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(reportError).toHaveBeenCalledWith(
+      'vehicle-photo-delete',
+      expect.any(Error),
+      expect.objectContaining({ bucket: 'vehicle-photos', object: 'user-1/1700.jpg', vehicleId: 'veh-1' }),
+    );
+    expect(revalidatePath).toHaveBeenCalledWith('/garage');
   });
 
   it('refuses when a session was logged on the bike after the rider read the count', async () => {

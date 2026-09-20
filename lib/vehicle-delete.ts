@@ -23,6 +23,48 @@ export const VEHICLE_DELETE_COUNT_CHANGED_MESSAGE =
 export const VEHICLE_DELETE_COUNT_FAILED_MESSAGE =
   'We could not count the sessions on this vehicle, so deleting it stays off until we can say exactly what would be removed. Reload the page to try again.';
 
+export const VEHICLE_PHOTO_BUCKET = 'vehicle-photos';
+
+const PUBLIC_OBJECT_SEGMENTS = ['storage', 'v1', 'object', 'public', VEHICLE_PHOTO_BUCKET];
+
+/**
+ * The object a vehicle's `photo_url` points at, for the delete to remove.
+ *
+ * The row carries the public URL `getPublicUrl` built, and the storage API takes
+ * the object name inside the bucket, so the endpoint segments are found in the
+ * path rather than the origin being stripped - a self-hosted project serves them
+ * under its own path prefix. supabase-js runs the whole URL through `encodeURI`,
+ * so each segment is decoded back to the name the object was uploaded under.
+ * Anything this cannot read as one of those URLs is `null`: the bike is still
+ * deleted, and a guess would delete some other object.
+ */
+export function vehiclePhotoObjectPath(photoUrl: string | null | undefined): string | null {
+  if (!photoUrl) return null;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(photoUrl);
+  } catch {
+    return null;
+  }
+
+  const segments = parsed.pathname.split('/').filter((segment) => segment !== '');
+  const marker = PUBLIC_OBJECT_SEGMENTS.join('/');
+  const start = segments.findIndex(
+    (_, index) => segments.slice(index, index + PUBLIC_OBJECT_SEGMENTS.length).join('/') === marker,
+  );
+  if (start === -1) return null;
+
+  const object = segments.slice(start + PUBLIC_OBJECT_SEGMENTS.length);
+  if (object.length === 0) return null;
+
+  try {
+    return object.map(decodeURIComponent).join('/');
+  } catch {
+    return null;
+  }
+}
+
 export interface VehicleDeletionCounts {
   sessionCount: number;
   lapCount: number;

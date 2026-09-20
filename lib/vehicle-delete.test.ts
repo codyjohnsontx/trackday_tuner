@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeVehicleDeletion, nicknameConfirmationMatches } from '@/lib/vehicle-delete';
+import { describeVehicleDeletion, nicknameConfirmationMatches, vehiclePhotoObjectPath } from '@/lib/vehicle-delete';
 
 describe('describeVehicleDeletion', () => {
   const none = { hasBaseline: false, recommendationCount: 0, hasRaceEngineerMemory: false };
@@ -67,5 +67,37 @@ describe('nicknameConfirmationMatches', () => {
     expect(nicknameConfirmationMatches('Blue R6x', 'Blue R6')).toBe(false);
     expect(nicknameConfirmationMatches('', 'Blue R6')).toBe(false);
     expect(nicknameConfirmationMatches('', '   ')).toBe(false);
+  });
+});
+
+describe('vehiclePhotoObjectPath', () => {
+  it('reads the object name out of the public URL the form stored', () => {
+    expect(
+      vehiclePhotoObjectPath('https://project.supabase.co/storage/v1/object/public/vehicle-photos/user-1/1700.jpg'),
+    ).toBe('user-1/1700.jpg');
+  });
+
+  it('decodes the name the object was uploaded under', () => {
+    expect(
+      vehiclePhotoObjectPath(
+        'http://127.0.0.1:54321/storage/v1/object/public/vehicle-photos/user-1/1700_my%20bike%20%232.jpg',
+      ),
+    ).toBe('user-1/1700_my bike #2.jpg');
+  });
+
+  it('finds the object under a self-hosted path prefix', () => {
+    expect(
+      vehiclePhotoObjectPath('https://example.com/supabase/storage/v1/object/public/vehicle-photos/user-1/a.jpg'),
+    ).toBe('user-1/a.jpg');
+  });
+
+  it('answers null rather than guessing at anything else', () => {
+    expect(vehiclePhotoObjectPath(null)).toBeNull();
+    expect(vehiclePhotoObjectPath('')).toBeNull();
+    expect(vehiclePhotoObjectPath('not a url')).toBeNull();
+    expect(vehiclePhotoObjectPath('https://example.com/photos/user-1/a.jpg')).toBeNull();
+    expect(vehiclePhotoObjectPath('https://project.supabase.co/storage/v1/object/public/other-bucket/a.jpg')).toBeNull();
+    expect(vehiclePhotoObjectPath('https://project.supabase.co/storage/v1/object/public/vehicle-photos/')).toBeNull();
+    expect(vehiclePhotoObjectPath('https://project.supabase.co/storage/v1/object/public/vehicle-photos/a%ZZ.jpg')).toBeNull();
   });
 });

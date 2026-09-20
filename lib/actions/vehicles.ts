@@ -13,6 +13,8 @@ import {
   VEHICLE_DELETE_COUNT_FAILED_MESSAGE,
   VEHICLE_DELETE_FAILED_MESSAGE,
   VEHICLE_DELETE_NOT_FOUND_MESSAGE,
+  VEHICLE_PHOTO_BUCKET,
+  vehiclePhotoObjectPath,
   type VehicleDeletionCounts,
 } from '@/lib/vehicle-delete';
 import type { TableInsert } from '@/types/supabase';
@@ -303,7 +305,7 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
     .delete()
     .eq('id', id)
     .eq('user_id', user.id)
-    .select('id');
+    .select('id, photo_url');
 
   if (error) {
     reportError('vehicle-delete', new Error(error.message), {
@@ -316,7 +318,24 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
     });
     return { ok: false, error: VEHICLE_DELETE_FAILED_MESSAGE };
   }
-  if ((data ?? []).length === 0) return { ok: false, error: VEHICLE_DELETE_NOT_FOUND_MESSAGE };
+  const deleted = (data ?? []) as { id: string; photo_url: string | null }[];
+  if (deleted.length === 0) return { ok: false, error: VEHICLE_DELETE_NOT_FOUND_MESSAGE };
+
+  // The bucket is public, so a photo left behind keeps serving the bike a rider
+  // was told is gone. The row is already deleted and cannot come back, so a
+  // storage failure is reported rather than failing a delete that happened.
+  const photoPath = vehiclePhotoObjectPath(deleted[0].photo_url);
+  if (photoPath) {
+    const { error: photoError } = await supabase.storage.from(VEHICLE_PHOTO_BUCKET).remove([photoPath]);
+    if (photoError) {
+      reportError('vehicle-photo-delete', new Error(photoError.message), {
+        bucket: VEHICLE_PHOTO_BUCKET,
+        object: photoPath,
+        userId: user.id,
+        vehicleId: id,
+      });
+    }
+  }
 
   // The cascade reaches every screen that lists sessions or picks a vehicle.
   revalidatePath('/garage');
