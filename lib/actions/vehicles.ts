@@ -5,6 +5,7 @@ import { getRealUser } from '@/lib/auth';
 import { getDemoProfile, getDemoVehicles } from '@/lib/demo/data';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
+import { getSupabaseUrl } from '@/lib/env.public';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
 import { reportError } from '@/lib/monitoring/report-error';
@@ -324,11 +325,19 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
   // The bucket is public, so a photo left behind keeps serving the bike a rider
   // was told is gone. The row is already deleted and cannot come back, so a
   // storage failure is reported rather than failing a delete that happened.
-  const photoPath = vehiclePhotoObjectPath(deleted[0].photo_url);
+  const photoPath = vehiclePhotoObjectPath(deleted[0].photo_url, {
+    supabaseUrl: getSupabaseUrl(),
+    ownerId: user.id,
+  });
   if (photoPath) {
-    const { error: photoError } = await supabase.storage.from(VEHICLE_PHOTO_BUCKET).remove([photoPath]);
-    if (photoError) {
-      reportError('vehicle-photo-delete', new Error(photoError.message), {
+    // `remove` deletes what RLS admits and reports what it deleted, so an object
+    // the policy refuses or one already gone comes back as no rows and no error
+    // - the photo still serving is exactly the case this removes.
+    const { data: removed, error: photoError } = await supabase.storage
+      .from(VEHICLE_PHOTO_BUCKET)
+      .remove([photoPath]);
+    if (photoError || (removed ?? []).length === 0) {
+      reportError('vehicle-photo-delete', new Error(photoError?.message ?? 'storage removed no object'), {
         bucket: VEHICLE_PHOTO_BUCKET,
         object: photoPath,
         userId: user.id,

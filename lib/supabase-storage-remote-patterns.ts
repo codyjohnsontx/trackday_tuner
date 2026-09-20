@@ -51,7 +51,7 @@ import type { RemotePattern } from 'next/dist/shared/lib/image-config';
  */
 
 /** The public object endpoint `getPublicUrl` points at, relative to the project URL. */
-const PUBLIC_OBJECT_ENDPOINT = 'storage/v1/object/public/';
+export const PUBLIC_OBJECT_ENDPOINT = 'storage/v1/object/public/';
 
 /** The same endpoint at the root of a host, which is where a hosted project serves it. */
 export const SUPABASE_PUBLIC_OBJECT_PATHNAME = `/${PUBLIC_OBJECT_ENDPOINT}**`;

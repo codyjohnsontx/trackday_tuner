@@ -11,6 +11,8 @@
  * The delete stays off until they type the bike's nickname.
  */
 
+import { PUBLIC_OBJECT_ENDPOINT } from '@/lib/supabase-storage-remote-patterns';
+
 export const VEHICLE_DELETE_FAILED_MESSAGE =
   'This vehicle was not deleted - something went wrong on our end. Nothing was removed, so the bike and its sessions are all still here. Try again in a moment.';
 
@@ -25,44 +27,50 @@ export const VEHICLE_DELETE_COUNT_FAILED_MESSAGE =
 
 export const VEHICLE_PHOTO_BUCKET = 'vehicle-photos';
 
-const PUBLIC_OBJECT_SEGMENTS = ['storage', 'v1', 'object', 'public', VEHICLE_PHOTO_BUCKET];
-
 /**
  * The object a vehicle's `photo_url` points at, for the delete to remove.
  *
- * The row carries the public URL `getPublicUrl` built, and the storage API takes
- * the object name inside the bucket, so the endpoint segments are found in the
- * path rather than the origin being stripped - a self-hosted project serves them
- * under its own path prefix. supabase-js runs the whole URL through `encodeURI`,
- * so each segment is decoded back to the name the object was uploaded under.
- * Anything this cannot read as one of those URLs is `null`: the bike is still
- * deleted, and a guess would delete some other object.
+ * `photo_url` is a column `authenticated` writes directly, so the value is the
+ * rider's and not the app's, and what this returns is fed to a destructive
+ * storage call. It is therefore anchored rather than scanned: the URL has to be
+ * this project's own public object endpoint for this bucket, built the way
+ * supabase-js builds it, and the object has to sit in the owner's folder. A URL
+ * naming another project, another bucket or another rider's folder is `null`,
+ * which deletes nothing and still deletes the bike. supabase-js runs the whole
+ * URL through `encodeURI`, so each segment is decoded back to the name the
+ * object was uploaded under.
  */
-export function vehiclePhotoObjectPath(photoUrl: string | null | undefined): string | null {
-  if (!photoUrl) return null;
+export function vehiclePhotoObjectPath(
+  photoUrl: string | null | undefined,
+  { supabaseUrl, ownerId }: { supabaseUrl: string; ownerId: string },
+): string | null {
+  if (!photoUrl || !ownerId) return null;
 
+  let prefix: URL;
   let parsed: URL;
   try {
+    const base = new URL(supabaseUrl.endsWith('/') ? supabaseUrl : `${supabaseUrl}/`);
+    prefix = new URL(`${PUBLIC_OBJECT_ENDPOINT}${VEHICLE_PHOTO_BUCKET}/`, base);
     parsed = new URL(photoUrl);
   } catch {
     return null;
   }
 
-  const segments = parsed.pathname.split('/').filter((segment) => segment !== '');
-  const marker = PUBLIC_OBJECT_SEGMENTS.join('/');
-  const start = segments.findIndex(
-    (_, index) => segments.slice(index, index + PUBLIC_OBJECT_SEGMENTS.length).join('/') === marker,
-  );
-  if (start === -1) return null;
+  if (parsed.origin !== prefix.origin) return null;
+  if (!parsed.pathname.startsWith(prefix.pathname)) return null;
 
-  const object = segments.slice(start + PUBLIC_OBJECT_SEGMENTS.length);
-  if (object.length === 0) return null;
+  const segments = parsed.pathname.slice(prefix.pathname.length).split('/').filter((segment) => segment !== '');
+  if (segments.length < 2) return null;
 
+  let object: string[];
   try {
-    return object.map(decodeURIComponent).join('/');
+    object = segments.map(decodeURIComponent);
   } catch {
     return null;
   }
+  if (object[0] !== ownerId) return null;
+
+  return object.join('/');
 }
 
 export interface VehicleDeletionCounts {
