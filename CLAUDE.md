@@ -553,9 +553,10 @@ The same shape applies to anything derived rather than given:
   and accent composition. Any other comparison of two track names goes through
   `trackNameKey` too, and a typed-name lookup of `tracks` through
   `findVisibleTrackByName` (`lib/track-lookup.ts`), never a raw `===` or
-  `.eq('name')`. A supplied `track_id` is looked up in the same seeded-or-own scope the picker offers rather than trusted, and the row's own
-  name wins over what was typed, so a session cannot store an id and a name that
-  point at different circuits. Creating a row for a name that matches none is
+  `.eq('name')`. A supplied `track_id` is looked up in the same seeded-or-own
+  scope the picker offers rather than trusted, and the row's own name wins over
+  what was typed, so a session cannot store an id and a name that point at
+  different circuits. Creating a row for a name that matches none is
   best effort: at the free-plan track cap, on an insert error, or when the name
   lookup could not answer - it failed, or filled `TRACK_NAME_MATCH_LIMIT` and so
   proves nothing - the session still saves with the name alone, and a row this

@@ -588,6 +588,12 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
       sessionsWithLaps += 1;
     }
 
+    // A tally of circuits, so it groups by the folded track key rather than by
+    // the raw name: "COTA" and "cota" are one row, as they are everywhere else.
+    // The per-session `unknown:` keys collapse back into one here - they exist so
+    // two trackless track days cannot share a board row and lose a lap best, and
+    // a count of sessions has nothing to lose, while a top five of identical
+    // "Unknown Track" rows tells the rider nothing and crowds out real circuits.
     const circuit = trackKeys.get(input.session.id);
     if (circuit) {
       const tallyTrack = circuit.key.startsWith('unknown:') ? { key: 'unknown', trackName: UNNAMED_TRACK } : circuit;
