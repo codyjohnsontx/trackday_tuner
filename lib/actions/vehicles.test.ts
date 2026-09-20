@@ -341,6 +341,14 @@ describe('vehicles actions', () => {
 
     expect(result).toEqual({ ok: true, data: undefined });
     expect(remove).not.toHaveBeenCalled();
+    expect(reportError).toHaveBeenCalledWith(
+      'vehicle-photo-delete',
+      expect.any(Error),
+      expect.objectContaining({
+        photoUrl: `${SUPABASE_URL}/storage/v1/object/public/vehicle-photos/user-2/theirs.jpg`,
+        vehicleId: 'veh-1',
+      }),
+    );
   });
 
   it('reports a removal that deleted nothing even though storage raised no error', async () => {

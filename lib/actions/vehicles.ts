@@ -325,11 +325,19 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
   // The bucket is public, so a photo left behind keeps serving the bike a rider
   // was told is gone. The row is already deleted and cannot come back, so a
   // storage failure is reported rather than failing a delete that happened.
-  const photoPath = vehiclePhotoObjectPath(deleted[0].photo_url, {
+  const photoUrl = deleted[0].photo_url;
+  const photoPath = vehiclePhotoObjectPath(photoUrl, {
     supabaseUrl: getSupabaseUrl(),
     ownerId: user.id,
   });
-  if (photoPath) {
+  if (photoUrl && !photoPath) {
+    reportError('vehicle-photo-delete', new Error('photo_url is not an object in this rider\'s folder'), {
+      bucket: VEHICLE_PHOTO_BUCKET,
+      photoUrl,
+      userId: user.id,
+      vehicleId: id,
+    });
+  } else if (photoPath) {
     // `remove` deletes what RLS admits and reports what it deleted, so an object
     // the policy refuses or one already gone comes back as no rows and no error
     // - the photo still serving is exactly the case this removes.
