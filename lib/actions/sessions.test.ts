@@ -92,6 +92,7 @@ function createQuery(response: QueryResponse = {}) {
   query.lte = vi.fn(() => query);
   query.order = vi.fn(() => query);
   query.limit = vi.fn(() => query);
+  query.range = vi.fn(() => query);
   query.single = vi.fn(async () => single);
   query.maybeSingle = vi.fn(async () => single);
   query.then = (onFulfilled: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
@@ -2289,6 +2290,60 @@ describe('sessions actions', () => {
     expect(byId.eq).toHaveBeenCalledWith('user_id', 'user-1');
     expect(byId.eq).toHaveBeenCalledWith('track_id', 'track-1');
     expect(byName.eq).toHaveBeenCalledWith('user_id', 'user-1');
+  });
+
+  it('lists only the most recent sessions at a track', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const session = (id: string, trackId: string | null, date: string) => ({
+      id,
+      track_id: trackId,
+      track_name: 'Barber',
+      date,
+      start_time: null,
+      created_at: `${date}T10:00:00Z`,
+    });
+    const linked = Array.from({ length: 10 }, (_, index) =>
+      session(`s-linked-${index}`, 'track-1', `2026-05-${String(20 - index).padStart(2, '0')}`),
+    );
+    const legacy = [session('s-legacy-new', null, '2026-06-01'), session('s-legacy-old', null, '2025-01-01')];
+    const byId = createQuery({ base: { data: linked, error: null } });
+    const byName = createQuery({ base: { data: legacy, error: null } });
+    vi.mocked(createClient).mockResolvedValue({
+      from: vi.fn().mockReturnValueOnce(byId).mockReturnValueOnce(byName),
+    } as never);
+
+    const result = await getSessionsAtTrack({ id: 'track-1', name: 'Barber' });
+
+    expect(byId.limit).toHaveBeenCalledWith(10);
+    expect(result.ok && result.data.map((row) => row.id)).toEqual([
+      's-legacy-new',
+      ...linked.slice(0, 9).map((row) => row.id),
+    ]);
+  });
+
+  it('pages the unlinked name read past rows the fold rejects instead of losing a real match', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const otherCircuit = Array.from({ length: 100 }, (_, index) => ({
+      id: `s-other-${index}`,
+      track_id: null,
+      track_name: 'Barber North',
+      date: '2026-07-01',
+      start_time: null,
+      created_at: '2026-07-01T10:00:00Z',
+    }));
+    const real = { id: 's-real', track_id: null, track_name: 'Barber', date: '2026-01-01', start_time: null, created_at: '2026-01-01T10:00:00Z' };
+    const byId = createQuery({ base: { data: [], error: null } });
+    const firstPage = createQuery({ base: { data: otherCircuit, error: null } });
+    const secondPage = createQuery({ base: { data: [real], error: null } });
+    vi.mocked(createClient).mockResolvedValue({
+      from: vi.fn().mockReturnValueOnce(byId).mockReturnValueOnce(firstPage).mockReturnValueOnce(secondPage),
+    } as never);
+
+    const result = await getSessionsAtTrack({ id: 'track-1', name: 'Barber' });
+
+    expect(result.ok && result.data.map((row) => row.id)).toEqual(['s-real']);
+    expect(firstPage.range).toHaveBeenCalledWith(0, 99);
+    expect(secondPage.range).toHaveBeenCalledWith(100, 199);
   });
 
   it('reports a failed track-sessions read rather than an empty history', async () => {

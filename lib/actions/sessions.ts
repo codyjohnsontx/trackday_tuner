@@ -284,20 +284,31 @@ export async function getSessions(vehicleId?: string, limit?: number): Promise<S
   return (data ?? []) as Session[];
 }
 
+const RECENT_TRACK_SESSION_LIMIT = 10;
+const TRACK_NAME_PAGE_SIZE = 100;
+
 /**
- * Every session the rider logged at one track, newest first.
+ * The rider's most recent sessions at one track, newest first, at most
+ * `RECENT_TRACK_SESSION_LIMIT` of them.
  *
  * Two reads rather than one `or(...)`: a track name is free text that can hold
  * the commas and parentheses PostgREST's `or` grammar reserves. The name read is
  * for sessions saved before every typed circuit was linked to a track row; its
- * pattern only narrows, and `sessionIsAtTrack` decides.
+ * pattern only narrows and `sessionIsAtTrack` decides, so it is paged until it
+ * has found enough real matches rather than capped - a cap there would let rows
+ * the fold rejects crowd out the ones it accepts.
  *
  * A failed read is reported rather than returned as `[]`, which the track page
  * would print as "no sessions here yet" to a rider who has logged a season there.
  */
 export async function getSessionsAtTrack(track: { id: string; name: string }): Promise<ActionResult<Session[]>> {
   if (await isDemoMode()) {
-    return { ok: true, data: getDemoSessions().filter((session) => sessionIsAtTrack(session, track)) };
+    return {
+      ok: true,
+      data: getDemoSessions()
+        .filter((session) => sessionIsAtTrack(session, track))
+        .slice(0, RECENT_TRACK_SESSION_LIMIT),
+    };
   }
 
   const user = await getRealUser();
@@ -313,9 +324,24 @@ export async function getSessionsAtTrack(track: { id: string; name: string }): P
       .order('start_time', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false });
 
+  const readUnlinkedByName = async () => {
+    const matches: Session[] = [];
+    for (let from = 0; matches.length < RECENT_TRACK_SESSION_LIMIT; from += TRACK_NAME_PAGE_SIZE) {
+      const { data, error } = await orderedSessions()
+        .is('track_id', null)
+        .ilike('track_name', trackNameSearchPattern(track.name))
+        .range(from, from + TRACK_NAME_PAGE_SIZE - 1);
+      if (error) return { data: null, error };
+      const page = (data ?? []) as Session[];
+      matches.push(...page.filter((session) => sessionIsAtTrack(session, track)));
+      if (page.length < TRACK_NAME_PAGE_SIZE) break;
+    }
+    return { data: matches, error: null };
+  };
+
   const [byId, byName] = await Promise.all([
-    orderedSessions().eq('track_id', track.id),
-    orderedSessions().is('track_id', null).ilike('track_name', trackNameSearchPattern(track.name)),
+    orderedSessions().eq('track_id', track.id).limit(RECENT_TRACK_SESSION_LIMIT),
+    readUnlinkedByName(),
   ]);
 
   const error = byId.error ?? byName.error;
@@ -330,9 +356,10 @@ export async function getSessionsAtTrack(track: { id: string; name: string }): P
     return { ok: false, error: 'Your sessions at this track could not be loaded. Try again in a moment.' };
   }
 
-  const sessions = [...((byId.data ?? []) as Session[]), ...((byName.data ?? []) as Session[])]
+  const sessions = [...((byId.data ?? []) as Session[]), ...(byName.data ?? [])]
     .filter((session) => sessionIsAtTrack(session, track))
-    .sort(compareSessionsDesc);
+    .sort(compareSessionsDesc)
+    .slice(0, RECENT_TRACK_SESSION_LIMIT);
   return { ok: true, data: sessions };
 }
 
