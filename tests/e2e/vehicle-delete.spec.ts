@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { signInWith } from '@/tests/e2e/helpers/auth';
 import { gotoPage } from '@/tests/e2e/helpers/navigation';
-import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
+import { createTestAdminClient, expectRows, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { EMPTY_SUSPENSION, EMPTY_TIRES } from '@/tests/e2e/helpers/session-fixtures';
 import {
   createThrowawayRider,
@@ -116,12 +116,13 @@ test.describe('deleting a vehicle', () => {
     await expect(page).toHaveURL(/\/garage$/, { timeout: 20_000 });
 
     const admin = createTestAdminClient();
-    const { data: vehicles } = await admin.from('vehicles').select('id').eq('id', vehicleId);
-    expect(vehicles ?? []).toHaveLength(0);
-    const { data: sessions } = await admin.from('sessions').select('id').in('id', [first, second]);
-    expect(sessions ?? []).toHaveLength(0);
-    const { data: laps } = await admin.from('session_laps').select('id').eq('session_id', first);
-    expect(laps ?? []).toHaveLength(0);
+    expect(expectRows(await admin.from('vehicles').select('id').eq('id', vehicleId), 'vehicle after delete')).toHaveLength(0);
+    expect(
+      expectRows(await admin.from('sessions').select('id').in('id', [first, second]), 'sessions after delete'),
+    ).toHaveLength(0);
+    expect(
+      expectRows(await admin.from('session_laps').select('id').eq('session_id', first), 'laps after delete'),
+    ).toHaveLength(0);
 
     await gotoPage(page, '/garage/new');
     await expect(page.getByRole('heading', { name: 'Add Vehicle' })).toBeVisible();
@@ -144,8 +145,12 @@ test.describe('deleting a vehicle', () => {
     await expect(
       page.getByRole('alert').filter({ hasText: 'The sessions on this vehicle changed since this page loaded' }),
     ).toBeVisible();
-    const { data: vehicles } = await createTestAdminClient().from('vehicles').select('id').eq('id', vehicleId);
-    expect(vehicles ?? []).toHaveLength(1);
+    expect(
+      expectRows(
+        await createTestAdminClient().from('vehicles').select('id').eq('id', vehicleId),
+        'vehicle after refused delete',
+      ),
+    ).toHaveLength(1);
   });
 
   test('tells the rider when the delete finds no vehicle, and stays put', async ({ page }) => {
@@ -156,7 +161,12 @@ test.describe('deleting a vehicle', () => {
     await expect(page.getByText(/No sessions are logged on it, so nothing else is lost\./)).toBeVisible();
 
     // Deleted out from under the open page - another tab, another device.
-    await createTestAdminClient().from('vehicles').delete().eq('id', vehicleId);
+    expect(
+      expectRows(
+        await createTestAdminClient().from('vehicles').delete().eq('id', vehicleId).select('id'),
+        'deleting the vehicle under the open page',
+      ),
+    ).toHaveLength(1);
 
     await typeNickname(page, NICKNAME);
     await page.getByRole('button', { name: 'Delete vehicle' }).click();

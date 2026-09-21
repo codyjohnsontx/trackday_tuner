@@ -1,3 +1,4 @@
+import { expect } from '@playwright/test';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/supabase';
 
@@ -49,4 +50,20 @@ export async function findUserIdByEmail(
   }
 
   return null;
+}
+
+/**
+ * The rows a verification read returned, after asserting it did not fail.
+ *
+ * A failed service-role read resolves with `data: null` and an `error`, and a
+ * `data ?? []` turns that into "no rows" - which is exactly what a deletion
+ * spec asserts, so the check would pass without ever seeing the database.
+ */
+export function expectRows<T>(
+  result: { data: T[] | null; error: { message: string } | null },
+  what: string,
+): T[] {
+  expect(result.error, `${what}: ${result.error?.message}`).toBeNull();
+  expect(result.data, `${what}: no rows array returned`).not.toBeNull();
+  return result.data!;
 }

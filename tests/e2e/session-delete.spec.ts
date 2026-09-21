@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { signInWith } from '@/tests/e2e/helpers/auth';
 import { gotoPage } from '@/tests/e2e/helpers/navigation';
-import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
+import { createTestAdminClient, expectRows, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { EMPTY_SUSPENSION, EMPTY_TIRES } from '@/tests/e2e/helpers/session-fixtures';
 import {
   createThrowawayRider,
@@ -99,10 +99,10 @@ test.describe('deleting a mis-logged session', () => {
     await expect(page.getByText(TRACK_NAME)).toHaveCount(0);
 
     const admin = createTestAdminClient();
-    const { data: sessionRows } = await admin.from('sessions').select('id').eq('id', sessionId);
-    expect(sessionRows ?? []).toHaveLength(0);
-    const { data: lapRows } = await admin.from('session_laps').select('id').eq('session_id', sessionId);
-    expect(lapRows ?? []).toHaveLength(0);
+    expect(expectRows(await admin.from('sessions').select('id').eq('id', sessionId), 'sessions after delete')).toHaveLength(0);
+    expect(
+      expectRows(await admin.from('session_laps').select('id').eq('session_id', sessionId), 'laps after delete'),
+    ).toHaveLength(0);
   });
 
   test('tells the rider when the session is already gone, and stays put', async ({ page }) => {
@@ -111,7 +111,12 @@ test.describe('deleting a mis-logged session', () => {
     await expect(page.getByRole('button', { name: 'Hold to delete session' })).toBeVisible();
 
     // Deleted out from under the open page - another tab, another device.
-    await createTestAdminClient().from('sessions').delete().eq('id', sessionId);
+    expect(
+      expectRows(
+        await createTestAdminClient().from('sessions').delete().eq('id', sessionId).select('id'),
+        'deleting the session under the open page',
+      ),
+    ).toHaveLength(1);
 
     await hold(page, 'Hold to delete session', 1_400);
     await expect(page.getByRole('alert').filter({ hasText: 'This session could not be found.' })).toBeVisible();

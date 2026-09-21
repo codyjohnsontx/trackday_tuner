@@ -29,5 +29,8 @@ export async function createThrowawayRider(label: string): Promise<ThrowawayRide
 
 export async function deleteThrowawayRider(rider: ThrowawayRider | null): Promise<void> {
   if (!rider) return;
-  await createTestAdminClient().auth.admin.deleteUser(rider.id);
+  // A cleanup that fails quietly leaves the account and every row it owns
+  // behind, and the next run has no way to tell.
+  const { error } = await createTestAdminClient().auth.admin.deleteUser(rider.id);
+  expect(error, `deleting throwaway rider ${rider.email}: ${error?.message}`).toBeNull();
 }
