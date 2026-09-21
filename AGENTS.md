@@ -519,9 +519,11 @@ with and without the flag and watching the cookie survive or vanish on render.
   guard it shipped and is not edited, because an applied migration never is - its
   "no comment promises more than the count comparison" is superseded by
   20260903001500 and by this bullet.** What is still not caught is two saves
-  carrying the SAME laps, because nothing is lost when they are. The sibling
-  readers -
-  `getSessions`, `getSessionEnvironment`, `getSessionEnvironments`,
+  carrying the SAME laps, because nothing is lost when they are. The session
+  delete confirmation is the same case: `getSessionEnvironment`,
+  `getSessionOutcome` and `getSessionChangeRecords` return `ActionResult` too, and
+  `lib/session-delete.ts` offers no delete until every read it names succeeded.
+  The sibling readers - `getSessions`, `getSessionEnvironments`,
   `getLatestSessionsByVehicle`, `getComparableSessions` - still discard theirs;
   none feeds a write, so they degrade a display only, and that is the line to
   check before copying one

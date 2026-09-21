@@ -108,7 +108,7 @@ Subscription tier flag (free/pro)
 
 B) Garage
 
-Create/edit vehicles
+Create/edit/delete vehicles (deleting one also deletes its sessions)
 
 Vehicle type: motorcycle or car
 
@@ -340,7 +340,7 @@ Free → Pro conversion rate (after hitting limits / wanting compare/export/AI)
 
 - Authentication with Supabase, including password recovery by email, and route-protected app pages.
 - Garage, tracks, and session logging workflows with free-tier limits.
-- Session history and compare-with-previous workflow.
+- Session history, deletion, lap times on the session page, and compare-with-previous workflow.
 - Stripe checkout + customer portal + webhook sync for entitlements.
 - Trackside tools: sag calculator and unit converter.
 - AI tuning advice, day planning, recommendation feedback recorded through the session outcome flow, curated RAG helpers, and RAG evaluation/index scripts.

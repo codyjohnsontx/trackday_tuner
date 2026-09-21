@@ -63,24 +63,31 @@ describe('session change actions', () => {
 
     const result = await getSessionChangeRecords('demo-session-4');
 
-    expect(result.map((record) => record.reference_kind)).toEqual(['previous', 'baseline']);
+    expect(result.ok && result.data.map((record) => record.reference_kind)).toEqual(['previous', 'baseline']);
     expect(createClient).not.toHaveBeenCalled();
   });
 
-  it('returns an empty list when logged out', async () => {
+  it('reports failure when logged out rather than an empty history', async () => {
     vi.mocked(getRealUser).mockResolvedValue(null);
 
-    await expect(getSessionChangeRecords('session-1')).resolves.toEqual([]);
+    await expect(getSessionChangeRecords('session-1')).resolves.toEqual({ ok: false, error: 'Not authenticated.' });
     expect(createClient).not.toHaveBeenCalled();
   });
 
-  it('swallows query errors and returns an empty list', async () => {
+  // A failed read used to come back as `[]`, which the session delete
+  // confirmation read as "no change history to lose".
+  it('reports a query error instead of returning an empty list', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     const query = createQuery({ base: { data: null, error: { message: 'boom' } } });
     const from = vi.fn().mockReturnValue(query);
     vi.mocked(createClient).mockResolvedValue({ from } as never);
 
-    await expect(getSessionChangeRecords('session-1')).resolves.toEqual([]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(getSessionChangeRecords('session-1')).resolves.toEqual({ ok: false, error: 'boom' });
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('sorts previous before baseline for the authenticated user', async () => {
@@ -98,6 +105,6 @@ describe('session change actions', () => {
     expect(from).toHaveBeenCalledWith('session_changes');
     expect(query.eq).toHaveBeenCalledWith('user_id', 'user-1');
     expect(query.eq).toHaveBeenCalledWith('session_id', 'session-1');
-    expect(result.map((record) => record.reference_kind)).toEqual(['previous', 'baseline']);
+    expect(result.ok && result.data.map((record) => record.reference_kind)).toEqual(['previous', 'baseline']);
   });
 });

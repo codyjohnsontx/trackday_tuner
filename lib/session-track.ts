@@ -143,6 +143,23 @@ export function trackNameSearchPattern(value: string | null | undefined): string
   return `${pattern}%`.replace(/%+/g, '%');
 }
 
+/**
+ * Whether a session was logged at a track: it carries the track's id, or it
+ * carries no id and names the same circuit.
+ *
+ * The name half is for sessions saved before `resolveSessionTrack` linked every
+ * typed circuit to a row. A session that DOES carry an id belongs to that track
+ * only, so a second row sharing the name cannot claim it.
+ */
+export function sessionIsAtTrack(
+  session: { track_id: string | null; track_name: string | null },
+  track: { id: string; name: string },
+): boolean {
+  if (session.track_id) return session.track_id === track.id;
+  const key = trackNameKey(session.track_name);
+  return key !== '' && key === trackNameKey(track.name);
+}
+
 /** The saved track a typed name means, or null when the rider is naming a new one. */
 export function findSavedTrackByName<T extends { name: string }>(
   name: string | null | undefined,

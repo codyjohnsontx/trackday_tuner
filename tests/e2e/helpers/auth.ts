@@ -11,6 +11,10 @@ export async function signIn(page: Page) {
     throw new Error('E2E_EMAIL and E2E_PASSWORD are required.');
   }
 
+  await signInWith(page, email, password);
+}
+
+export async function signInWith(page: Page, email: string, password: string) {
   await page.goto('/login');
 
   // The login page has two controls named "Sign In": the mode toggle above the

@@ -3,6 +3,7 @@ import {
   describeSessionTrackGap,
   findSavedTrackByName,
   normalizeTrackName,
+  sessionIsAtTrack,
   trackNameExactPattern,
   trackNameKey,
   trackNameSearchPattern,
@@ -214,5 +215,26 @@ describe('telling a rider what their session\'s circuit is missing', () => {
     expect(
       describeSessionTrackGap({ trackId: null, trackName: 'Thunderhill West', savedTracks, atTrackLimit: false }),
     ).toBeNull();
+  });
+});
+
+describe('sessionIsAtTrack', () => {
+  const track = { id: 'track-1', name: 'Barber Motorsports Park' };
+
+  it('claims a session carrying the track id', () => {
+    expect(sessionIsAtTrack({ track_id: 'track-1', track_name: 'anything' }, track)).toBe(true);
+  });
+
+  it('leaves a session linked to a different track alone, even when the name matches', () => {
+    expect(sessionIsAtTrack({ track_id: 'track-2', track_name: 'Barber Motorsports Park' }, track)).toBe(false);
+  });
+
+  it('claims an unlinked session naming the same circuit in another case or spacing', () => {
+    expect(sessionIsAtTrack({ track_id: null, track_name: '  barber  motorsports park ' }, track)).toBe(true);
+  });
+
+  it('does not claim an unlinked session naming a different circuit, or none', () => {
+    expect(sessionIsAtTrack({ track_id: null, track_name: 'Barber Motorsports Park North' }, track)).toBe(false);
+    expect(sessionIsAtTrack({ track_id: null, track_name: null }, track)).toBe(false);
   });
 });

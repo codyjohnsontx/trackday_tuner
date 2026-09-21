@@ -34,14 +34,19 @@ import { reportError } from '@/lib/monitoring/report-error';
 import { DEMO_COOKIE_NAME } from '@/lib/demo/mode';
 import {
   createSession,
+  deleteSession,
   getComparableSessions,
   getPreviousSession,
   getSessionEnvironments,
+  getSessionEnvironment,
   getSessionLaps,
+  getSessionsAtTrack,
   getTelemetrySummaries,
   replaceSessionLaps,
 } from '@/lib/actions/sessions';
 import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
+import { getSessionOutcome } from '@/lib/actions/outcomes';
+import { SESSION_DELETE_FAILED_MESSAGE, SESSION_DELETE_NOT_FOUND_MESSAGE } from '@/lib/session-delete';
 import { COMPARABLE_SESSION_FETCH_LIMIT, COMPARABLE_SESSION_LIMIT } from '@/lib/session-compare';
 import { MISSING_TRACK_MESSAGE, TRACK_NAME_MATCH_LIMIT } from '@/lib/session-track';
 import { createTrackNameQuery } from '@/tests/unit/helpers/track-name-query';
@@ -84,10 +89,12 @@ function createQuery(response: QueryResponse = {}) {
   query.neq = vi.fn(() => query);
   query.or = vi.fn(() => query);
   query.ilike = vi.fn(() => query);
+  query.is = vi.fn(() => query);
   query.lt = vi.fn(() => query);
   query.lte = vi.fn(() => query);
   query.order = vi.fn(() => query);
   query.limit = vi.fn(() => query);
+  query.range = vi.fn(() => query);
   query.single = vi.fn(async () => single);
   query.maybeSingle = vi.fn(async () => single);
   query.then = (onFulfilled: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
@@ -2198,6 +2205,205 @@ describe('sessions actions', () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.session_id).toBe('demo-session-4');
     expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it('deletes only the caller own session and refreshes the screens that list it', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const deleteQuery = createQuery({ base: { data: [{ id: 'sess-1' }], error: null } });
+    const from = vi.fn(() => deleteQuery);
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await deleteSession('sess-1');
+
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(from).toHaveBeenCalledWith('sessions');
+    expect(deleteQuery.delete).toHaveBeenCalled();
+    expect(deleteQuery.eq).toHaveBeenCalledWith('id', 'sess-1');
+    expect(deleteQuery.eq).toHaveBeenCalledWith('user_id', 'user-1');
+    expect(revalidatePath).toHaveBeenCalledWith('/sessions');
+    expect(revalidatePath).toHaveBeenCalledWith('/dashboard');
+    expect(revalidatePath).toHaveBeenCalledWith('/sessions/sess-1');
+  });
+
+  it('reports a failure when the delete matched no session', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    // RLS plus the user_id filter make another rider's id delete zero rows rather
+    // than error, so the row count is the only signal that nothing happened.
+    const deleteQuery = createQuery({ base: { data: [], error: null } });
+    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => deleteQuery) } as never);
+
+    const result = await deleteSession('someone-elses-session');
+
+    expect(result).toEqual({ ok: false, error: SESSION_DELETE_NOT_FOUND_MESSAGE });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('tells the rider nothing was removed and reports the error when the delete fails', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const deleteQuery = createQuery({
+      base: { data: null, error: { message: 'permission denied for table sessions', code: '42501' } },
+    });
+    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => deleteQuery) } as never);
+
+    const result = await deleteSession('sess-1');
+
+    // The database's own words are for the log, not the rider.
+    expect(result).toEqual({ ok: false, error: SESSION_DELETE_FAILED_MESSAGE });
+    expect(reportError).toHaveBeenCalledWith(
+      'session-delete',
+      expect.any(Error),
+      expect.objectContaining({ reason: '42501', table: 'sessions' }),
+    );
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('refuses to delete a session in demo mode', async () => {
+    vi.mocked(cookies).mockResolvedValue({ get: vi.fn(() => ({ value: '1', name: DEMO_COOKIE_NAME })) } as never);
+
+    const result = await deleteSession('demo-session-4');
+
+    expect(result.ok).toBe(false);
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it('returns auth error when deleting a session while logged out', async () => {
+    vi.mocked(getRealUser).mockResolvedValue(null);
+
+    const result = await deleteSession('sess-1');
+
+    expect(result).toEqual({ ok: false, error: 'Not authenticated.' });
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it('lists the sessions at a track by id and by an unlinked matching name, newest first', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const linked = { id: 's-linked', track_id: 'track-1', track_name: 'Barber', date: '2026-05-01', start_time: null, created_at: '2026-05-01T10:00:00Z' };
+    const legacy = { id: 's-legacy', track_id: null, track_name: 'barber ', date: '2026-06-01', start_time: null, created_at: '2026-06-01T10:00:00Z' };
+    const otherCircuit = { id: 's-other', track_id: null, track_name: 'Barber North', date: '2026-07-01', start_time: null, created_at: '2026-07-01T10:00:00Z' };
+    const byId = createQuery({ base: { data: [linked], error: null } });
+    // The name read is a wildcard narrowing, so it can return a circuit the fold rejects.
+    const byName = createQuery({ base: { data: [legacy, otherCircuit], error: null } });
+    const from = vi.fn().mockReturnValueOnce(byId).mockReturnValueOnce(byName);
+    vi.mocked(createClient).mockResolvedValue({ from } as never);
+
+    const result = await getSessionsAtTrack({ id: 'track-1', name: 'Barber' });
+
+    expect(result.ok && result.data.map((session) => session.id)).toEqual(['s-legacy', 's-linked']);
+    expect(byId.eq).toHaveBeenCalledWith('user_id', 'user-1');
+    expect(byId.eq).toHaveBeenCalledWith('track_id', 'track-1');
+    expect(byName.eq).toHaveBeenCalledWith('user_id', 'user-1');
+  });
+
+  it('lists only the most recent sessions at a track', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const session = (id: string, trackId: string | null, date: string) => ({
+      id,
+      track_id: trackId,
+      track_name: 'Barber',
+      date,
+      start_time: null,
+      created_at: `${date}T10:00:00Z`,
+    });
+    const linked = Array.from({ length: 10 }, (_, index) =>
+      session(`s-linked-${index}`, 'track-1', `2026-05-${String(20 - index).padStart(2, '0')}`),
+    );
+    const legacy = [session('s-legacy-new', null, '2026-06-01'), session('s-legacy-old', null, '2025-01-01')];
+    const byId = createQuery({ base: { data: linked, error: null } });
+    const byName = createQuery({ base: { data: legacy, error: null } });
+    vi.mocked(createClient).mockResolvedValue({
+      from: vi.fn().mockReturnValueOnce(byId).mockReturnValueOnce(byName),
+    } as never);
+
+    const result = await getSessionsAtTrack({ id: 'track-1', name: 'Barber' });
+
+    expect(byId.limit).toHaveBeenCalledWith(10);
+    expect(result.ok && result.data.map((row) => row.id)).toEqual([
+      's-legacy-new',
+      ...linked.slice(0, 9).map((row) => row.id),
+    ]);
+  });
+
+  it('pages the unlinked name read past rows the fold rejects instead of losing a real match', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const otherCircuit = Array.from({ length: 100 }, (_, index) => ({
+      id: `s-other-${index}`,
+      track_id: null,
+      track_name: 'Barber North',
+      date: '2026-07-01',
+      start_time: null,
+      created_at: '2026-07-01T10:00:00Z',
+    }));
+    const real = { id: 's-real', track_id: null, track_name: 'Barber', date: '2026-01-01', start_time: null, created_at: '2026-01-01T10:00:00Z' };
+    const byId = createQuery({ base: { data: [], error: null } });
+    const firstPage = createQuery({ base: { data: otherCircuit, error: null } });
+    const secondPage = createQuery({ base: { data: [real], error: null } });
+    vi.mocked(createClient).mockResolvedValue({
+      from: vi.fn().mockReturnValueOnce(byId).mockReturnValueOnce(firstPage).mockReturnValueOnce(secondPage),
+    } as never);
+
+    const result = await getSessionsAtTrack({ id: 'track-1', name: 'Barber' });
+
+    expect(result.ok && result.data.map((row) => row.id)).toEqual(['s-real']);
+    expect(firstPage.range).toHaveBeenCalledWith(0, 99);
+    expect(secondPage.range).toHaveBeenCalledWith(100, 199);
+  });
+
+  it('reports a failed track-sessions read rather than an empty history', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const byId = createQuery({ base: { data: null, error: { message: 'boom', code: '500' } } });
+    const byName = createQuery({ base: { data: [], error: null } });
+    vi.mocked(createClient).mockResolvedValue({
+      from: vi.fn().mockReturnValueOnce(byId).mockReturnValueOnce(byName),
+    } as never);
+
+    const result = await getSessionsAtTrack({ id: 'track-1', name: 'Barber' });
+
+    expect(result.ok).toBe(false);
+    expect(reportError).toHaveBeenCalled();
+  });
+
+  // Both reads feed the session delete confirmation, which used to read a
+  // failed query as "nothing of this kind to lose".
+  it('reports a failed weather read instead of saying the session has none', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const query = createQuery({ base: { data: null, error: { message: 'boom' } } });
+    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => query) } as never);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      await expect(getSessionEnvironment('sess-1')).resolves.toEqual({ ok: false, error: 'boom' });
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('returns a successful empty weather read as null data, not a failure', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const query = createQuery({ base: { data: [], error: null } });
+    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => query) } as never);
+
+    await expect(getSessionEnvironment('sess-1')).resolves.toEqual({ ok: true, data: null });
+  });
+
+  it('reports a failed outcome read instead of saying the session has none', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const query = createQuery({ single: { data: null, error: { message: 'boom' } } });
+    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => query) } as never);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      await expect(getSessionOutcome('sess-1')).resolves.toEqual({ ok: false, error: 'boom' });
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('returns a session with no outcome as null data, not a failure', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const query = createQuery({ single: { data: null, error: null } });
+    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => query) } as never);
+
+    await expect(getSessionOutcome('sess-1')).resolves.toEqual({ ok: true, data: null });
   });
 
   // A console.error spy is installed inline by several tests above and, before

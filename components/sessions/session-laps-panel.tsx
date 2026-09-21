@@ -3,9 +3,10 @@
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
+import { LapMetricsStrip } from '@/components/sessions/lap-metrics-strip';
 import { LapTimeEditor } from '@/components/sessions/lap-time-editor';
 import { replaceSessionLaps } from '@/lib/actions/sessions';
-import { commitLapEditorValue, lapEditorValueFrom, type LapEditorValue } from '@/lib/lap-times';
+import { aggregateLaps, commitLapEditorValue, formatLapTimeInput, lapEditorValueFrom, type LapEditorValue } from '@/lib/lap-times';
 import { trackProductEvent } from '@/lib/product-events.client';
 import { cn } from '@/lib/utils';
 import type { CreateSessionLapInput, SessionLap } from '@/types';
@@ -84,12 +85,49 @@ function LapsEditor({ sessionId, vehicleId, initialLaps, demoMode }: { sessionId
   }
 
   if (!editing) {
+    // The rider's headline numbers belong on the read view. This panel used to
+    // print the included-lap count and nothing else, so a logged best lap was
+    // reachable only by opening the editor or the comparison screen.
+    const metrics = aggregateLaps(savedLaps);
+    const excluded = savedLaps.length - metrics.lap_count;
     return (
       <section className="rounded-card bg-surface p-4">
         <div className="flex items-center justify-between gap-3">
-          <div><h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Lap Data</h2><p className="mt-1 text-sm text-ink-dim">{savedLaps.filter((lap) => lap.included).length} included laps</p></div>
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Lap Data</h2>
+            <p className="mt-1 text-sm text-ink-dim">
+              {metrics.lap_count} included lap{metrics.lap_count === 1 ? '' : 's'}
+              {excluded > 0 ? ` · ${excluded} not counted` : ''}
+            </p>
+          </div>
           <Button type="button" variant="secondary" disabled={demoMode} onClick={() => setEditing(true)}>Edit</Button>
         </div>
+        <LapMetricsStrip metrics={metrics} className="mt-4 border-y border-white/5 py-3" />
+        {/* A session can hold up to 200 laps, which would bury everything below
+            this panel on a phone, so the list itself sits behind a disclosure. */}
+        <details className="mt-3">
+          <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium text-ink-dim hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80">
+            Show every lap ({savedLaps.length})
+          </summary>
+          <ul className="mt-1 divide-y divide-white/5 rounded-row bg-surface-2 px-3">
+            {savedLaps.map((lap) => (
+              <li key={lap.lap_number} className="flex min-h-11 items-center gap-3 py-2">
+                <span className="w-14 text-xs text-ink-faint">Lap {lap.lap_number}</span>
+                <span className={cn('flex-1 text-sm tabular-nums', lap.included ? 'text-ink' : 'text-ink-faint')}>
+                  {formatLapTimeInput(lap.lap_time_ms)}
+                </span>
+                {/* The fastest lap is data, not interaction, so it reads in the
+                    faster/slower palette rather than the signal accent. */}
+                {lap.included && lap.lap_time_ms === metrics.best_lap_ms ? (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-faster">Best</span>
+                ) : null}
+                {lap.included ? null : (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Not counted</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
         {message ? <div className="mt-3"><Message message={message} /></div> : null}
       </section>
     );

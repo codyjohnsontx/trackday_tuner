@@ -21,6 +21,7 @@ import {
   courseMatchRank,
 } from '@/lib/session-compare';
 import { fetchPreviousSession } from '@/lib/session-previous';
+import { SESSION_DELETE_FAILED_MESSAGE, SESSION_DELETE_NOT_FOUND_MESSAGE } from '@/lib/session-delete';
 import { reportError } from '@/lib/monitoring/report-error';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
@@ -28,7 +29,13 @@ import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
 import { validateLaps } from '@/lib/lap-times';
 import { MISSING_CONDITIONS_MESSAGE, isSessionCondition } from '@/lib/session-answers';
-import { MISSING_TRACK_MESSAGE, hasTrackName, normalizeTrackName } from '@/lib/session-track';
+import {
+  MISSING_TRACK_MESSAGE,
+  hasTrackName,
+  normalizeTrackName,
+  sessionIsAtTrack,
+  trackNameSearchPattern,
+} from '@/lib/session-track';
 import { findVisibleTrackByName, visibleTracksFilter } from '@/lib/track-lookup';
 import {
   baselineReferenceLabel,
@@ -277,6 +284,85 @@ export async function getSessions(vehicleId?: string, limit?: number): Promise<S
   return (data ?? []) as Session[];
 }
 
+const RECENT_TRACK_SESSION_LIMIT = 10;
+const TRACK_NAME_PAGE_SIZE = 100;
+
+/**
+ * The rider's most recent sessions at one track, newest first, at most
+ * `RECENT_TRACK_SESSION_LIMIT` of them.
+ *
+ * Two reads rather than one `or(...)`: a track name is free text that can hold
+ * the commas and parentheses PostgREST's `or` grammar reserves. The name read is
+ * for sessions saved before every typed circuit was linked to a track row; its
+ * pattern only narrows and `sessionIsAtTrack` decides, so it is paged until it
+ * has found enough real matches rather than capped - a cap there would let rows
+ * the fold rejects crowd out the ones it accepts.
+ *
+ * A failed read is reported rather than returned as `[]`, which the track page
+ * would print as "no sessions here yet" to a rider who has logged a season there.
+ */
+export async function getSessionsAtTrack(track: { id: string; name: string }): Promise<ActionResult<Session[]>> {
+  if (await isDemoMode()) {
+    return {
+      ok: true,
+      data: getDemoSessions()
+        .filter((session) => sessionIsAtTrack(session, track))
+        .slice(0, RECENT_TRACK_SESSION_LIMIT),
+    };
+  }
+
+  const user = await getRealUser();
+  if (!user) return { ok: false, error: 'Not authenticated.' };
+
+  const supabase = await createClient();
+  const orderedSessions = () =>
+    supabase
+      .from('sessions')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('date', { ascending: false })
+      .order('start_time', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false });
+
+  const readUnlinkedByName = async () => {
+    const matches: Session[] = [];
+    for (let from = 0; matches.length < RECENT_TRACK_SESSION_LIMIT; from += TRACK_NAME_PAGE_SIZE) {
+      const { data, error } = await orderedSessions()
+        .is('track_id', null)
+        .ilike('track_name', trackNameSearchPattern(track.name))
+        .range(from, from + TRACK_NAME_PAGE_SIZE - 1);
+      if (error) return { data: null, error };
+      const page = (data ?? []) as Session[];
+      matches.push(...page.filter((session) => sessionIsAtTrack(session, track)));
+      if (page.length < TRACK_NAME_PAGE_SIZE) break;
+    }
+    return { data: matches, error: null };
+  };
+
+  const [byId, byName] = await Promise.all([
+    orderedSessions().eq('track_id', track.id).limit(RECENT_TRACK_SESSION_LIMIT),
+    readUnlinkedByName(),
+  ]);
+
+  const error = byId.error ?? byName.error;
+  if (error) {
+    reportError('track-sessions', new Error(error.message), {
+      reason: error.code,
+      table: 'sessions',
+      details: error.details,
+      hint: error.hint,
+      userId: user.id,
+    });
+    return { ok: false, error: 'Your sessions at this track could not be loaded. Try again in a moment.' };
+  }
+
+  const sessions = [...((byId.data ?? []) as Session[]), ...(byName.data ?? [])]
+    .filter((session) => sessionIsAtTrack(session, track))
+    .sort(compareSessionsDesc)
+    .slice(0, RECENT_TRACK_SESSION_LIMIT);
+  return { ok: true, data: sessions };
+}
+
 export async function getLatestSessionsByVehicle(): Promise<Record<string, Session>> {
   if (await isDemoMode()) {
     return getDemoLatestSessionsByVehicle();
@@ -346,23 +432,33 @@ export async function getSession(id: string): Promise<Session | null> {
   return data as Session;
 }
 
-export async function getSessionEnvironment(sessionId: string): Promise<SessionEnvironment | null> {
+/**
+ * A session's weather readings, `null` when none were logged. A failed read is
+ * reported rather than returned as `null`, which the session delete
+ * confirmation would read as "no weather readings to lose".
+ */
+export async function getSessionEnvironment(sessionId: string): Promise<ActionResult<SessionEnvironment | null>> {
   if (await isDemoMode()) {
-    return getDemoSessionEnvironment(sessionId);
+    return { ok: true, data: getDemoSessionEnvironment(sessionId) };
   }
 
   const user = await getRealUser();
-  if (!user) return null;
+  if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('session_environment')
     .select('*')
     .eq('session_id', sessionId)
     .eq('user_id', user.id)
     .limit(1);
 
-  return (data?.[0] ?? null) as SessionEnvironment | null;
+  if (error) {
+    console.error('[sessions] session-environment query failed', { userId: user.id, sessionId, error: error.message });
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true, data: (data?.[0] ?? null) as SessionEnvironment | null };
 }
 
 export async function getSessionEnvironments(sessionIds: string[]): Promise<SessionEnvironment[]> {
@@ -1040,14 +1136,31 @@ export async function deleteSession(id: string): Promise<ActionResult> {
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const supabase = await createClient();
-  const { error } = await supabase
+  // The deleted rows are selected back because RLS and the user_id filter turn
+  // another rider's id, or one already gone, into zero rows rather than an error.
+  // Without the count that is a success the page would navigate away on.
+  const { data, error } = await supabase
     .from('sessions')
     .delete()
     .eq('id', id)
-    .eq('user_id', user.id);
+    .eq('user_id', user.id)
+    .select('id');
 
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    reportError('session-delete', new Error(error.message), {
+      reason: error.code,
+      table: 'sessions',
+      details: error.details,
+      hint: error.hint,
+      userId: user.id,
+      sessionId: id,
+    });
+    return { ok: false, error: SESSION_DELETE_FAILED_MESSAGE };
+  }
+  if ((data ?? []).length === 0) return { ok: false, error: SESSION_DELETE_NOT_FOUND_MESSAGE };
 
   revalidatePath('/sessions');
+  revalidatePath('/dashboard');
+  revalidatePath(`/sessions/${id}`);
   return { ok: true, data: undefined };
 }

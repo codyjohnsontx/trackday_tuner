@@ -4,7 +4,8 @@ import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { DemoBanner } from '@/components/demo/demo-banner';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
-import { getSessions, getSessionCount } from '@/lib/actions/sessions';
+import { getSessions, getSessionCount, getTelemetrySummaries } from '@/lib/actions/sessions';
+import { buildLapSummaryLabel } from '@/lib/session-compare';
 import { isDemoMode } from '@/lib/demo/mode';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
@@ -33,6 +34,9 @@ export default async function DashboardPage() {
   const atSessionLimit = isAtFreePlanLimit('sessions', sessionCount, access.hasProAccess);
 
   const vehicleMap = new Map(vehicles.map((v) => [v.id, v.nickname]));
+  // Only the three rows on screen, so this stays one small extra read.
+  const telemetry = await getTelemetrySummaries(sessions.map((s) => s.id));
+  const telemetryMap = new Map(telemetry.map((summary) => [summary.session_id, summary]));
 
   // The name and the line under it describe one vehicle, so they are resolved
   // together rather than picked off two different lists.
@@ -98,6 +102,7 @@ export default async function DashboardPage() {
                 <SessionCard
                   session={s}
                   vehicleNickname={vehicleMap.get(s.vehicle_id) ?? 'Unknown Vehicle'}
+                  lapSummary={buildLapSummaryLabel(telemetryMap.get(s.id))}
                 />
               </li>
             ))}
