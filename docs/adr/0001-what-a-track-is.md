@@ -94,14 +94,14 @@ list.
 
 Already true, and kept:
 
-- Venues and layouts are separate rows (`tracks`, `track_layouts`), and seeded
-  venues carry curated aliases (`supabase/migrations/20260916001600_seed_north_america_tracks.sql`).
+- Tracks and layouts are separate rows (`tracks`, `track_layouts`), and seeded
+  tracks carry curated aliases (`supabase/migrations/20260916001600_seed_north_america_tracks.sql`).
 - Name matching is `trackNameKey` (`lib/session-track.ts`), which folds exactly
   case, whitespace and NFC. Riders can only read `track_aliases`.
-- Comparisons and personal bests group by venue and layout, and a session with
-  no layout is its own group (`sessionsMatchCourse` / `courseMatchRank` in
-  `lib/session-compare.ts`).
-- Riders cannot create layouts (decision 10's known limit).
+- A session with no layout is its own group for comparisons and personal bests,
+  never joined to a named layout (`sessionsMatchCourse` / `courseMatchRank` in
+  `lib/session-compare.ts`) - decision 6's rule for layout.
+- Riders cannot create layouts (decision 10's known limit, for now).
 
 Contradicted by current behaviour - **not yet built**:
 
@@ -112,26 +112,33 @@ Contradicted by current behaviour - **not yet built**:
   entry". The same file's header also resolves a rider's own track name before a
   seeded alias, which decision 7 overrides where the two are the same venue.
 - **Only Buttonwillow records direction today**, and only inside two layout
-  names. There is no direction field, no normal direction on any circuit, and
-  configuration therefore means venue and layout only. Decisions 2, 3, 4 and 10
-  need a direction column, a data change folding Buttonwillow's two Config 13
-  layouts into one, and a cited normal direction per seeded circuit.
+  names. Nothing records a session's direction, no circuit has a normal
+  direction, and Buttonwillow's two Config 13 layouts are still two (decisions
+  2, 3, 4 and 10). How direction is stored is not decided here.
+- **Grouping is by track row, not by venue.** A rider's custom row and a seeded
+  row for the same venue stay separate in history, comparisons and personal
+  bests, which group by track row and layout with no direction (decisions 4, 5
+  and 7). The track page lists the ten most recent sessions and there is no
+  venue day count (decision 5).
 - **Race Engineer similar-session scoring is not layout-aware**, so decision 5
   is not met for the Race Engineer even before direction exists.
 - **The layout picker** is optional with a "Not specified" choice and never
   picks a lone layout automatically (decision 6).
 - **There is no merge** of a duplicate custom track, so its sessions stay split
   and it keeps occupying a free-plan slot (decision 9).
-- **Past sessions show the name they were logged with** (`sessions.track_name`),
-  not the track's current name (decision 11).
+- **Neither half of decision 11 is built.** Past sessions show
+  `sessions.track_name`, not the track's current name. And that column does not
+  keep what the rider typed: when a typed name or alias resolves to a track,
+  `createSession` stores that track's canonical name instead (typed `cota `
+  is stored as `Circuit of the Americas`). Nothing keeps the typed name.
 - **Deleting a custom track** unlinks its sessions (`on delete set null`) and
   deletes the Race Engineer memory for it (`race_engineer_memory.track_id` is
   `on delete cascade`) with no offer to move them and no statement of what is
   lost (decision 12).
 - **Unmatched-name pairings are not recorded**, so there is nothing yet to
   review for promotion to aliases.
-- **History by venue** is partly there: the track page lists a venue's sessions
-  labelled with their layout, but there is no direction to label.
+- **Session labels** carry the layout where one was chosen, but there is no
+  direction to label (decision 5).
 
 Future work on tracks builds against this record. A change that needs a
 different definition updates this record, through a new decision record that

@@ -13,14 +13,20 @@ those as the target, not as current behaviour.
 Raceway Park. History is shown by venue: session lists, counts and days at the
 track group every session there, each labelled with its layout and direction.
 Renaming a track changes what its past sessions display; the name as it was
-typed is kept in the data. *Not yet built: sessions display the name stored when
-they were logged, not the track's current name.*
+typed is kept in the data. *Not yet built: history groups by track row, so a
+rider's custom row and a seeded row for the same venue stay separate; the track
+page lists the ten most recent sessions and there is no venue day count.
+Sessions display `sessions.track_name`, not the track's current name, and that
+column is not what the rider typed either: when a typed name or alias resolves
+to a track, it is overwritten with that track's name at save time. Nothing
+keeps the typed name.*
 
 **Layout** - A configuration of one venue, such as Config 13 at Buttonwillow
 (`track_layouts`). The session form asks for one when a circuit has more than one
-and picks it automatically when there is only one. Only seeded tracks have
-layouts; riders cannot make their own. *Not yet built: the form offers layouts as
-optional with "Not specified", and does not pick a lone layout automatically.*
+and picks it automatically when there is only one. Riders cannot make their own
+layouts for now; that is a known limit, to revisit if riders ask. *Not yet
+built: the form offers layouts as optional with "Not specified", and does not
+pick a lone layout automatically.*
 
 **Direction** - Clockwise or counter-clockwise, a separate choice on top of the
 layout that defaults to the circuit's normal direction. A seeded circuit's normal
@@ -35,13 +41,13 @@ two directions.*
 Performance is compared per configuration: personal bests, session comparisons
 and Race Engineer similar-session scoring. A session missing a layout or a
 direction is its own group and is never assumed onto another configuration.
-*Not yet built: comparisons and personal bests group by venue and layout
-(`sessionsMatchCourse` in `lib/session-compare.ts`) with no direction, and Race
-Engineer similar-session scoring is not layout-aware.*
+*Not yet built: comparisons and personal bests group by track row and layout
+(`sessionsMatchCourse` in `lib/session-compare.ts`), not by venue, with no
+direction, and Race Engineer similar-session scoring is not layout-aware.*
 
-**Seeded track** - A venue the app ships, from a migration, with a slug, its
-layouts and its aliases. Where a seeded track and a custom track are the same
-venue, the seeded one wins.
+**Seeded track** - A venue the app ships, with its layouts and aliases. Where a
+seeded track and a custom track are the same venue, the seeded one wins. *Not
+yet built: see Your older entry.*
 
 **Custom track** - A venue a rider types because it is not seeded. It is a
 fallback and counts against the free plan's track limit. Deleting one that has
