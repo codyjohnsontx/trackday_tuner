@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { signInWith } from '@/tests/e2e/helpers/auth';
+import { gotoPage } from '@/tests/e2e/helpers/navigation';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { EMPTY_SUSPENSION, EMPTY_TIRES } from '@/tests/e2e/helpers/session-fixtures';
 import {
@@ -93,10 +94,10 @@ test.describe('deleting a vehicle', () => {
     await signInWith(page, rider!.email, rider!.password);
 
     // The free plan's one vehicle is taken, which is why this rider is here.
-    await page.goto('/garage/new');
+    await gotoPage(page, '/garage/new');
     await expect(page.getByRole('heading', { name: 'Add Vehicle' })).toHaveCount(0);
 
-    await page.goto(`/garage/${vehicleId}/edit`);
+    await gotoPage(page, `/garage/${vehicleId}/edit`);
     await expect(
       page.getByText(
         `Deleting ${NICKNAME} also deletes both sessions you logged on it and 3 lap times, with their setups, notes and outcomes. This cannot be undone.`,
@@ -122,7 +123,7 @@ test.describe('deleting a vehicle', () => {
     const { data: laps } = await admin.from('session_laps').select('id').eq('session_id', first);
     expect(laps ?? []).toHaveLength(0);
 
-    await page.goto('/garage/new');
+    await gotoPage(page, '/garage/new');
     await expect(page.getByRole('heading', { name: 'Add Vehicle' })).toBeVisible();
   });
 
@@ -131,7 +132,7 @@ test.describe('deleting a vehicle', () => {
     await plantSession(rider!.id, vehicleId, '2019-09-07');
 
     await signInWith(page, rider!.email, rider!.password);
-    await page.goto(`/garage/${vehicleId}/edit`);
+    await gotoPage(page, `/garage/${vehicleId}/edit`);
     await expect(page.getByText(/also deletes the 1 session you logged on it,/)).toBeVisible();
 
     // Logged from another tab while this confirmation sat open.
@@ -151,7 +152,7 @@ test.describe('deleting a vehicle', () => {
     const vehicleId = await plantVehicle(rider!.id);
 
     await signInWith(page, rider!.email, rider!.password);
-    await page.goto(`/garage/${vehicleId}/edit`);
+    await gotoPage(page, `/garage/${vehicleId}/edit`);
     await expect(page.getByText(/No sessions are logged on it, so nothing else is lost\./)).toBeVisible();
 
     // Deleted out from under the open page - another tab, another device.

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { signInWith } from '@/tests/e2e/helpers/auth';
+import { gotoPage } from '@/tests/e2e/helpers/navigation';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { EMPTY_SUSPENSION, EMPTY_TIRES } from '@/tests/e2e/helpers/session-fixtures';
 import {
@@ -72,7 +73,7 @@ test.describe('recent sessions on the track page', () => {
 
   test('lists the sessions logged at this track, newest first, and nothing else', async ({ page }) => {
     await signInWith(page, rider!.email, rider!.password);
-    await page.goto(`/tracks/${trackId}`);
+    await gotoPage(page, `/tracks/${trackId}`);
 
     const section = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Recent Sessions' }) });
     const rows = section.getByRole('link');
@@ -88,7 +89,7 @@ test.describe('recent sessions on the track page', () => {
 
   test('says so when nothing has been logged at the track', async ({ page }) => {
     await signInWith(page, rider!.email, rider!.password);
-    await page.goto(`/tracks/${emptyTrackId}`);
+    await gotoPage(page, `/tracks/${emptyTrackId}`);
 
     await expect(page.getByText('You have not logged a session at this track yet.')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Log a Session' })).toBeVisible();

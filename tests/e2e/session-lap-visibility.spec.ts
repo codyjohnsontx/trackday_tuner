@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { test, expect } from '@playwright/test';
 import { signInWith } from '@/tests/e2e/helpers/auth';
+import { gotoPage } from '@/tests/e2e/helpers/navigation';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { EMPTY_SUSPENSION, EMPTY_TIRES } from '@/tests/e2e/helpers/session-fixtures';
 import {
@@ -92,7 +93,7 @@ test.describe('lap times outside the editor', () => {
 
   test('the session page shows the numbers and every lap', async ({ page }) => {
     await signInWith(page, rider!.email, rider!.password);
-    await page.goto(`/sessions/${sessionId}`);
+    await gotoPage(page, `/sessions/${sessionId}`);
 
     await expect(page.getByText('3 included laps · 1 not counted')).toBeVisible();
     // The Best cell; the same time also sits in the lap list, still closed here.
@@ -110,7 +111,7 @@ test.describe('lap times outside the editor', () => {
 
     await expect(page.locator('a[href^="/sessions/"]').filter({ hasText: TRACK_NAME })).toContainText(HEADLINE);
 
-    await page.goto('/sessions');
+    await gotoPage(page, '/sessions');
     await expect(page.getByText(HEADLINE)).toBeVisible();
   });
 });

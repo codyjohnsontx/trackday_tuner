@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { signInWith } from '@/tests/e2e/helpers/auth';
+import { gotoPage } from '@/tests/e2e/helpers/navigation';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { EMPTY_SUSPENSION, EMPTY_TIRES } from '@/tests/e2e/helpers/session-fixtures';
 import {
@@ -82,7 +83,7 @@ test.describe('deleting a mis-logged session', () => {
 
   test('names what goes with it, and a hold removes the session and its laps', async ({ page }) => {
     await signInWith(page, rider!.email, rider!.password);
-    await page.goto(`/sessions/${sessionId}`);
+    await gotoPage(page, `/sessions/${sessionId}`);
 
     await expect(
       page.getByText(`Delete your ${TRACK_NAME} session from Sunday, April 21, 2019 on Delete Test R6.`),
@@ -106,7 +107,7 @@ test.describe('deleting a mis-logged session', () => {
 
   test('tells the rider when the session is already gone, and stays put', async ({ page }) => {
     await signInWith(page, rider!.email, rider!.password);
-    await page.goto(`/sessions/${sessionId}`);
+    await gotoPage(page, `/sessions/${sessionId}`);
     await expect(page.getByRole('button', { name: 'Hold to delete session' })).toBeVisible();
 
     // Deleted out from under the open page - another tab, another device.
