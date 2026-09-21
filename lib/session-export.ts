@@ -554,7 +554,7 @@ function buildSessionTrackKeys(sessions: readonly Session[]): Map<string, Resolv
 export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAnalyticsSummary {
   const byVehicle = new Map<string, number>();
   const vehicleLabels = new Map<string, string>();
-  const byTrack = new Map<string, number>();
+  const byTrack = new Map<string, { trackName: string; count: number }>();
   const moduleCounts = new Map<keyof SessionEnabledModules, number>();
   const ambientTemps: number[] = [];
   const trackTemps: number[] = [];
@@ -564,7 +564,9 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
   let totalLaps = 0;
   let sessionsWithLaps = 0;
 
-  const courseKeys = buildSessionCourseKeys(inputs.map((input) => input.session));
+  const sessions = inputs.map((input) => input.session);
+  const trackKeys = buildSessionTrackKeys(sessions);
+  const courseKeys = buildSessionCourseKeys(sessions);
 
   const ordered = [...inputs].sort((a, b) =>
     `${a.session.date} ${a.session.start_time ?? ''}`.localeCompare(`${b.session.date} ${b.session.start_time ?? ''}`),
@@ -574,7 +576,6 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
     const label = input.vehicle?.nickname ?? 'Unknown Vehicle';
     vehicleLabels.set(input.session.vehicle_id, label);
     increment(byVehicle, input.session.vehicle_id);
-    increment(byTrack, input.session.track_name ?? 'Unknown Track');
 
     const enabled = getEnabledModules(input.session, input.vehicle);
     for (const [module, isEnabled] of Object.entries(enabled) as [keyof SessionEnabledModules, boolean][]) {
@@ -585,6 +586,19 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
     if (lapCount !== null && lapCount > 0) {
       totalLaps += lapCount;
       sessionsWithLaps += 1;
+    }
+
+    // A tally of circuits, so it groups by the folded track key rather than by
+    // the raw name: "COTA" and "cota" are one row, as they are everywhere else.
+    // The per-session `unknown:` keys collapse back into one here - they exist so
+    // two trackless track days cannot share a board row and lose a lap best, and
+    // a count of sessions has nothing to lose, while a top five of identical
+    // "Unknown Track" rows tells the rider nothing and crowds out real circuits.
+    const circuit = trackKeys.get(input.session.id);
+    if (circuit) {
+      const tallyTrack = circuit.key.startsWith('unknown:') ? { key: 'unknown', trackName: UNNAMED_TRACK } : circuit;
+      const tally = byTrack.get(tallyTrack.key);
+      byTrack.set(tallyTrack.key, { trackName: tallyTrack.trackName, count: (tally?.count ?? 0) + 1 });
     }
 
     const track = courseKeys.get(input.session.id);
@@ -663,8 +677,7 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
     sessionsByVehicle: [...byVehicle.entries()]
       .map(([vehicleId, count]) => ({ vehicleId, label: vehicleLabels.get(vehicleId) ?? 'Unknown Vehicle', count }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
-    topTracks: [...byTrack.entries()]
-      .map(([trackName, count]) => ({ trackName, count }))
+    topTracks: [...byTrack.values()]
       .sort((a, b) => b.count - a.count || a.trackName.localeCompare(b.trackName))
       .slice(0, 5),
     moduleCoverage: coverageRows(

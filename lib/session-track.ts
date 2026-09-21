@@ -9,15 +9,16 @@
  * whole season the Tracks screen said did not exist, and retyped the name every
  * time, so one typo silently split their history in two.
  *
- * These helpers state what counts as the same circuit. Case and spacing are not a
- * different track: `cota` and `COTA` are one, and so are `Barber  Motorsports
- * Park` and `Barber Motorsports Park`.
+ * These helpers state what counts as the same circuit. Case, spacing and accent
+ * composition are not a different track: `cota` and `COTA` are one, and so are
+ * `Barber  Motorsports Park` and `Barber Motorsports Park`. `trackNameKey` is that
+ * rule, and every place that compares two track names goes through it.
  *
  * They also state that a session names one at all. Vehicle and Date were both
  * validated while Track was not, so a rider who scrolled past it saved a session
  * that reads "Unknown Track" wherever it is listed and matches no other session
  * at the same circuit. `sessionsMatchTrack` in lib/session-compare.ts pairs two
- * sessions by `track_id`, or by an identical name when neither carries one, so a
+ * sessions by `track_id` when both carry one, or by `trackNameKey` otherwise, so a
  * trackless session is never a match for anything. It is still offered for
  * comparison - the picker filters on vehicle, not track - but `buildContextFlags`
  * marks every comparison against it with a critical "Track mismatch" and

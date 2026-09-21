@@ -218,7 +218,7 @@ describe('session export helpers', () => {
     const analytics = deriveSessionAnalytics([
       { session: session({ id: 's1', date: '2026-05-01', vehicle_id: 'bike-1' }), vehicle: motorcycle, environment: environment(), telemetry: null },
       { session: session({ id: 's2', date: '2026-05-02', vehicle_id: 'bike-1', tires: { ...session().tires, front: { ...session().tires.front, pressure: '32' } } }), vehicle: motorcycle, environment: null, telemetry: null },
-      { session: session({ id: 's3', vehicle_id: 'car-1', track_name: 'Laguna Seca' }), vehicle: car, environment: environment({ ambient_temperature_c: 26 }), telemetry: null },
+      { session: session({ id: 's3', vehicle_id: 'car-1', track_id: 'track-2', track_name: 'Laguna Seca' }), vehicle: car, environment: environment({ ambient_temperature_c: 26 }), telemetry: null },
     ]);
 
     expect(analytics.totalSessions).toBe(3);
@@ -231,6 +231,29 @@ describe('session export helpers', () => {
       latest: '32',
     });
     expect(analytics.environmentSnapshots.averageAmbientTemperatureC).toBe(25);
+  });
+
+  it('counts one circuit once in top tracks whatever case or spacing it was typed in', () => {
+    const analytics = deriveSessionAnalytics([
+      { session: session({ id: 's1', track_id: null, track_name: 'COTA' }), vehicle: motorcycle, environment: null, telemetry: null },
+      { session: session({ id: 's2', track_id: null, track_name: 'cota' }), vehicle: motorcycle, environment: null, telemetry: null },
+      { session: session({ id: 's3', track_id: null, track_name: '  COTA ' }), vehicle: motorcycle, environment: null, telemetry: null },
+    ]);
+
+    expect(analytics.topTracks).toEqual([{ trackName: 'COTA', count: 3 }]);
+  });
+
+  it('rolls sessions with no track into one top-tracks row', () => {
+    const analytics = deriveSessionAnalytics([
+      { session: session({ id: 's1', date: '2026-05-01', track_id: null, track_name: null }), vehicle: motorcycle, environment: null, telemetry: null },
+      { session: session({ id: 's2', date: '2026-05-02', track_id: null, track_name: '' }), vehicle: motorcycle, environment: null, telemetry: null },
+      { session: session({ id: 's3', date: '2026-05-03', track_id: null, track_name: 'COTA' }), vehicle: motorcycle, environment: null, telemetry: null },
+    ]);
+
+    expect(analytics.topTracks).toEqual([
+      { trackName: 'Unknown Track', count: 2 },
+      { trackName: 'COTA', count: 1 },
+    ]);
   });
 
   /**
