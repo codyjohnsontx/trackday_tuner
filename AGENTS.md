@@ -4,6 +4,9 @@
 
 Mobile-first motorsport setup logger. Users log vehicle setups per track session (tires, suspension, etc.) and compare across sessions.
 
+- `CONTEXT.md` - domain glossary (track, layout, direction, configuration); read before touching tracks
+- `docs/adr/0001-what-a-track-is.md` - the owner's track definition and where the code does not match it yet
+
 ## Tech Stack
 
 - **Framework**: Next.js 15 (App Router), React 19, TypeScript 5 strict
