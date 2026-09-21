@@ -21,6 +21,10 @@
  * matters: a rider who has made their own track called "Barber" means THAT one,
  * not the seeded Barber Motorsports Park an alias would otherwise redirect them
  * to. Their own naming wins.
+ *
+ * That order is what the code does today, not the rule going forward:
+ * docs/adr/0001-what-a-track-is.md (decisions 7 and 8) has the seeded circuit
+ * win where the two are the same venue. Not yet rebuilt.
  */
 import { findSavedTrackByName, trackNameKey } from '@/lib/session-track';
 import type { Track, TrackAlias, TrackLayout } from '@/types';
@@ -95,6 +99,8 @@ export function buildTrackLayoutIndex(rows: readonly TrackLayout[]): TrackLayout
  * A rider who logged "Road America" as a custom track before the seed arrived
  * now sees two rows with that name. Taking whichever came back first would split
  * their history across both, so their own row wins, as it does over an alias.
+ * Superseded by docs/adr/0001-what-a-track-is.md decision 8 (the seeded circuit
+ * wins); this is current behaviour, not yet rebuilt.
  */
 export function findTrackByName<T extends { name: string; is_seeded: boolean }>(
   name: string | null | undefined,
