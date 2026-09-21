@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeSessionDeletion } from '@/lib/session-delete';
+import { describeSessionDeletion, resolveSessionDeletion } from '@/lib/session-delete';
 
 describe('describeSessionDeletion', () => {
   it('names every piece of a session that goes with it', () => {
@@ -22,9 +22,44 @@ describe('describeSessionDeletion', () => {
     ).toBe('This also deletes the setup and notes you logged and 1 lap time. It cannot be undone.');
   });
 
-  it('does not claim there are no laps when the lap read failed', () => {
-    expect(
-      describeSessionDeletion({ lapCount: null, hasOutcome: false, changeCount: 0, hasEnvironment: false }),
-    ).toContain('any lap times saved with it');
+});
+
+describe('resolveSessionDeletion', () => {
+  const loaded = {
+    laps: { ok: true as const, data: [{}, {}] },
+    outcome: { ok: true as const, data: { id: 'outcome-1' } },
+    changes: { ok: true as const, data: [] },
+    environment: { ok: true as const, data: null },
+  };
+
+  it('confirms with the counted losses when every read succeeded', () => {
+    expect(resolveSessionDeletion(loaded)).toEqual({
+      ok: true,
+      description:
+        'This also deletes the setup and notes you logged, 2 lap times and the outcome you recorded. It cannot be undone.',
+    });
+  });
+
+  it('refuses to confirm, naming the part that could not be loaded', () => {
+    expect(resolveSessionDeletion({ ...loaded, outcome: { ok: false } })).toEqual({
+      ok: false,
+      error:
+        "We could not load this session's outcome, so deleting it stays off until we can say exactly what would be removed. Reload the page to try again.",
+    });
+  });
+
+  it('names every part that failed, including laps', () => {
+    const result = resolveSessionDeletion({
+      laps: { ok: false },
+      outcome: loaded.outcome,
+      changes: { ok: false },
+      environment: { ok: false },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error:
+        "We could not load this session's lap times, change history and weather readings, so deleting it stays off until we can say exactly what would be removed. Reload the page to try again.",
+    });
   });
 });

@@ -30,7 +30,7 @@ import { resolveChangeSets } from '@/lib/session-changes';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import { buildSetupView } from '@/lib/setup-view';
 import { isSessionBefore } from '@/lib/session-compare';
-import { describeSessionDeletion } from '@/lib/session-delete';
+import { resolveSessionDeletion } from '@/lib/session-delete';
 import type { Session } from '@/types';
 import { pageTitleClass } from '@/components/ui/page-header';
 
@@ -325,7 +325,7 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
   const mayBeAtTrackLimit =
     !demoMode && !hasProAccess && !session.track_id && hasTrackName(session.track_name);
 
-  const [previousSession, environment, baseline, changeRecords, sessionLaps, comparableSessions, existingOutcome, outcomeHistory, recommendations, savedTracks] = await Promise.all([
+  const [previousSession, environmentRead, baseline, changeRecordsRead, sessionLaps, comparableSessions, existingOutcomeRead, outcomeHistory, recommendations, savedTracks] = await Promise.all([
     getPreviousSession(session),
     getSessionEnvironment(session.id),
     getVehicleBaseline(session.vehicle_id),
@@ -342,6 +342,18 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
         })
       : Promise.resolve(null),
   ]);
+  // The panels below keep reading a failed read as "nothing there", as they
+  // always have. The delete confirmation does not: it has to name everything
+  // the delete takes, so it gets the reads themselves.
+  const environment = environmentRead.ok ? environmentRead.data : null;
+  const changeRecords = changeRecordsRead.ok ? changeRecordsRead.data : [];
+  const existingOutcome = existingOutcomeRead.ok ? existingOutcomeRead.data : null;
+  const deletion = resolveSessionDeletion({
+    laps: sessionLaps,
+    outcome: existingOutcomeRead,
+    changes: changeRecordsRead,
+    environment: environmentRead,
+  });
   const trackGap = describeSessionTrackGap({
     trackId: session.track_id,
     trackName: session.track_name,
@@ -482,17 +494,14 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
         <p className="mt-2 text-sm leading-6 text-ink">
           Delete your {session.track_name ?? 'untitled'} session from {formattedDate} on {vehicleNickname}.
         </p>
-        <p className="mt-1 text-sm leading-6 text-ink-dim">
-          {describeSessionDeletion({
-            lapCount: sessionLaps.ok ? sessionLaps.data.length : null,
-            hasOutcome: existingOutcome != null,
-            changeCount: changeRecords.length,
-            hasEnvironment: environment != null,
-          })}
-        </p>
+        {deletion.ok ? (
+          <p className="mt-1 text-sm leading-6 text-ink-dim">{deletion.description}</p>
+        ) : (
+          <p className="mt-1 text-sm leading-6 text-slower" role="alert">{deletion.error}</p>
+        )}
         {demoMode ? <p className="mt-3 text-xs text-ink-faint">Demo mode is read-only.</p> : null}
         <div className="mt-4">
-          <SessionDeleteForm sessionId={session.id} disabled={demoMode} />
+          <SessionDeleteForm sessionId={session.id} disabled={demoMode || !deletion.ok} />
         </div>
       </section>
     </div>

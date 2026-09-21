@@ -38,12 +38,14 @@ import {
   getComparableSessions,
   getPreviousSession,
   getSessionEnvironments,
+  getSessionEnvironment,
   getSessionLaps,
   getSessionsAtTrack,
   getTelemetrySummaries,
   replaceSessionLaps,
 } from '@/lib/actions/sessions';
 import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
+import { getSessionOutcome } from '@/lib/actions/outcomes';
 import { SESSION_DELETE_FAILED_MESSAGE, SESSION_DELETE_NOT_FOUND_MESSAGE } from '@/lib/session-delete';
 import { COMPARABLE_SESSION_FETCH_LIMIT, COMPARABLE_SESSION_LIMIT } from '@/lib/session-compare';
 import { MISSING_TRACK_MESSAGE, TRACK_NAME_MATCH_LIMIT } from '@/lib/session-track';
@@ -2358,6 +2360,50 @@ describe('sessions actions', () => {
 
     expect(result.ok).toBe(false);
     expect(reportError).toHaveBeenCalled();
+  });
+
+  // Both reads feed the session delete confirmation, which used to read a
+  // failed query as "nothing of this kind to lose".
+  it('reports a failed weather read instead of saying the session has none', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const query = createQuery({ base: { data: null, error: { message: 'boom' } } });
+    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => query) } as never);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      await expect(getSessionEnvironment('sess-1')).resolves.toEqual({ ok: false, error: 'boom' });
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('returns a successful empty weather read as null data, not a failure', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const query = createQuery({ base: { data: [], error: null } });
+    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => query) } as never);
+
+    await expect(getSessionEnvironment('sess-1')).resolves.toEqual({ ok: true, data: null });
+  });
+
+  it('reports a failed outcome read instead of saying the session has none', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const query = createQuery({ single: { data: null, error: { message: 'boom' } } });
+    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => query) } as never);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      await expect(getSessionOutcome('sess-1')).resolves.toEqual({ ok: false, error: 'boom' });
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('returns a session with no outcome as null data, not a failure', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const query = createQuery({ single: { data: null, error: null } });
+    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => query) } as never);
+
+    await expect(getSessionOutcome('sess-1')).resolves.toEqual({ ok: true, data: null });
   });
 
   // A console.error spy is installed inline by several tests above and, before

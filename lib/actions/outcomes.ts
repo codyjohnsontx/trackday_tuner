@@ -4,20 +4,31 @@ import { getRealUser } from '@/lib/auth';
 import { isDemoMode } from '@/lib/demo/mode';
 import { filterRecommendationsBeforeSession } from '@/lib/recommendation-ordering';
 import { createClient } from '@/lib/supabase/server';
-import type { AiRecommendation, Session, SessionFeedback } from '@/types';
+import type { ActionResult, AiRecommendation, Session, SessionFeedback } from '@/types';
 
-export async function getSessionOutcome(sessionId: string): Promise<SessionFeedback | null> {
-  if (await isDemoMode()) return null;
+/**
+ * The outcome recorded for a session, `null` when there is none.
+ *
+ * A failed read is reported rather than returned as `null`: the session delete
+ * confirmation reads `null` as "no outcome to lose", so the two must not look
+ * the same.
+ */
+export async function getSessionOutcome(sessionId: string): Promise<ActionResult<SessionFeedback | null>> {
+  if (await isDemoMode()) return { ok: true, data: null };
   const user = await getRealUser();
-  if (!user) return null;
+  if (!user) return { ok: false, error: 'Not authenticated.' };
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('session_feedback')
     .select('*')
     .eq('user_id', user.id)
     .eq('session_id', sessionId)
     .maybeSingle();
-  return (data as SessionFeedback | null) ?? null;
+  if (error) {
+    console.error('[outcomes] session-outcome query failed', { userId: user.id, sessionId, error: error.message });
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, data: (data as SessionFeedback | null) ?? null };
 }
 
 export async function getVehicleOutcomeHistory(vehicleId: string, limit = 5): Promise<SessionFeedback[]> {

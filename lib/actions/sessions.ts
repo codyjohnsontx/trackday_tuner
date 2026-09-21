@@ -432,23 +432,33 @@ export async function getSession(id: string): Promise<Session | null> {
   return data as Session;
 }
 
-export async function getSessionEnvironment(sessionId: string): Promise<SessionEnvironment | null> {
+/**
+ * A session's weather readings, `null` when none were logged. A failed read is
+ * reported rather than returned as `null`, which the session delete
+ * confirmation would read as "no weather readings to lose".
+ */
+export async function getSessionEnvironment(sessionId: string): Promise<ActionResult<SessionEnvironment | null>> {
   if (await isDemoMode()) {
-    return getDemoSessionEnvironment(sessionId);
+    return { ok: true, data: getDemoSessionEnvironment(sessionId) };
   }
 
   const user = await getRealUser();
-  if (!user) return null;
+  if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('session_environment')
     .select('*')
     .eq('session_id', sessionId)
     .eq('user_id', user.id)
     .limit(1);
 
-  return (data?.[0] ?? null) as SessionEnvironment | null;
+  if (error) {
+    console.error('[sessions] session-environment query failed', { userId: user.id, sessionId, error: error.message });
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true, data: (data?.[0] ?? null) as SessionEnvironment | null };
 }
 
 export async function getSessionEnvironments(sessionIds: string[]): Promise<SessionEnvironment[]> {
