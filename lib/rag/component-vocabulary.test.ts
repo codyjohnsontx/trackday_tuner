@@ -280,8 +280,6 @@ describe('magnitudeAllowed', () => {
       ['a negative at the ceiling', '-2 clicks'],
       ['a negative decimal', '-0.5 clicks'],
       ['a negative reached through prose', 'soften by -1 click'],
-      ['a negative with a space after the sign', '- 1 click'],
-      ['a negative padded by a positive', '1 step, - 2 clicks'],
       ['a negative written with a minus sign', '−1 click'],
       ['a negative written with an en dash', '–1 click'],
       ['a negative written with an em dash', '—1 click'],
@@ -351,6 +349,17 @@ describe('magnitudeAllowed', () => {
 
     it('accepts padding prose around a legal number', () => {
       expect(magnitudeAllowed(REBOUND, 'about 1 click on the front')).toBe(true);
+    });
+
+    // A range with the unit on both ends. The sign rule reads the magnitude raw
+    // precisely so these survive: the dash here is reached across a word rather
+    // than a digit, and refusing one costs the rider the whole response.
+    it.each([
+      ['a range with the unit repeated', '1 click - 2 clicks', 'REBOUND'],
+      ['a decimal range with the unit repeated', '0.5 psi - 1 psi', 'TIRE_PRESSURE'],
+      ['a range naming each end', '1 click front - 2 clicks rear', 'REBOUND'],
+    ])('accepts %s', (_label, magnitude, policy) => {
+      expect(magnitudeAllowed(policy === 'REBOUND' ? REBOUND : TIRE_PRESSURE, magnitude)).toBe(true);
     });
   });
 });

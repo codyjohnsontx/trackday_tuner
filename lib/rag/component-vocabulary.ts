@@ -232,16 +232,20 @@ export function directionAllowed(policy: ComponentPolicy, direction: string): bo
  * separator, anything else or nothing makes it a sign. Refusing is the fail-safe
  * direction on a value the rider acts on at a track day.
  *
- * THE TEST RUNS ON THE MAGNITUDE WITH WHITESPACE COMPACTED, AND THAT IS NOT WHAT
- * SAVES `1 - 2 clicks`. That one is a non-match either way, because the pattern
- * wants a digit straight after the dash and a space is not one. What compaction
- * buys is the opposite shape, a sign separated from its digit - `- 1 click`,
- * `1 step, - 2 clicks` - which raw text reads as no sign at all. What it costs is
- * a dash reached across a non-digit word: `1 click - 2 clicks` and `1 click front
- * - 2 clicks rear` are refused as negative although both ends are positive.
- * Neither shape is observed - no recorded magnitude in
- * `tests/fixtures/rag-eval/` carries a dash in any spelling - so this trades one
- * unobserved miss for one unobserved false refusal, in the fail-safe direction.
+ * THE TEST READS THE MAGNITUDE RAW, AND A SIGN HELD OFF ITS DIGIT BY A SPACE IS
+ * THEREFORE NOT REFUSED. `- 1 click` is accepted and reaches the rider as
+ * `Soften · - 1 click`. That is a deliberate trade and not an oversight, so do
+ * not close it by compacting the whitespace first. Owner's ruling: the
+ * discriminator is the non-space character before the dash, so anything that
+ * catches `- 1 click` catches `1 click - 2 clicks` and `0.5 psi - 1 psi` with
+ * it - ordinary ranges written with the unit on both ends, which are positive at
+ * both ends and within their ceilings. There is no free narrowing between the
+ * two. What that would cost is not the one recommendation:
+ * `evaluateAdvicePolicy` force-refuses the WHOLE response on an
+ * `unsafe_magnitude`, so the rider loses their entire answer on a paid route.
+ * Both shapes are unobserved - no recorded magnitude in
+ * `tests/fixtures/rag-eval/` carries a dash in any spelling - and between two
+ * unobserved shapes the one that costs an answer is the one to leave alone.
  *
  * WHICH DASHES THIS COVERS IS A DECISION, NOT A FACT ABOUT UNICODE. Four are
  * in: hyphen-minus (U+002D), minus sign (U+2212), en dash (U+2013) and em dash
@@ -273,7 +277,7 @@ const NEGATIVE_MAGNITUDE_PATTERN = /(?:^|[^\d])[-\u2212\u2013\u2014]\d/;
  * takes.
  */
 function parseMagnitudeNumbers(value: string): number[] | null {
-  if (NEGATIVE_MAGNITUDE_PATTERN.test(value.replace(/\s+/g, ''))) return null;
+  if (NEGATIVE_MAGNITUDE_PATTERN.test(value)) return null;
   const matches = [...value.matchAll(/[-+]?\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
   if (matches.length === 0 || matches.some((entry) => !Number.isFinite(entry))) return null;
   return matches.map((entry) => Math.abs(entry));

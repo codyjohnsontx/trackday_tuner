@@ -994,12 +994,14 @@ raised, rather than measured.
 which.** `1-2 clicks` is the range shape the magnitude parser has always accepted, and `Math.abs`
 is what reads its `-2` as the 2 the rider would act on - so it REMAINS, and
 removing it would let a range's larger end slip under a ceiling. The sign test
-runs first, on the magnitude with whitespace compacted, and **compaction is not
-what saves `1 - 2 clicks`** - that is a non-match either way, since the pattern
-wants a digit straight after the dash. What it buys is a sign separated from its
-digit (`- 1 click`); what it costs is a dash reached across a non-digit word
-(`1 click - 2 clicks`, `1 click front - 2 clicks rear`), refused although both
-ends are positive. Neither shape has been emitted here. **Which dashes the sign test covers is a decision, and the
+runs first and reads the magnitude RAW, so **a sign held off its digit by a space
+is deliberately NOT refused**: `- 1 click` is served and renders as `Soften · - 1
+click`. Owner's ruling, and there is no free narrowing to reach for - the
+discriminator is the non-space character before the dash, so anything catching
+`- 1 click` also catches `1 click - 2 clicks` and `0.5 psi - 1 psi`, ordinary
+ranges positive at both ends, and an `unsafe_magnitude` force-refuses the WHOLE
+response rather than the one recommendation. Between two unobserved shapes,
+losing the rider's entire answer on a paid route is the worse one. **Which dashes the sign test covers is a decision, and the
 three it leaves out are named where it is written.** In: hyphen-minus (U+002D),
 minus sign (U+2212), en dash (U+2013), em dash (U+2014) - the ASCII one and the
 three a text pipeline substitutes for it. Out: U+2010 HYPHEN, U+2012 FIGURE DASH
