@@ -852,6 +852,105 @@ fields were the only gap. The regression test locks the BLOCK STRUCTURE rather
 than spying `formatValue`, because a helper that stopped neutralising tags would
 still satisfy a spy.
 
+**The same unconstrained column means a leaf typed `string` can arrive as a
+number, and `formatValue` has to be TOTAL over what `jsonb` holds.** It called
+`.trim()` unguarded, so a saved `preload` of `5` threw
+`TypeError: value.trim is not a function` and both AI routes answered the shaped
+500 their error boundary exists to produce - true of every `suspension.*`,
+`tires.*`, `alignment.*` and `extra_modules.*` field, and the routes' boundaries
+are the backstop rather than the bug. **The leaf rule is: a finite number
+renders as itself, and EVERYTHING else renders as absent** - the rule the empty
+string already had. Two kinds are absent on purpose rather than by omission. A
+composite is not serialized, because the requirement is only that a non-string
+must not throw and printing one would open a channel no screen inspects, since
+`pushRiderText` collects strings and so `classifyStoredRiderText` never sees
+text nested inside a stored blob. A BOOLEAN is not printed either, and that one
+was a fix round's own defect caught under review: `true` is not a setting in any
+vocabulary `describeComponentVocabulary()` gives the model, and rendering it as
+the string `'true'` made `hasManualSessionData` report manual setup data on a
+session that had none and made two sessions storing a boolean in
+`tires.*.compound` score `matching front compound` - the only branch that stated
+a value where the row holds none, rather than stating absence.
+**The string path is unchanged byte for byte**,
+which is the constraint that matters on a formatter feeding every field of both
+routes: `lib/rag/prompt.test.ts` pins a whole session block captured from the
+implementation before the fix, and `npm run rag:eval` replays every tape key
+untouched.
+
+**The same argument applies one level up, to the CONTAINERS.** `sessions.tires`
+and `sessions.suspension` are `jsonb not null`, which permits the JSON value
+`null` and any object shape, so `session.tires.front.brand` on a row saved as
+`tires = null` or `tires = {}` threw `TypeError: Cannot read properties of
+undefined` and produced the identical shaped 500 by the identical rider action.
+Every walk into those two blobs - in the session block, in the similar-session
+lines, and in `collectSessionRiderText` and `collectTuningAdviceRiderText`,
+which screen the same leaves - reads them with optional chaining so a malformed
+blob renders absent instead.
+
+**ONLY THE AI PATH IS CLOSED. THE RENDERED SESSION SCREENS AND THE EXPORT STILL
+CRASH ON BOTH HALVES OF THIS** - an odd-shaped container AND a non-string leaf -
+and the leaf half needs no malformed blob at all: a row with
+`tires.front.pressure` saved as the JSON number 30, the exact row this work was
+written for, throws `TypeError: pressure.trim is not a function` out of
+`buildSessionHistorySummary` (`lib/session-history.ts`) on the sessions list,
+where there is no error boundary to shape it, so the rider loses the whole list
+rather than one field. `.trim()` reaches a leaf the column lets be a number in
+`lib/session-history.ts` (both tyre pressures and the six suspension values),
+`lib/session-modules.ts` (`hasAlignmentValues`, `hasExtraModuleValues`,
+`hasTireValues`, `hasSuspensionValues` - and `?.trim()` does not help, since
+optional chaining guards null and not the wrong type) and
+`lib/session-export.ts` (`parsePressure`). That is separate work, tracked as
+**tt-session-screens-nonstring-fields**, and how a screen should print a numeric
+leaf is a product call rather than a mechanical one.
+
+So the leaf rule has TWO definitions today - `formatValue` here and `leafText`
+in `lib/rag/race-engineer-context.ts` - and one decision, whether to print a
+boolean, had to be made in both. **That is an accepted outcome of this task, not
+an oversight**; collapsing them into one exported helper the screens read too
+belongs to that backlog item, because it is what would let the screens share the
+rule rather than gain a third copy of it.
+
+**`formatValue` IS NOT THE ONLY READER OF THOSE LEAVES, AND IT IS NOT THE FIRST
+ONE A REQUEST REACHES.** `lib/rag/race-engineer-context.ts` reads
+`tires.*.pressure`, `tires.*.compound` and `suspension.*.rebound` in
+`hasManualSessionData` and `selectSimilarSessions`, and both routes call it
+BEFORE the prompt is built - tuning-advice through `loadRaceEngineerContext`,
+day-plan inline - so fixing only the formatter left every one of those leaves
+still taking the request out, from inside the same error boundary. `leafText`
+there is the same rule `formatValue` applies, and `normalize` and `parseNumber`
+are defined on it rather than restating it. **What hid this is the `||` chain in
+`hasManualSessionData`: it reads `notes` first, so any session carrying a note
+short-circuits before a setup leaf is touched** - a harness whose fixture has
+notes reports green over the whole class.
+**Each route has a route-level test, and THE TWO REACH DIFFERENT DEPTHS - read
+this before trusting either as cover.**
+`app/api/ai/tuning-advice/route.non-string-session-field.test.ts` stubs nothing
+between the request and the model: it mocks Supabase, `embedQuery`,
+`retrieveRelevantChunks` and the `openai` client and nothing else, so
+`generateTuningAdvice` and `formatValue` really run and the test reads
+`preload=5 compression=— rebound=5` back out of the prompt handed to the model.
+The day-plan describe in `app/api/ai/day-plan/route.test.ts` mocks
+`@/lib/rag/advice`, and `generateDayPlan` is what calls `embedQuery`,
+`retrieveRelevantChunks`, `buildDayPlanMessages` and `completeAdvice` - so it
+exercises `buildContext` and the real stored-text collector, covering the
+CONTEXT LOADER's leaves, and never reaches that route's prompt builder at all.
+Its assertions read `generateDayPlan.mock.calls[0]`, which is the input rather
+than a prompt. **The day-plan prompt builder is covered at helper level
+instead**, by `renders the same stored number on the day-plan prompt` in
+`lib/rag/prompt.test.ts`. That split is adequate cover and is recorded rather
+than fixed; what it is not is a second end-to-end walk, so do not read the
+day-plan route test as guarding `formatSessionBlock`.
+Both fixtures
+empty every leaf the `||` chain reads except the number under test, or
+`dataUsed.manual` is carried by a sibling leaf and the assertion holds whatever
+the leaf rule does; and both carry a second session, because
+`selectSimilarSessions` only enters its map once there is a candidate.
+The helper-level regressions in `lib/rag/race-engineer-context.test.ts` and
+`lib/rag/prompt.test.ts` cover the leaf rule and the container guards per
+function. **Before changing a reader of these blobs, grep `\.tires\b` and
+`\.suspension\b` across `lib/rag/` and `app/api/ai/` - the class is two
+modules, not one.**
+
 **Screening a field decides that it is CHECKED. A second axis decides what a
 match DOES, and that one is ACTIONABILITY: can the rider reach the thing the
 refusal would name?** If they can, refuse - the request cannot safely proceed and

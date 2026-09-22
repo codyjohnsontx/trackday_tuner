@@ -135,7 +135,8 @@ function createServerClient({
   feedbackNotes,
   sessionSuspensionRebound = '',
   sessionTireCondition = 'used',
-  malformedSessionJson = false,
+  sessionFrontTirePressure = RECENT_SESSION.tires.front.pressure,
+  sessionRearTirePressure = RECENT_SESSION.tires.rear.pressure,
   memorySummary,
   memoryTrackId = null,
   sessionTrackId = null,
@@ -146,9 +147,14 @@ function createServerClient({
   vehicleNickname?: string;
   sessionNotes?: string | null;
   feedbackNotes?: string;
-  sessionSuspensionRebound?: string;
+  // `sessions.tires` and `sessions.suspension` are shape-unconstrained `jsonb`,
+  // so these three are `unknown` rather than `string`: the column accepts what
+  // the TypeScript type does not, and these are the leaves
+  // `hasManualSessionData` and `pressureScore` read.
+  sessionSuspensionRebound?: unknown;
   sessionTireCondition?: string;
-  malformedSessionJson?: boolean;
+  sessionFrontTirePressure?: unknown;
+  sessionRearTirePressure?: unknown;
   memorySummary?: string;
   memoryTrackId?: string | null;
   sessionTrackId?: string | null;
@@ -169,27 +175,24 @@ function createServerClient({
     order: vi.fn(() => sessionsQuery),
     limit: vi.fn(async () => ({
       data: [
-        malformedSessionJson
-          ? // sessions.tires is `jsonb not null` but shape-unconstrained, and
-            // createSession inserts the blob verbatim, so a row like this is
-            // reachable and every reader of session.tires.front throws on it.
-            { ...RECENT_SESSION, tires: {}, suspension: {} }
-          : {
-              ...RECENT_SESSION,
-              track_id: sessionTrackId,
-              notes: sessionNotes,
-              tires: {
-                ...RECENT_SESSION.tires,
-                condition: sessionTireCondition,
-              },
-              suspension: {
-                front: {
-                  ...RECENT_SESSION.suspension.front,
-                  rebound: sessionSuspensionRebound,
-                },
-                rear: RECENT_SESSION.suspension.rear,
-              },
+        {
+          ...RECENT_SESSION,
+          track_id: sessionTrackId,
+          notes: sessionNotes,
+          tires: {
+            ...RECENT_SESSION.tires,
+            front: { ...RECENT_SESSION.tires.front, pressure: sessionFrontTirePressure },
+            rear: { ...RECENT_SESSION.tires.rear, pressure: sessionRearTirePressure },
+            condition: sessionTireCondition,
+          },
+          suspension: {
+            front: {
+              ...RECENT_SESSION.suspension.front,
+              rebound: sessionSuspensionRebound,
             },
+            rear: RECENT_SESSION.suspension.rear,
+          },
+        },
         ...olderSessions.map((session) => ({ ...RECENT_SESSION, ...session })),
       ],
       error: null,
@@ -631,11 +634,20 @@ describe('POST /api/ai/day-plan audit and rate limiting', () => {
   });
 
   // buildContext and the stored-text screen read the session JSON, so they sit
-  // inside the route's one error boundary. Outside it, a malformed row left the
-  // reserved slot stranded at 'pending', where it kept spending the rider's
+  // inside the route's one error boundary. Outside it, a throw from either left
+  // the reserved slot stranded at 'pending', where it kept spending the rider's
   // hourly budget, and answered with an unshaped 500 carrying no request id.
+  //
+  // The throw is injected at the collector rather than provoked with a
+  // malformed `tires` blob, because the readers of that blob are total now -
+  // `formatValue` and `leafText` render a non-string leaf as absent and every
+  // walk into the container is optionally chained, so `tires: {}` is answered
+  // rather than thrown on. What this asserts is the boundary, which still has
+  // to hold for whatever throws inside it next.
   it('audits a throw from the context build and answers with the shaped 500', async () => {
-    createClient.mockResolvedValue(createServerClient({ malformedSessionJson: true }));
+    collectDayPlanRiderText.mockImplementationOnce(() => {
+      throw new TypeError('Cannot read properties of undefined');
+    });
 
     const response = await post({ vehicle_id: VEHICLE_ID });
     const body = await response.json();
@@ -1352,5 +1364,76 @@ describe('POST /api/ai/day-plan resolves the typed circuit through the track-nam
     expect(response.status).toBe(200);
     const older = dayPlanContext().similarSessions.find((item) => item.session.id === OLDER_SESSION_ID);
     expect(older?.reasons).toContain('same track');
+  });
+});
+/**
+ * The day-plan twin of
+ * `app/api/ai/tuning-advice/route.non-string-session-field.test.ts`.
+ *
+ * `sessions.tires` is shape-unconstrained `jsonb` that `createSession` inserts
+ * verbatim, so a pressure the TypeScript type calls a `string` can hold a JSON
+ * number. This route reaches that leaf through its own `buildContext`, which
+ * synthesises a `planningSession` from the rider's most recent session and
+ * hands it to `selectSimilarSessions` and `hasManualSessionData` - so the
+ * baseline row is both the `current` session and one of the `candidates`, and
+ * its pressure is read on both sides of the comparison. Neither reader is the
+ * prompt builder, and both used to throw on it from inside the route's error
+ * boundary.
+ *
+ * `notes` is empty because `hasManualSessionData` is an `||` chain that reads
+ * the notes first.
+ */
+describe('POST /api/ai/day-plan with a non-string field in the session jsonb', () => {
+  const EARLIER_SESSION_ID = '77777777-7777-7777-7777-777777777777';
+
+  function dayPlanContext() {
+    const [input] = generateDayPlan.mock.calls[0] as [
+      {
+        raceEngineerContext: {
+          dataUsed: { manual: boolean };
+          similarSessions: Array<{ session: { id: string }; reasons: string[] }>;
+        };
+      },
+    ];
+    return input.raceEngineerContext;
+  }
+
+  beforeEach(() => {
+    createClient.mockResolvedValue(
+      createServerClient({
+        // Every leaf `hasManualSessionData` reads is emptied except the two
+        // numbers under test, so `dataUsed.manual` can only be true because a
+        // number was read as its own text. Leaving the rear pressure at its
+        // '28 psi' default would carry the flag on its own and the assertion
+        // would hold whatever the leaf rule did.
+        sessionNotes: '',
+        sessionRearTirePressure: '',
+        sessionFrontTirePressure: 30,
+        sessionSuspensionRebound: 5,
+        // A second session on the vehicle, stored the ordinary way, so the
+        // comparison scores a real pair: the numeric pressure on the planning
+        // session against a string pressure on the candidate.
+        olderSessions: [{ id: EARLIER_SESSION_ID, date: '2026-07-01' }],
+      }),
+    );
+  });
+
+  it('answers the rider instead of failing the request', async () => {
+    const response = await post({ vehicle_id: VEHICLE_ID, track_name: 'Test Track' });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(generateDayPlan).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the stored numbers rather than dropping the comparison and the manual flag', async () => {
+    await post({ vehicle_id: VEHICLE_ID, track_name: 'Test Track' });
+
+    const context = dayPlanContext();
+    expect(context.dataUsed.manual).toBe(true);
+    expect(
+      context.similarSessions.find((item) => item.session.id === EARLIER_SESSION_ID)?.reasons,
+    ).toContain('front pressure within 0.5');
   });
 });

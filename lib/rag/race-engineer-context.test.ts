@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectSimilarSessions } from '@/lib/rag/race-engineer-context';
+import { hasManualSessionData, selectSimilarSessions } from '@/lib/rag/race-engineer-context';
 import type { Session, SessionEnvironment } from '@/types';
 
 const baseSession: Session = {
@@ -157,5 +157,174 @@ describe('selectSimilarSessions', () => {
     expect(result).toHaveLength(1);
     expect(result[0].reasons).toContain('same track');
     expect(result[0].reasons).not.toContain('similar ambient temperature');
+  });
+});
+/**
+ * `sessions.tires` and `sessions.suspension` are shape-unconstrained `jsonb`
+ * that `createSession` inserts verbatim, so every leaf below is a value the
+ * database will accept although the TypeScript type says `string`, and every
+ * container below is a shape it will accept although the type says otherwise.
+ * Both helpers run inside the two AI routes' error boundaries and BEFORE the
+ * prompt builder, so each of these used to answer a legitimate question with
+ * the shaped 500.
+ */
+describe('the setup jsonb a rider can actually have stored', () => {
+  /**
+   * `hasManualSessionData` is an `||` chain that reads `notes` first and then
+   * the two pressures, so a session carrying either never reaches the leaf
+   * under test. Every case below starts from a session with none of them - the
+   * rider who logged one number and no prose - or the chain short-circuits and
+   * the case proves nothing.
+   */
+  const noManualText = {
+    ...baseSession,
+    notes: '',
+    tires: {
+      ...baseSession.tires,
+      front: { ...baseSession.tires.front, pressure: '' },
+      rear: { ...baseSession.tires.rear, pressure: '' },
+    },
+    suspension: {
+      front: { ...baseSession.suspension.front, rebound: '' },
+      rear: { ...baseSession.suspension.rear, rebound: '' },
+    },
+  } as unknown as Session;
+
+  it.each([
+    [
+      'a number pressure',
+      {
+        tires: {
+          ...noManualText.tires,
+          front: { ...noManualText.tires.front, pressure: 31 },
+        },
+      },
+      true,
+    ],
+    [
+      'a number rebound',
+      {
+        suspension: {
+          ...noManualText.suspension,
+          front: { ...noManualText.suspension.front, rebound: 8 },
+        },
+      },
+      true,
+    ],
+    ['a null tires blob', { tires: null as unknown as Session['tires'] }, false],
+    ['a null suspension blob', { suspension: null as unknown as Session['suspension'] }, false],
+    ['a tires blob with no axles', { tires: {} as unknown as Session['tires'] }, false],
+    [
+      'a suspension blob with no ends',
+      { suspension: {} as unknown as Session['suspension'] },
+      false,
+    ],
+    [
+      'a composite where a pressure should be',
+      {
+        tires: {
+          ...noManualText.tires,
+          front: { ...noManualText.tires.front, pressure: { psi: 31 } },
+        },
+      },
+      false,
+    ],
+    [
+      'a true boolean where a pressure should be',
+      {
+        tires: {
+          ...noManualText.tires,
+          front: { ...noManualText.tires.front, pressure: true },
+        },
+      },
+      false,
+    ],
+    [
+      'a false boolean where a pressure should be',
+      {
+        tires: {
+          ...noManualText.tires,
+          front: { ...noManualText.tires.front, pressure: false },
+        },
+      },
+      false,
+    ],
+  ])('reads manual data off a session with %s', (_label, partial, expected) => {
+    expect(hasManualSessionData({ ...noManualText, ...partial } as Session)).toBe(expected);
+  });
+
+  /**
+   * A boolean is not a compound. Rendering one as 'true' made two sessions that
+   * both stored one score a match and print `matching front compound` into
+   * `reasons`, which the prompt interpolates as evidence of a comparison that
+   * was never made.
+   */
+  it('does not match two sessions on a boolean where a compound should be', () => {
+    const withBooleanCompound = (id: string, date: string) =>
+      ({
+        ...baseSession,
+        id,
+        date,
+        tires: {
+          ...baseSession.tires,
+          front: { ...baseSession.tires.front, compound: true },
+          rear: { ...baseSession.tires.rear, compound: true },
+        },
+      }) as unknown as Session;
+
+    const [match] = selectSimilarSessions({
+      current: withBooleanCompound('current', '2026-04-22'),
+      candidates: [withBooleanCompound('candidate', '2026-04-21')],
+    });
+
+    expect(match.reasons).not.toContain('matching front compound');
+    expect(match.reasons).not.toContain('matching rear compound');
+  });
+
+  it('scores a pressure stored as a number the way the same pressure stored as text scores', () => {
+    const candidate = { ...baseSession, id: 'candidate', date: '2026-04-21' };
+    const asText = selectSimilarSessions({ current: baseSession, candidates: [candidate] });
+    const asNumber = selectSimilarSessions({
+      current: {
+        ...baseSession,
+        tires: {
+          ...baseSession.tires,
+          front: { ...baseSession.tires.front, pressure: 31 },
+        },
+      } as unknown as Session,
+      candidates: [candidate],
+    });
+
+    expect(asNumber[0].reasons).toContain('front pressure within 0.5');
+    expect(asNumber[0].score).toBe(asText[0].score);
+  });
+
+  it.each([
+    ['a null tires blob on the current session', { tires: null as unknown as Session['tires'] }],
+    ['a tires blob with no axles on the current session', { tires: {} as unknown as Session['tires'] }],
+  ])('compares candidates against %s without throwing', (_label, partial) => {
+    const candidate = { ...baseSession, id: 'candidate', date: '2026-04-21' };
+
+    expect(() =>
+      selectSimilarSessions({
+        current: { ...baseSession, ...partial } as Session,
+        candidates: [candidate],
+      }),
+    ).not.toThrow();
+  });
+
+  it('compares a candidate whose own tires blob is null without throwing', () => {
+    const candidate = {
+      ...baseSession,
+      id: 'candidate',
+      date: '2026-04-21',
+      tires: null as unknown as Session['tires'],
+    } as Session;
+
+    const result = selectSimilarSessions({ current: baseSession, candidates: [candidate] });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].reasons).not.toContain('matching front compound');
+    expect(result[0].reasons).not.toContain('front pressure within 0.5');
   });
 });
