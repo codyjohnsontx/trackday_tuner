@@ -885,8 +885,30 @@ undefined` and produced the identical shaped 500 by the identical rider action.
 Every walk into those two blobs - in the session block, in the similar-session
 lines, and in `collectSessionRiderText` and `collectTuningAdviceRiderText`,
 which screen the same leaves - reads them with optional chaining so a malformed
-blob renders absent instead. The rendered session screens and the export still
-assume the old shape; that is a separate task.
+blob renders absent instead.
+
+**ONLY THE AI PATH IS CLOSED. THE RENDERED SESSION SCREENS AND THE EXPORT STILL
+CRASH ON BOTH HALVES OF THIS** - an odd-shaped container AND a non-string leaf -
+and the leaf half needs no malformed blob at all: a row with
+`tires.front.pressure` saved as the JSON number 30, the exact row this work was
+written for, throws `TypeError: pressure.trim is not a function` out of
+`buildSessionHistorySummary` (`lib/session-history.ts`) on the sessions list,
+where there is no error boundary to shape it, so the rider loses the whole list
+rather than one field. `.trim()` reaches a leaf the column lets be a number in
+`lib/session-history.ts` (both tyre pressures and the six suspension values),
+`lib/session-modules.ts` (`hasAlignmentValues`, `hasExtraModuleValues`,
+`hasTireValues`, `hasSuspensionValues` - and `?.trim()` does not help, since
+optional chaining guards null and not the wrong type) and
+`lib/session-export.ts` (`parsePressure`). That is separate work, tracked as
+**tt-session-screens-nonstring-fields**, and how a screen should print a numeric
+leaf is a product call rather than a mechanical one.
+
+So the leaf rule has TWO definitions today - `formatValue` here and `leafText`
+in `lib/rag/race-engineer-context.ts` - and one decision, whether to print a
+boolean, had to be made in both. **That is an accepted outcome of this task, not
+an oversight**; collapsing them into one exported helper the screens read too
+belongs to that backlog item, because it is what would let the screens share the
+rule rather than gain a third copy of it.
 
 **`formatValue` IS NOT THE ONLY READER OF THOSE LEAVES, AND IT IS NOT THE FIRST
 ONE A REQUEST REACHES.** `lib/rag/race-engineer-context.ts` reads
