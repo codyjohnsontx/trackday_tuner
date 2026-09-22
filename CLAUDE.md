@@ -858,13 +858,29 @@ number, and `formatValue` has to be TOTAL over what `jsonb` holds.** It called
 `TypeError: value.trim is not a function` and both AI routes answered the shaped
 500 their error boundary exists to produce - true of every `suspension.*`,
 `tires.*`, `alignment.*` and `extra_modules.*` field, and the routes' boundaries
-are the backstop rather than the bug. It now renders numbers and booleans as
-themselves, composites as capped JSON, and anything empty or unserializable as
-absent, every branch sanitized. **The string path is unchanged byte for byte**,
+are the backstop rather than the bug. It now renders a finite number or a
+boolean as itself and **everything else as absent**, which is the rule the empty
+string already had. A composite - an array or an object - is deliberately NOT
+serialized into the prompt: the requirement is only that a non-string must not
+throw, and printing one would open a channel no screen inspects, since
+`pushRiderText` collects strings and so `classifyStoredRiderText` never sees
+text nested inside a stored blob. Absent is less code than either a serializer
+or a second collector for it. **The string path is unchanged byte for byte**,
 which is the constraint that matters on a formatter feeding every field of both
 routes: `lib/rag/prompt.test.ts` pins a whole session block captured from the
 implementation before the fix, and `npm run rag:eval` replays every tape key
 untouched.
+
+**The same argument applies one level up, to the CONTAINERS.** `sessions.tires`
+and `sessions.suspension` are `jsonb not null`, which permits the JSON value
+`null` and any object shape, so `session.tires.front.brand` on a row saved as
+`tires = null` or `tires = {}` threw `TypeError: Cannot read properties of
+undefined` and produced the identical shaped 500 by the identical rider action.
+Every walk into those two blobs - in the session block, in the similar-session
+lines, and in `collectSessionRiderText` and `collectTuningAdviceRiderText`,
+which screen the same leaves - reads them with optional chaining so a malformed
+blob renders absent instead. The rendered session screens and the export still
+assume the old shape; that is a separate task.
 
 **Screening a field decides that it is CHECKED. A second axis decides what a
 match DOES, and that one is ACTIONABILITY: can the rider reach the thing the

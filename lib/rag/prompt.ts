@@ -87,13 +87,6 @@ function sanitizeFreeText(value: string): string {
   return value.replace(DATA_TAG_PATTERN, (match) => match.replace(/</g, '\u2039').replace(/>/g, '\u203a'));
 }
 
-// Upper bound on a serialized array or object. A prompt line is one line and a
-// stored composite has no length bound, so without this one malformed blob
-// could crowd the rest of the session block out of the model's attention. It
-// applies only to the composite branch: a long STRING is printed whole, exactly
-// as it always was.
-const MAX_SERIALIZED_VALUE_LENGTH = 200;
-
 /**
  * Render one setup field for the prompt.
  *
@@ -112,26 +105,23 @@ const MAX_SERIALIZED_VALUE_LENGTH = 200;
  * AI routes and every field in the session block, so a change to how an
  * ordinary string renders would move every completion tape key in `rag:eval`
  * and alter the prompt for every rider. Only values that used to throw render
- * differently now, and each renders the way the prompt already reads for the
- * string a rider would have typed instead:
+ * differently now:
  *
  * - a finite number or a boolean prints as itself, so a `preload` stored as 5
  *   reads `preload=5` exactly as the string '5' does;
- * - a non-finite number carries no setting, so it reads as absent;
- * - an array or object prints as compact JSON, capped, so the model sees the
- *   shape rather than a field silently vanishing;
- * - anything empty - '', [], {} - reads as absent, the rule the empty string
- *   already had;
- * - anything that cannot be serialized at all (a bigint, a cycle) reads as
- *   absent rather than taking the request down, which is the whole point.
+ * - EVERYTHING ELSE READS AS ABSENT, which is the rule the empty string already
+ *   had. That covers a non-finite number, which carries no setting, and every
+ *   composite - an array or an object.
  *
- * Every branch goes through `sanitizeFreeText`, because a `</session_data>`
- * nested inside a stored object escapes the data block exactly as one stored at
- * the top level does, and `JSON.stringify` does not escape angle brackets.
+ * A composite is absent rather than serialized because the requirement is only
+ * that a non-string must not throw, and serializing one opens a channel no
+ * screen inspects: `pushRiderText` collects strings, so `classifyStoredRiderText`
+ * would never see text printed out of a stored array or object, and this file
+ * states without qualification that every stored value the prompt interpolates
+ * is screened. Absent keeps that true and needs less code than either the
+ * serializer or a second collector for it.
  */
 function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return '—';
-
   if (typeof value === 'string') {
     const trimmed = value.trim();
     if (trimmed === '') return '—';
@@ -144,18 +134,7 @@ function formatValue(value: unknown): string {
 
   if (typeof value === 'boolean') return String(value);
 
-  let serialized: string;
-  try {
-    serialized = JSON.stringify(value) ?? '';
-  } catch {
-    return '—';
-  }
-  if (serialized === '' || serialized === '[]' || serialized === '{}') return '—';
-  const capped =
-    serialized.length > MAX_SERIALIZED_VALUE_LENGTH
-      ? `${serialized.slice(0, MAX_SERIALIZED_VALUE_LENGTH)}…`
-      : serialized;
-  return sanitizeFreeText(capped);
+  return '—';
 }
 
 function formatSessionBlock(label: string, session: Session | null): string {
@@ -192,9 +171,9 @@ function formatSessionBlock(label: string, session: Session | null): string {
   if (session.session_number != null) {
     lines.push(`  session_number: ${session.session_number}`);
   }
-  lines.push(`  tires.condition: ${formatValue(session.tires.condition)}`);
-  lines.push(`  tires.front: brand=${formatValue(session.tires.front.brand)} compound=${formatValue(session.tires.front.compound)} pressure=${formatValue(session.tires.front.pressure)}`);
-  lines.push(`  tires.rear: brand=${formatValue(session.tires.rear.brand)} compound=${formatValue(session.tires.rear.compound)} pressure=${formatValue(session.tires.rear.pressure)}`);
+  lines.push(`  tires.condition: ${formatValue(session.tires?.condition)}`);
+  lines.push(`  tires.front: brand=${formatValue(session.tires?.front?.brand)} compound=${formatValue(session.tires?.front?.compound)} pressure=${formatValue(session.tires?.front?.pressure)}`);
+  lines.push(`  tires.rear: brand=${formatValue(session.tires?.rear?.brand)} compound=${formatValue(session.tires?.rear?.compound)} pressure=${formatValue(session.tires?.rear?.pressure)}`);
   // Every one of these is a string leaf of the `suspension` jsonb blob, which
   // `createSession` inserts verbatim and which no CHECK constraint shapes -
   // `authenticated` holds insert and update on `sessions`, and RLS picks the row,
@@ -204,8 +183,8 @@ function formatSessionBlock(label: string, session: Session | null): string {
   // stored `</session_data>` closed this block early and put the rider's text in
   // the model's instruction space on BOTH AI routes. The stored-text screen does
   // not cover this: its patterns are phrases, so a bare closing tag passes it.
-  lines.push(`  suspension.front: preload=${formatValue(session.suspension.front.preload)} compression=${formatValue(session.suspension.front.compression)} rebound=${formatValue(session.suspension.front.rebound)} direction=${formatValue(session.suspension.front.direction)}`);
-  lines.push(`  suspension.rear: preload=${formatValue(session.suspension.rear.preload)} compression=${formatValue(session.suspension.rear.compression)} rebound=${formatValue(session.suspension.rear.rebound)} direction=${formatValue(session.suspension.rear.direction)}`);
+  lines.push(`  suspension.front: preload=${formatValue(session.suspension?.front?.preload)} compression=${formatValue(session.suspension?.front?.compression)} rebound=${formatValue(session.suspension?.front?.rebound)} direction=${formatValue(session.suspension?.front?.direction)}`);
+  lines.push(`  suspension.rear: preload=${formatValue(session.suspension?.rear?.preload)} compression=${formatValue(session.suspension?.rear?.compression)} rebound=${formatValue(session.suspension?.rear?.rebound)} direction=${formatValue(session.suspension?.rear?.direction)}`);
   if (session.alignment) {
     lines.push(
       `  alignment: front_camber=${formatValue(session.alignment.front_camber)} rear_camber=${formatValue(session.alignment.rear_camber)} front_toe=${formatValue(session.alignment.front_toe)} rear_toe=${formatValue(session.alignment.rear_toe)} caster=${formatValue(session.alignment.caster)}`,
@@ -324,7 +303,7 @@ function formatRaceEngineerContext(context: RaceEngineerContext | null | undefin
     lines.push('  similar_sessions:');
     context.similarSessions.forEach((item, idx) => {
       lines.push(`    [${idx + 1}] session_id=${item.session.id} date=${item.session.date} track=${formatValue(item.session.track_name)} score=${item.score.toFixed(2)} reasons=${sanitizeFreeText(item.reasons.join(', ') || 'matched history')}`);
-      lines.push(`        tires.front.pressure=${formatValue(item.session.tires.front.pressure)} tires.rear.pressure=${formatValue(item.session.tires.rear.pressure)} conditions=${item.session.conditions}`);
+      lines.push(`        tires.front.pressure=${formatValue(item.session.tires?.front?.pressure)} tires.rear.pressure=${formatValue(item.session.tires?.rear?.pressure)} conditions=${item.session.conditions}`);
       if (item.session.notes) {
         lines.push(`        notes=${sanitizeFreeText(truncateAtWordBoundary(item.session.notes.trim(), 220))}`);
       }
@@ -616,21 +595,21 @@ function collectSessionRiderText(session: Session): RiderTextField[] {
     pushRiderText(fields, REFUSE_ON_MATCH, `the ${name} ${suffix}`, value);
 
   add('track name', session.track_name);
-  add('tyre condition', session.tires.condition);
-  add('front tyre brand', session.tires.front.brand);
-  add('front tyre compound', session.tires.front.compound);
-  add('front tyre pressure', session.tires.front.pressure);
-  add('rear tyre brand', session.tires.rear.brand);
-  add('rear tyre compound', session.tires.rear.compound);
-  add('rear tyre pressure', session.tires.rear.pressure);
-  add('front preload', session.suspension.front.preload);
-  add('front compression', session.suspension.front.compression);
-  add('front rebound', session.suspension.front.rebound);
-  add('front adjuster direction', session.suspension.front.direction);
-  add('rear preload', session.suspension.rear.preload);
-  add('rear compression', session.suspension.rear.compression);
-  add('rear rebound', session.suspension.rear.rebound);
-  add('rear adjuster direction', session.suspension.rear.direction);
+  add('tyre condition', session.tires?.condition);
+  add('front tyre brand', session.tires?.front?.brand);
+  add('front tyre compound', session.tires?.front?.compound);
+  add('front tyre pressure', session.tires?.front?.pressure);
+  add('rear tyre brand', session.tires?.rear?.brand);
+  add('rear tyre compound', session.tires?.rear?.compound);
+  add('rear tyre pressure', session.tires?.rear?.pressure);
+  add('front preload', session.suspension?.front?.preload);
+  add('front compression', session.suspension?.front?.compression);
+  add('front rebound', session.suspension?.front?.rebound);
+  add('front adjuster direction', session.suspension?.front?.direction);
+  add('rear preload', session.suspension?.rear?.preload);
+  add('rear compression', session.suspension?.rear?.compression);
+  add('rear rebound', session.suspension?.rear?.rebound);
+  add('rear adjuster direction', session.suspension?.rear?.direction);
   if (session.alignment) {
     add('front camber', session.alignment.front_camber);
     add('rear camber', session.alignment.rear_camber);
@@ -729,8 +708,8 @@ function collectRaceEngineerContextRiderText(
   for (const item of context.similarSessions) {
     const suffix = sessionLabelSuffix(item.session);
     pushRiderText(fields, REFUSE_ON_MATCH, `the track name ${suffix}`, item.session.track_name);
-    pushRiderText(fields, REFUSE_ON_MATCH, `the front tyre pressure ${suffix}`, item.session.tires.front.pressure);
-    pushRiderText(fields, REFUSE_ON_MATCH, `the rear tyre pressure ${suffix}`, item.session.tires.rear.pressure);
+    pushRiderText(fields, REFUSE_ON_MATCH, `the front tyre pressure ${suffix}`, item.session.tires?.front?.pressure);
+    pushRiderText(fields, REFUSE_ON_MATCH, `the rear tyre pressure ${suffix}`, item.session.tires?.rear?.pressure);
     pushRiderText(fields, REFUSE_ON_MATCH, `the notes ${suffix}`, item.session.notes);
   }
 
