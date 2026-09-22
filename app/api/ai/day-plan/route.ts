@@ -656,11 +656,15 @@ export async function POST(request: Request) {
 
   // Everything from here reads the stored session JSON, which is `jsonb not
   // null` but shape-unconstrained - `createSession` inserts the tyre and
-  // suspension blobs verbatim - so a row missing a branch throws on an ordinary
-  // field read. It all sits inside the one error boundary for that reason: a
-  // throw out here would leave the slot this request already reserved stranded
-  // at `pending`, still counting against the rider's budget for the whole
-  // window, and answer them with an unshaped 500 carrying no request id.
+  // suspension blobs verbatim - so a row can carry a missing branch or a leaf
+  // that is not the string its TypeScript type claims. Every reader below now
+  // absorbs both (`leafText` in `lib/rag/race-engineer-context.ts`,
+  // `formatValue` in `lib/rag/prompt.ts`), and the region still sits inside the
+  // one error boundary because a throw out here - from those blobs or from
+  // anything else on this path - would leave the slot this request already
+  // reserved stranded at `pending`, still counting against the rider's budget
+  // for the whole window, and answer them with an unshaped 500 carrying no
+  // request id.
   try {
     const raceEngineerContext = buildContext({
       userId: user.id,
