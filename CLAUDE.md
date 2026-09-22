@@ -994,16 +994,21 @@ raised, rather than measured.
 which.** `1-2 clicks` is the range shape the magnitude parser has always accepted, and `Math.abs`
 is what reads its `-2` as the 2 the rider would act on - so it REMAINS, and
 removing it would let a range's larger end slip under a ceiling. The sign test
-runs first, on the magnitude with whitespace compacted so `1 - 2 clicks` is still
-a range; its one accepted false refusal is `1 click - 2 clicks`, which no model
-here has emitted. **Which dashes the sign test covers is a decision, and the
+runs first, on the magnitude with whitespace compacted, and **compaction is not
+what saves `1 - 2 clicks`** - that is a non-match either way, since the pattern
+wants a digit straight after the dash. What it buys is a sign separated from its
+digit (`- 1 click`); what it costs is a dash reached across a non-digit word
+(`1 click - 2 clicks`, `1 click front - 2 clicks rear`), refused although both
+ends are positive. Neither shape has been emitted here. **Which dashes the sign test covers is a decision, and the
 three it leaves out are named where it is written.** In: hyphen-minus (U+002D),
 minus sign (U+2212), en dash (U+2013), em dash (U+2014) - the ASCII one and the
-three a text pipeline substitutes for it, which is how a `-1 click` cleared the
-ceiling and reached the rider while the test was ASCII-only. Out: U+2010 HYPHEN,
-U+2012 FIGURE DASH and U+FF0D FULLWIDTH HYPHEN-MINUS, which read as no sign at
-all and parse as a positive number - unobserved in any recorded model output
-rather than unreachable, so widening to them is a ruling nobody has made. The
+three a text pipeline substitutes for it. Out: U+2010 HYPHEN, U+2012 FIGURE DASH
+and U+FF0D FULLWIDTH HYPHEN-MINUS, which read as no sign at all and parse as a
+positive number. **The non-ASCII half is a precaution rather than an incident, in
+both directions**: no recorded model output here has ever spelled a magnitude
+with any dash but the ASCII one, so nothing covered has been seen arriving and
+nothing uncovered has been seen escaping, and widening to the other three is a
+ruling nobody has made. The
 digit-before rule is one rule over whichever characters are in, so every covered
 dash still separates a range. The regression set is `magnitudeAllowed` in
 `lib/rag/component-vocabulary.test.ts` - both walls, with the ceiling, the

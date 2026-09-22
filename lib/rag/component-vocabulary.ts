@@ -229,24 +229,32 @@ export function directionAllowed(policy: ComponentPolicy, direction: string): bo
  * reading: it instructs the opposite of its own direction, or nothing at all.
  *
  * What tells them apart is what comes BEFORE the dash: a digit makes it a
- * separator, anything else or nothing makes it a sign. Whitespace is compacted
- * first so `1 - 2 clicks` is still read as the range it is; the cost of that is
- * `1 click - 2 clicks`, which is read as negative and refused, and which no model
- * has emitted here (every recorded magnitude in `tests/fixtures/rag-eval/` is a
- * bare `<number> <unit>`). Refusing is the fail-safe direction on a value the
- * rider acts on at a track day.
+ * separator, anything else or nothing makes it a sign. Refusing is the fail-safe
+ * direction on a value the rider acts on at a track day.
+ *
+ * THE TEST RUNS ON THE MAGNITUDE WITH WHITESPACE COMPACTED, AND THAT IS NOT WHAT
+ * SAVES `1 - 2 clicks`. That one is a non-match either way, because the pattern
+ * wants a digit straight after the dash and a space is not one. What compaction
+ * buys is the opposite shape, a sign separated from its digit - `- 1 click`,
+ * `1 step, - 2 clicks` - which raw text reads as no sign at all. What it costs is
+ * a dash reached across a non-digit word: `1 click - 2 clicks` and `1 click front
+ * - 2 clicks rear` are refused as negative although both ends are positive.
+ * Neither shape is observed - every recorded magnitude in
+ * `tests/fixtures/rag-eval/` is a bare `<number> <unit>` - so this trades one
+ * unobserved miss for one unobserved false refusal, in the fail-safe direction.
  *
  * WHICH DASHES THIS COVERS IS A DECISION, NOT A FACT ABOUT UNICODE. Four are
  * in: hyphen-minus (U+002D), minus sign (U+2212), en dash (U+2013) and em dash
- * (U+2014) - the ASCII one plus the three a text pipeline substitutes for it,
- * which is where a `−1 click` that reached the rider through exactly this path
- * came from. THREE MORE SPELL A DASH AND ARE NOT COVERED: U+2010 HYPHEN, U+2012
- * FIGURE DASH and U+FF0D FULLWIDTH HYPHEN-MINUS each read as NO SIGN AT ALL,
- * parse as a positive number and clear the ceiling. That is unobserved rather
- * than unreachable - no recorded model output here spells a magnitude as
- * anything but a bare `<number> <unit>` - and widening to them is a ruling
- * nobody has made, not an oversight to close on sight. The digit-before rule is
- * one rule over whichever characters are in, so `1–2 clicks` is still a range.
+ * (U+2014) - the ASCII one plus the three a text pipeline substitutes for it.
+ * THREE MORE SPELL A DASH AND ARE NOT COVERED: U+2010 HYPHEN, U+2012 FIGURE DASH
+ * and U+FF0D FULLWIDTH HYPHEN-MINUS each read as NO SIGN AT ALL, parse as a
+ * positive number and clear the ceiling. The whole non-ASCII half of this is a
+ * PRECAUTION RATHER THAN AN INCIDENT, in both directions: no recorded model
+ * output here has ever spelled a magnitude with any dash but the ASCII one, so
+ * nothing covered has been seen arriving and nothing uncovered has been seen
+ * escaping. Widening to the other three is a ruling nobody has made, not an
+ * oversight to close on sight. The digit-before rule is one rule over whichever
+ * characters are in, so `1–2 clicks` is still a range.
  */
 const NEGATIVE_MAGNITUDE_PATTERN = /(?:^|[^\d])[-\u2212\u2013\u2014]\d/;
 
