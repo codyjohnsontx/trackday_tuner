@@ -897,7 +897,11 @@ notes reports green over the whole class.
 `app/api/ai/tuning-advice/route.non-string-session-field.test.ts` therefore
 stubs nothing between the request and the model, and its fixture has empty notes
 and one earlier session, because the context loader needs a candidate before
-`selectSimilarSessions` enters its map at all. **Before changing a reader of
+`selectSimilarSessions` enters its map at all. Day-plan has its own route-level
+twin in `app/api/ai/day-plan/route.test.ts`, which needs no second session: its
+`buildContext` synthesises the `planningSession` from the rider's latest row, so
+that row is both the `current` session and one of the `candidates` and its
+pressure is read on both sides of the comparison. **Before changing a reader of
 these blobs, grep `\.tires\b` and `\.suspension\b` across `lib/rag/` and
 `app/api/ai/` - the class is two modules, not one.**
 

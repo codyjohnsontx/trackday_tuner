@@ -135,6 +135,7 @@ function createServerClient({
   feedbackNotes,
   sessionSuspensionRebound = '',
   sessionTireCondition = 'used',
+  sessionFrontTirePressure = RECENT_SESSION.tires.front.pressure,
   memorySummary,
   memoryTrackId = null,
   sessionTrackId = null,
@@ -147,6 +148,9 @@ function createServerClient({
   feedbackNotes?: string;
   sessionSuspensionRebound?: string;
   sessionTireCondition?: string;
+  // `sessions.tires` is shape-unconstrained `jsonb`, so this is `unknown`
+  // rather than `string`: the column accepts what the TypeScript type does not.
+  sessionFrontTirePressure?: unknown;
   memorySummary?: string;
   memoryTrackId?: string | null;
   sessionTrackId?: string | null;
@@ -173,6 +177,7 @@ function createServerClient({
           notes: sessionNotes,
           tires: {
             ...RECENT_SESSION.tires,
+            front: { ...RECENT_SESSION.tires.front, pressure: sessionFrontTirePressure },
             condition: sessionTireCondition,
           },
           suspension: {
@@ -1354,5 +1359,60 @@ describe('POST /api/ai/day-plan resolves the typed circuit through the track-nam
     expect(response.status).toBe(200);
     const older = dayPlanContext().similarSessions.find((item) => item.session.id === OLDER_SESSION_ID);
     expect(older?.reasons).toContain('same track');
+  });
+});
+/**
+ * The day-plan twin of
+ * `app/api/ai/tuning-advice/route.non-string-session-field.test.ts`.
+ *
+ * `sessions.tires` is shape-unconstrained `jsonb` that `createSession` inserts
+ * verbatim, so a pressure the TypeScript type calls a `string` can hold a JSON
+ * number. This route reaches that leaf through its own `buildContext`, which
+ * synthesises a `planningSession` from the rider's most recent session and
+ * hands it to `selectSimilarSessions` and `hasManualSessionData` - so the
+ * baseline row is both the `current` session and one of the `candidates`, and
+ * its pressure is read on both sides of the comparison. Neither reader is the
+ * prompt builder, and both used to throw on it from inside the route's error
+ * boundary.
+ *
+ * `notes` is empty because `hasManualSessionData` is an `||` chain that reads
+ * the notes first.
+ */
+describe('POST /api/ai/day-plan with a non-string field in the session jsonb', () => {
+  function dayPlanContext() {
+    const [input] = generateDayPlan.mock.calls[0] as [
+      {
+        raceEngineerContext: {
+          dataUsed: { manual: boolean };
+          similarSessions: Array<{ session: { id: string }; reasons: string[] }>;
+        };
+      },
+    ];
+    return input.raceEngineerContext;
+  }
+
+  beforeEach(() => {
+    createClient.mockResolvedValue(
+      createServerClient({ sessionNotes: '', sessionFrontTirePressure: 30 }),
+    );
+  });
+
+  it('answers the rider instead of failing the request', async () => {
+    const response = await post({ vehicle_id: VEHICLE_ID, track_name: 'Test Track' });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(generateDayPlan).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the stored number as the pressure rather than dropping the comparison', async () => {
+    await post({ vehicle_id: VEHICLE_ID, track_name: 'Test Track' });
+
+    const context = dayPlanContext();
+    expect(context.dataUsed.manual).toBe(true);
+    expect(
+      context.similarSessions.find((item) => item.session.id === SESSION_ID)?.reasons,
+    ).toContain('front pressure within 0.5');
   });
 });
