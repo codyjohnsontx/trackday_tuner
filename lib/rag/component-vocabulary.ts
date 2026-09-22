@@ -236,12 +236,17 @@ export function directionAllowed(policy: ComponentPolicy, direction: string): bo
  * bare `<number> <unit>`). Refusing is the fail-safe direction on a value the
  * rider acts on at a track day.
  *
- * FOUR CHARACTERS SPELL A DASH, and the guard covers all four: hyphen-minus
- * (U+002D), minus sign (U+2212), en dash (U+2013) and em dash (U+2014). Only the
- * first is ASCII, and while it was the only one here a model emitting `−1 click`
- * reached the rider through exactly the path this guard closes, because the
- * number parser below reads a non-ASCII sign as no sign at all. The digit-before
- * rule is one rule over all four, so `1–2 clicks` is still the range it is.
+ * WHICH DASHES THIS COVERS IS A DECISION, NOT A FACT ABOUT UNICODE. Four are
+ * in: hyphen-minus (U+002D), minus sign (U+2212), en dash (U+2013) and em dash
+ * (U+2014) - the ASCII one plus the three a text pipeline substitutes for it,
+ * which is where a `−1 click` that reached the rider through exactly this path
+ * came from. THREE MORE SPELL A DASH AND ARE NOT COVERED: U+2010 HYPHEN, U+2012
+ * FIGURE DASH and U+FF0D FULLWIDTH HYPHEN-MINUS each read as NO SIGN AT ALL,
+ * parse as a positive number and clear the ceiling. That is unobserved rather
+ * than unreachable - no recorded model output here spells a magnitude as
+ * anything but a bare `<number> <unit>` - and widening to them is a ruling
+ * nobody has made, not an oversight to close on sight. The digit-before rule is
+ * one rule over whichever characters are in, so `1–2 clicks` is still a range.
  */
 const NEGATIVE_MAGNITUDE_PATTERN = /(?:^|[^\d])[-\u2212\u2013\u2014]\d/;
 

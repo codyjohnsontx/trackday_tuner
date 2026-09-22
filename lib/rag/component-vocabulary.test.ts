@@ -282,7 +282,6 @@ describe('magnitudeAllowed', () => {
       ['a negative reached through prose', 'soften by -1 click'],
       ['a negative with a space after the sign', '- 1 click'],
       ['a negative padded by a positive', '1 step, - 2 clicks'],
-      ['a negative written with a hyphen-minus', '-1 click'],
       ['a negative written with a minus sign', '−1 click'],
       ['a negative written with an en dash', '–1 click'],
       ['a negative written with an em dash', '—1 click'],
@@ -329,13 +328,12 @@ describe('magnitudeAllowed', () => {
 
     // The range spellings the magnitude parser has always accepted. The dash here is a
     // separator, not a sign, and reading it as a sign would refuse advice the
-    // guard has always served - which is the wall the four dash characters the
-    // sign rule now covers have to stay on the right side of.
+    // guard has always served - which is the wall every dash character the sign
+    // rule covers has to stay on the right side of.
     it.each([
       ['a hyphenated range', '1-2 clicks'],
       ['a spaced range', '1 - 2 clicks'],
       ['a decimal range', '0.5-1 psi'],
-      ['a range written with a hyphen-minus', '1-2 clicks'],
       ['a range written with a minus sign', '1−2 clicks'],
       ['a range written with an en dash', '1–2 clicks'],
       ['a range written with an em dash', '1—2 clicks'],
