@@ -271,8 +271,8 @@ const NEGATIVE_MAGNITUDE_PATTERN = /(?:^|[^\d])[-\u2212\u2013\u2014]\d/;
  * and only the absolute values are the range's ends - that is the job it was
  * doing. Removing it reads that range as `max(1, -3) = 1`, which clears the
  * 2-click rebound ceiling and lets a 3-click change through; with it the range
- * measures 3 and is refused, which is what the `measures a range by its larger
- * end` case pins. The sign question is answered BEFORE it, by
+ * measures 3 and is refused, which is what the `refuses a range whose larger end
+ * is over the ceiling` case pins. The sign question is answered BEFORE it, by
  * `NEGATIVE_MAGNITUDE_PATTERN`, and answered by refusing rather than by
  * measuring: a negative never reaches the ceiling comparison at all, so the
  * refusal is `unsafe_magnitude` on the same path an over-range value already
