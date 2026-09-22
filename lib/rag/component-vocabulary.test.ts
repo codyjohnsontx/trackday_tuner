@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   COMPONENT_POLICIES,
+  type ComponentPolicy,
   describeComponentVocabulary,
   directionAllowed,
   formatComponentLabel,
@@ -296,6 +297,14 @@ describe('magnitudeAllowed', () => {
       expect(magnitudeAllowed(TIRE_PRESSURE, '3 psi')).toBe(false);
     });
 
+    // A range is measured by its larger end, which is what `Math.abs` was doing
+    // before the sign rule arrived and is still doing after it: without it
+    // `max(1, -3) = 1` clears the 2-click rebound ceiling.
+    it('refuses a range whose larger end is over the ceiling', () => {
+      expect(magnitudeAllowed(REBOUND, '1-3 clicks')).toBe(false);
+      expect(magnitudeAllowed(TIRE_PRESSURE, '0.5-2 psi')).toBe(false);
+    });
+
     it('refuses a magnitude carrying no number at all', () => {
       expect(magnitudeAllowed(REBOUND, 'a couple of clicks')).toBe(false);
     });
@@ -328,23 +337,15 @@ describe('magnitudeAllowed', () => {
     // separator, not a sign, and reading it as a sign would refuse advice the
     // guard has always served - which is the wall every dash character the sign
     // rule covers has to stay on the right side of.
-    it.each([
-      ['a hyphenated range', '1-2 clicks'],
-      ['a spaced range', '1 - 2 clicks'],
-      ['a decimal range', '0.5-1 psi'],
-      ['a range written with a minus sign', '1−2 clicks'],
-      ['a range written with an en dash', '1–2 clicks'],
-      ['a range written with an em dash', '1—2 clicks'],
-    ])('accepts %s', (_label, magnitude) => {
-      const policy = magnitude.includes('psi') ? TIRE_PRESSURE : REBOUND;
+    it.each<[string, string, ComponentPolicy]>([
+      ['a hyphenated range', '1-2 clicks', REBOUND],
+      ['a spaced range', '1 - 2 clicks', REBOUND],
+      ['a decimal range', '0.5-1 psi', TIRE_PRESSURE],
+      ['a range written with a minus sign', '1−2 clicks', REBOUND],
+      ['a range written with an en dash', '1–2 clicks', REBOUND],
+      ['a range written with an em dash', '1—2 clicks', REBOUND],
+    ])('accepts %s', (_label, magnitude, policy) => {
       expect(magnitudeAllowed(policy, magnitude)).toBe(true);
-    });
-
-    // A range is still measured by its larger end, which is what `Math.abs` was
-    // doing before the sign rule arrived and is still doing after it.
-    it('measures a range by its larger end', () => {
-      expect(magnitudeAllowed(REBOUND, '1-3 clicks')).toBe(false);
-      expect(magnitudeAllowed(TIRE_PRESSURE, '0.5-2 psi')).toBe(false);
     });
 
     it('accepts padding prose around a legal number', () => {
@@ -354,12 +355,12 @@ describe('magnitudeAllowed', () => {
     // A range with the unit on both ends. The sign rule reads the magnitude raw
     // precisely so these survive: the dash here is reached across a word rather
     // than a digit, and refusing one costs the rider the whole response.
-    it.each([
-      ['a range with the unit repeated', '1 click - 2 clicks', 'REBOUND'],
-      ['a decimal range with the unit repeated', '0.5 psi - 1 psi', 'TIRE_PRESSURE'],
-      ['a range naming each end', '1 click front - 2 clicks rear', 'REBOUND'],
+    it.each<[string, string, ComponentPolicy]>([
+      ['a range with the unit repeated', '1 click - 2 clicks', REBOUND],
+      ['a decimal range with the unit repeated', '0.5 psi - 1 psi', TIRE_PRESSURE],
+      ['a range naming each end', '1 click front - 2 clicks rear', REBOUND],
     ])('accepts %s', (_label, magnitude, policy) => {
-      expect(magnitudeAllowed(policy === 'REBOUND' ? REBOUND : TIRE_PRESSURE, magnitude)).toBe(true);
+      expect(magnitudeAllowed(policy, magnitude)).toBe(true);
     });
   });
 });
