@@ -87,11 +87,75 @@ function sanitizeFreeText(value: string): string {
   return value.replace(DATA_TAG_PATTERN, (match) => match.replace(/</g, '\u2039').replace(/>/g, '\u203a'));
 }
 
-function formatValue(value: string | null | undefined): string {
+// Upper bound on a serialized array or object. A prompt line is one line and a
+// stored composite has no length bound, so without this one malformed blob
+// could crowd the rest of the session block out of the model's attention. It
+// applies only to the composite branch: a long STRING is printed whole, exactly
+// as it always was.
+const MAX_SERIALIZED_VALUE_LENGTH = 200;
+
+/**
+ * Render one setup field for the prompt.
+ *
+ * It takes `unknown` and never throws, because the columns behind these fields
+ * are shape-unconstrained `jsonb` that `createSession` inserts verbatim -
+ * `authenticated` holds insert and update on `sessions`, and RLS picks the row,
+ * not the column. So the TypeScript type calling a leaf `string` is a claim
+ * about the code that wrote it, not about the row that comes back: a saved
+ * `preload` of the JSON number 5 reached `.trim()` here and threw
+ * `TypeError: value.trim is not a function`, inside the AI routes' error
+ * boundary, so a rider with a valid session and a legitimate question got the
+ * shaped 500 instead of advice. That was true of every field on this line and
+ * of every `tires.*`, `alignment.*` and `extra_modules.*` field.
+ *
+ * THE STRING BEHAVIOUR IS UNCHANGED, BYTE FOR BYTE. This formatter feeds both
+ * AI routes and every field in the session block, so a change to how an
+ * ordinary string renders would move every completion tape key in `rag:eval`
+ * and alter the prompt for every rider. Only values that used to throw render
+ * differently now, and each renders the way the prompt already reads for the
+ * string a rider would have typed instead:
+ *
+ * - a finite number or a boolean prints as itself, so a `preload` stored as 5
+ *   reads `preload=5` exactly as the string '5' does;
+ * - a non-finite number carries no setting, so it reads as absent;
+ * - an array or object prints as compact JSON, capped, so the model sees the
+ *   shape rather than a field silently vanishing;
+ * - anything empty - '', [], {} - reads as absent, the rule the empty string
+ *   already had;
+ * - anything that cannot be serialized at all (a bigint, a cycle) reads as
+ *   absent rather than taking the request down, which is the whole point.
+ *
+ * Every branch goes through `sanitizeFreeText`, because a `</session_data>`
+ * nested inside a stored object escapes the data block exactly as one stored at
+ * the top level does, and `JSON.stringify` does not escape angle brackets.
+ */
+function formatValue(value: unknown): string {
   if (value === null || value === undefined) return '—';
-  const trimmed = value.trim();
-  if (trimmed === '') return '—';
-  return sanitizeFreeText(trimmed);
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') return '—';
+    return sanitizeFreeText(trimmed);
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : '—';
+  }
+
+  if (typeof value === 'boolean') return String(value);
+
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(value) ?? '';
+  } catch {
+    return '—';
+  }
+  if (serialized === '' || serialized === '[]' || serialized === '{}') return '—';
+  const capped =
+    serialized.length > MAX_SERIALIZED_VALUE_LENGTH
+      ? `${serialized.slice(0, MAX_SERIALIZED_VALUE_LENGTH)}…`
+      : serialized;
+  return sanitizeFreeText(capped);
 }
 
 function formatSessionBlock(label: string, session: Session | null): string {

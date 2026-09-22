@@ -852,6 +852,20 @@ fields were the only gap. The regression test locks the BLOCK STRUCTURE rather
 than spying `formatValue`, because a helper that stopped neutralising tags would
 still satisfy a spy.
 
+**The same unconstrained column means a leaf typed `string` can arrive as a
+number, and `formatValue` has to be TOTAL over what `jsonb` holds.** It called
+`.trim()` unguarded, so a saved `preload` of `5` threw
+`TypeError: value.trim is not a function` and both AI routes answered the shaped
+500 their error boundary exists to produce - true of every `suspension.*`,
+`tires.*`, `alignment.*` and `extra_modules.*` field, and the routes' boundaries
+are the backstop rather than the bug. It now renders numbers and booleans as
+themselves, composites as capped JSON, and anything empty or unserializable as
+absent, every branch sanitized. **The string path is unchanged byte for byte**,
+which is the constraint that matters on a formatter feeding every field of both
+routes: `lib/rag/prompt.test.ts` pins a whole session block captured from the
+implementation before the fix, and `npm run rag:eval` replays every tape key
+untouched.
+
 **Screening a field decides that it is CHECKED. A second axis decides what a
 match DOES, and that one is ACTIONABILITY: can the rider reach the thing the
 refusal would name?** If they can, refuse - the request cannot safely proceed and

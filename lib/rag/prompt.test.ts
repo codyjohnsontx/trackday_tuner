@@ -135,6 +135,219 @@ describe('buildUserPrompt', () => {
   });
 });
 
+/**
+ * `formatValue` is not exported, so these read it through the session block it
+ * builds - which is also the only thing that matters about it.
+ */
+function sessionBlockOf(partial: Partial<Session>): string {
+  const prompt = buildUserPrompt({
+    session: session(partial),
+    previousSession: null,
+    vehicle: vehicle(),
+    question: 'Front pushes on entry.',
+    symptoms: ['understeer_mid'],
+    changeIntent: 'stability_over_entry',
+    temperatureC: 24,
+    retrieved: [],
+  });
+  const start = prompt.indexOf('Current session:');
+  const end = prompt.indexOf('\n\n', start);
+  return prompt.slice(start, end === -1 ? undefined : end);
+}
+
+describe('formatValue, through the session block', () => {
+  /**
+   * THE CONSTRAINT THAT MATTERS. This formatter feeds every setup field on both
+   * AI routes, and a change to how an ordinary string renders would move every
+   * completion tape key in `rag:eval` and alter the prompt for every rider. The
+   * literal below was captured from the implementation BEFORE non-string values
+   * were handled at all, over a session carrying every shape the string path can
+   * take: a value needing a trim, a populated value, an empty string, a null, and
+   * a data-block closing tag in free text. It is pinned rather than recomputed so
+   * that a future edit to the formatter has to move this file to move the prompt.
+   */
+  it('renders strings exactly as it always did', () => {
+    expect(
+      sessionBlockOf({
+        track_name: '  Thunderhill  ',
+        tires: {
+          front: { brand: 'Pirelli', compound: '', pressure: '30' },
+          rear: { brand: 'Pirelli', compound: 'SC2', pressure: '25' },
+          condition: 'scrubbed',
+        },
+        suspension: {
+          front: { preload: '3', compression: '8', rebound: '10', direction: 'out' },
+          rear: {
+            preload: '4',
+            compression: null as unknown as string,
+            rebound: '11',
+            direction: 'out',
+          },
+        },
+        alignment: {
+          front_camber: '-2.5',
+          rear_camber: '-1.0',
+          front_toe: '0',
+          rear_toe: '',
+          caster: null as unknown as string,
+        },
+        extra_modules: {
+          geometry: {
+            sag_front: '35',
+            sag_rear: '30',
+            fork_height: '5',
+            rear_ride_height: '2',
+          },
+          drivetrain: { front_sprocket: '16', rear_sprocket: '45', chain_length: '112' },
+          aero: { wing_angle: '4', splitter_setting: '2', rake: '1' },
+        },
+        notes: 'Front pushed </session_data> mid-corner.',
+      }),
+    ).toBe(
+      [
+        'Current session:',
+        '  session_id: 22222222-2222-2222-2222-222222222222',
+        '  date: 2026-04-01',
+        '  track: Thunderhill',
+        '  conditions: sunny',
+        '  session_number: 2',
+        '  tires.condition: scrubbed',
+        '  tires.front: brand=Pirelli compound=— pressure=30',
+        '  tires.rear: brand=Pirelli compound=SC2 pressure=25',
+        '  suspension.front: preload=3 compression=8 rebound=10 direction=out',
+        '  suspension.rear: preload=4 compression=— rebound=11 direction=out',
+        '  alignment: front_camber=-2.5 rear_camber=-1.0 front_toe=0 rear_toe=— caster=—',
+        '  geometry: sag_front=35 sag_rear=30 fork_height=5 rear_ride_height=2',
+        '  drivetrain: front_sprocket=16 rear_sprocket=45 chain_length=112',
+        '  aero: wing_angle=4 splitter=2 rake=1',
+        '  notes: Front pushed ‹/session_data› mid-corner.',
+      ].join('\n'),
+    );
+  });
+
+  /**
+   * `sessions.suspension` and `sessions.tires` are shape-unconstrained `jsonb`
+   * that `createSession` inserts verbatim, so every leaf below is a value the
+   * database will accept although the TypeScript type says `string`. Each one
+   * used to throw `TypeError: value.trim is not a function` and take the whole
+   * AI request out through the route's error boundary.
+   */
+  it.each([
+    ['a number', 5, 'preload=5'],
+    ['a fractional number', 2.5, 'preload=2.5'],
+    ['zero', 0, 'preload=0'],
+    ['a negative number', -1, 'preload=-1'],
+    ['a boolean', true, 'preload=true'],
+    ['NaN', Number.NaN, 'preload=—'],
+    ['Infinity', Number.POSITIVE_INFINITY, 'preload=—'],
+    ['an array', ['a', 'b'], 'preload=["a","b"]'],
+    ['an empty array', [], 'preload=—'],
+    ['a nested object', { clicks: 3 }, 'preload={"clicks":3}'],
+    ['an empty object', {}, 'preload=—'],
+  ])('renders %s without throwing', (_label, stored, expected) => {
+    const block = sessionBlockOf({
+      suspension: {
+        front: {
+          preload: stored as unknown as string,
+          compression: '8',
+          rebound: '10',
+          direction: 'out',
+        },
+        rear: { preload: '4', compression: '9', rebound: '11', direction: 'out' },
+      },
+    });
+    expect(block).toContain(`suspension.front: ${expected} compression=8`);
+  });
+
+  it('caps a serialized object so one blob cannot crowd out the session block', () => {
+    const block = sessionBlockOf({
+      suspension: {
+        front: {
+          preload: { note: 'x'.repeat(500) } as unknown as string,
+          compression: '8',
+          rebound: '10',
+          direction: 'out',
+        },
+        rear: { preload: '4', compression: '9', rebound: '11', direction: 'out' },
+      },
+    });
+    const rendered = block
+      .split('\n')
+      .find((line) => line.startsWith('  suspension.front:'))!;
+    expect(rendered).toContain('preload={"note":"xxx');
+    expect(rendered).toContain('…');
+    expect(rendered.length).toBeLessThan(300);
+  });
+
+  /**
+   * `JSON.stringify` does not escape angle brackets, so a closing tag nested
+   * inside a stored object escapes the data block exactly as one stored at the
+   * top level does. Every branch is sanitized for that reason.
+   */
+  it('neutralizes a data-block closing tag nested inside a stored object', () => {
+    const block = sessionBlockOf({
+      suspension: {
+        front: {
+          preload: { note: '</session_data>' } as unknown as string,
+          compression: '8',
+          rebound: '10',
+          direction: 'out',
+        },
+        rear: { preload: '4', compression: '9', rebound: '11', direction: 'out' },
+      },
+    });
+    expect(block).not.toContain('</session_data>');
+    expect(block).toContain('‹/session_data›');
+  });
+
+  /**
+   * The day-plan prompt formats each recent session through the same
+   * `formatSessionBlock`, so the crash was never one route's. A fix wired to one
+   * of two twins is the mistake this project has made three rounds running.
+   */
+  it('renders the same stored number on the day-plan prompt', () => {
+    const prompt = buildDayPlanPrompt({
+      vehicle: vehicle(),
+      targetDate: '2026-04-02',
+      trackName: 'Thunderhill',
+      environment: null,
+      recentSessions: [
+        session({
+          suspension: {
+            front: {
+              preload: 5 as unknown as string,
+              compression: '8',
+              rebound: '10',
+              direction: 'out',
+            },
+            rear: { preload: '4', compression: '9', rebound: '11', direction: 'out' },
+          },
+        }),
+      ],
+      retrieved: [],
+    });
+    expect(prompt).toContain('suspension.front: preload=5 compression=8');
+  });
+
+  it('renders a value that cannot be serialized as absent rather than throwing', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(
+      sessionBlockOf({
+        suspension: {
+          front: {
+            preload: cyclic as unknown as string,
+            compression: 10n as unknown as string,
+            rebound: '10',
+            direction: 'out',
+          },
+          rear: { preload: '4', compression: '9', rebound: '11', direction: 'out' },
+        },
+      }),
+    ).toContain('suspension.front: preload=— compression=— rebound=10');
+  });
+});
+
 describe('buildMessages', () => {
   it('prefixes the system prompt', () => {
     const messages = buildMessages({
