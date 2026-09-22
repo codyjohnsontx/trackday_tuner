@@ -882,6 +882,25 @@ which screen the same leaves - reads them with optional chaining so a malformed
 blob renders absent instead. The rendered session screens and the export still
 assume the old shape; that is a separate task.
 
+**`formatValue` IS NOT THE ONLY READER OF THOSE LEAVES, AND IT IS NOT THE FIRST
+ONE A REQUEST REACHES.** `lib/rag/race-engineer-context.ts` reads
+`tires.*.pressure`, `tires.*.compound` and `suspension.*.rebound` in
+`hasManualSessionData` and `selectSimilarSessions`, and both routes call it
+BEFORE the prompt is built - tuning-advice through `loadRaceEngineerContext`,
+day-plan inline - so fixing only the formatter left every one of those leaves
+still taking the request out, from inside the same error boundary. `leafText`
+there is the same rule `formatValue` applies, and `normalize` and `parseNumber`
+are defined on it rather than restating it. **What hid this is the `||` chain in
+`hasManualSessionData`: it reads `notes` first, so any session carrying a note
+short-circuits before a setup leaf is touched** - a harness whose fixture has
+notes reports green over the whole class.
+`app/api/ai/tuning-advice/route.non-string-session-field.test.ts` therefore
+stubs nothing between the request and the model, and its fixture has empty notes
+and one earlier session, because the context loader needs a candidate before
+`selectSimilarSessions` enters its map at all. **Before changing a reader of
+these blobs, grep `\.tires\b` and `\.suspension\b` across `lib/rag/` and
+`app/api/ai/` - the class is two modules, not one.**
+
 **Screening a field decides that it is CHECKED. A second axis decides what a
 match DOES, and that one is ACTIONABILITY: can the rider reach the thing the
 refusal would name?** If they can, refuse - the request cannot safely proceed and

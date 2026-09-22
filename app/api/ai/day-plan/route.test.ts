@@ -135,7 +135,6 @@ function createServerClient({
   feedbackNotes,
   sessionSuspensionRebound = '',
   sessionTireCondition = 'used',
-  malformedSessionJson = false,
   memorySummary,
   memoryTrackId = null,
   sessionTrackId = null,
@@ -148,7 +147,6 @@ function createServerClient({
   feedbackNotes?: string;
   sessionSuspensionRebound?: string;
   sessionTireCondition?: string;
-  malformedSessionJson?: boolean;
   memorySummary?: string;
   memoryTrackId?: string | null;
   sessionTrackId?: string | null;
@@ -169,27 +167,22 @@ function createServerClient({
     order: vi.fn(() => sessionsQuery),
     limit: vi.fn(async () => ({
       data: [
-        malformedSessionJson
-          ? // sessions.tires is `jsonb not null` but shape-unconstrained, and
-            // createSession inserts the blob verbatim, so a row like this is
-            // reachable and every reader of session.tires.front throws on it.
-            { ...RECENT_SESSION, tires: {}, suspension: {} }
-          : {
-              ...RECENT_SESSION,
-              track_id: sessionTrackId,
-              notes: sessionNotes,
-              tires: {
-                ...RECENT_SESSION.tires,
-                condition: sessionTireCondition,
-              },
-              suspension: {
-                front: {
-                  ...RECENT_SESSION.suspension.front,
-                  rebound: sessionSuspensionRebound,
-                },
-                rear: RECENT_SESSION.suspension.rear,
-              },
+        {
+          ...RECENT_SESSION,
+          track_id: sessionTrackId,
+          notes: sessionNotes,
+          tires: {
+            ...RECENT_SESSION.tires,
+            condition: sessionTireCondition,
+          },
+          suspension: {
+            front: {
+              ...RECENT_SESSION.suspension.front,
+              rebound: sessionSuspensionRebound,
             },
+            rear: RECENT_SESSION.suspension.rear,
+          },
+        },
         ...olderSessions.map((session) => ({ ...RECENT_SESSION, ...session })),
       ],
       error: null,
@@ -631,11 +624,20 @@ describe('POST /api/ai/day-plan audit and rate limiting', () => {
   });
 
   // buildContext and the stored-text screen read the session JSON, so they sit
-  // inside the route's one error boundary. Outside it, a malformed row left the
-  // reserved slot stranded at 'pending', where it kept spending the rider's
+  // inside the route's one error boundary. Outside it, a throw from either left
+  // the reserved slot stranded at 'pending', where it kept spending the rider's
   // hourly budget, and answered with an unshaped 500 carrying no request id.
+  //
+  // The throw is injected at the collector rather than provoked with a
+  // malformed `tires` blob, because the readers of that blob are total now -
+  // `formatValue` and `leafText` render a non-string leaf as absent and every
+  // walk into the container is optionally chained, so `tires: {}` is answered
+  // rather than thrown on. What this asserts is the boundary, which still has
+  // to hold for whatever throws inside it next.
   it('audits a throw from the context build and answers with the shaped 500', async () => {
-    createClient.mockResolvedValue(createServerClient({ malformedSessionJson: true }));
+    collectDayPlanRiderText.mockImplementationOnce(() => {
+      throw new TypeError('Cannot read properties of undefined');
+    });
 
     const response = await post({ vehicle_id: VEHICLE_ID });
     const body = await response.json();

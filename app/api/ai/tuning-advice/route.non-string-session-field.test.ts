@@ -11,11 +11,18 @@
  * session and a legitimate question got an error instead of advice, with no way
  * to tell what about their session was wrong.
  *
- * The prompt builder, `lib/rag/advice.ts`, the domain guard and the policy are
- * all REAL here; only Supabase, the embedding call and the model call are
- * stubbed. That matters, because the throw is raised by the prompt builder on
- * the session the ROUTE loaded - a harness that stubs `generateTuningAdvice`
- * never builds that prompt and cannot see this at all.
+ * `lib/rag/race-engineer-context.ts` reads four of those leaves too, one module
+ * EARLIER in the same request, so the route reaches `hasManualSessionData` and
+ * `selectSimilarSessions` before it ever reaches `formatValue`.
+ *
+ * Everything between the request and the model is therefore REAL here - the
+ * context loader, the prompt builder, `lib/rag/advice.ts`, the domain guard and
+ * the policy; only Supabase, the embedding call and the model call are stubbed.
+ * That is the whole point of this file: stub any of those and the harness stops
+ * being able to see the crash it was written for. It was stubbing the context
+ * loader and storing the number on `preload`, the one suspension leaf
+ * `hasManualSessionData` does not read, so it reported green over a defect that
+ * still 500'd every request carrying a number in `rebound` or `pressure`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,7 +31,6 @@ const {
   getUserProfile,
   createClient,
   createAdminClient,
-  loadRaceEngineerContext,
   embedQuery,
   retrieveRelevantChunks,
   chatCompletionsCreate,
@@ -33,7 +39,6 @@ const {
   getUserProfile: vi.fn(),
   createClient: vi.fn(),
   createAdminClient: vi.fn(),
-  loadRaceEngineerContext: vi.fn(),
   embedQuery: vi.fn(),
   retrieveRelevantChunks: vi.fn(),
   chatCompletionsCreate: vi.fn(),
@@ -60,12 +65,6 @@ vi.mock('openai', () => {
   }
   return { default: OpenAI, OpenAI, APIConnectionTimeoutError, APIUserAbortError };
 });
-vi.mock('@/lib/rag/race-engineer-context', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/rag/race-engineer-context')>()),
-  loadRaceEngineerContext,
-  createRecommendationSnapshot: vi.fn(() => ({})),
-}));
-
 import { POST } from '@/app/api/ai/tuning-advice/route';
 import type { KnowledgeChunk } from '@/lib/rag/types';
 
@@ -77,9 +76,17 @@ const SOURCE = 'docs/knowledge-base/tires/pressure-basics.md';
 const QUESTION = 'Front pushes on entry after I raised pressure 1 psi. What next?';
 
 /**
- * The rider's saved session, with `suspension.front.preload` holding the JSON
- * number 5. The TypeScript type says `string`; the column says `jsonb`, and the
- * column is what the row actually obeys - hence the cast.
+ * The rider's saved session, carrying the JSON number 5 on each of the three
+ * leaves that reach a different reader: `suspension.front.preload` is the
+ * prompt builder's, `suspension.front.rebound` is `hasManualSessionData`'s, and
+ * `tires.front.pressure` is both `hasManualSessionData`'s and
+ * `selectSimilarSessions`'s. The TypeScript type says `string`; the column says
+ * `jsonb`, and the column is what the row actually obeys.
+ *
+ * `notes` is deliberately empty. `hasManualSessionData` is an `||` chain that
+ * reads the notes first, so a session carrying any note at all short-circuits
+ * before it ever touches a setup leaf - which is exactly how a row like this one
+ * can 500 in production and pass a harness.
  */
 function sessionRow() {
   return {
@@ -95,20 +102,44 @@ function sessionRow() {
     session_number: 1,
     conditions: 'sunny',
     tires: {
-      front: { brand: '', compound: '', pressure: '30 psi' },
+      front: { brand: '', compound: '', pressure: 30 },
       rear: { brand: '', compound: '', pressure: '28 psi' },
       condition: 'used',
     },
     suspension: {
-      front: { preload: 5, compression: '', rebound: '', direction: 'in' },
+      front: { preload: 5, compression: '', rebound: 5, direction: 'in' },
       rear: { preload: '', compression: '', rebound: '', direction: 'in' },
     },
     alignment: null,
     enabled_modules: null,
     extra_modules: null,
-    notes: 'Front pushes on entry.',
+    notes: '',
     created_at: '2026-04-25T10:00:00.000Z',
     updated_at: '2026-04-25T10:00:00.000Z',
+  };
+}
+
+/**
+ * One earlier session on the same vehicle, stored the ordinary way. Without a
+ * candidate `selectSimilarSessions` never enters its map, so the comparison that
+ * reads the current session's pressure through `parseNumber` never runs.
+ */
+function earlierSessionRow() {
+  return {
+    ...sessionRow(),
+    id: '44444444-4444-4444-4444-444444444444',
+    date: '2026-04-24',
+    session_number: 3,
+    tires: {
+      front: { brand: '', compound: 'SC2', pressure: '30 psi' },
+      rear: { brand: '', compound: 'SC1', pressure: '28 psi' },
+      condition: 'used',
+    },
+    suspension: {
+      front: { preload: '4', compression: '', rebound: '8', direction: 'in' },
+      rear: { preload: '6', compression: '', rebound: '10', direction: 'in' },
+    },
+    notes: 'Stable all session.',
   };
 }
 
@@ -120,7 +151,7 @@ function createServerClient() {
     lt: vi.fn().mockReturnThis(),
     lte: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
-    limit: vi.fn(async () => ({ data: [], error: null })),
+    limit: vi.fn(async () => ({ data: [earlierSessionRow()], error: null })),
     single: vi.fn(async () => ({ data: sessionRow(), error: null })),
   };
 
@@ -143,11 +174,24 @@ function createServerClient() {
     })),
   };
 
+  // The rest of what `loadRaceEngineerContext` reads - environments, feedback,
+  // recommendations, memory, telemetry, laps - answers empty, so the context is
+  // the one a rider with a single earlier session actually gets.
+  const empty = {
+    eq: () => empty,
+    neq: () => empty,
+    in: () => empty,
+    or: () => empty,
+    order: () => empty,
+    limit: () => empty,
+    then: (resolve: (value: unknown) => void) => resolve({ data: [], error: null }),
+  };
+
   return {
     from: vi.fn((table: string) => {
       if (table === 'sessions') return { select: vi.fn(() => sessionsQuery) };
       if (table === 'vehicles') return { select: vi.fn(() => vehiclesQuery) };
-      throw new Error(`Unexpected table: ${table}`);
+      return { select: vi.fn(() => empty) };
     }),
   };
 }
@@ -248,23 +292,6 @@ describe('POST /api/ai/tuning-advice with a non-string field in the session json
     getUserProfile.mockResolvedValue({ id: USER_ID, tier: 'pro' });
     createClient.mockResolvedValue(createServerClient());
     createAdminClient.mockReturnValue(createAdminClientMock());
-    loadRaceEngineerContext.mockResolvedValue({
-      similarSessions: [],
-      sessionEnvironment: null,
-      recentFeedback: [],
-      recentRecommendations: [],
-      memory: null,
-      telemetrySummary: null,
-      dayTrend: 'No trend yet.',
-      dataUsed: {
-        manual: true,
-        weather: false,
-        history: false,
-        feedback: false,
-        lap_data: false,
-        telemetry: false,
-      },
-    });
     embedQuery.mockResolvedValue([0.1, 0.2, 0.3]);
     retrieveRelevantChunks.mockResolvedValue([{ chunk: chunk(), score: 0.9 }]);
     chatCompletionsCreate.mockResolvedValue({
@@ -291,6 +318,7 @@ describe('POST /api/ai/tuning-advice with a non-string field in the session json
       { messages: Array<{ role: string; content: string }> },
     ];
     const userPrompt = messages.find((m) => m.role === 'user')?.content ?? '';
-    expect(userPrompt).toContain('suspension.front: preload=5 ');
+    expect(userPrompt).toContain('suspension.front: preload=5 compression=— rebound=5 ');
+    expect(userPrompt).toContain('pressure=30');
   });
 });

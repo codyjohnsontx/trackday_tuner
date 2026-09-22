@@ -42,19 +42,41 @@ export interface RaceEngineerContextInput {
   session: Session;
 }
 
-function normalize(value: string | null | undefined): string {
-  return value?.trim().toLowerCase() ?? '';
+/**
+ * The text of one setup leaf, over what the column can actually hold.
+ *
+ * `sessions.tires` and `sessions.suspension` are shape-unconstrained `jsonb`
+ * that `createSession` inserts verbatim, so a leaf the TypeScript type calls a
+ * `string` is a claim about the code that wrote the row, not about the row that
+ * comes back. `normalize` and `parseNumber` reached `.trim()` and `.match()` on
+ * it unguarded, so a saved pressure or rebound of the JSON number 5 threw
+ * inside both AI routes' error boundaries - the same crash, one module earlier
+ * than `formatValue`, and reached before it on every request.
+ *
+ * The rule is `formatValue`'s in `lib/rag/prompt.ts`: a finite number or a
+ * boolean is the text it prints as, and everything else carries no setting. So
+ * a pressure stored as 30 scores the way the string '30' does rather than
+ * dropping out of the comparison the prompt says was made.
+ */
+function leafText(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '';
+  if (typeof value === 'boolean') return String(value);
+  return '';
 }
 
-function parseNumber(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const match = value.match(/-?\d+(?:\.\d+)?/);
+function normalize(value: unknown): string {
+  return leafText(value).toLowerCase();
+}
+
+function parseNumber(value: unknown): number | null {
+  const match = leafText(value).match(/-?\d+(?:\.\d+)?/);
   if (!match) return null;
   const parsed = Number(match[0]);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function pressureScore(current: string, candidate: string, label: string): [number, string | null] {
+function pressureScore(current: unknown, candidate: unknown, label: string): [number, string | null] {
   const currentPressure = parseNumber(current);
   const candidatePressure = parseNumber(candidate);
   if (currentPressure == null || candidatePressure == null) return [0, null];
@@ -100,23 +122,23 @@ export function selectSimilarSessions(params: {
         reasons.push('same condition label');
       }
 
-      const currentFrontCompound = normalize(params.current.tires.front.compound);
-      const candidateFrontCompound = normalize(candidate.tires.front.compound);
+      const currentFrontCompound = normalize(params.current.tires?.front?.compound);
+      const candidateFrontCompound = normalize(candidate.tires?.front?.compound);
       if (currentFrontCompound && currentFrontCompound === candidateFrontCompound) {
         score += 1;
         reasons.push('matching front compound');
       }
 
-      const currentRearCompound = normalize(params.current.tires.rear.compound);
-      const candidateRearCompound = normalize(candidate.tires.rear.compound);
+      const currentRearCompound = normalize(params.current.tires?.rear?.compound);
+      const candidateRearCompound = normalize(candidate.tires?.rear?.compound);
       if (currentRearCompound && currentRearCompound === candidateRearCompound) {
         score += 1;
         reasons.push('matching rear compound');
       }
 
       for (const [deltaScore, reason] of [
-        pressureScore(params.current.tires.front.pressure, candidate.tires.front.pressure, 'front'),
-        pressureScore(params.current.tires.rear.pressure, candidate.tires.rear.pressure, 'rear'),
+        pressureScore(params.current.tires?.front?.pressure, candidate.tires?.front?.pressure, 'front'),
+        pressureScore(params.current.tires?.rear?.pressure, candidate.tires?.rear?.pressure, 'rear'),
       ]) {
         score += deltaScore;
         if (reason) reasons.push(reason);
@@ -153,11 +175,11 @@ export function selectSimilarSessions(params: {
 
 export function hasManualSessionData(session: Session): boolean {
   return Boolean(
-    session.notes?.trim() ||
-      session.tires.front.pressure.trim() ||
-      session.tires.rear.pressure.trim() ||
-      session.suspension.front.rebound.trim() ||
-      session.suspension.rear.rebound.trim(),
+    leafText(session.notes) ||
+      leafText(session.tires?.front?.pressure) ||
+      leafText(session.tires?.rear?.pressure) ||
+      leafText(session.suspension?.front?.rebound) ||
+      leafText(session.suspension?.rear?.rebound),
   );
 }
 
