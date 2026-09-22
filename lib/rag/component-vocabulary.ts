@@ -263,14 +263,16 @@ export function directionAllowed(policy: ComponentPolicy, direction: string): bo
 const NEGATIVE_MAGNITUDE_PATTERN = /(?:^|[^\d])[-\u2212\u2013\u2014]\d/;
 
 /**
- * Every number in the magnitude, or `null` when it carries none or one that does
- * not parse.
+ * Every number in the magnitude, or `null` when the sign test rejects it, when
+ * it carries no number, or when one it carries does not parse.
  *
- * `Math.abs` REMAINS, and what changed is what reaches it. The `-` in `1-2
- * clicks` is part of the range, so the numbers there are 1 and -2 and only the
- * absolute values are the range's ends - that is the job it was doing, and
- * removing it would read that range as `max(1, -2) = 1` and let a 2-click change
- * through a 1-click ceiling. The sign question is answered BEFORE it, by
+ * `Math.abs` REMAINS, and what changed is what reaches it. The `-` in a range is
+ * part of the range rather than a sign, so `1-3 clicks` tokenizes to `[1, -3]`
+ * and only the absolute values are the range's ends - that is the job it was
+ * doing. Removing it reads that range as `max(1, -3) = 1`, which clears the
+ * 2-click rebound ceiling and lets a 3-click change through; with it the range
+ * measures 3 and is refused, which is what the `measures a range by its larger
+ * end` case pins. The sign question is answered BEFORE it, by
  * `NEGATIVE_MAGNITUDE_PATTERN`, and answered by refusing rather than by
  * measuring: a negative never reaches the ceiling comparison at all, so the
  * refusal is `unsafe_magnitude` on the same path an over-range value already
