@@ -239,8 +239,8 @@ export function directionAllowed(policy: ComponentPolicy, direction: string): bo
  * `1 step, - 2 clicks` - which raw text reads as no sign at all. What it costs is
  * a dash reached across a non-digit word: `1 click - 2 clicks` and `1 click front
  * - 2 clicks rear` are refused as negative although both ends are positive.
- * Neither shape is observed - every recorded magnitude in
- * `tests/fixtures/rag-eval/` is a bare `<number> <unit>` - so this trades one
+ * Neither shape is observed - no recorded magnitude in
+ * `tests/fixtures/rag-eval/` carries a dash in any spelling - so this trades one
  * unobserved miss for one unobserved false refusal, in the fail-safe direction.
  *
  * WHICH DASHES THIS COVERS IS A DECISION, NOT A FACT ABOUT UNICODE. Four are
