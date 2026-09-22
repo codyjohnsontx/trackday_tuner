@@ -200,28 +200,13 @@ function directionKey(value: string): string {
  *
  * `magnitudeAllowed` below still matches its unit by containment, and that is
  * NOT the same class: a magnitude is inherently a phrase (`0.5 psi`), so there
- * is no closed set to compare against. Containment holds there for PADDING and
- * NOT for SIGN, and the difference is a KNOWN ACCEPTED GAP rather than a
- * property of the matcher. `parseRangeMax` takes the LARGEST number in the
- * string, so extra prose can only raise the figure the ceiling is checked
- * against and can only make it stricter. But it takes that number through
- * `Math.abs`, so a NEGATIVE magnitude clears the ceiling today:
- * `{component: 'front_rebound', direction: 'soften', magnitude: '-1 click'}`
- * passes both guards, is persisted, and reaches the rider rendered raw beside
- * the now-guaranteed-canonical direction as `Soften · -1 click`, because the
- * display/wire split deliberately leaves `magnitude` unformatted. That is the
- * same shape this guard just closed on the sibling field - a checked
- * recommendation whose rendered text no longer means what the vocabulary
- * verified.
- *
- * The correction is recorded here rather than fixed here because that earlier
- * sentence claimed the gap away, and a false justification is worse than an
- * undocumented gap: the gap is merely unknown, while the justification actively
- * talks the next reader out of ever opening `parseRangeMax`. A comment that
- * defends a bug outlives the code. The gap is pre-existing and out of scope for
- * this change, and is tracked as tt-negative-magnitude-accepted; the earliest
- * shared boundary for closing it is `parseRangeMax` / `magnitudeAllowed`, not a
- * render site. `findComponentPolicy` was already exact.
+ * is no closed set to compare against. Containment holds there for PADDING, and
+ * it used to hold for SIGN as well: `parseRangeMax` took every number through
+ * `Math.abs`, so `{component: 'front_rebound', direction: 'soften', magnitude:
+ * '-1 click'}` passed both guards, was persisted, and reached the rider rendered
+ * raw as `Soften · -1 click`, because the display/wire split deliberately leaves
+ * `magnitude` unformatted. THAT GAP IS CLOSED HERE - see `parseMagnitudeNumbers`
+ * for what `Math.abs` was doing and what now carries that job.
  *
  * Nothing already stored is re-checked here - `ai_recommendations` rows are read
  * back through `formatDirectionLabel`, which passes an unrecognised value
@@ -233,17 +218,80 @@ export function directionAllowed(policy: ComponentPolicy, direction: string): bo
   return policy.directions.some((allowed) => directionKey(allowed) === key);
 }
 
-function parseRangeMax(value: string): number | null {
+/**
+ * A dash that is a MINUS SIGN rather than a RANGE SEPARATOR.
+ *
+ * Both spellings reach this guard and they mean opposite things. `1-2 clicks` is
+ * the range shape this parser has always accepted - two ends of one positive
+ * range - and `Math.abs` is what lets the `-2` in it be read as the `2` a rider
+ * would act on.
+ * `-1 click` is a single negative quantity, and `Soften by -1 click` has no safe
+ * reading: it instructs the opposite of its own direction, or nothing at all.
+ *
+ * What tells them apart is what comes BEFORE the dash: a digit makes it a
+ * separator, anything else or nothing makes it a sign. Refusing is the fail-safe
+ * direction on a value the rider acts on at a track day.
+ *
+ * THE TEST READS THE MAGNITUDE RAW, AND A SIGN HELD OFF ITS DIGIT BY A SPACE IS
+ * THEREFORE NOT REFUSED. `- 1 click` is accepted and reaches the rider as
+ * `Soften · - 1 click`. That is a deliberate trade and not an oversight, so do
+ * not close it by compacting the whitespace first. Owner's ruling: the
+ * discriminator is the non-space character before the dash, so anything that
+ * catches `- 1 click` catches `1 click - 2 clicks` and `0.5 psi - 1 psi` with
+ * it - ordinary ranges written with the unit on both ends, which are positive at
+ * both ends and within their ceilings. There is no free narrowing between the
+ * two. What that would cost is not the one recommendation:
+ * `evaluateAdvicePolicy` force-refuses the WHOLE response on an
+ * `unsafe_magnitude`, so the rider loses their entire answer on a paid route.
+ * Both shapes are unobserved - no recorded magnitude in
+ * `tests/fixtures/rag-eval/` carries a dash in any spelling - and between two
+ * unobserved shapes the one that costs an answer is the one to leave alone.
+ *
+ * WHICH DASHES THIS COVERS IS A DECISION, NOT A FACT ABOUT UNICODE. Four are
+ * in: hyphen-minus (U+002D), minus sign (U+2212), en dash (U+2013) and em dash
+ * (U+2014) - the ASCII one plus the three a text pipeline substitutes for it.
+ * THREE MORE SPELL A DASH AND ARE NOT COVERED: U+2010 HYPHEN, U+2012 FIGURE DASH
+ * and U+FF0D FULLWIDTH HYPHEN-MINUS each read as NO SIGN AT ALL, parse as a
+ * positive number and clear the ceiling. The whole non-ASCII half of this is a
+ * PRECAUTION RATHER THAN AN INCIDENT, in both directions: no recorded model
+ * output here has ever spelled a magnitude with any dash but the ASCII one, so
+ * nothing covered has been seen arriving and nothing uncovered has been seen
+ * escaping. Widening to the other three is a ruling nobody has made, not an
+ * oversight to close on sight. The digit-before rule is one rule over whichever
+ * characters are in, so `1–2 clicks` is still a range.
+ */
+const NEGATIVE_MAGNITUDE_PATTERN = /(?:^|[^\d])[-\u2212\u2013\u2014]\d/;
+
+/**
+ * Every number in the magnitude, or `null` when the sign test rejects it, when
+ * it carries no number, or when one it carries does not parse.
+ *
+ * `Math.abs` REMAINS, and what changed is what reaches it. The `-` in a range is
+ * part of the range rather than a sign, so `1-3 clicks` tokenizes to `[1, -3]`
+ * and only the absolute values are the range's ends - that is the job it was
+ * doing. Removing it reads that range as `max(1, -3) = 1`, which clears the
+ * 2-click rebound ceiling and lets a 3-click change through; with it the range
+ * measures 3 and is refused, which is what the `refuses a range whose larger end
+ * is over the ceiling` case pins. The sign question is answered BEFORE it, by
+ * `NEGATIVE_MAGNITUDE_PATTERN`, and answered by refusing rather than by
+ * measuring: a negative never reaches the ceiling comparison at all, so the
+ * refusal is `unsafe_magnitude` on the same path an over-range value already
+ * takes.
+ */
+function parseMagnitudeNumbers(value: string): number[] | null {
+  if (NEGATIVE_MAGNITUDE_PATTERN.test(value)) return null;
   const matches = [...value.matchAll(/[-+]?\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
   if (matches.length === 0 || matches.some((entry) => !Number.isFinite(entry))) return null;
-  return Math.max(...matches.map((entry) => Math.abs(entry)));
+  return matches.map((entry) => Math.abs(entry));
 }
 
 export function magnitudeAllowed(policy: ComponentPolicy, magnitude: string): boolean {
-  return (
-    policy.unitPattern.test(magnitude) &&
-    (parseRangeMax(magnitude) ?? Infinity) <= policy.maxMagnitude
-  );
+  if (!policy.unitPattern.test(magnitude)) return false;
+  const numbers = parseMagnitudeNumbers(magnitude);
+  // A magnitude nothing could be read out of is refused exactly as it always was:
+  // the old `?? Infinity` sent an unparseable value over every ceiling.
+  if (numbers === null) return false;
+  return Math.max(...numbers) <= policy.maxMagnitude;
 }
 
 export function findComponentPolicy(component: string): ComponentPolicy | null {

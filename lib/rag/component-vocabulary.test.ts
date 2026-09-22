@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   COMPONENT_POLICIES,
+  type ComponentPolicy,
   describeComponentVocabulary,
   directionAllowed,
   formatComponentLabel,
+  magnitudeAllowed,
   formatDirectionLabel,
 } from '@/lib/rag/component-vocabulary';
 
@@ -247,6 +249,118 @@ describe('directionAllowed', () => {
           expect(directionAllowed(policy, label), `${key} / ${label}`).toBe(true);
         }
       }
+    });
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// magnitudeAllowed
+//
+// Same two walls as directionAllowed above, for the same reason: this is the
+// other half of what makes a recommendation a checked one.
+//
+// WALL ONE - wrongly ACCEPTED. The case that brought this set into existence is
+// a NEGATIVE magnitude. `parseRangeMax` took every number through `Math.abs`, so
+// `-1 click` cleared the 2-click ceiling as a 1, was persisted, and reached the
+// rider rendered raw as `Soften · -1 click` - an instruction with no safe
+// reading, on a value riders act on at a track day.
+// WALL TWO - wrongly REFUSED. A correct recommendation discarded whole. The
+// neighbours that must keep behaving are pinned case by case, because the sign
+// rule has to tell a minus sign apart from a range separator and getting that
+// backwards refuses ordinary advice.
+// ---------------------------------------------------------------------------
+
+const REBOUND = COMPONENT_POLICIES.rebound; // clicks, ceiling 2
+const TIRE_PRESSURE = COMPONENT_POLICIES.tire_pressure; // psi, ceiling 1
+
+describe('magnitudeAllowed', () => {
+  describe('must refuse', () => {
+    it.each([
+      ['a bare negative magnitude', '-1 click'],
+      ['a negative at the ceiling', '-2 clicks'],
+      ['a negative decimal', '-0.5 clicks'],
+      ['a negative reached through prose', 'soften by -1 click'],
+      ['a negative written with a minus sign', '−1 click'],
+      ['a negative written with an en dash', '–1 click'],
+      ['a negative written with an em dash', '—1 click'],
+    ])('refuses %s', (_label, magnitude) => {
+      expect(magnitudeAllowed(REBOUND, magnitude)).toBe(false);
+    });
+
+    it('refuses a negative on a decimal-ceiling component too', () => {
+      expect(magnitudeAllowed(TIRE_PRESSURE, '-0.5 psi')).toBe(false);
+    });
+
+    it('refuses a magnitude over the ceiling', () => {
+      expect(magnitudeAllowed(REBOUND, '3 clicks')).toBe(false);
+      expect(magnitudeAllowed(TIRE_PRESSURE, '3 psi')).toBe(false);
+    });
+
+    // A range is measured by its larger end, which is what `Math.abs` was doing
+    // before the sign rule arrived and is still doing after it: without it
+    // `max(1, -3) = 1` clears the 2-click rebound ceiling.
+    it('refuses a range whose larger end is over the ceiling', () => {
+      expect(magnitudeAllowed(REBOUND, '1-3 clicks')).toBe(false);
+      expect(magnitudeAllowed(TIRE_PRESSURE, '0.5-2 psi')).toBe(false);
+    });
+
+    it('refuses a magnitude carrying no number at all', () => {
+      expect(magnitudeAllowed(REBOUND, 'a couple of clicks')).toBe(false);
+    });
+
+    it('refuses an empty magnitude', () => {
+      expect(magnitudeAllowed(REBOUND, '')).toBe(false);
+    });
+
+    it('refuses a magnitude in the wrong unit', () => {
+      expect(magnitudeAllowed(REBOUND, '1 psi')).toBe(false);
+    });
+  });
+
+  describe('must accept', () => {
+    it('accepts an ordinary positive magnitude', () => {
+      expect(magnitudeAllowed(REBOUND, '1 click')).toBe(true);
+      expect(magnitudeAllowed(TIRE_PRESSURE, '0.5 psi')).toBe(true);
+    });
+
+    it('accepts a magnitude exactly at the ceiling', () => {
+      expect(magnitudeAllowed(REBOUND, '2 clicks')).toBe(true);
+      expect(magnitudeAllowed(TIRE_PRESSURE, '1 psi')).toBe(true);
+    });
+
+    it('accepts an explicit plus sign', () => {
+      expect(magnitudeAllowed(REBOUND, '+1 click')).toBe(true);
+    });
+
+    // The range spellings the magnitude parser has always accepted. The dash here is a
+    // separator, not a sign, and reading it as a sign would refuse advice the
+    // guard has always served - which is the wall every dash character the sign
+    // rule covers has to stay on the right side of.
+    it.each<[string, string, ComponentPolicy]>([
+      ['a hyphenated range', '1-2 clicks', REBOUND],
+      ['a spaced range', '1 - 2 clicks', REBOUND],
+      ['a decimal range', '0.5-1 psi', TIRE_PRESSURE],
+      ['a range written with a minus sign', '1−2 clicks', REBOUND],
+      ['a range written with an en dash', '1–2 clicks', REBOUND],
+      ['a range written with an em dash', '1—2 clicks', REBOUND],
+    ])('accepts %s', (_label, magnitude, policy) => {
+      expect(magnitudeAllowed(policy, magnitude)).toBe(true);
+    });
+
+    it('accepts padding prose around a legal number', () => {
+      expect(magnitudeAllowed(REBOUND, 'about 1 click on the front')).toBe(true);
+    });
+
+    // A range with the unit on both ends. The sign rule reads the magnitude raw
+    // precisely so these survive: the dash here is reached across a word rather
+    // than a digit, and refusing one costs the rider the whole response.
+    it.each<[string, string, ComponentPolicy]>([
+      ['a range with the unit repeated', '1 click - 2 clicks', REBOUND],
+      ['a decimal range with the unit repeated', '0.5 psi - 1 psi', TIRE_PRESSURE],
+      ['a range naming each end', '1 click front - 2 clicks rear', REBOUND],
+    ])('accepts %s', (_label, magnitude, policy) => {
+      expect(magnitudeAllowed(policy, magnitude)).toBe(true);
     });
   });
 });
