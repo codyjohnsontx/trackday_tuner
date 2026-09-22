@@ -858,14 +858,20 @@ number, and `formatValue` has to be TOTAL over what `jsonb` holds.** It called
 `TypeError: value.trim is not a function` and both AI routes answered the shaped
 500 their error boundary exists to produce - true of every `suspension.*`,
 `tires.*`, `alignment.*` and `extra_modules.*` field, and the routes' boundaries
-are the backstop rather than the bug. It now renders a finite number or a
-boolean as itself and **everything else as absent**, which is the rule the empty
-string already had. A composite - an array or an object - is deliberately NOT
-serialized into the prompt: the requirement is only that a non-string must not
-throw, and printing one would open a channel no screen inspects, since
+are the backstop rather than the bug. **The leaf rule is: a finite number
+renders as itself, and EVERYTHING else renders as absent** - the rule the empty
+string already had. Two kinds are absent on purpose rather than by omission. A
+composite is not serialized, because the requirement is only that a non-string
+must not throw and printing one would open a channel no screen inspects, since
 `pushRiderText` collects strings and so `classifyStoredRiderText` never sees
-text nested inside a stored blob. Absent is less code than either a serializer
-or a second collector for it. **The string path is unchanged byte for byte**,
+text nested inside a stored blob. A BOOLEAN is not printed either, and that one
+was a fix round's own defect caught under review: `true` is not a setting in any
+vocabulary `describeComponentVocabulary()` gives the model, and rendering it as
+the string `'true'` made `hasManualSessionData` report manual setup data on a
+session that had none and made two sessions storing a boolean in
+`tires.*.compound` score `matching front compound` - the only branch that stated
+a value where the row holds none, rather than stating absence.
+**The string path is unchanged byte for byte**,
 which is the constraint that matters on a formatter feeding every field of both
 routes: `lib/rag/prompt.test.ts` pins a whole session block captured from the
 implementation before the fix, and `npm run rag:eval` replays every tape key
@@ -894,16 +900,18 @@ are defined on it rather than restating it. **What hid this is the `||` chain in
 `hasManualSessionData`: it reads `notes` first, so any session carrying a note
 short-circuits before a setup leaf is touched** - a harness whose fixture has
 notes reports green over the whole class.
-`app/api/ai/tuning-advice/route.non-string-session-field.test.ts` therefore
-stubs nothing between the request and the model, and its fixture has empty notes
-and one earlier session, because the context loader needs a candidate before
-`selectSimilarSessions` enters its map at all. Day-plan has its own route-level
-twin in `app/api/ai/day-plan/route.test.ts`, which needs no second session: its
-`buildContext` synthesises the `planningSession` from the rider's latest row, so
-that row is both the `current` session and one of the `candidates` and its
-pressure is read on both sides of the comparison. **Before changing a reader of
-these blobs, grep `\.tires\b` and `\.suspension\b` across `lib/rag/` and
-`app/api/ai/` - the class is two modules, not one.**
+**Each route has its own end-to-end test and both stub nothing between the
+request and the model** - `app/api/ai/tuning-advice/route.non-string-session-field.test.ts`
+and the matching describe in `app/api/ai/day-plan/route.test.ts`. Both fixtures
+empty every leaf the `||` chain reads except the number under test, or
+`dataUsed.manual` is carried by a sibling leaf and the assertion holds whatever
+the leaf rule does; and both carry a second session, because
+`selectSimilarSessions` only enters its map once there is a candidate.
+The helper-level regressions in `lib/rag/race-engineer-context.test.ts` and
+`lib/rag/prompt.test.ts` cover the leaf rule and the container guards per
+function. **Before changing a reader of these blobs, grep `\.tires\b` and
+`\.suspension\b` across `lib/rag/` and `app/api/ai/` - the class is two
+modules, not one.**
 
 **Screening a field decides that it is CHECKED. A second axis decides what a
 match DOES, and that one is ACTIONABILITY: can the rider reach the thing the

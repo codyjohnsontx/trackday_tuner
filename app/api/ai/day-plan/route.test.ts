@@ -136,6 +136,7 @@ function createServerClient({
   sessionSuspensionRebound = '',
   sessionTireCondition = 'used',
   sessionFrontTirePressure = RECENT_SESSION.tires.front.pressure,
+  sessionRearTirePressure = RECENT_SESSION.tires.rear.pressure,
   memorySummary,
   memoryTrackId = null,
   sessionTrackId = null,
@@ -146,11 +147,14 @@ function createServerClient({
   vehicleNickname?: string;
   sessionNotes?: string | null;
   feedbackNotes?: string;
-  sessionSuspensionRebound?: string;
+  // `sessions.tires` and `sessions.suspension` are shape-unconstrained `jsonb`,
+  // so these three are `unknown` rather than `string`: the column accepts what
+  // the TypeScript type does not, and these are the leaves
+  // `hasManualSessionData` and `pressureScore` read.
+  sessionSuspensionRebound?: unknown;
   sessionTireCondition?: string;
-  // `sessions.tires` is shape-unconstrained `jsonb`, so this is `unknown`
-  // rather than `string`: the column accepts what the TypeScript type does not.
   sessionFrontTirePressure?: unknown;
+  sessionRearTirePressure?: unknown;
   memorySummary?: string;
   memoryTrackId?: string | null;
   sessionTrackId?: string | null;
@@ -178,6 +182,7 @@ function createServerClient({
           tires: {
             ...RECENT_SESSION.tires,
             front: { ...RECENT_SESSION.tires.front, pressure: sessionFrontTirePressure },
+            rear: { ...RECENT_SESSION.tires.rear, pressure: sessionRearTirePressure },
             condition: sessionTireCondition,
           },
           suspension: {
@@ -1379,6 +1384,8 @@ describe('POST /api/ai/day-plan resolves the typed circuit through the track-nam
  * the notes first.
  */
 describe('POST /api/ai/day-plan with a non-string field in the session jsonb', () => {
+  const EARLIER_SESSION_ID = '77777777-7777-7777-7777-777777777777';
+
   function dayPlanContext() {
     const [input] = generateDayPlan.mock.calls[0] as [
       {
@@ -1393,7 +1400,21 @@ describe('POST /api/ai/day-plan with a non-string field in the session jsonb', (
 
   beforeEach(() => {
     createClient.mockResolvedValue(
-      createServerClient({ sessionNotes: '', sessionFrontTirePressure: 30 }),
+      createServerClient({
+        // Every leaf `hasManualSessionData` reads is emptied except the two
+        // numbers under test, so `dataUsed.manual` can only be true because a
+        // number was read as its own text. Leaving the rear pressure at its
+        // '28 psi' default would carry the flag on its own and the assertion
+        // would hold whatever the leaf rule did.
+        sessionNotes: '',
+        sessionRearTirePressure: '',
+        sessionFrontTirePressure: 30,
+        sessionSuspensionRebound: 5,
+        // A second session on the vehicle, stored the ordinary way, so the
+        // comparison scores a real pair: the numeric pressure on the planning
+        // session against a string pressure on the candidate.
+        olderSessions: [{ id: EARLIER_SESSION_ID, date: '2026-07-01' }],
+      }),
     );
   });
 
@@ -1406,13 +1427,13 @@ describe('POST /api/ai/day-plan with a non-string field in the session jsonb', (
     expect(generateDayPlan).toHaveBeenCalledTimes(1);
   });
 
-  it('reads the stored number as the pressure rather than dropping the comparison', async () => {
+  it('reads the stored numbers rather than dropping the comparison and the manual flag', async () => {
     await post({ vehicle_id: VEHICLE_ID, track_name: 'Test Track' });
 
     const context = dayPlanContext();
     expect(context.dataUsed.manual).toBe(true);
     expect(
-      context.similarSessions.find((item) => item.session.id === SESSION_ID)?.reasons,
+      context.similarSessions.find((item) => item.session.id === EARLIER_SESSION_ID)?.reasons,
     ).toContain('front pressure within 0.5');
   });
 });

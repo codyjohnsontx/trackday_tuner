@@ -107,11 +107,16 @@ function sanitizeFreeText(value: string): string {
  * and alter the prompt for every rider. Only values that used to throw render
  * differently now:
  *
- * - a finite number or a boolean prints as itself, so a `preload` stored as 5
- *   reads `preload=5` exactly as the string '5' does;
+ * - a finite number prints as itself, so a `preload` stored as 5 reads
+ *   `preload=5` exactly as the string '5' does;
  * - EVERYTHING ELSE READS AS ABSENT, which is the rule the empty string already
- *   had. That covers a non-finite number, which carries no setting, and every
- *   composite - an array or an object.
+ *   had. That covers a non-finite number, which carries no setting, every
+ *   composite - an array or an object - and a boolean.
+ *
+ * A boolean is absent rather than printed for the same reason a composite is.
+ * Nothing asked for one to render, `describeComponentVocabulary()` gives the
+ * model no setting that reads `true`, and printing it is the only branch that
+ * would state a value where the row holds none.
  *
  * A composite is absent rather than serialized because the requirement is only
  * that a non-string must not throw, and serializing one opens a channel no
@@ -131,8 +136,6 @@ function formatValue(value: unknown): string {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? String(value) : '—';
   }
-
-  if (typeof value === 'boolean') return String(value);
 
   return '—';
 }

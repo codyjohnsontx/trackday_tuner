@@ -229,8 +229,56 @@ describe('the setup jsonb a rider can actually have stored', () => {
       },
       false,
     ],
+    [
+      'a true boolean where a pressure should be',
+      {
+        tires: {
+          ...noManualText.tires,
+          front: { ...noManualText.tires.front, pressure: true },
+        },
+      },
+      false,
+    ],
+    [
+      'a false boolean where a pressure should be',
+      {
+        tires: {
+          ...noManualText.tires,
+          front: { ...noManualText.tires.front, pressure: false },
+        },
+      },
+      false,
+    ],
   ])('reads manual data off a session with %s', (_label, partial, expected) => {
     expect(hasManualSessionData({ ...noManualText, ...partial } as Session)).toBe(expected);
+  });
+
+  /**
+   * A boolean is not a compound. Rendering one as 'true' made two sessions that
+   * both stored one score a match and print `matching front compound` into
+   * `reasons`, which the prompt interpolates as evidence of a comparison that
+   * was never made.
+   */
+  it('does not match two sessions on a boolean where a compound should be', () => {
+    const withBooleanCompound = (id: string, date: string) =>
+      ({
+        ...baseSession,
+        id,
+        date,
+        tires: {
+          ...baseSession.tires,
+          front: { ...baseSession.tires.front, compound: true },
+          rear: { ...baseSession.tires.rear, compound: true },
+        },
+      }) as unknown as Session;
+
+    const [match] = selectSimilarSessions({
+      current: withBooleanCompound('current', '2026-04-22'),
+      candidates: [withBooleanCompound('candidate', '2026-04-21')],
+    });
+
+    expect(match.reasons).not.toContain('matching front compound');
+    expect(match.reasons).not.toContain('matching rear compound');
   });
 
   it('scores a pressure stored as a number the way the same pressure stored as text scores', () => {
