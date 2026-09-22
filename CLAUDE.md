@@ -980,21 +980,27 @@ changes how it reads. The remaining containment matcher in that file is
 `magnitudeAllowed`, and it is a different class: a magnitude is inherently a
 phrase, so there is no closed set to compare against.
 
-**Containment holds there for padding and not for sign, and that is a known
-accepted gap.** `parseRangeMax` takes the largest number present, so extra prose
-can only raise the figure checked against the ceiling and can only tighten it -
-but it takes that number through `Math.abs`, so a negative magnitude clears the
-ceiling today. `{component: front_rebound, direction: soften, magnitude: '-1
-click'}` passes both guards, is persisted, and reaches the rider rendered raw as
-`Soften · -1 click`, because the display/wire split deliberately leaves
-`magnitude` unformatted. It is recorded rather than fixed because the earlier
-claim here ("padding one can only tighten the ceiling") talked the gap away, and
-a false justification is worse than an undocumented gap: the gap is merely
-unknown, while the justification actively stops the next reader ever opening
-`parseRangeMax`. A comment that defends a bug outlives the code. Pre-existing,
-out of scope for the equality change, tracked as tt-negative-magnitude-accepted;
-the earliest shared boundary for closing it is `parseRangeMax` /
-`magnitudeAllowed`, not a render site.
+**Containment holds there for padding, and the SIGN is answered before the
+ceiling is ever consulted.** Padding can only raise the figure checked against
+the ceiling, so it can only tighten. Sign used to be folded away by `Math.abs`,
+so `{component: front_rebound, direction: soften, magnitude: '-1 click'}` cleared
+the ceiling as a 1, was persisted, and reached the rider rendered raw as `Soften
+· -1 click` - the display/wire split deliberately leaves `magnitude` unformatted,
+so whatever clears the policy is what a rider acts on at a track day. A negative
+is now REFUSED as `unsafe_magnitude`, the violation an over-range value already
+raised, rather than measured.
+
+**A `-` is a minus sign or a range separator, and only what precedes it says
+which.** `1-2 clicks` is the range shape the magnitude parser has always accepted, and `Math.abs`
+is what reads its `-2` as the 2 the rider would act on - so it REMAINS, and
+removing it would let a range's larger end slip under a ceiling. The sign test
+runs first, on the magnitude with whitespace compacted so `1 - 2 clicks` is still
+a range; its one accepted false refusal is `1 click - 2 clicks`, which no model
+here has emitted. The regression set is `magnitudeAllowed` in
+`lib/rag/component-vocabulary.test.ts` - both walls, with the ceiling, the
+at-ceiling, the missing-number and the range neighbours pinned beside the
+negatives - and the rider-facing walk is
+`tests/unit/negative-magnitude-refused.test.ts`.
 
 **An empty `recommended_changes` list is checked as prose.** `evaluateAdvicePolicy`
 validates component, direction and magnitude by iterating the structured field, so

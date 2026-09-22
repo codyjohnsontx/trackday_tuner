@@ -96,6 +96,31 @@ describe('evaluateAdvicePolicy', () => {
     expect(result.violations).toContain('unsafe_magnitude');
   });
 
+  // The reproduction that opened tt-negative-magnitude-accepted. `parseRangeMax`
+  // took every number through `Math.abs`, so this cleared the 2-click rebound
+  // ceiling as a 1, was persisted, and reached the rider rendered raw as
+  // `Soften · -1 click`. It refuses through `unsafe_magnitude`, the same
+  // violation an over-range value already raised; the rider-facing half of the
+  // walk is tests/unit/negative-magnitude-refused.test.ts.
+  it('forces refusal for a negative magnitude', () => {
+    const result = evaluateAdvicePolicy({
+      advice: buildAdvice({
+        recommended_changes: [
+          {
+            component: 'front_rebound',
+            direction: 'soften',
+            magnitude: '-1 click',
+            reason: 'Recover front grip.',
+          },
+        ],
+      }),
+      fallbackDataUsed: buildAdvice().data_used,
+    });
+    expect(result.decision).toBe('force_refusal');
+    expect(result.violations).toContain('unsafe_magnitude');
+    expect(result.advice.recommended_changes).toEqual([]);
+  });
+
   it('forces refusal for ungrounded recommendations', () => {
     const result = evaluateAdvicePolicy({
       advice: buildAdvice({
