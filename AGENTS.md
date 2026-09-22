@@ -922,9 +922,25 @@ are defined on it rather than restating it. **What hid this is the `||` chain in
 `hasManualSessionData`: it reads `notes` first, so any session carrying a note
 short-circuits before a setup leaf is touched** - a harness whose fixture has
 notes reports green over the whole class.
-**Each route has its own end-to-end test and both stub nothing between the
-request and the model** - `app/api/ai/tuning-advice/route.non-string-session-field.test.ts`
-and the matching describe in `app/api/ai/day-plan/route.test.ts`. Both fixtures
+**Each route has a route-level test, and THE TWO REACH DIFFERENT DEPTHS - read
+this before trusting either as cover.**
+`app/api/ai/tuning-advice/route.non-string-session-field.test.ts` stubs nothing
+between the request and the model: it mocks Supabase, `embedQuery`,
+`retrieveRelevantChunks` and the `openai` client and nothing else, so
+`generateTuningAdvice` and `formatValue` really run and the test reads
+`preload=5 compression=— rebound=5` back out of the prompt handed to the model.
+The day-plan describe in `app/api/ai/day-plan/route.test.ts` mocks
+`@/lib/rag/advice`, and `generateDayPlan` is what calls `embedQuery`,
+`retrieveRelevantChunks`, `buildDayPlanMessages` and `completeAdvice` - so it
+exercises `buildContext` and the real stored-text collector, covering the
+CONTEXT LOADER's leaves, and never reaches that route's prompt builder at all.
+Its assertions read `generateDayPlan.mock.calls[0]`, which is the input rather
+than a prompt. **The day-plan prompt builder is covered at helper level
+instead**, by `renders the same stored number on the day-plan prompt` in
+`lib/rag/prompt.test.ts`. That split is adequate cover and is recorded rather
+than fixed; what it is not is a second end-to-end walk, so do not read the
+day-plan route test as guarding `formatSessionBlock`.
+Both fixtures
 empty every leaf the `||` chain reads except the number under test, or
 `dataUsed.manual` is carried by a sibling leaf and the assertion holds whatever
 the leaf rule does; and both carry a second session, because
