@@ -219,7 +219,7 @@ export function directionAllowed(policy: ComponentPolicy, direction: string): bo
 }
 
 /**
- * A `-` that is a MINUS SIGN rather than a RANGE SEPARATOR.
+ * A dash that is a MINUS SIGN rather than a RANGE SEPARATOR.
  *
  * Both spellings reach this guard and they mean opposite things. `1-2 clicks` is
  * the range shape this parser has always accepted - two ends of one positive
@@ -228,15 +228,22 @@ export function directionAllowed(policy: ComponentPolicy, direction: string): bo
  * `-1 click` is a single negative quantity, and `Soften by -1 click` has no safe
  * reading: it instructs the opposite of its own direction, or nothing at all.
  *
- * What tells them apart is what comes BEFORE the `-`: a digit makes it a
+ * What tells them apart is what comes BEFORE the dash: a digit makes it a
  * separator, anything else or nothing makes it a sign. Whitespace is compacted
  * first so `1 - 2 clicks` is still read as the range it is; the cost of that is
  * `1 click - 2 clicks`, which is read as negative and refused, and which no model
  * has emitted here (every recorded magnitude in `tests/fixtures/rag-eval/` is a
  * bare `<number> <unit>`). Refusing is the fail-safe direction on a value the
  * rider acts on at a track day.
+ *
+ * FOUR CHARACTERS SPELL A DASH, and the guard covers all four: hyphen-minus
+ * (U+002D), minus sign (U+2212), en dash (U+2013) and em dash (U+2014). Only the
+ * first is ASCII, and while it was the only one here a model emitting `−1 click`
+ * reached the rider through exactly the path this guard closes, because the
+ * number parser below reads a non-ASCII sign as no sign at all. The digit-before
+ * rule is one rule over all four, so `1–2 clicks` is still the range it is.
  */
-const NEGATIVE_MAGNITUDE_PATTERN = /(?:^|[^\d])-\d/;
+const NEGATIVE_MAGNITUDE_PATTERN = /(?:^|[^\d])[-\u2212\u2013\u2014]\d/;
 
 /**
  * Every number in the magnitude, or `null` when it carries none or one that does

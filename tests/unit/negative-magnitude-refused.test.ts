@@ -85,6 +85,16 @@ describe('a negative magnitude never reaches the rider', () => {
     expect(text).not.toContain('Soften');
   });
 
+  it('refuses the same instruction spelled with a minus sign rather than a hyphen', () => {
+    const input = advice('−1 click');
+    const result = evaluateAdvicePolicy({ advice: input, fallbackDataUsed: input.data_used });
+
+    expect(result.decision).toBe('force_refusal');
+    const text = riderText(result.advice);
+    expect(text).not.toContain('−1 click');
+    expect(text).not.toContain('Soften');
+  });
+
   it('still serves the same recommendation written positively', () => {
     const input = advice('1 click');
     const result = evaluateAdvicePolicy({ advice: input, fallbackDataUsed: input.data_used });

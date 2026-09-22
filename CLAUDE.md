@@ -990,16 +990,22 @@ so whatever clears the policy is what a rider acts on at a track day. A negative
 is now REFUSED as `unsafe_magnitude`, the violation an over-range value already
 raised, rather than measured.
 
-**A `-` is a minus sign or a range separator, and only what precedes it says
+**A dash is a minus sign or a range separator, and only what precedes it says
 which.** `1-2 clicks` is the range shape the magnitude parser has always accepted, and `Math.abs`
 is what reads its `-2` as the 2 the rider would act on - so it REMAINS, and
 removing it would let a range's larger end slip under a ceiling. The sign test
 runs first, on the magnitude with whitespace compacted so `1 - 2 clicks` is still
 a range; its one accepted false refusal is `1 click - 2 clicks`, which no model
-here has emitted. The regression set is `magnitudeAllowed` in
+here has emitted. **Four characters spell a dash and the sign test covers all
+four** - hyphen-minus (U+002D), minus sign (U+2212), en dash (U+2013), em dash
+(U+2014) - because only the first is ASCII and the number parser reads a
+non-ASCII sign as no sign at all, so while the test was ASCII-only a `-1 click`
+written with any of the other three cleared the ceiling and reached the rider.
+The digit-before rule is one rule over all four, so every dash still separates a
+range. The regression set is `magnitudeAllowed` in
 `lib/rag/component-vocabulary.test.ts` - both walls, with the ceiling, the
-at-ceiling, the missing-number and the range neighbours pinned beside the
-negatives - and the rider-facing walk is
+at-ceiling, the missing-number, a negative and a range per dash character pinned
+beside each other - and the rider-facing walk is
 `tests/unit/negative-magnitude-refused.test.ts`.
 
 **An empty `recommended_changes` list is checked as prose.** `evaluateAdvicePolicy`
