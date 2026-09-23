@@ -29,7 +29,8 @@ Ship a post-session AI copilot that gives conservative, explainable setup sugges
   "question": "Front pushes mid-corner after raising pressure 1 psi.",
   "symptoms": ["understeer_mid_corner"],
   "change_intent": "stability_over_entry",
-  "temperature_c": 24
+  "temperature_c": 24,
+  "time_zone": "America/Chicago"
 }
 ```
 
@@ -38,6 +39,9 @@ Validation rules:
 - `vehicle_id`, `session_id`, and `question` are required.
 - `question` min 10 chars, max 1000 chars.
 - `symptoms` optional; max 8 tags.
+- `time_zone` optional; the browser's IANA zone, max 100 chars. It dates the
+  rider's own outcomes in a refusal label, and a zone the runtime does not
+  recognise falls back to the UTC date rather than rejecting the request.
 - Reject unknown keys.
 
 ## Retrieval Sources
