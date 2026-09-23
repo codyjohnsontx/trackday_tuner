@@ -27,7 +27,8 @@ import {
 } from '@/lib/rag/domain-guard';
 import { collectDayPlanRiderText, collectDayPlanSessionIds } from '@/lib/rag/prompt';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
-import { isUuid } from '@/lib/rag/validation';
+import { isUuid, validateTimeZone } from '@/lib/rag/validation';
+import { dateInTimeZone } from '@/lib/local-date';
 import { trackNameKey } from '@/lib/session-track';
 import { findVisibleTrackByName } from '@/lib/track-lookup';
 import {
@@ -143,20 +144,8 @@ function validateDayPlanRequest(input: unknown): ValidationResult {
       return { ok: false, error: 'target_date must be YYYY-MM-DD.' };
     }
   }
-  if (
-    Object.prototype.hasOwnProperty.call(record, 'time_zone') &&
-    record.time_zone !== undefined &&
-    record.time_zone !== null &&
-    typeof record.time_zone !== 'string'
-  ) {
-    return { ok: false, error: 'time_zone must be a string.' };
-  }
-  const timeZone = typeof record.time_zone === 'string' && record.time_zone.trim()
-    ? record.time_zone.trim()
-    : undefined;
-  if (timeZone && timeZone.length > 100) {
-    return { ok: false, error: 'time_zone must be at most 100 characters.' };
-  }
+  const timeZone = validateTimeZone(record);
+  if (!timeZone.ok) return timeZone;
 
   if (
     Object.prototype.hasOwnProperty.call(record, 'track_name') &&
@@ -213,7 +202,7 @@ function validateDayPlanRequest(input: unknown): ValidationResult {
     data: {
       vehicle_id: record.vehicle_id,
       target_date: targetDate,
-      time_zone: timeZone,
+      time_zone: timeZone.value,
       track_name: trackName || undefined,
       ambient_temperature_c: ambient?.value,
       track_temperature_c: track?.value,
@@ -226,24 +215,9 @@ function validateDayPlanRequest(input: unknown): ValidationResult {
 
 function todayIso(timeZone?: string): string {
   const now = new Date();
-  if (timeZone) {
-    try {
-      const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).formatToParts(now);
-      const year = parts.find((part) => part.type === 'year')?.value;
-      const month = parts.find((part) => part.type === 'month')?.value;
-      const day = parts.find((part) => part.type === 'day')?.value;
-      if (year && month && day) {
-        return `${year}-${month}-${day}`;
-      }
-    } catch {
-      // Fall through to the server-local date if the provided time zone is invalid.
-    }
-  }
+  // An invalid zone falls through to the server-local date.
+  const local = timeZone ? dateInTimeZone(now, timeZone) : null;
+  if (local) return local;
 
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -691,7 +665,7 @@ export async function POST(request: Request) {
         environment: hasEnvironment ? environment : null,
         recentSessions,
         raceEngineerContext,
-      }),
+      }, validated.data.time_zone),
     });
 
     if (storedAssessment.decision === 'refuse') {

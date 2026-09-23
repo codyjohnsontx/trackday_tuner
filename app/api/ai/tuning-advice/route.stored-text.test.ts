@@ -356,6 +356,7 @@ async function drive(
     vehicle?: Vehicle;
     previous?: Session[];
     context?: RaceEngineerContext;
+    timeZone?: unknown;
   } = {},
 ): Promise<DriveResult> {
   const rows: Row[] = [];
@@ -369,7 +370,12 @@ async function drive(
     new Request('http://127.0.0.1:3000/api/ai/tuning-advice', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ vehicle_id: VEHICLE_ID, session_id: SESSION_ID, question: QUESTION }),
+      body: JSON.stringify({
+        vehicle_id: VEHICLE_ID,
+        session_id: SESSION_ID,
+        question: QUESTION,
+        ...(setup.timeZone === undefined ? {} : { time_zone: setup.timeZone }),
+      }),
     }),
   );
 
@@ -484,6 +490,33 @@ describe('POST /api/ai/tuning-advice stored rider text screening', () => {
   it('refuses on a logged outcome note', async () => {
     const result = await drive({
       context: context({ recentFeedback: [feedback({ notes: PAYLOAD })] }),
+    });
+    expectStoredTextRefusal(result, 'the notes on the outcome you logged on 2026-04-26');
+  });
+
+  // The feedback row is stamped at midnight UTC, which is still the evening
+  // before in Chicago. The route has to hand the request's `time_zone` to the
+  // collector, or the refusal names the outcome logged a day later.
+  it('dates the outcome in the rider\'s time zone', async () => {
+    const result = await drive({
+      context: context({ recentFeedback: [feedback({ notes: PAYLOAD })] }),
+      timeZone: 'America/Chicago',
+    });
+    expectStoredTextRefusal(result, 'the notes on the outcome you logged on 2026-04-25');
+  });
+
+  it('dates the memory outcome in the rider\'s time zone', async () => {
+    const result = await drive({
+      context: context({ memory: { ...memory(PAYLOAD), updated_at: '2026-04-20T23:30:00.000Z' } }),
+      timeZone: 'Asia/Tokyo',
+    });
+    expectStoredTextRefusal(result, 'the notes on the outcome you logged on 2026-04-21');
+  });
+
+  it('keeps the UTC date when the time zone is not one it recognises', async () => {
+    const result = await drive({
+      context: context({ recentFeedback: [feedback({ notes: PAYLOAD })] }),
+      timeZone: 'Not/AZone',
     });
     expectStoredTextRefusal(result, 'the notes on the outcome you logged on 2026-04-26');
   });

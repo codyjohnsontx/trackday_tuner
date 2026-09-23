@@ -393,14 +393,14 @@ describe('a jsonb container the prompt walks into', () => {
       question: 'Front pushes on entry.',
       retrieved: [],
     };
-    expect(() => collectTuningAdviceRiderText(input)).not.toThrow();
+    expect(() => collectTuningAdviceRiderText(input, undefined)).not.toThrow();
     expect(() => collectDayPlanRiderText({
       vehicle: vehicle(),
       targetDate: '2026-04-02',
       trackName: 'Thunderhill',
       environment: null,
       recentSessions: [input.session],
-    })).not.toThrow();
+    }, undefined)).not.toThrow();
   });
 
   /**
@@ -441,7 +441,7 @@ describe('a jsonb container the prompt walks into', () => {
     };
 
     expect(buildUserPrompt(input)).toContain('tires.front.pressure=— tires.rear.pressure=—');
-    expect(() => collectTuningAdviceRiderText(input)).not.toThrow();
+    expect(() => collectTuningAdviceRiderText(input, undefined)).not.toThrow();
   });
 });
 
@@ -625,6 +625,46 @@ function stampedMemory() {
   };
 }
 
+/**
+ * The outcome labels are dated in the rider's zone, which the route passes as
+ * the request's `time_zone`. Each case is a timestamp within a few hours of
+ * midnight UTC, so the UTC date and the rider's date differ - one zone behind
+ * UTC and one ahead, because a fix that only handled one direction (subtracting
+ * an offset, say) would pass the other.
+ */
+const RIDER_ZONE_CASES = [
+  // 8pm on the 1st in Chicago is already the 2nd in UTC.
+  { zone: 'America/Chicago', timestamp: '2026-04-02T01:00:00Z', riderDate: '2026-04-01', utcDate: '2026-04-02' },
+  // 8am on the 2nd in Tokyo is still the 1st in UTC.
+  { zone: 'Asia/Tokyo', timestamp: '2026-04-01T23:00:00Z', riderDate: '2026-04-02', utcDate: '2026-04-01' },
+];
+
+/** A missing zone, and ones the runtime rejects, keep the UTC date. */
+const FALLBACK_ZONES: Array<string | undefined> = [undefined, 'Not/AZone', 'garbage'];
+
+function outcomeLabels(
+  collected: Array<{ value: string; label: string }>,
+): { memory?: string; feedback?: string } {
+  const labelFor = (sentinel: string) =>
+    collected.find((field) => field.value.includes(sentinel))?.label;
+  return { memory: labelFor(SENTINELS.memorySummary), feedback: labelFor(SENTINELS.feedbackNotes) };
+}
+
+function withOutcomeTimestamp<T extends { raceEngineerContext: RaceEngineerContext }>(
+  input: T,
+  timestamp: string,
+): T {
+  const context = input.raceEngineerContext;
+  return {
+    ...input,
+    raceEngineerContext: {
+      ...context,
+      memory: context.memory ? { ...context.memory, updated_at: timestamp } : null,
+      recentFeedback: context.recentFeedback.map((row) => ({ ...row, created_at: timestamp })),
+    },
+  };
+}
+
 describe('collectDayPlanRiderText', () => {
   function stampedInput() {
     const stamped = stampedSession();
@@ -671,7 +711,7 @@ describe('collectDayPlanRiderText', () => {
   it('collects every rider-authored string the day-plan prompt prints', () => {
     const input = stampedInput();
     const prompt = buildDayPlanPrompt({ ...input, retrieved: [] });
-    const collected = collectDayPlanRiderText(input);
+    const collected = collectDayPlanRiderText(input, undefined);
 
     const missing = Object.entries(SENTINELS)
       .filter(([, sentinel]) => prompt.includes(sentinel))
@@ -693,7 +733,7 @@ describe('collectDayPlanRiderText', () => {
   // tuning-advice, where they are the stored row. Getting this backwards would
   // silently drop submitted text from the plan.
   it('refuses on the environment it was handed, which the request just submitted', () => {
-    const collected = collectDayPlanRiderText(stampedInput());
+    const collected = collectDayPlanRiderText(stampedInput(), undefined);
     const weather = collected.filter((field) => field.value.includes(SENTINELS.weather));
 
     expect(weather.length).toBeGreaterThan(0);
@@ -704,14 +744,14 @@ describe('collectDayPlanRiderText', () => {
   // always empty and its environment is submitted, so `dropScreenedSources` can
   // never fire here - which is what keeps day-plan's behaviour where it was.
   it('collects nothing skippable, so the drop path is inert on this route', () => {
-    const collected = collectDayPlanRiderText(stampedInput());
+    const collected = collectDayPlanRiderText(stampedInput(), undefined);
 
     expect(collected.length).toBeGreaterThan(0);
     expect(collected.filter((field) => field.onMatch === 'skip')).toEqual([]);
   });
 
   it('labels each value with something the rider can go and edit', () => {
-    const collected = collectDayPlanRiderText(stampedInput());
+    const collected = collectDayPlanRiderText(stampedInput(), undefined);
     const labelFor = (sentinel: string) =>
       collected.find((field) => field.value.includes(sentinel))?.label;
 
@@ -721,6 +761,26 @@ describe('collectDayPlanRiderText', () => {
     expect(labelFor(SENTINELS.feedbackNotes)).toBe(
       'the notes on the outcome you logged on 2026-04-02',
     );
+  });
+
+  it.each(RIDER_ZONE_CASES)(
+    'dates both outcome labels on the rider\'s day in $zone',
+    ({ zone, timestamp, riderDate }) => {
+      const input = withOutcomeTimestamp(stampedInput(), timestamp);
+      expect(outcomeLabels(collectDayPlanRiderText(input, zone))).toEqual({
+        memory: `the notes on the outcome you logged on ${riderDate}`,
+        feedback: `the notes on the outcome you logged on ${riderDate}`,
+      });
+    },
+  );
+
+  it.each(FALLBACK_ZONES)('keeps the UTC date when the zone is %s', (zone) => {
+    const { timestamp, utcDate } = RIDER_ZONE_CASES[0];
+    const input = withOutcomeTimestamp(stampedInput(), timestamp);
+    expect(outcomeLabels(collectDayPlanRiderText(input, zone))).toEqual({
+      memory: `the notes on the outcome you logged on ${utcDate}`,
+      feedback: `the notes on the outcome you logged on ${utcDate}`,
+    });
   });
 });
 
@@ -819,7 +879,7 @@ describe('collectTuningAdviceRiderText', () => {
   it('collects every stored rider-authored string the tuning-advice prompt prints', () => {
     const input = stampedInput();
     const prompt = buildUserPrompt({ ...input, retrieved: [] });
-    const collected = collectTuningAdviceRiderText(input);
+    const collected = collectTuningAdviceRiderText(input, undefined);
 
     const missing = Object.entries(SENTINELS)
       .filter(([name]) => !SUBMITTED.includes(name))
@@ -844,7 +904,7 @@ describe('collectTuningAdviceRiderText', () => {
   it('leaves the submitted fields to the first screen', () => {
     const input = stampedInput();
     const prompt = buildUserPrompt({ ...input, retrieved: [] });
-    const collected = collectTuningAdviceRiderText(input);
+    const collected = collectTuningAdviceRiderText(input, undefined);
 
     for (const name of SUBMITTED) {
       const sentinel = SENTINELS[name as keyof typeof SENTINELS];
@@ -857,7 +917,7 @@ describe('collectTuningAdviceRiderText', () => {
   // can only act on that if the collector says which is which, and a skip has to
   // name a source precise enough to remove from the prompt.
   it('gives each value a disposition and names what a skip drops', () => {
-    const collected = collectTuningAdviceRiderText(stampedInput());
+    const collected = collectTuningAdviceRiderText(stampedInput(), undefined);
     const fieldFor = (sentinel: string) =>
       collected.find((field) => field.value.includes(sentinel));
 
@@ -915,7 +975,7 @@ describe('collectTuningAdviceRiderText', () => {
   });
 
   it('labels each value with something the rider can go and find', () => {
-    const collected = collectTuningAdviceRiderText(stampedInput());
+    const collected = collectTuningAdviceRiderText(stampedInput(), undefined);
     const labelFor = (sentinel: string) =>
       collected.find((field) => field.value.includes(sentinel))?.label;
 
@@ -947,7 +1007,7 @@ describe('collectTuningAdviceRiderText', () => {
         session_number: 1,
         notes: SENTINELS.previousNotes,
       }),
-    });
+    }, undefined);
     const labelFor = (sentinel: string) =>
       collected.find((field) => field.value.includes(sentinel))?.label;
 
@@ -967,11 +1027,31 @@ describe('collectTuningAdviceRiderText', () => {
     const collected = collectTuningAdviceRiderText({
       ...input,
       session: stampedSession({ session_number: null, notes: 'S-unnumbered-notes' }),
-    });
+    }, undefined);
     const labelFor = (sentinel: string) =>
       collected.find((field) => field.value.includes(sentinel))?.label;
 
     expect(labelFor('S-unnumbered-notes')).toBe('the notes on your 2026-04-01 session');
+  });
+
+  it.each(RIDER_ZONE_CASES)(
+    'dates both outcome labels on the rider\'s day in $zone',
+    ({ zone, timestamp, riderDate }) => {
+      const input = withOutcomeTimestamp(stampedInput(), timestamp);
+      expect(outcomeLabels(collectTuningAdviceRiderText(input, zone))).toEqual({
+        memory: `the notes on the outcome you logged on ${riderDate}`,
+        feedback: `the notes on the outcome you logged on ${riderDate}`,
+      });
+    },
+  );
+
+  it.each(FALLBACK_ZONES)('keeps the UTC date when the zone is %s', (zone) => {
+    const { timestamp, utcDate } = RIDER_ZONE_CASES[0];
+    const input = withOutcomeTimestamp(stampedInput(), timestamp);
+    expect(outcomeLabels(collectTuningAdviceRiderText(input, zone))).toEqual({
+      memory: `the notes on the outcome you logged on ${utcDate}`,
+      feedback: `the notes on the outcome you logged on ${utcDate}`,
+    });
   });
 
   // The context loader returns more feedback rows than the prompt prints, so
@@ -991,7 +1071,7 @@ describe('collectTuningAdviceRiderText', () => {
       raceEngineerContext: { ...input.raceEngineerContext, recentFeedback },
     };
     const prompt = buildUserPrompt({ ...withFeedback, retrieved: [] });
-    const collected = collectTuningAdviceRiderText(withFeedback);
+    const collected = collectTuningAdviceRiderText(withFeedback, undefined);
 
     const printed = recentFeedback.filter((row) => prompt.includes(row.notes));
     // Guard the guard: a window that printed everything, or nothing, would make

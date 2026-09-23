@@ -8,6 +8,7 @@ import {
 } from '@/lib/rag/race-engineer-context';
 import type { CreateSessionEnvironmentInput, Session, SessionEnvironment, Vehicle } from '@/types';
 import { truncateAtWordBoundary } from '@/lib/utils';
+import { riderDateOfTimestamp } from '@/lib/local-date';
 
 export const SYSTEM_PROMPT = `You are Race Engineer, the rider's or driver's personal post-session race engineer for trackday motorcycles and cars. Speak like a seasoned, level-headed race engineer: direct, specific, and conservative.
 
@@ -661,6 +662,7 @@ function collectRaceEngineerContextRiderText(
   context: RaceEngineerContext | null | undefined,
   environmentSuffix: string,
   environmentDisposition: RiderTextDisposition,
+  riderTimeZone: string | undefined,
 ): RiderTextField[] {
   if (!context) return [];
   const fields: RiderTextField[] = [
@@ -686,21 +688,18 @@ function collectRaceEngineerContextRiderText(
   // `now()` when it writes the summary - so it is the outcome that put this text
   // here, read off the row already in hand.
   //
-  // That date is the UTC date of a `timestamptz`, so for a rider west of
-  // Greenwich it can be a day ahead of the one they saw: an outcome logged at
-  // 8pm local reads as the next day. The cost is real - a rider who logged
-  // outcomes on consecutive days can be pointed at the wrong one. It is kept
-  // rather than fixed because the feedback label below has exactly the same
-  // skew and predates this branch; the two are deliberately identical, and the
-  // skew is filed as ONE task covering BOTH labels. Fixing whichever one a
-  // reviewer happened to look at is the half-measure this subsystem keeps
-  // paying for. Converting is not available here anyway - the rider's timezone
-  // is only knowable in the browser (see `todayLocalDate` in CLAUDE.md).
+  // That date is a `timestamptz`, and its UTC date can be a day off the one
+  // the rider saw: an outcome logged at 8pm in Texas is already tomorrow in
+  // UTC, so a rider who logged outcomes on consecutive days would be pointed at
+  // the wrong one. It is written in the rider's own zone, which only the
+  // browser knows and the request carries as `time_zone`. The feedback label
+  // below has the same date and goes through the same `riderDateOfTimestamp`;
+  // the two are one rule, so change them together or not at all.
   if (context.memory) {
     pushRiderText(
       fields,
       REFUSE_ON_MATCH,
-      `the notes on the outcome you logged on ${context.memory.updated_at.slice(0, 10)}`,
+      `the notes on the outcome you logged on ${riderDateOfTimestamp(context.memory.updated_at, riderTimeZone)}`,
       context.memory.summary,
     );
   }
@@ -716,12 +715,10 @@ function collectRaceEngineerContextRiderText(
     pushRiderText(fields, REFUSE_ON_MATCH, `the notes ${suffix}`, item.session.notes);
   }
 
-  // Same UTC-date skew as the memory label above, and deliberately worded the
-  // same way: both are the UTC date of a `timestamptz` and can be a day off for
-  // a rider west of Greenwich, pointing them at the wrong outcome if they
-  // logged on consecutive days. One task covers both; do not fix one alone.
+  // Dated in the rider's zone exactly as the memory label above is, and worded
+  // the same way, because both name the outcome the rider logged.
   for (const feedback of context.recentFeedback.slice(0, RECENT_FEEDBACK_LIMIT)) {
-    const suffix = `on the outcome you logged on ${feedback.created_at.slice(0, 10)}`;
+    const suffix = `on the outcome you logged on ${riderDateOfTimestamp(feedback.created_at, riderTimeZone)}`;
     pushRiderText(fields, REFUSE_ON_MATCH, `the symptoms ${suffix}`, feedback.symptoms.join(', '));
     pushRiderText(fields, REFUSE_ON_MATCH, `the notes ${suffix}`, feedback.notes);
   }
@@ -741,7 +738,8 @@ function collectRaceEngineerContextRiderText(
   // window while every request for the vehicle refuses before the model call.
   //
   // `id` is a uuid and `status` is held to four values by
-  // `ai_recommendations_status_check`, so neither is collected.
+  // `ai_recommendations_status_check`, so neither is collected. The label keeps
+  // its UTC date: a skipped field's label never reaches a rider.
   for (const recommendation of context.recentRecommendations.slice(0, RECENT_RECOMMENDATION_LIMIT)) {
     const disposition = {
       onMatch: 'skip',
@@ -888,9 +886,15 @@ function collectRaceEngineerContextRiderText(
 /**
  * Every rider-authored free-text value `buildDayPlanPrompt` puts in front of the
  * model, labelled. See the exclusion list above.
+ *
+ * `riderTimeZone` is the request's `time_zone`. It is required, with no default,
+ * on both collectors because the outcome labels are dated in it: a route that
+ * forgot to pass it would name the UTC day and point a rider at the wrong
+ * outcome. `undefined` is an honest answer when the request carried none.
  */
 export function collectDayPlanRiderText(
   input: Omit<BuildDayPlanInput, 'retrieved'>,
+  riderTimeZone: string | undefined,
 ): RiderTextField[] {
   const requestFields: RiderTextField[] = [];
   pushRiderText(requestFields, REFUSE_ON_MATCH, 'the track name you entered', input.trackName);
@@ -912,6 +916,7 @@ export function collectDayPlanRiderText(
       input.raceEngineerContext,
       'you entered for today',
       REFUSE_ON_MATCH,
+      riderTimeZone,
     ),
   ];
 }
@@ -932,6 +937,7 @@ export function collectDayPlanRiderText(
  */
 export function collectTuningAdviceRiderText(
   input: Omit<BuildPromptInput, 'retrieved'>,
+  riderTimeZone: string | undefined,
 ): RiderTextField[] {
   return [
     ...collectVehicleRiderText(input.vehicle),
@@ -952,6 +958,7 @@ export function collectTuningAdviceRiderText(
       input.raceEngineerContext,
       sessionLabelSuffix(input.session),
       SKIP_SESSION_ENVIRONMENT,
+      riderTimeZone,
     ),
   ];
 }

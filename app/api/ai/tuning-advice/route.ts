@@ -453,7 +453,7 @@ export async function POST(request: Request) {
         changeIntent: validated.data.change_intent,
         temperatureC: validated.data.temperature_c,
         raceEngineerContext,
-      }),
+      }, validated.data.time_zone),
     });
 
     if (storedAssessment.decision === 'refuse') {

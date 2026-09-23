@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { todayLocalDate } from '@/lib/local-date';
+import { riderDateOfTimestamp, todayLocalDate } from '@/lib/local-date';
 
 // The bug this guards only shows up where local time and UTC disagree about the
 // day, so the timezone is pinned rather than inherited: CI runs in UTC, where a
@@ -34,5 +34,31 @@ describe('todayLocalDate', () => {
 
   it('pads month and day so the value parses as a date input value', () => {
     expect(todayLocalDate(new Date(2026, 0, 5, 20, 0, 0))).toBe('2026-01-05');
+  });
+});
+
+// The zone is passed explicitly, so the TZ pinned above must not matter: a
+// server in UTC and one in Chicago have to name the same rider day.
+describe('riderDateOfTimestamp', () => {
+  it('names the day behind UTC for a rider west of Greenwich', () => {
+    expect(riderDateOfTimestamp('2026-04-02T01:00:00Z', 'America/Chicago')).toBe('2026-04-01');
+  });
+
+  it('names the day ahead of UTC for a rider east of Greenwich', () => {
+    expect(riderDateOfTimestamp('2026-04-01T23:00:00Z', 'Asia/Tokyo')).toBe('2026-04-02');
+  });
+
+  it('reads the offset Supabase actually returns', () => {
+    expect(riderDateOfTimestamp('2026-04-02T01:00:00.123456+00:00', 'America/Chicago')).toBe(
+      '2026-04-01',
+    );
+  });
+
+  it.each([undefined, '', 'Not/AZone'])('falls back to the UTC date for zone %s', (zone) => {
+    expect(riderDateOfTimestamp('2026-04-02T01:00:00Z', zone)).toBe('2026-04-02');
+  });
+
+  it('falls back to the stored prefix when the timestamp does not parse', () => {
+    expect(riderDateOfTimestamp('2026-04-02 garbage', 'America/Chicago')).toBe('2026-04-02');
   });
 });
