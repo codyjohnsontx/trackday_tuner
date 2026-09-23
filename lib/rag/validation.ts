@@ -5,6 +5,7 @@ export interface TuningAdviceRequest {
   symptoms?: string[];
   change_intent?: string;
   temperature_c?: number;
+  time_zone?: string;
 }
 
 const ALLOWED_KEYS = new Set([
@@ -14,6 +15,7 @@ const ALLOWED_KEYS = new Set([
   'symptoms',
   'change_intent',
   'temperature_c',
+  'time_zone',
 ]);
 
 const MAX_QUESTION_LENGTH = 1000;
@@ -125,6 +127,9 @@ export function validateTuningAdviceRequest(input: unknown): ValidationResult {
     temperatureC = record.temperature_c;
   }
 
+  const timeZone = validateTimeZone(record);
+  if (!timeZone.ok) return timeZone;
+
   return {
     ok: true,
     data: {
@@ -134,8 +139,34 @@ export function validateTuningAdviceRequest(input: unknown): ValidationResult {
       symptoms,
       change_intent: changeIntent,
       temperature_c: temperatureC,
+      time_zone: timeZone.value,
     },
   };
+}
+
+const MAX_TIME_ZONE_LENGTH = 100;
+
+/**
+ * The rider's IANA time zone, as the browser reports it
+ * (`Intl.DateTimeFormat().resolvedOptions().timeZone`). Every AI route that
+ * accepts one reads it here, so the rule is written once.
+ *
+ * Only the shape is checked. A string this runtime does not recognise as a zone
+ * is still accepted, because every reader falls back when formatting in it
+ * fails - refusing the whole request over a date label would cost the rider the
+ * answer they asked for.
+ */
+export function validateTimeZone(
+  record: Record<string, unknown>,
+): { ok: true; value: string | undefined } | { ok: false; error: string } {
+  const raw = record.time_zone;
+  if (raw === undefined || raw === null) return { ok: true, value: undefined };
+  if (typeof raw !== 'string') return { ok: false, error: 'time_zone must be a string.' };
+  const trimmed = raw.trim();
+  if (trimmed.length > MAX_TIME_ZONE_LENGTH) {
+    return { ok: false, error: `time_zone must be at most ${MAX_TIME_ZONE_LENGTH} characters.` };
+  }
+  return { ok: true, value: trimmed || undefined };
 }
 
 // Shared by every AI route so one number caps what a rider can post at the

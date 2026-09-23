@@ -1170,7 +1170,9 @@ async function runCase(testCase, deps) {
       changeIntent,
       temperatureC,
       raceEngineerContext: context,
-    }),
+    // The route passes the request's `time_zone`; a golden case carries none,
+    // and it only dates refusal labels, never prompt text.
+    }, undefined),
   });
 
   if (storedAssessment.decision === 'refuse') {

@@ -232,6 +232,9 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
       session_id: sessionId,
       vehicle_id: vehicleId,
       question: trimmed,
+      // A refusal names the day an outcome was logged, and only the browser
+      // knows which day that was for the rider.
+      time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
     if (symptoms.length > 0) body.symptoms = symptoms;
     if (intent) body.change_intent = intent;

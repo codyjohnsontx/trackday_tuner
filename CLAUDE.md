@@ -548,7 +548,9 @@ The same shape applies to anything derived rather than given:
 - **Dates** come from `todayLocalDate` (`lib/local-date.ts`), never
   `toISOString()`, which is UTC and hands an evening rider west of Greenwich
   tomorrow's date. The rider's calendar day is only knowable in their browser, so
-  it is seeded on mount rather than during SSR
+  it is seeded on mount rather than during SSR. Server text that dates a rider's
+  own action (the AI refusal's "the outcome you logged on <date>") goes through
+  `riderDateOfTimestamp` with the zone the request carries as `time_zone`
 - **Lap times** live in a `LapEditorValue` (`lib/lap-times.ts`) that carries the
   editor's entry boxes alongside the list. A save has to run
   `commitLapEditorValue` to get a lap array at all, because text a rider typed
