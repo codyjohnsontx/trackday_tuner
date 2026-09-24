@@ -1418,3 +1418,116 @@ describe('session_data block integrity for rider-writable suspension fields', ()
     });
   }
 });
+
+/**
+ * A stored recommendation's direction is echoed back into the tuning-advice
+ * prompt only when the policy would accept it today. A paraphrase persisted
+ * before `directionAllowed` tightened to equality was echoed, copied by the
+ * model, and refused - the rider refused over the product's own earlier answer.
+ */
+describe('recent_recommendations direction echo', () => {
+  function stored(id: string, component: string | null, direction: string | null): AiRecommendation {
+    return {
+      id,
+      user_id: 'user-1',
+      session_id: '22222222-2222-2222-2222-222222222222',
+      vehicle_id: '11111111-1111-1111-1111-111111111111',
+      track_id: null,
+      request_id: 'earlier',
+      summary: 'Earlier recommendation.',
+      component,
+      direction,
+      magnitude: '1 click',
+      predicted_effect: 'less push on entry',
+      status: 'applied',
+      advice: {},
+      context_snapshot: {},
+      outcome_session_id: null,
+      created_at: '2026-03-20T00:00:00Z',
+      updated_at: '2026-03-20T00:00:00Z',
+    } as AiRecommendation;
+  }
+
+  function recommendationBlockOf(rows: AiRecommendation[]): string {
+    const prompt = buildUserPrompt({
+      session: session(),
+      previousSession: null,
+      vehicle: vehicle(),
+      question: 'Front pushes on entry.',
+      retrieved: [],
+      raceEngineerContext: {
+        similarSessions: [],
+        sessionEnvironment: null,
+        recentFeedback: [],
+        recentRecommendations: rows,
+        memory: null,
+        telemetrySummary: null,
+        dayTrend: 'No trend.',
+        dataUsed: {
+          manual: true,
+          weather: false,
+          history: false,
+          feedback: false,
+          lap_data: false,
+          telemetry: false,
+        },
+      },
+    });
+    const start = prompt.indexOf('  recent_recommendations:');
+    const end = prompt.indexOf('  telemetry_summary:', start);
+    return prompt.slice(start, end);
+  }
+
+  const SESSION = '22222222-2222-2222-2222-222222222222';
+  const line = (idx: number, id: string, component: string, direction: string) =>
+    `    [${idx}] id=${id} session_id=${SESSION} outcome_session_id=— status=applied component=${component} direction=${direction} magnitude=1 click\n` +
+    '        predicted_effect=less push on entry\n';
+
+  // Pinned byte for byte: these are exactly the lines the prompt printed before
+  // the echo was gated, so a canonical row reads the same to the model.
+  it('prints a canonical direction exactly as before', () => {
+    expect(
+      recommendationBlockOf([
+        stored('rec-a', 'front_rebound', 'soften'),
+        stored('rec-b', 'rear_tire_pressure', 'increase'),
+        stored('rec-c', 'front_toe', 'Toe_In'),
+      ]),
+    ).toBe(
+      '  recent_recommendations:\n' +
+        line(1, 'rec-a', 'front_rebound', 'soften') +
+        line(2, 'rec-b', 'rear_tire_pressure', 'increase') +
+        line(3, 'rec-c', 'front_toe', 'Toe_In'),
+    );
+  });
+
+  it('does not echo a stored paraphrase, and leaves the rest of the row alone', () => {
+    const block = recommendationBlockOf([stored('rec-a', 'front_rebound', 'soften front rebound')]);
+    expect(block).not.toContain('soften front rebound');
+    expect(block).toBe('  recent_recommendations:\n' + line(1, 'rec-a', 'front_rebound', '—'));
+  });
+
+  it('gates each row on its own component in a mixed window', () => {
+    expect(
+      recommendationBlockOf([
+        stored('rec-a', 'front_rebound', 'soften'),
+        stored('rec-b', 'rear_tire_pressure', 'increase tire pressure'),
+        // Canonical for camber, not for tire pressure: equality is per policy.
+        stored('rec-c', 'rear_tire_pressure', 'increase negative camber'),
+      ]),
+    ).toBe(
+      '  recent_recommendations:\n' +
+        line(1, 'rec-a', 'front_rebound', 'soften') +
+        line(2, 'rec-b', 'rear_tire_pressure', '—') +
+        line(3, 'rec-c', 'rear_tire_pressure', '—'),
+    );
+  });
+
+  it('prints no direction for a component the vocabulary does not know', () => {
+    expect(recommendationBlockOf([stored('rec-a', 'Front setup', 'increase')])).toBe(
+      '  recent_recommendations:\n' + line(1, 'rec-a', 'Front setup', '—'),
+    );
+    expect(recommendationBlockOf([stored('rec-a', null, 'increase')])).toBe(
+      '  recent_recommendations:\n' + line(1, 'rec-a', '—', '—'),
+    );
+  });
+});

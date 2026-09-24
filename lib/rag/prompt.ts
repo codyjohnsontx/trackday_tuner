@@ -1,4 +1,8 @@
-import { describeComponentVocabulary } from '@/lib/rag/component-vocabulary';
+import {
+  describeComponentVocabulary,
+  directionAllowed,
+  findComponentPolicy,
+} from '@/lib/rag/component-vocabulary';
 import type { RetrievedChunk } from '@/lib/rag/types';
 import {
   buildDayTrend,
@@ -139,6 +143,41 @@ function formatValue(value: unknown): string {
   }
 
   return '—';
+}
+
+/**
+ * A stored recommendation's `direction`, as the prompt prints it back.
+ *
+ * ONLY A CANONICAL DIRECTION IS ECHOED. The model is shown its earlier answers
+ * so it can build on them, and it copies what it is shown. A row written before
+ * `directionAllowed` tightened to normalized equality can hold a paraphrase
+ * (`increase tire pressure`) that containment accepted and persisted raw; echoed
+ * back, the model may repeat it, the policy refuses it as
+ * `unsupported_direction`, and a refused request writes no row that could push
+ * the paraphrase out of the window - so the rider keeps being refused over the
+ * product's own earlier answer.
+ *
+ * The test is the policy's own - `findComponentPolicy` then `directionAllowed`,
+ * exactly as `changeViolations` in `lib/rag/policy.ts` runs them - so the prompt
+ * echoes precisely what the policy would accept today and cannot drift from it.
+ * An unknown component has no policy and so no canonical direction.
+ *
+ * A non-canonical direction prints as absent (`—`) and NOTHING ELSE about the
+ * row changes. Dropping the whole row was rejected: its session ids are in the
+ * accepted evidence set (`collectTuningAdviceSessionIds`), so removing the line
+ * would make the policy accept ids the prompt no longer names, and it would
+ * renumber the rows after it. A canonical direction renders through
+ * `formatValue` exactly as before, byte for byte.
+ *
+ * The stored-text collector still screens the raw value. That is harmless: a
+ * match skips the whole recommendation, which is a removal either way.
+ */
+function formatStoredDirection(component: unknown, direction: unknown): string {
+  const policy = typeof component === 'string' ? findComponentPolicy(component) : null;
+  if (!policy || typeof direction !== 'string' || !directionAllowed(policy, direction)) {
+    return '—';
+  }
+  return formatValue(direction);
 }
 
 function formatSessionBlock(label: string, session: Session | null): string {
@@ -337,7 +376,7 @@ function formatRaceEngineerContext(context: RaceEngineerContext | null | undefin
       // `id` is the recommendation's own id and is not a session id. The two
       // session ids on the row are the ones the policy accepts as evidence, so
       // they are printed beside it rather than left for the model to guess.
-      lines.push(`    [${idx + 1}] id=${recommendation.id} session_id=${recommendation.session_id ?? '—'} outcome_session_id=${recommendation.outcome_session_id ?? '—'} status=${recommendation.status} component=${formatValue(recommendation.component)} direction=${formatValue(recommendation.direction)} magnitude=${formatValue(recommendation.magnitude)}`);
+      lines.push(`    [${idx + 1}] id=${recommendation.id} session_id=${recommendation.session_id ?? '—'} outcome_session_id=${recommendation.outcome_session_id ?? '—'} status=${recommendation.status} component=${formatValue(recommendation.component)} direction=${formatStoredDirection(recommendation.component, recommendation.direction)} magnitude=${formatValue(recommendation.magnitude)}`);
       lines.push(`        predicted_effect=${formatValue(recommendation.predicted_effect)}`);
     });
   } else {
