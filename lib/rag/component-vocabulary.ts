@@ -193,9 +193,10 @@ function directionKey(value: string): string {
  * `recentRecommendations` is always empty there, so a working AI route always
  * remains; and `completed_refusal_unsupported_direction` is in neither
  * throttled-status list, so repeated refusals cannot escalate into a lockout.
- * It is closed in `prompt.ts` rather than here: `formatStoredDirection` echoes a
- * stored direction only when this function accepts it for the row's component,
- * and prints a paraphrase as absent.
+ * It is closed in `prompt.ts` rather than here: `formatStoredChangeValue`
+ * echoes a stored direction only when this function accepts it for the row's
+ * component, and prints a paraphrase as absent. A stored magnitude is gated the
+ * same way through `magnitudeAllowed`.
  *
  * `magnitudeAllowed` below still matches its unit by containment, and that is
  * NOT the same class: a magnitude is inherently a phrase (`0.5 psi`), so there

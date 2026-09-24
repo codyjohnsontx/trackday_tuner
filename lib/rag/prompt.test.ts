@@ -1420,13 +1420,19 @@ describe('session_data block integrity for rider-writable suspension fields', ()
 });
 
 /**
- * A stored recommendation's direction is echoed back into the tuning-advice
- * prompt only when the policy would accept it today. A paraphrase persisted
- * before `directionAllowed` tightened to equality was echoed, copied by the
- * model, and refused - the rider refused over the product's own earlier answer.
+ * A stored recommendation's direction and magnitude are echoed back into the
+ * tuning-advice prompt only when the policy would accept them today. A value
+ * persisted before the policy tightened - a paraphrased direction, a negative
+ * magnitude - was echoed, copied by the model, and refused: the rider refused
+ * over the product's own earlier answer.
  */
-describe('recent_recommendations direction echo', () => {
-  function stored(id: string, component: string | null, direction: string | null): AiRecommendation {
+describe('recent_recommendations direction and magnitude echo', () => {
+  function stored(
+    id: string,
+    component: string | null,
+    direction: string | null,
+    magnitude: string | null = '1 click',
+  ): AiRecommendation {
     return {
       id,
       user_id: 'user-1',
@@ -1437,7 +1443,7 @@ describe('recent_recommendations direction echo', () => {
       summary: 'Earlier recommendation.',
       component,
       direction,
-      magnitude: '1 click',
+      magnitude,
       predicted_effect: 'less push on entry',
       status: 'applied',
       advice: {},
@@ -1479,24 +1485,24 @@ describe('recent_recommendations direction echo', () => {
   }
 
   const SESSION = '22222222-2222-2222-2222-222222222222';
-  const line = (idx: number, id: string, component: string, direction: string) =>
-    `    [${idx}] id=${id} session_id=${SESSION} outcome_session_id=— status=applied component=${component} direction=${direction} magnitude=1 click\n` +
+  const line = (idx: number, id: string, component: string, direction: string, magnitude = '1 click') =>
+    `    [${idx}] id=${id} session_id=${SESSION} outcome_session_id=— status=applied component=${component} direction=${direction} magnitude=${magnitude}\n` +
     '        predicted_effect=less push on entry\n';
 
   // Pinned byte for byte: these are exactly the lines the prompt printed before
   // the echo was gated, so a canonical row reads the same to the model.
-  it('prints a canonical direction exactly as before', () => {
+  it('prints a canonical direction and magnitude exactly as before', () => {
     expect(
       recommendationBlockOf([
         stored('rec-a', 'front_rebound', 'soften'),
-        stored('rec-b', 'rear_tire_pressure', 'increase'),
-        stored('rec-c', 'front_toe', 'Toe_In'),
+        stored('rec-b', 'rear_tire_pressure', 'increase', '0.5 psi'),
+        stored('rec-c', 'front_toe', 'Toe_In', '1-2 mm'),
       ]),
     ).toBe(
       '  recent_recommendations:\n' +
         line(1, 'rec-a', 'front_rebound', 'soften') +
-        line(2, 'rec-b', 'rear_tire_pressure', 'increase') +
-        line(3, 'rec-c', 'front_toe', 'Toe_In'),
+        line(2, 'rec-b', 'rear_tire_pressure', 'increase', '0.5 psi') +
+        line(3, 'rec-c', 'front_toe', 'Toe_In', '1-2 mm'),
     );
   });
 
@@ -1506,28 +1512,56 @@ describe('recent_recommendations direction echo', () => {
     expect(block).toBe('  recent_recommendations:\n' + line(1, 'rec-a', 'front_rebound', '—'));
   });
 
+  it('does not echo a stored negative magnitude, and leaves the rest of the row alone', () => {
+    const block = recommendationBlockOf([stored('rec-a', 'front_rebound', 'soften', '-1 click')]);
+    expect(block).not.toContain('-1 click');
+    expect(block).toBe('  recent_recommendations:\n' + line(1, 'rec-a', 'front_rebound', 'soften', '—'));
+  });
+
+  it('does not echo a stored magnitude over the ceiling or in the wrong unit', () => {
+    expect(
+      recommendationBlockOf([
+        stored('rec-a', 'front_rebound', 'soften', '3 clicks'),
+        stored('rec-b', 'rear_tire_pressure', 'increase', '1 click'),
+      ]),
+    ).toBe(
+      '  recent_recommendations:\n' +
+        line(1, 'rec-a', 'front_rebound', 'soften', '—') +
+        line(2, 'rec-b', 'rear_tire_pressure', 'increase', '—'),
+    );
+  });
+
+  it('drops a bad direction and a bad magnitude on the same row independently', () => {
+    const block = recommendationBlockOf([
+      stored('rec-a', 'front_rebound', 'soften front rebound', '-1 click'),
+    ]);
+    expect(block).not.toContain('soften front rebound');
+    expect(block).not.toContain('-1 click');
+    expect(block).toBe('  recent_recommendations:\n' + line(1, 'rec-a', 'front_rebound', '—', '—'));
+  });
+
   it('gates each row on its own component in a mixed window', () => {
     expect(
       recommendationBlockOf([
         stored('rec-a', 'front_rebound', 'soften'),
-        stored('rec-b', 'rear_tire_pressure', 'increase tire pressure'),
+        stored('rec-b', 'rear_tire_pressure', 'increase tire pressure', '0.5 psi'),
         // Canonical for camber, not for tire pressure: equality is per policy.
-        stored('rec-c', 'rear_tire_pressure', 'increase negative camber'),
+        stored('rec-c', 'rear_tire_pressure', 'increase negative camber', '0.5 psi'),
       ]),
     ).toBe(
       '  recent_recommendations:\n' +
         line(1, 'rec-a', 'front_rebound', 'soften') +
-        line(2, 'rec-b', 'rear_tire_pressure', '—') +
-        line(3, 'rec-c', 'rear_tire_pressure', '—'),
+        line(2, 'rec-b', 'rear_tire_pressure', '—', '0.5 psi') +
+        line(3, 'rec-c', 'rear_tire_pressure', '—', '0.5 psi'),
     );
   });
 
-  it('prints no direction for a component the vocabulary does not know', () => {
+  it('prints no direction or magnitude for a component the vocabulary does not know', () => {
     expect(recommendationBlockOf([stored('rec-a', 'Front setup', 'increase')])).toBe(
-      '  recent_recommendations:\n' + line(1, 'rec-a', 'Front setup', '—'),
+      '  recent_recommendations:\n' + line(1, 'rec-a', 'Front setup', '—', '—'),
     );
     expect(recommendationBlockOf([stored('rec-a', null, 'increase')])).toBe(
-      '  recent_recommendations:\n' + line(1, 'rec-a', '—', '—'),
+      '  recent_recommendations:\n' + line(1, 'rec-a', '—', '—', '—'),
     );
   });
 });
