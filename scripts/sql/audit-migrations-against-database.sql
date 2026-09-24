@@ -126,7 +126,8 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   -- a database without pg_cron, which no CASE can prevent.
   -- Whether the job has actually RUN is not answerable here: read
   -- cron.job_run_details, or /api/health, which fails ai_text_retention on a
-  -- row more than 36 hours past its retain_until.
+  -- row more than 36 hours past its retain_until, or on an ai_requests preview
+  -- still set more than 90 days and 36 hours after its created_at.
   (19, '20260924001700_add_ai_request_text', 'cron job',
       'public.ai_request_text + cron job purge-expired-ai-request-text',
       to_regclass('public.ai_request_text') is not null

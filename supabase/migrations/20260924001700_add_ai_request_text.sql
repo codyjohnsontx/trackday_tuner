@@ -143,8 +143,10 @@ grant execute on function public.purge_expired_ai_request_text() to service_role
 -- depend on a GitHub schedule that goes quiet after 60 days without a commit,
 -- a Vercel plan, or a route being reachable. Whether it actually runs is not
 -- taken on trust: /api/health's ai_text_retention check fails when any row is
--- more than 36 hours past its retain_until. A row already waits up to 24 hours
--- for the next daily run, so a single missed run can trip it.
+-- more than 36 hours past its retain_until, or when an ai_requests preview is
+-- still set more than 90 days and 36 hours after its created_at. A row already
+-- waits up to 24 hours for the next daily run, so a single missed run can trip
+-- it.
 --
 -- cron.schedule with a job name replaces a job of that name, so re-running this
 -- file leaves one job rather than two.
