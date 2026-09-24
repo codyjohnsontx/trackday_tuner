@@ -208,7 +208,9 @@ export async function checkSchemaContract(): Promise<HealthCheck> {
 
 /**
  * How far past its `retain_until` a row may be before the purge is called
- * broken. The job runs once a day, so 36 hours is one missed run plus slack.
+ * broken. The job runs once a day, so a row waits up to 24 hours for the next
+ * run; 36 hours absorbs a run up to 12 hours late, and a single missed run can
+ * already trip it.
  */
 export const AI_TEXT_RETENTION_GRACE_MS = 36 * 60 * 60 * 1000;
 

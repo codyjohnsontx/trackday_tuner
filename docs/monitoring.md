@@ -308,7 +308,9 @@ route and fails any that can reach `lib/rag/retriever` without one.
 in the database (`purge-expired-ai-request-text`, 04:17 UTC daily) deletes it.
 Nothing about that job is visible from the app, so this check asks the question
 the notice answers instead: is any row more than 36 hours past its
-`retain_until`? One missed run is inside that grace; two are not. It reads a
+`retain_until`? A row already waits up to 24 hours for the next run, so the
+grace absorbs a run up to 12 hours late, and a single missed run can trip it
+when a row expired in the 12 hours after the last run. It reads a
 count and never a row, and it holds whichever trigger does the deleting - if the
 purge moves to Vercel Cron, this check does not change.
 
