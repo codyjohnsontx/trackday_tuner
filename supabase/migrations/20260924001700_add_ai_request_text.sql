@@ -24,15 +24,35 @@
 -- `redaction_version` says which redaction rules produced it, so a replay can
 -- tell rows masked under different rules apart.
 
+--
+-- OWNERSHIP IS THE PARENT'S, NOT THE WRITER'S. RLS below trusts `user_id` on
+-- this row, so a text row naming rider B under rider A's request would show A's
+-- question to B and hide it from A. The foreign key is therefore on
+-- (request_id, user_id) together, against a unique key on ai_requests over the
+-- same pair, and the database refuses a mismatch whatever the service writer
+-- passes.
+--
+-- THE 90 DAYS ARE A CONSTRAINT, NOT A DEFAULT. The purge and the health check
+-- both read `retain_until`, so a writer passing a later value would keep text
+-- past the notice and be reported healthy. The check caps it at created_at plus
+-- 90 days; an earlier deadline is allowed, since deleting sooner breaks no
+-- promise.
+create unique index if not exists ai_requests_request_id_user_id_key
+  on public.ai_requests(request_id, user_id);
+
 create table if not exists public.ai_request_text (
-  request_id text primary key
-    references public.ai_requests(request_id) on delete cascade,
+  request_id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
   route text not null check (route in ('tuning_advice', 'day_plan')),
   submitted jsonb not null check (jsonb_typeof(submitted) = 'object'),
   redaction_version smallint not null,
   created_at timestamptz not null default now(),
-  retain_until timestamptz not null default now() + interval '90 days'
+  retain_until timestamptz not null default now() + interval '90 days',
+  constraint ai_request_text_request_owner_fkey
+    foreign key (request_id, user_id)
+    references public.ai_requests(request_id, user_id) on delete cascade,
+  constraint ai_request_text_retain_until_within_90_days
+    check (retain_until <= created_at + interval '90 days')
 );
 
 create index if not exists ai_request_text_user_created_idx
@@ -135,6 +155,15 @@ begin
   return removed;
 end;
 $$;
+
+-- The preview half filters every ai_requests row on created_at with no user_id,
+-- which the (user_id, created_at) index cannot serve, and /api/health runs the
+-- same predicate every 15 minutes under a five-second timeout. The partial
+-- index holds only rows that still carry a preview, which the purge keeps to
+-- the last 90 days.
+create index if not exists ai_requests_preview_created_idx
+  on public.ai_requests(created_at)
+  where prompt_redacted_preview is not null;
 
 revoke all on function public.purge_expired_ai_request_text() from public, anon, authenticated;
 grant execute on function public.purge_expired_ai_request_text() to service_role;

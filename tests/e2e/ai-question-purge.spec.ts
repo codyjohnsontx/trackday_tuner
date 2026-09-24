@@ -160,6 +160,67 @@ test.describe('retained AI question text', () => {
     expect(await preview(admin, fresh)).toBe('rear steps out on exit');
   });
 
+  // A deadline earlier than 90 days is allowed - deleting sooner breaks no
+  // promise - and the purge honours it even on a row created moments ago.
+  test('the purge deletes recent text whose own deadline has passed', async () => {
+    const now = Date.now();
+    const earlyDeadline = await seedRequest(admin, rider.userId, {
+      createdAt: new Date(now - 60 * 1000),
+      retainUntil: new Date(now - 1000),
+    });
+
+    const { error } = await admin.rpc('purge_expired_ai_request_text');
+    expect(error).toBeNull();
+    expect(await textRow(admin, earlyDeadline)).toBeNull();
+  });
+
+  // The purge and the health check both trust retain_until, so a writer that
+  // set it past 90 days would keep text past the notice and read as healthy.
+  // The database refuses the row instead.
+  test('the database refuses a deadline more than 90 days after creation', async () => {
+    const now = Date.now();
+    const requestId = await seedRequest(admin, rider.userId, { createdAt: new Date(now) });
+
+    const { error } = await admin.from('ai_request_text').insert({
+      request_id: requestId,
+      user_id: rider.userId,
+      route: 'tuning_advice',
+      submitted: { question: 'kept too long' },
+      redaction_version: 1,
+      created_at: new Date(now).toISOString(),
+      retain_until: new Date(now + 91 * DAY_MS).toISOString(),
+    });
+    expect(error?.code).toBe('23514');
+    expect(await textRow(admin, requestId)).toBeNull();
+  });
+
+  // RLS trusts user_id on the text row, so a row naming another rider under
+  // this rider's request would show this rider's question to them. The
+  // service writer is the one that could get it wrong, so the service role is
+  // what sends it, and the composite foreign key is what refuses it.
+  test('the database refuses text owned by someone other than its request\'s rider', async () => {
+    const requestId = await seedRequest(admin, rider.userId, {
+      createdAt: new Date(),
+      preview: 'rider A question',
+    });
+
+    const { error } = await admin.from('ai_request_text').insert({
+      request_id: requestId,
+      user_id: otherRider.userId,
+      route: 'tuning_advice',
+      submitted: { question: 'rider A question' },
+      redaction_version: 1,
+    });
+    expect(error?.code).toBe('23503');
+    expect(await textRow(admin, requestId)).toBeNull();
+
+    const visibleToOther = expectRows(
+      await otherRider.client.from('ai_request_text').select('request_id').eq('request_id', requestId),
+      'reading ai_request_text as the other rider',
+    );
+    expect(visibleToOther).toEqual([]);
+  });
+
   test('a rider cannot run the purge', async () => {
     const { error } = await rider.client.rpc('purge_expired_ai_request_text');
     expect(error?.code).toBe('42501');

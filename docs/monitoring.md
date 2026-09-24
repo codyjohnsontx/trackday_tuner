@@ -57,7 +57,15 @@ once, with step 2's last item, rather than assuming it.
 Everything below is a copy-paste step with a way to check it worked. Nothing
 here needs any context from the branch that added it.
 
-### Step 1 - `/api/health` (nothing to do, but verify it)
+### Step 1 - `/api/health` (one database prerequisite, then verify it)
+
+**Before deploying a release that includes the `ai_text_retention` check, apply
+`20260924001700` to the database.** The check reads `ai_request_text`, so on a
+database without it `/api/health` answers `503` with
+`SupabaseError:PGRST205` and the scheduled monitor fails. The hosted project has
+no CLI migration history, so that means the SQL-editor block in
+[`docs/beta-runbook.md`, "Apply the AI question-text table by hand"](beta-runbook.md#apply-the-ai-question-text-table-by-hand-on-a-project-with-no-migration-history),
+run before the pull request merges.
 
 After the next production deploy:
 

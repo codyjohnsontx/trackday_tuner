@@ -462,15 +462,21 @@ still carries Supabase's legacy defaults, which hand a new table to `anon` and
 ```sql
 -- hosted-ai-request-text: mirror of supabase/migrations/20260924001700_add_ai_request_text.sql
 begin;
+create unique index if not exists ai_requests_request_id_user_id_key
+  on public.ai_requests(request_id, user_id);
 create table if not exists public.ai_request_text (
-  request_id text primary key
-    references public.ai_requests(request_id) on delete cascade,
+  request_id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
   route text not null check (route in ('tuning_advice', 'day_plan')),
   submitted jsonb not null check (jsonb_typeof(submitted) = 'object'),
   redaction_version smallint not null,
   created_at timestamptz not null default now(),
-  retain_until timestamptz not null default now() + interval '90 days'
+  retain_until timestamptz not null default now() + interval '90 days',
+  constraint ai_request_text_request_owner_fkey
+    foreign key (request_id, user_id)
+    references public.ai_requests(request_id, user_id) on delete cascade,
+  constraint ai_request_text_retain_until_within_90_days
+    check (retain_until <= created_at + interval '90 days')
 );
 create index if not exists ai_request_text_user_created_idx
   on public.ai_request_text(user_id, created_at desc);
@@ -510,6 +516,9 @@ begin
   return removed;
 end;
 $$;
+create index if not exists ai_requests_preview_created_idx
+  on public.ai_requests(created_at)
+  where prompt_redacted_preview is not null;
 revoke all on function public.purge_expired_ai_request_text() from public, anon, authenticated;
 grant execute on function public.purge_expired_ai_request_text() to service_role;
 create extension if not exists pg_cron with schema pg_catalog;
@@ -597,6 +606,8 @@ alter table public.profiles
   drop column if exists ai_question_retention_opted_in_at,
   drop column if exists ai_question_retention_requires_opt_in;
 alter table public.ai_requests drop column if exists app_commit;
+drop index if exists public.ai_requests_preview_created_idx;
+drop index if exists public.ai_requests_request_id_user_id_key;
 commit;
 ```
 

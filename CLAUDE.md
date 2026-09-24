@@ -271,6 +271,9 @@ apart from `ai_requests` because that table is the rate limit, and a rider must 
 delete those rows. `tests/unit/migrations-bootstrap.test.ts` fails any grant wider than
 `select, delete` to `authenticated`, and any at all to `anon` or `public`. The migration
 revokes before it grants because hosted still carries the legacy `grant all` defaults.
+Because RLS trusts the text row's own `user_id`, ownership is enforced by a composite
+foreign key to `ai_requests(request_id, user_id)`, and `retain_until` is capped at
+`created_at + 90 days` by a CHECK - the purge and the health check both trust it.
 A daily `pg_cron` job purges it, and `/api/health`'s `ai_text_retention` check is what
 proves the job runs. The four `profiles.ai_question_retention_*` columns decide
 whether text may be kept at all, and the rule is written once, in that migration's
