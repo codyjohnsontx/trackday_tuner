@@ -1022,7 +1022,7 @@ export type Database = {
       };
     };
     Views: {
-      ai_requests_unacknowledged_previews: {
+      ai_requests_unretainable_previews: {
         Row: {
           request_id: string;
           created_at: string;

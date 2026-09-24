@@ -273,12 +273,13 @@ delete those rows. `tests/unit/migrations-bootstrap.test.ts` fails any grant wid
 revokes before it grants because hosted still carries the legacy `grant all` defaults.
 Because RLS trusts the text row's own `user_id`, ownership is enforced by a composite
 foreign key to `ai_requests(request_id, user_id)`, and `retain_until` is capped at
-`created_at + 90 days` by a CHECK - the purge and the health check both trust it.
-Nothing of a rider's is kept until they have seen the notice, and that covers the
-140-character `ai_requests.prompt_redacted_preview` too: the migration nulled every
-existing one, and the purge nulls any preview whose rider has no
-`ai_question_retention_notice_seen_at`, which `/api/health` counts through the
-`ai_requests_unacknowledged_previews` view.
+`created_at + 90 days` by a CHECK - the purge and the health check both trust it - and
+a before-insert trigger pins `created_at` to the insert time so no writer can date a
+row ahead. The 140-character `ai_requests.prompt_redacted_preview` follows the same
+keep rule as the text: the migration nulled every existing one, and the purge nulls
+any preview whose rider's text may not be kept. The rule is written in SQL once, as
+the `ai_requests_unretainable_previews` view, which that clear, the purge and
+`/api/health` all read.
 A daily `pg_cron` job purges it, and `/api/health`'s `ai_text_retention` check is what
 proves the job runs. The four `profiles.ai_question_retention_*` columns decide
 whether text may be kept at all, and the rule is written once, in that migration's

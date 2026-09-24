@@ -229,13 +229,14 @@ export const AI_PREVIEW_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
  * exactly like one where it works, until a rider's text outlives the notice.
  * The same job nulls the 140-character `ai_requests.prompt_redacted_preview`
  * after 90 days, and that half acts on rows every AI request writes today, so
- * it is counted too. So is the notice rule: nothing of a rider's is kept until
- * they have seen the notice, the routes still write a preview for everyone
- * until capture gates that write, and the purge nulls those daily - so a
- * preview for a rider who has not seen it, older than the same 36-hour grace,
- * means the purge is not keeping that rule either. Those rows are read through
- * the `ai_requests_unacknowledged_previews` view, because PostgREST cannot join
- * `ai_requests` to `profiles`.
+ * it is counted too. So is the keep rule: a rider's text is kept only once
+ * they have seen the notice and while their consent stands, the routes still
+ * write a preview for everyone until capture gates that write, and the purge
+ * nulls the rest daily - so a preview for a rider whose text may not be kept,
+ * older than the same 36-hour grace, means the purge is not keeping that rule
+ * either. Those rows are read through the `ai_requests_unretainable_previews`
+ * view, the one place the rule is written and the one the purge reads too,
+ * because PostgREST cannot join `ai_requests` to `profiles`.
  * So this asks the question the notice answers - is any row older than it is
  * allowed to be? - which holds whichever trigger does the deleting, and would
  * hold unchanged if the purge moved to Vercel Cron.
@@ -253,7 +254,7 @@ export async function checkAiTextRetention(now: Date = new Date()): Promise<Heal
     ).toISOString();
     // A GET for the same reason `checkSupabase` makes one: over HEAD a missing
     // table reads as an empty, healthy answer.
-    const [text, previews, unacknowledged] = await Promise.all([
+    const [text, previews, unretainable] = await Promise.all([
       admin
         .from('ai_request_text')
         .select('request_id', { count: 'exact' })
@@ -266,14 +267,14 @@ export async function checkAiTextRetention(now: Date = new Date()): Promise<Heal
         .lt('created_at', previewCutoff)
         .limit(1),
       admin
-        .from('ai_requests_unacknowledged_previews')
+        .from('ai_requests_unretainable_previews')
         .select('request_id', { count: 'exact' })
         .lt('created_at', textCutoff)
         .limit(1),
     ]);
     const overdueText = exactCount('ai_request_text', text);
     const overduePreviews = exactCount('ai_requests', previews);
-    const unacknowledgedPreviews = exactCount('ai_requests_unacknowledged_previews', unacknowledged);
+    const unretainablePreviews = exactCount('ai_requests_unretainable_previews', unretainable);
     if (overdueText > 0) {
       const err = new Error(`${overdueText} ai_request_text rows are past retain_until by more than 36 hours.`);
       err.name = `OverdueRetainedTextError:${overdueText}`;
@@ -286,11 +287,11 @@ export async function checkAiTextRetention(now: Date = new Date()): Promise<Heal
       err.name = `OverduePreviewError:${overduePreviews}`;
       throw err;
     }
-    if (unacknowledgedPreviews > 0) {
+    if (unretainablePreviews > 0) {
       const err = new Error(
-        `${unacknowledgedPreviews} ai_requests rows keep a prompt_redacted_preview more than 36 hours old for a rider who has not seen the notice.`,
+        `${unretainablePreviews} ai_requests rows keep a prompt_redacted_preview more than 36 hours old for a rider whose text may not be kept.`,
       );
-      err.name = `UnacknowledgedPreviewError:${unacknowledgedPreviews}`;
+      err.name = `UnretainablePreviewError:${unretainablePreviews}`;
       throw err;
     }
     return '0 overdue';

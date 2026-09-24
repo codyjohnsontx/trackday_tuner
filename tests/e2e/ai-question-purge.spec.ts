@@ -61,6 +61,11 @@ async function makeRider(admin: SupabaseClient<Database>, label: string): Promis
 
 // An ai_requests row and, optionally, its text. The foreign key needs the
 // request first, the way the capture step will write them.
+//
+// A text row cannot be inserted already old: the database stamps created_at
+// with the insert time and caps retain_until at 90 days after it, whatever the
+// writer passes. So an aged row is inserted and then moved back with a
+// service-role UPDATE, which the 90-day CHECK still bounds.
 async function seedRequest(
   admin: SupabaseClient<Database>,
   userId: string,
@@ -87,10 +92,18 @@ async function seedRequest(
         change_intent: null,
       },
       redaction_version: 1,
-      created_at: options.createdAt.toISOString(),
       retain_until: options.retainUntil.toISOString(),
     });
     if (textError) throw new Error(`seeding ai_request_text failed: ${textError.message}`);
+
+    const { error: ageError } = await admin
+      .from('ai_request_text')
+      .update({
+        created_at: options.createdAt.toISOString(),
+        retain_until: options.retainUntil.toISOString(),
+      })
+      .eq('request_id', requestId);
+    if (ageError) throw new Error(`dating ai_request_text failed: ${ageError.message}`);
   }
   return requestId;
 }
@@ -122,24 +135,52 @@ test.describe('retained AI question text', () => {
   let admin: SupabaseClient<Database>;
   let rider: Rider;
   let otherRider: Rider;
+  let optedOutRider: Rider;
+  let optInPendingRider: Rider;
+  let optedInRider: Rider;
+
+  async function recordConsent(
+    userId: string,
+    consent: Database['public']['Tables']['profiles']['Update'],
+  ): Promise<void> {
+    const { error } = await admin.from('profiles').update(consent).eq('id', userId);
+    if (error) throw new Error(`recording the retention choice failed: ${error.message}`);
+  }
 
   test.beforeAll(async ({}, workerInfo) => {
     admin = createTestAdminClient();
-    rider = await makeRider(admin, `${workerInfo.project.name}-a`);
-    otherRider = await makeRider(admin, `${workerInfo.project.name}-b`);
-    // `rider` has seen the retention notice, so a fresh preview of theirs is
-    // kept; `otherRider` has not, so nothing of theirs is.
-    const { error } = await admin
-      .from('profiles')
-      .update({ ai_question_retention_notice_seen_at: new Date().toISOString() })
-      .eq('id', rider.userId);
-    if (error) throw new Error(`recording the notice as seen failed: ${error.message}`);
+    const project = workerInfo.project.name;
+    rider = await makeRider(admin, `${project}-a`);
+    otherRider = await makeRider(admin, `${project}-b`);
+    optedOutRider = await makeRider(admin, `${project}-out`);
+    optInPendingRider = await makeRider(admin, `${project}-pending`);
+    optedInRider = await makeRider(admin, `${project}-in`);
+
+    // One rider per arm of the keep rule. `rider` has seen the notice and kept
+    // the default, so their text may be kept; `otherRider` has not seen it.
+    // `optedOutRider` saw it and turned keeping off. The last two started with
+    // keeping off, as EU and UK signups do: one has not turned it on, one has.
+    const seen = new Date().toISOString();
+    await recordConsent(rider.userId, { ai_question_retention_notice_seen_at: seen });
+    await recordConsent(optedOutRider.userId, {
+      ai_question_retention_notice_seen_at: seen,
+      ai_question_retention_opted_out_at: seen,
+    });
+    await recordConsent(optInPendingRider.userId, {
+      ai_question_retention_notice_seen_at: seen,
+      ai_question_retention_requires_opt_in: true,
+    });
+    await recordConsent(optedInRider.userId, {
+      ai_question_retention_notice_seen_at: seen,
+      ai_question_retention_requires_opt_in: true,
+      ai_question_retention_opted_in_at: seen,
+    });
   });
 
   test.afterAll(async () => {
     // Deleting the accounts cascades through user_id on both tables.
-    for (const userId of [rider?.userId, otherRider?.userId]) {
-      if (userId) await admin.auth.admin.deleteUser(userId);
+    for (const each of [rider, otherRider, optedOutRider, optInPendingRider, optedInRider]) {
+      if (each?.userId) await admin.auth.admin.deleteUser(each.userId);
     }
   });
 
@@ -167,42 +208,51 @@ test.describe('retained AI question text', () => {
     expect(await preview(admin, fresh)).toBe('rear steps out on exit');
   });
 
-  // Nothing of a rider's is kept until they have seen the notice. The routes
+  // A preview is kept only for a rider whose text may be kept. The routes
   // still write a preview for everyone until capture gates that write, so the
-  // purge is what clears it - and it keeps the request row, which is the rate
-  // limit.
-  test('the purge clears a fresh preview for a rider who has not seen the notice', async () => {
-    const now = Date.now();
-    const unacknowledged = await seedRequest(admin, otherRider.userId, {
-      createdAt: new Date(now - 60 * 1000),
-      preview: 'asked before seeing the notice',
-    });
-    const acknowledged = await seedRequest(admin, rider.userId, {
-      createdAt: new Date(now - 60 * 1000),
-      preview: 'asked after seeing the notice',
-    });
+  // purge is what clears the rest - and it keeps the request row, which is the
+  // rate limit.
+  test('the purge clears a fresh preview for every rider whose text may not be kept', async () => {
+    const createdAt = new Date(Date.now() - 60 * 1000);
+    const cleared = {
+      notSeen: await seedRequest(admin, otherRider.userId, { createdAt, preview: 'before the notice' }),
+      optedOut: await seedRequest(admin, optedOutRider.userId, { createdAt, preview: 'after opting out' }),
+      optInPending: await seedRequest(admin, optInPendingRider.userId, {
+        createdAt,
+        preview: 'before opting in',
+      }),
+    };
+    const kept = {
+      retaining: await seedRequest(admin, rider.userId, { createdAt, preview: 'kept by default' }),
+      optedIn: await seedRequest(admin, optedInRider.userId, { createdAt, preview: 'kept after opting in' }),
+    };
 
-    // Only the acknowledged side is asserted on the view: the purge is global,
-    // so another device project's run may already have cleared the other one,
-    // which then correctly leaves the view.
+    // Only the kept side is asserted on the view: the purge is global, so
+    // another device project's run may already have cleared the others, which
+    // then correctly leave the view.
     const pending = expectRows(
       await admin
-        .from('ai_requests_unacknowledged_previews')
+        .from('ai_requests_unretainable_previews')
         .select('request_id')
-        .in('request_id', [unacknowledged, acknowledged]),
-      'reading the unacknowledged-previews view as service_role',
+        .in('request_id', [...Object.values(cleared), ...Object.values(kept)]),
+      'reading the unretainable-previews view as service_role',
     );
-    expect(pending.map((row) => row.request_id)).not.toContain(acknowledged);
+    const pendingIds = pending.map((row) => row.request_id);
+    expect(pendingIds).not.toContain(kept.retaining);
+    expect(pendingIds).not.toContain(kept.optedIn);
 
     const { error } = await admin.rpc('purge_expired_ai_request_text');
     expect(error).toBeNull();
 
-    expect(await preview(admin, unacknowledged)).toBeNull();
-    expect(await preview(admin, acknowledged)).toBe('asked after seeing the notice');
+    expect(await preview(admin, cleared.notSeen)).toBeNull();
+    expect(await preview(admin, cleared.optedOut)).toBeNull();
+    expect(await preview(admin, cleared.optInPending)).toBeNull();
+    expect(await preview(admin, kept.retaining)).toBe('kept by default');
+    expect(await preview(admin, kept.optedIn)).toBe('kept after opting in');
   });
 
-  test('a rider cannot read the unacknowledged-previews view', async () => {
-    const { error } = await rider.client.from('ai_requests_unacknowledged_previews').select('request_id');
+  test('a rider cannot read the unretainable-previews view', async () => {
+    const { error } = await rider.client.from('ai_requests_unretainable_previews').select('request_id');
     expect(error?.code).toBe('42501');
   });
 
@@ -220,12 +270,14 @@ test.describe('retained AI question text', () => {
     expect(await textRow(admin, earlyDeadline)).toBeNull();
   });
 
-  // The purge and the health check both trust retain_until, so a writer that
-  // set it past 90 days would keep text past the notice and read as healthy.
-  // The database refuses the row instead.
-  test('the database refuses a deadline more than 90 days after creation', async () => {
+  // The purge and the health check both trust retain_until, and the 90-day
+  // CHECK measures it from created_at. A writer dating a row a year ahead would
+  // satisfy the CHECK and keep text for fifteen months, reported healthy. The
+  // database dates the row itself instead.
+  test('the database dates new text itself and keeps it at most 90 days', async () => {
     const now = Date.now();
     const requestId = await seedRequest(admin, rider.userId, { createdAt: new Date(now) });
+    const aYearAhead = now + 365 * DAY_MS;
 
     const { error } = await admin.from('ai_request_text').insert({
       request_id: requestId,
@@ -233,11 +285,46 @@ test.describe('retained AI question text', () => {
       route: 'tuning_advice',
       submitted: { question: 'kept too long' },
       redaction_version: 1,
-      created_at: new Date(now).toISOString(),
-      retain_until: new Date(now + 91 * DAY_MS).toISOString(),
+      created_at: new Date(aYearAhead).toISOString(),
+      retain_until: new Date(aYearAhead + 90 * DAY_MS).toISOString(),
     });
+    expect(error).toBeNull();
+
+    const stored = (await textRow(admin, requestId))!;
+    const createdAt = new Date(stored.created_at).getTime();
+    expect(Math.abs(createdAt - now)).toBeLessThan(10 * 60 * 1000);
+    expect(new Date(stored.retain_until).getTime()).toBeLessThanOrEqual(createdAt + 90 * DAY_MS);
+  });
+
+  test('the database keeps a deadline sooner than 90 days that the writer chose', async () => {
+    const requestId = await seedRequest(admin, rider.userId, { createdAt: new Date() });
+    const soon = new Date(Date.now() + 7 * DAY_MS);
+
+    const { error } = await admin.from('ai_request_text').insert({
+      request_id: requestId,
+      user_id: rider.userId,
+      route: 'tuning_advice',
+      submitted: { question: 'kept a week' },
+      redaction_version: 1,
+      retain_until: soon.toISOString(),
+    });
+    expect(error).toBeNull();
+    expect(new Date((await textRow(admin, requestId))!.retain_until).getTime()).toBe(soon.getTime());
+  });
+
+  // The trigger covers inserts. A later UPDATE by the service role is bounded
+  // by the CHECK, which refuses a deadline more than 90 days after creation.
+  test('the database refuses moving a deadline more than 90 days after creation', async () => {
+    const now = Date.now();
+    const retainUntil = new Date(now + 90 * DAY_MS);
+    const requestId = await seedRequest(admin, rider.userId, { createdAt: new Date(now), retainUntil });
+
+    const { error } = await admin
+      .from('ai_request_text')
+      .update({ retain_until: new Date(now + 91 * DAY_MS).toISOString() })
+      .eq('request_id', requestId);
     expect(error?.code).toBe('23514');
-    expect(await textRow(admin, requestId)).toBeNull();
+    expect(new Date((await textRow(admin, requestId))!.retain_until).getTime()).toBe(retainUntil.getTime());
   });
 
   // RLS trusts user_id on the text row, so a row naming another rider under

@@ -436,11 +436,19 @@ recent operational preview data (`npm run ai:requests` prints `-` for them). The
 `ai_requests` rows, their fingerprints and verdicts are kept.
 
 After that, the daily job keeps both rules: it nulls every preview older than 90
-days, and every preview of a rider who has not seen the notice. The routes still
-write a preview for every request until the capture change gates that write, so
-until it ships a new preview of a rider who has not seen the notice lives until
+days, and every preview of a rider whose text may not be kept - one who has not
+seen the notice, has opted out, or signed up where keeping starts off and has
+not opted in. The `ai_requests_unretainable_previews` view is the one place that
+rule is written, and the block's own clear, the job and `/api/health` all read
+it. The routes still write a preview for every request until the capture change
+gates that write, so until it ships a new preview of such a rider lives until
 the next 04:17 UTC run - under a day - and `/api/health` fails
 `ai_text_retention` if one survives 36 hours.
+
+The block also installs a trigger that stamps every new `ai_request_text` row
+with the time it is inserted and caps its `retain_until` at 90 days after that,
+whatever the writer passes, so no writer can keep text longer by dating a row
+ahead.
 
 **1. Confirm the project can take it.**
 
@@ -488,6 +496,20 @@ create table if not exists public.ai_request_text (
   constraint ai_request_text_retain_until_within_90_days
     check (retain_until <= created_at + interval '90 days')
 );
+create or replace function public.ai_request_text_pin_retention()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.created_at := now();
+  new.retain_until := least(new.retain_until, new.created_at + interval '90 days');
+  return new;
+end;
+$$;
+create or replace trigger ai_request_text_pin_retention
+  before insert on public.ai_request_text
+  for each row execute function public.ai_request_text_pin_retention();
 create index if not exists ai_request_text_user_created_idx
   on public.ai_request_text(user_id, created_at desc);
 create index if not exists ai_request_text_retain_until_idx
@@ -508,14 +530,26 @@ alter table public.profiles
   add column if not exists ai_question_retention_opted_out_at timestamptz,
   add column if not exists ai_question_retention_opted_in_at timestamptz,
   add column if not exists ai_question_retention_requires_opt_in boolean not null default false;
-update public.ai_requests r
-   set prompt_redacted_preview = null
+create or replace view public.ai_requests_unretainable_previews
+  with (security_invoker = true)
+as
+select r.request_id, r.created_at
+  from public.ai_requests r
  where r.prompt_redacted_preview is not null
    and not exists (
      select 1 from public.profiles p
       where p.id = r.user_id
         and p.ai_question_retention_notice_seen_at is not null
+        and p.ai_question_retention_opted_out_at is null
+        and (not p.ai_question_retention_requires_opt_in
+             or p.ai_question_retention_opted_in_at is not null)
    );
+revoke all on public.ai_requests_unretainable_previews from public, anon, authenticated;
+grant select on public.ai_requests_unretainable_previews to service_role;
+update public.ai_requests r
+   set prompt_redacted_preview = null
+  from public.ai_requests_unretainable_previews v
+ where v.request_id = r.request_id;
 create or replace function public.purge_expired_ai_request_text()
 returns integer
 language plpgsql
@@ -533,12 +567,8 @@ begin
      and created_at < now() - interval '90 days';
   update public.ai_requests r
      set prompt_redacted_preview = null
-   where r.prompt_redacted_preview is not null
-     and not exists (
-       select 1 from public.profiles p
-        where p.id = r.user_id
-          and p.ai_question_retention_notice_seen_at is not null
-     );
+    from public.ai_requests_unretainable_previews v
+   where v.request_id = r.request_id;
   return removed;
 end;
 $$;
@@ -547,19 +577,6 @@ create index if not exists ai_requests_preview_created_idx
   where prompt_redacted_preview is not null;
 revoke all on function public.purge_expired_ai_request_text() from public, anon, authenticated;
 grant execute on function public.purge_expired_ai_request_text() to service_role;
-create or replace view public.ai_requests_unacknowledged_previews
-  with (security_invoker = true)
-as
-select r.request_id, r.created_at
-  from public.ai_requests r
- where r.prompt_redacted_preview is not null
-   and not exists (
-     select 1 from public.profiles p
-      where p.id = r.user_id
-        and p.ai_question_retention_notice_seen_at is not null
-   );
-revoke all on public.ai_requests_unacknowledged_previews from public, anon, authenticated;
-grant select on public.ai_requests_unacknowledged_previews to service_role;
 create extension if not exists pg_cron with schema pg_catalog;
 grant usage on schema cron to postgres;
 select cron.schedule(
@@ -603,7 +620,7 @@ Expect `false`, `false`.
 ```sql
 select grantee, string_agg(privilege_type, ', ' order by privilege_type) as privileges
 from information_schema.role_table_grants
-where table_schema = 'public' and table_name = 'ai_requests_unacknowledged_previews'
+where table_schema = 'public' and table_name = 'ai_requests_unretainable_previews'
 group by grantee;
 
 select count(*) as previews_left from public.ai_requests where prompt_redacted_preview is not null;
@@ -651,8 +668,9 @@ any of it.
 begin;
 select cron.unschedule('purge-expired-ai-request-text');
 drop function if exists public.purge_expired_ai_request_text();
-drop view if exists public.ai_requests_unacknowledged_previews;
+drop view if exists public.ai_requests_unretainable_previews;
 drop table if exists public.ai_request_text;
+drop function if exists public.ai_request_text_pin_retention();
 alter table public.profiles
   drop column if exists ai_question_retention_notice_seen_at,
   drop column if exists ai_question_retention_opted_out_at,
