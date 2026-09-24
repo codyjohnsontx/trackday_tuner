@@ -1,4 +1,10 @@
-import { describeComponentVocabulary } from '@/lib/rag/component-vocabulary';
+import {
+  describeComponentVocabulary,
+  directionAllowed,
+  findComponentPolicy,
+  magnitudeAllowed,
+  type ComponentPolicy,
+} from '@/lib/rag/component-vocabulary';
 import type { RetrievedChunk } from '@/lib/rag/types';
 import {
   buildDayTrend,
@@ -139,6 +145,49 @@ function formatValue(value: unknown): string {
   }
 
   return '—';
+}
+
+/**
+ * A stored recommendation's `direction` or `magnitude`, as the prompt prints it
+ * back.
+ *
+ * ONLY A VALUE THE POLICY ACCEPTS TODAY IS ECHOED. The model is shown its
+ * earlier answers so it can build on them, and it copies what it is shown. A
+ * row written before the policy tightened can hold a value it accepted then and
+ * refuses now: a paraphrased direction (`increase tire pressure`) that
+ * containment accepted before `directionAllowed` became normalized equality, or
+ * a negative magnitude (`-1 click`) that `Math.abs` measured as positive before
+ * `magnitudeAllowed` refused a sign. Echoed back, the model may repeat it, the
+ * policy refuses it as `unsupported_direction` or `unsafe_magnitude`, and a
+ * refused request writes no row that could push it out of the window - so the
+ * rider keeps being refused over the product's own earlier answer.
+ *
+ * The test is the policy's own - `findComponentPolicy` then `directionAllowed`
+ * or `magnitudeAllowed`, exactly as `changeViolations` in `lib/rag/policy.ts`
+ * runs them - so the prompt echoes precisely what the policy would accept today
+ * and cannot drift from it. An unknown component has no policy and so no
+ * acceptable direction or magnitude.
+ *
+ * A refused value prints as absent (`—`) and NOTHING ELSE about the row
+ * changes. Dropping the whole row was rejected: its session ids are in the
+ * accepted evidence set (`collectTuningAdviceSessionIds`), so removing the line
+ * would make the policy accept ids the prompt no longer names, and it would
+ * renumber the rows after it. An accepted value renders through `formatValue`
+ * exactly as before, byte for byte.
+ *
+ * The stored-text collector still screens the raw value. That is harmless: a
+ * match skips the whole recommendation, which is a removal either way.
+ */
+function formatStoredChangeValue(
+  component: unknown,
+  value: unknown,
+  accepts: (policy: ComponentPolicy, value: string) => boolean,
+): string {
+  const policy = typeof component === 'string' ? findComponentPolicy(component) : null;
+  if (!policy || typeof value !== 'string' || !accepts(policy, value)) {
+    return '—';
+  }
+  return formatValue(value);
 }
 
 function formatSessionBlock(label: string, session: Session | null): string {
@@ -337,7 +386,7 @@ function formatRaceEngineerContext(context: RaceEngineerContext | null | undefin
       // `id` is the recommendation's own id and is not a session id. The two
       // session ids on the row are the ones the policy accepts as evidence, so
       // they are printed beside it rather than left for the model to guess.
-      lines.push(`    [${idx + 1}] id=${recommendation.id} session_id=${recommendation.session_id ?? '—'} outcome_session_id=${recommendation.outcome_session_id ?? '—'} status=${recommendation.status} component=${formatValue(recommendation.component)} direction=${formatValue(recommendation.direction)} magnitude=${formatValue(recommendation.magnitude)}`);
+      lines.push(`    [${idx + 1}] id=${recommendation.id} session_id=${recommendation.session_id ?? '—'} outcome_session_id=${recommendation.outcome_session_id ?? '—'} status=${recommendation.status} component=${formatValue(recommendation.component)} direction=${formatStoredChangeValue(recommendation.component, recommendation.direction, directionAllowed)} magnitude=${formatStoredChangeValue(recommendation.component, recommendation.magnitude, magnitudeAllowed)}`);
       lines.push(`        predicted_effect=${formatValue(recommendation.predicted_effect)}`);
     });
   } else {

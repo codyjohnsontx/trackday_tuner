@@ -1076,8 +1076,11 @@ the guard and the label cannot disagree about what a value is; everything else i
 refused, including a paraphrase that names the component back
 (`increase tire pressure`) and a direction curated for a different component.
 The accepted cost is a refusal on that paraphrase, which is the fail-safe
-direction. Nothing stored is re-checked, so no existing `ai_recommendations` row
-changes how it reads. The remaining containment matcher in that file is
+direction. Nothing stored is re-checked on screen, so no existing
+`ai_recommendations` row changes how it reads to a rider. The prompt is the
+exception: `formatStoredChangeValue` (`lib/rag/prompt.ts`) prints a stored
+direction or magnitude the policy now refuses as absent, so the model is never
+shown an old value it would be refused for copying. The remaining containment matcher in that file is
 `magnitudeAllowed`, and it is a different class: a magnitude is inherently a
 phrase, so there is no closed set to compare against.
 

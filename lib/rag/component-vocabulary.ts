@@ -169,7 +169,7 @@ function directionKey(value: string): string {
  * a live model might still produce, so the cost of this change is a refusal
  * there rather than bad advice. That cost is tracked, carrying the open question
  * of whether a live model actually emits the canonical strings at all; the echo
- * path below is filed against it as the next task. An ambiguous value carrying
+ * path that compounded it is closed, as recorded below. An ambiguous value carrying
  * two intents (`increase or decrease depending on grip`). A direction curated
  * for a DIFFERENT component: `tire_pressure` accepted `increase negative
  * camber` because that phrase contains `increase`, and `camber` accepted the
@@ -179,24 +179,24 @@ function directionKey(value: string): string {
  *
  * THE PARAPHRASE COST IS NOT QUITE SELF-LIMITING. A paraphrase the old
  * containment matcher accepted was persisted raw, and
- * `formatRaceEngineerContext` in `lib/rag/prompt.ts` prints stored directions
+ * `formatRaceEngineerContext` in `lib/rag/prompt.ts` printed stored directions
  * straight back into the prompt as `direction=<value>`, on the stated grounds
  * that the canonical identifier is the point (the wire half of the split
  * recorded on `formatComponentLabel` below) - WHICH IS FALSE FOR A STORED
- * PARAPHRASE, and that sentence is where the fix goes. A refused request writes
- * no row, because `persistRecommendation` returns before the insert, and
- * `save_session_outcome` only updates status, so nothing displaces a
- * `created_at`-ordered window: while refusals continue, the same paraphrase
- * keeps being echoed back. It is STICKY RATHER THAN SEALED - the model must
+ * PARAPHRASE. A refused request writes no row, because `persistRecommendation`
+ * returns before the insert, and `save_session_outcome` only updates status, so
+ * nothing displaces a `created_at`-ordered window: while refusals continued, the same paraphrase
+ * kept being echoed back. It is STICKY RATHER THAN SEALED - the model must
  * still choose to copy it while this same prompt tells it not to, and one
  * canonical response writes a newer row that pushes it down. It is bounded three
  * ways: to a single (`user_id`, `vehicle_id`); day-plan is untouched because
  * `recentRecommendations` is always empty there, so a working AI route always
  * remains; and `completed_refusal_unsupported_direction` is in neither
  * throttled-status list, so repeated refusals cannot escalate into a lockout.
- * The fix belongs in `prompt.ts` and is deliberately NOT on this branch, because
- * `formatRaceEngineerContext` is shared prompt output on BOTH AI routes and that
- * blast radius is out of scope here.
+ * It is closed in `prompt.ts` rather than here: `formatStoredChangeValue`
+ * echoes a stored direction only when this function accepts it for the row's
+ * component, and prints a paraphrase as absent. A stored magnitude is gated the
+ * same way through `magnitudeAllowed`.
  *
  * `magnitudeAllowed` below still matches its unit by containment, and that is
  * NOT the same class: a magnitude is inherently a phrase (`0.5 psi`), so there
