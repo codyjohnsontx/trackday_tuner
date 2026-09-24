@@ -285,7 +285,7 @@ is deliberately not among them: nothing in the app reads it, only
 
 | Piece | Answers | Catches R3? |
 | --- | --- | --- |
-| `/api/health` | Is Postgres reachable, does the RAG index load *in this bundle*, and does the Data API still expose the RPCs this code calls? | Yes, on the first deploy |
+| `/api/health` | Is Postgres reachable, does the RAG index load *in this bundle*, does the Data API still expose the RPCs this code calls, and has any retained rider question text outlived its 90 days? | Yes, on the first deploy |
 | `/api/monitoring/ai-health` | Has anything failed in the last hour? Error rate, p95 latency | Yes, on the first rider call |
 | `.github/workflows/monitoring.yml` | Runs both every 15 minutes and fails the run when either says no | This is what makes them alerts |
 | Sentry | The stack trace behind an individual failure | Yes - but only because handled errors are reported explicitly, see below |
