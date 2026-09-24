@@ -129,18 +129,20 @@ export async function checkSupabase(): Promise<HealthCheck> {
       .from('profiles')
       .select('id')
       .limit(1);
-    if (error) {
-      const wrapped = new Error(error.message);
-      // A PostgREST rejection carries a code (`42501` for a missing grant); a
-      // transport failure carries an empty one, so the suffix is dropped rather
-      // than printed as a bare colon. Either way the message itself stays out
-      // of the public body and goes to the log.
-      const code = error.code?.trim();
-      wrapped.name = code ? `SupabaseError:${code}` : 'SupabaseUnreachableError';
-      throw wrapped;
-    }
+    if (error) throw supabaseError(error);
     return undefined;
   });
+}
+
+function supabaseError(error: { message: string; code?: string }): Error {
+  const wrapped = new Error(error.message);
+  // A PostgREST rejection carries a code (`42501` for a missing grant); a
+  // transport failure carries an empty one, so the suffix is dropped rather
+  // than printed as a bare colon. Either way the message itself stays out
+  // of the public body and goes to the log.
+  const code = error.code?.trim();
+  wrapped.name = code ? `SupabaseError:${code}` : 'SupabaseUnreachableError';
+  return wrapped;
 }
 
 /**
@@ -280,12 +282,7 @@ function exactCount(
   table: string,
   { count, error }: { count: number | null; error: { message: string; code?: string } | null },
 ): number {
-  if (error) {
-    const wrapped = new Error(error.message);
-    const code = error.code?.trim();
-    wrapped.name = code ? `SupabaseError:${code}` : 'SupabaseUnreachableError';
-    throw wrapped;
-  }
+  if (error) throw supabaseError(error);
   if (count === null) {
     // Asked for an exact count and got none: the answer cannot say the
     // promise holds, so it does not get to say so.
