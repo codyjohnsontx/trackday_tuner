@@ -179,9 +179,17 @@ test.describe('retained AI question text', () => {
   });
 
   test.afterAll(async () => {
-    // Deleting the accounts cascades through user_id on both tables.
+    // Deleting the accounts cascades through user_id on both tables. Every
+    // deletion is attempted, and a failure is reported rather than thrown, so a
+    // leftover rider is visible without masking the assertion that failed.
+    const failures: string[] = [];
     for (const each of [rider, otherRider, optedOutRider, optInPendingRider, optedInRider]) {
-      if (each?.userId) await admin.auth.admin.deleteUser(each.userId);
+      if (!each?.userId) continue;
+      const { error } = await admin.auth.admin.deleteUser(each.userId);
+      if (error) failures.push(`${each.userId}: ${error.message}`);
+    }
+    if (failures.length > 0) {
+      console.warn(`ai-question-purge fixture cleanup failed: ${failures.join('; ')}`);
     }
   });
 
@@ -336,11 +344,15 @@ test.describe('retained AI question text', () => {
     const earlyDeadline = await seedRequest(admin, rider.userId, {
       createdAt: new Date(now - 60 * 1000),
       retainUntil: new Date(now - 1000),
+      preview: 'late apex understeer',
     });
 
     const { error } = await admin.rpc('purge_expired_ai_request_text');
     expect(error).toBeNull();
     expect(await textRow(admin, earlyDeadline)).toBeNull();
+    // The text goes by its own deadline, not by its age: the preview of the
+    // same recent request, from a rider who may keep text, stays.
+    expect(await preview(admin, earlyDeadline)).toBe('late apex understeer');
   });
 
   // The purge and the health check both trust retain_until, and the 90-day
