@@ -623,14 +623,20 @@ from information_schema.role_table_grants
 where table_schema = 'public' and table_name = 'ai_requests_unretainable_previews'
 group by grantee;
 
-select count(*) as previews_left from public.ai_requests where prompt_redacted_preview is not null;
+select count(*) as previews_left
+from public.ai_requests
+where prompt_redacted_preview is not null
+  and created_at < '<when you ran the block>'::timestamptz;
 ```
 
 Expect no `anon`, `authenticated` or `PUBLIC` row for the view (it lists request
 ids for the health check, and `service_role` is the only reader), and
-`previews_left` of `0`.
+`previews_left` of `0`. The time bound is there because the routes keep writing
+a preview on every AI request until capture gates that write, so any request
+since the block adds one; those are recent, and the next 04:17 UTC run clears
+them.
 
-With no preview left there is nothing for the first run to catch up on, so
+With no older preview left there is nothing for the first run to catch up on, so
 `curl -s https://<your-app>/api/health` after the deploy should list
 `{"name":"ai_text_retention","status":"ok",...,"detail":"0 overdue"}`.
 
