@@ -19,6 +19,8 @@
  *   is the Save Outcome outage: nothing applies migrations automatically, so the
  *   deployed code can be ahead of the deployed schema and only the one feature
  *   that needs the missing function says so - to the rider, as a lost save
+ * - no retained rider question text has outlived its 90 days
+ *   (`ai_text_retention`), which is the only proof the purge job runs
  *
  * `runHealthChecks` never throws. A health endpoint that 500s tells you only
  * that it 500'd; one that answers `503` with a named failing check tells you
@@ -204,6 +206,61 @@ export async function checkSchemaContract(): Promise<HealthCheck> {
   });
 }
 
+/**
+ * How far past its `retain_until` a row may be before the purge is called
+ * broken. The job runs once a day, so 36 hours is one missed run plus slack.
+ */
+export const AI_TEXT_RETENTION_GRACE_MS = 36 * 60 * 60 * 1000;
+
+/**
+ * The 90-day promise, checked by its effect rather than by its scheduler.
+ *
+ * Retained rider question text (`ai_request_text`) is deleted by a `pg_cron`
+ * job calling `purge_expired_ai_request_text()` once a day
+ * (20260924001700). Nothing about that job is visible from the app: a hosted
+ * project where it was never scheduled, or where it fails every night, looks
+ * exactly like one where it works, until a rider's text outlives the notice.
+ * So this asks the question the notice answers - is any row older than it is
+ * allowed to be? - which holds whichever trigger does the deleting, and would
+ * hold unchanged if the purge moved to Vercel Cron.
+ *
+ * The count is a number of rows, not their content, so it is safe in the
+ * public body. A missing table fails too, with its PostgREST code: the code
+ * expects a schema that is not there.
+ */
+export async function checkAiTextRetention(now: Date = new Date()): Promise<HealthCheck> {
+  return timed('ai_text_retention', async () => {
+    const admin = createAdminClient();
+    const cutoff = new Date(now.getTime() - AI_TEXT_RETENTION_GRACE_MS).toISOString();
+    // A GET for the same reason `checkSupabase` makes one: over HEAD a missing
+    // table reads as an empty, healthy answer.
+    const { count, error } = await admin
+      .from('ai_request_text')
+      .select('request_id', { count: 'exact' })
+      .lt('retain_until', cutoff)
+      .limit(1);
+    if (error) {
+      const wrapped = new Error(error.message);
+      const code = error.code?.trim();
+      wrapped.name = code ? `SupabaseError:${code}` : 'SupabaseUnreachableError';
+      throw wrapped;
+    }
+    if (count === null) {
+      // Asked for an exact count and got none: the answer cannot say the
+      // promise holds, so it does not get to say so.
+      const err = new Error('ai_request_text answered without a count.');
+      err.name = 'MissingCountError';
+      throw err;
+    }
+    if (count > 0) {
+      const err = new Error(`${count} ai_request_text rows are past retain_until by more than 36 hours.`);
+      err.name = `OverdueRetainedTextError:${count}`;
+      throw err;
+    }
+    return '0 overdue';
+  });
+}
+
 export function summarizeHealth(checks: HealthCheck[], checkedAt: Date): HealthReport {
   return {
     status: checks.some((check) => check.status === 'fail') ? 'unhealthy' : 'ok',
@@ -218,6 +275,11 @@ export function healthHttpStatus(report: HealthReport): 200 | 503 {
 }
 
 export async function runHealthChecks(now: Date = new Date()): Promise<HealthReport> {
-  const checks = await Promise.all([checkSupabase(), checkRagIndex(), checkSchemaContract()]);
+  const checks = await Promise.all([
+    checkSupabase(),
+    checkRagIndex(),
+    checkSchemaContract(),
+    checkAiTextRetention(now),
+  ]);
   return summarizeHealth(checks, now);
 }

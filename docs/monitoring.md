@@ -65,13 +65,14 @@ After the next production deploy:
 curl -i https://<your-app>/api/health
 ```
 
-Expect `HTTP/2 200` and a body naming three checks:
+Expect `HTTP/2 200` and a body naming four checks:
 
 ```json
 {"status":"ok","checked_at":"...","checks":[
   {"name":"supabase","status":"ok","duration_ms":10},
   {"name":"rag_index","status":"ok","duration_ms":8,"detail":"75 chunks"},
-  {"name":"schema_contract","status":"ok","duration_ms":12,"detail":"3 rpcs"}]}
+  {"name":"schema_contract","status":"ok","duration_ms":12,"detail":"3 rpcs"},
+  {"name":"ai_text_retention","status":"ok","duration_ms":9,"detail":"0 overdue"}]}
 ```
 
 Anything failing answers `503` and names the check, and **which check it is
@@ -94,6 +95,11 @@ decides what to do**:
   `DataApiUnreachableError` instead means no probe got an answer, so nothing
   was measured - expect `supabase` to be failing beside it.
 - `supabase` - the database did not answer at all.
+- `ai_text_retention` - retained rider question text has outlived its 90 days
+  by more than 36 hours, so the daily purge is not running and the privacy
+  notice is untrue right now. The detail carries the number of rows,
+  `OverdueRetainedTextError:<n>`. See "The `ai_text_retention` check" below.
+  `SupabaseError:PGRST205` instead means `20260924001700` was never applied.
 
 ### Step 2 - the 15-minute alert (no external account)
 
@@ -296,6 +302,31 @@ function is its own bundle - so `/api/health` has its own
 `tests/unit/rag-index-bundling.test.ts` walks the import graph of every API
 route and fails any that can reach `lib/rag/retriever` without one.
 
+#### The `ai_text_retention` check
+
+`ai_request_text` holds a rider's question text for 90 days, and a `pg_cron` job
+in the database (`purge-expired-ai-request-text`, 04:17 UTC daily) deletes it.
+Nothing about that job is visible from the app, so this check asks the question
+the notice answers instead: is any row more than 36 hours past its
+`retain_until`? One missed run is inside that grace; two are not. It reads a
+count and never a row, and it holds whichever trigger does the deleting - if the
+purge moves to Vercel Cron, this check does not change.
+
+On a failure, read the job's recent runs in the SQL editor:
+
+```sql
+select status, return_message, start_time
+from cron.job_run_details
+where jobid = (select jobid from cron.job where jobname = 'purge-expired-ai-request-text')
+order by start_time desc
+limit 5;
+```
+
+No rows means the job was never scheduled on this project - apply the block in
+`docs/beta-runbook.md` ("Apply the AI question-text table by hand"). A `failed`
+row carries the error. Either way `select public.purge_expired_ai_request_text();`
+run by hand clears what is overdue while the cause is fixed.
+
 #### The `schema_contract` check
 
 Nothing applies migrations automatically. `npm run db:push` is a person at a
@@ -497,7 +528,7 @@ add the `crons` entry to `vercel.json`, set `MONITORING_CRON_SECRET` in Vercel
   one Sentry event. So while a dependency is down, the volume is set by how
   often the endpoint is *called* rather than by the outage: the documented
   callers alone (the 15-minute workflow plus a 5-minute external monitor)
-  produce roughly 48 events an hour with all three checks failing, and anyone can
+  produce roughly 64 events an hour with all four checks failing, and anyone can
   raise that by looping the URL - during exactly the window Sentry's free tier
   needs to still be accepting events. Accepted because a health check that
   reports nothing defeats its own purpose, and it has to stay reachable by an

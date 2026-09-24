@@ -41,6 +41,10 @@ export const DEMO_PROFILE: Profile = {
   stripe_subscription_id: null,
   stripe_price_id: null,
   stripe_current_period_end: null,
+  ai_question_retention_notice_seen_at: null,
+  ai_question_retention_opted_out_at: null,
+  ai_question_retention_opted_in_at: null,
+  ai_question_retention_requires_opt_in: false,
 };
 
 export const DEMO_VEHICLES: Vehicle[] = [

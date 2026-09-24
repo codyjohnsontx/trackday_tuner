@@ -46,6 +46,9 @@
    Saving laps *and* logging a session are both down for that window -
    `createSession` calls the function even for a session with no laps - while
    reading is unaffected. Each migration's own header carries the detail.
+   `20260924001700` (retained AI question text and its 90-day purge) also goes
+   in by hand on a project with no migration history, and also before the
+   release that ships it - see "Apply the AI question-text table by hand" below.
 2. Set `BETA_INVITE_ONLY=true`, a long random `BETA_INVITE_SECRET`, and a distinct
    `BETA_FORM_RATE_LIMIT_SECRET` in the deployment environment.
 3. Deploy and verify the public home page, waitlist, invitation signup, session
@@ -405,6 +408,183 @@ alter default privileges in schema public
   grant select, insert, update, delete on tables to authenticated;
 alter default privileges in schema public
   grant usage, select, update on sequences to authenticated;
+commit;
+```
+
+### Apply the AI question-text table by hand on a project with no migration history
+
+`20260924001700` creates `ai_request_text`, where the text of a rider's Race
+Engineer question (and a Morning Plan's track name and conditions) will be kept
+for 90 days so it can be replayed through new versions of the guards. It also
+schedules the daily `pg_cron` job that deletes that text on time, adds the
+four `profiles` columns that record whether a rider's text may be kept, and adds
+`ai_requests.app_commit`. **Nothing writes the table yet**: the notice and the
+rider's controls ship before capture does. The hosted project has no CLI history,
+so this block is how it gets there, and the owner runs it.
+
+Apply it **before** merging the pull request that ships it. That release adds
+the `ai_text_retention` check to `/api/health`, which reads the table and
+answers `503` with `SupabaseError:PGRST205` on a database without it.
+
+Two things change on hosted the first time the job runs, both decided by the
+owner on 2026-09-24 and both intended: every `ai_requests.prompt_redacted_preview`
+older than 90 days is nulled (the preview is question text too, and the notice
+promises 90 days for every copy), and so is each one after, as it turns 90 days
+old. The `ai_requests` rows, their fingerprints and verdicts are kept.
+
+**1. Confirm the project can take it.**
+
+```sql
+select
+  to_regclass('public.ai_requests') is not null as has_ai_requests,
+  exists (select 1 from information_schema.columns
+          where table_schema = 'public' and table_name = 'ai_requests'
+            and column_name = 'prompt_redacted_preview') as has_preview,
+  exists (select 1 from pg_available_extensions where name = 'pg_cron')
+    as pg_cron_available;
+```
+
+Expect `true` three times. A `false` in either of the first two is a missing
+earlier migration - run the audit (`scripts/sql/audit-migrations-against-database.sql`)
+and stop. `pg_cron_available` false means the purge cannot live in the database
+on this project, and the owner's fallback is a daily Vercel Cron calling the same
+function; that is not built yet, so stop and say so rather than applying the
+table without its purge.
+
+**2. Run this block, whole, in the SQL editor.** It is
+`supabase/migrations/20260924001700_add_ai_request_text.sql` with its comments
+removed, in the order that file runs, inside a transaction so an error anywhere
+applies nothing. `tests/unit/hosted-ai-request-text-runbook.test.ts` fails if the
+two ever differ. The migration revokes before it grants because this project
+still carries Supabase's legacy defaults, which hand a new table to `anon` and
+`authenticated` with `grant all`.
+
+```sql
+-- hosted-ai-request-text: mirror of supabase/migrations/20260924001700_add_ai_request_text.sql
+begin;
+create table if not exists public.ai_request_text (
+  request_id text primary key
+    references public.ai_requests(request_id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  route text not null check (route in ('tuning_advice', 'day_plan')),
+  submitted jsonb not null check (jsonb_typeof(submitted) = 'object'),
+  redaction_version smallint not null,
+  created_at timestamptz not null default now(),
+  retain_until timestamptz not null default now() + interval '90 days'
+);
+create index if not exists ai_request_text_user_created_idx
+  on public.ai_request_text(user_id, created_at desc);
+create index if not exists ai_request_text_retain_until_idx
+  on public.ai_request_text(retain_until);
+alter table public.ai_request_text enable row level security;
+create policy "ai_request_text: select own"
+  on public.ai_request_text for select
+  using (auth.uid() = user_id);
+create policy "ai_request_text: delete own"
+  on public.ai_request_text for delete
+  using (auth.uid() = user_id);
+revoke all on public.ai_request_text from public, anon, authenticated;
+grant select, delete on public.ai_request_text to authenticated;
+alter table public.ai_requests
+  add column if not exists app_commit text;
+alter table public.profiles
+  add column if not exists ai_question_retention_notice_seen_at timestamptz,
+  add column if not exists ai_question_retention_opted_out_at timestamptz,
+  add column if not exists ai_question_retention_opted_in_at timestamptz,
+  add column if not exists ai_question_retention_requires_opt_in boolean not null default false;
+create or replace function public.purge_expired_ai_request_text()
+returns integer
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  removed integer;
+begin
+  delete from public.ai_request_text where retain_until < now();
+  get diagnostics removed = row_count;
+  update public.ai_requests
+     set prompt_redacted_preview = null
+   where prompt_redacted_preview is not null
+     and created_at < now() - interval '90 days';
+  return removed;
+end;
+$$;
+revoke all on function public.purge_expired_ai_request_text() from public, anon, authenticated;
+grant execute on function public.purge_expired_ai_request_text() to service_role;
+create extension if not exists pg_cron with schema pg_catalog;
+grant usage on schema cron to postgres;
+select cron.schedule(
+  'purge-expired-ai-request-text',
+  '17 4 * * *',
+  $$select public.purge_expired_ai_request_text()$$
+);
+commit;
+```
+
+**3. Verify.**
+
+```sql
+select jobname, schedule, command, active
+from cron.job
+where jobname = 'purge-expired-ai-request-text';
+```
+
+Expect one row, `17 4 * * *`, active.
+
+```sql
+select grantee, string_agg(privilege_type, ', ' order by privilege_type) as privileges
+from information_schema.role_table_grants
+where table_schema = 'public' and table_name = 'ai_request_text'
+  and grantee in ('anon', 'authenticated', 'PUBLIC')
+group by grantee;
+```
+
+Expect exactly one row: `authenticated | DELETE, SELECT`. Anything else - an
+`anon` row, or `INSERT` or `UPDATE` for `authenticated` - means a rider can
+plant text or keep it past 90 days by moving `retain_until`; stop.
+
+```sql
+select
+  has_function_privilege('anon', 'public.purge_expired_ai_request_text()', 'execute') as anon_can_purge,
+  has_function_privilege('authenticated', 'public.purge_expired_ai_request_text()', 'execute') as rider_can_purge;
+```
+
+Expect `false`, `false`.
+
+Then `curl -s https://<your-app>/api/health` after the deploy should list
+`{"name":"ai_text_retention","status":"ok",...,"detail":"0 overdue"}`.
+
+**4. The day after, read whether the job ran.** Nothing in the app can tell you
+the job fired until a row is 36 hours overdue, which is 90 days away:
+
+```sql
+select status, return_message, start_time
+from cron.job_run_details
+where jobid = (select jobid from cron.job where jobname = 'purge-expired-ai-request-text')
+order by start_time desc
+limit 5;
+```
+
+Expect a `succeeded` row from 04:17 UTC.
+
+**5. Rollback, only before any rider's choice or text has been stored.** It
+drops the table and the four consent columns, so once the settings screen or
+capture has shipped it destroys records a rider made. Until then nothing writes
+any of it.
+
+```sql
+-- hosted-ai-request-text-rollback: only before the notice and controls ship
+begin;
+select cron.unschedule('purge-expired-ai-request-text');
+drop function if exists public.purge_expired_ai_request_text();
+drop table if exists public.ai_request_text;
+alter table public.profiles
+  drop column if exists ai_question_retention_notice_seen_at,
+  drop column if exists ai_question_retention_opted_out_at,
+  drop column if exists ai_question_retention_opted_in_at,
+  drop column if exists ai_question_retention_requires_opt_in;
+alter table public.ai_requests drop column if exists app_commit;
 commit;
 ```
 

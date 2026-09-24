@@ -263,6 +263,19 @@ renders its own photos and the rule is not a second copy of the URL. It once nam
 passed, because nothing looked at the card. Seeded tracks are a migration too -
 see "A circuit is an identity" under "What a Rider Told You".
 
+**Retained AI question text (`ai_request_text`, 20260924001700) is the one table a
+rider may DELETE and must never UPDATE or INSERT.** Deleting is the rider's control
+over their own text; UPDATE would let them move `retain_until` past the 90 days the
+notice promises, and INSERT would plant text a verdict appears to answer. It is kept
+apart from `ai_requests` because that table is the rate limit, and a rider must never
+delete those rows. `tests/unit/migrations-bootstrap.test.ts` fails any grant wider than
+`select, delete` to `authenticated`, and any at all to `anon` or `public`. The migration
+revokes before it grants because hosted still carries the legacy `grant all` defaults.
+A daily `pg_cron` job purges it, and `/api/health`'s `ai_text_retention` check is what
+proves the job runs. The four `profiles.ai_question_retention_*` columns decide
+whether text may be kept at all, and the rule is written once, in that migration's
+header.
+
 Functions are deliberately *not* granted schema-wide. RLS contains a table; it does
 not contain a `security definer` function, which runs as its owner and bypasses
 every policy, so for a function the grant *is* the access control. Execute belongs

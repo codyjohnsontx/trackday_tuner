@@ -12,7 +12,13 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient }));
 // which does not resolve in the node-environment unit suite.
 vi.mock('@/lib/rag/retriever', () => ({ loadKnowledgeIndex, isKnowledgeIndexLoaded }));
 
-import { HEALTH_CHECK_TIMEOUT_MS, checkRagIndex, checkSupabase } from '@/lib/monitoring/health';
+import {
+  AI_TEXT_RETENTION_GRACE_MS,
+  HEALTH_CHECK_TIMEOUT_MS,
+  checkAiTextRetention,
+  checkRagIndex,
+  checkSupabase,
+} from '@/lib/monitoring/health';
 
 /**
  * A stub PostgREST, driven through the real `@supabase/supabase-js` client so
@@ -120,6 +126,98 @@ describe('checkSupabase', () => {
 
     expect(JSON.stringify(check)).not.toContain('permission denied');
     expect(console.error).toHaveBeenCalled();
+  });
+});
+
+/**
+ * A stub PostgREST that also answers the exact count, which PostgREST reports in
+ * `Content-Range` (`0-0/3`, or a star over 0 for none) and `postgrest-js` parses into
+ * `count`. `contentRange: null` sends no header, so the client reads no count.
+ */
+function stubCountingPostgrest(status: number, payload: unknown, contentRange: string | null) {
+  const requests: { method: string; url: string; prefer: string | null }[] = [];
+  const fetchStub = (async (input: unknown, init?: RequestInit) => {
+    const method = (init?.method ?? 'GET').toUpperCase();
+    requests.push({ method, url: String(input), prefer: new Headers(init?.headers).get('prefer') });
+    const headers: Record<string, string> = { 'content-type': 'application/json; charset=utf-8' };
+    if (contentRange !== null) headers['content-range'] = contentRange;
+    return new Response(method === 'HEAD' ? null : JSON.stringify(payload), { status, headers });
+  }) as unknown as typeof fetch;
+
+  createAdminClient.mockReturnValue(
+    createClient('http://postgrest.stub', 'service-role-key', {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch: fetchStub },
+    }),
+  );
+  return requests;
+}
+
+describe('checkAiTextRetention', () => {
+  const now = new Date('2026-12-01T12:00:00.000Z');
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('passes when no retained text is overdue, asking only about rows 36 hours past retain_until', async () => {
+    const requests = stubCountingPostgrest(200, [], '*/0');
+
+    const check = await checkAiTextRetention(now);
+
+    expect(check.status).toBe('ok');
+    expect(check.detail).toBe('0 overdue');
+    expect(requests).toHaveLength(1);
+    expect(requests[0].method).toBe('GET');
+    expect(requests[0].prefer).toContain('count=exact');
+    const url = new URL(requests[0].url);
+    expect(url.pathname).toBe('/rest/v1/ai_request_text');
+    const cutoff = new Date(now.getTime() - AI_TEXT_RETENTION_GRACE_MS).toISOString();
+    expect(url.searchParams.get('retain_until')).toBe(`lt.${cutoff}`);
+    expect(cutoff).toBe('2026-11-30T00:00:00.000Z');
+  });
+
+  // The purge not running is the failure this exists to report. The count is a
+  // number of rows, never their text, so it may be named in the public body.
+  it('fails naming the count when rows have outlived the grace', async () => {
+    stubCountingPostgrest(200, [{ request_id: 'req-1' }], '0-0/3');
+
+    const check = await checkAiTextRetention(now);
+
+    expect(check.status).toBe('fail');
+    expect(check.detail).toBe('OverdueRetainedTextError:3');
+  });
+
+  // A project that never got 20260924001700 holds no text, but the code expects
+  // a table that is not there, and saying "healthy" would hide that.
+  it('fails with the PostgREST code when the table is missing', async () => {
+    stubCountingPostgrest(
+      404,
+      {
+        code: 'PGRST205',
+        details: null,
+        hint: null,
+        message: "Could not find the table 'public.ai_request_text' in the schema cache",
+      },
+      null,
+    );
+
+    const check = await checkAiTextRetention(now);
+
+    expect(check.status).toBe('fail');
+    expect(check.detail).toBe('SupabaseError:PGRST205');
+    expect(JSON.stringify(check)).not.toContain('schema cache');
+  });
+
+  // An answer with no count measured nothing, so it cannot say the promise holds.
+  it('fails when the answer carries no count', async () => {
+    stubCountingPostgrest(200, [], null);
+
+    const check = await checkAiTextRetention(now);
+
+    expect(check.status).toBe('fail');
+    expect(check.detail).toBe('MissingCountError');
   });
 });
 
