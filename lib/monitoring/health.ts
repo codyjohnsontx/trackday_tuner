@@ -19,8 +19,8 @@
  *   is the Save Outcome outage: nothing applies migrations automatically, so the
  *   deployed code can be ahead of the deployed schema and only the one feature
  *   that needs the missing function says so - to the rider, as a lost save
- * - no retained rider question text has outlived its 90 days
- *   (`ai_text_retention`), which is the only proof the purge job runs
+ * - no retained rider question text, and no `ai_requests` preview, has outlived
+ *   its 90 days (`ai_text_retention`), which is the only proof the purge job runs
  *
  * `runHealthChecks` never throws. A health endpoint that 500s tells you only
  * that it 500'd; one that answers `503` with a named failing check tells you
@@ -214,6 +214,9 @@ export async function checkSchemaContract(): Promise<HealthCheck> {
  */
 export const AI_TEXT_RETENTION_GRACE_MS = 36 * 60 * 60 * 1000;
 
+/** How long `ai_requests.prompt_redacted_preview` is kept before the purge nulls it. */
+export const AI_PREVIEW_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+
 /**
  * The 90-day promise, checked by its effect rather than by its scheduler.
  *
@@ -222,6 +225,9 @@ export const AI_TEXT_RETENTION_GRACE_MS = 36 * 60 * 60 * 1000;
  * (20260924001700). Nothing about that job is visible from the app: a hosted
  * project where it was never scheduled, or where it fails every night, looks
  * exactly like one where it works, until a rider's text outlives the notice.
+ * The same job nulls the 140-character `ai_requests.prompt_redacted_preview`
+ * after 90 days, and that half acts on rows every AI request writes today, so
+ * it is counted too.
  * So this asks the question the notice answers - is any row older than it is
  * allowed to be? - which holds whichever trigger does the deleting, and would
  * hold unchanged if the purge moved to Vercel Cron.
@@ -233,34 +239,61 @@ export const AI_TEXT_RETENTION_GRACE_MS = 36 * 60 * 60 * 1000;
 export async function checkAiTextRetention(now: Date = new Date()): Promise<HealthCheck> {
   return timed('ai_text_retention', async () => {
     const admin = createAdminClient();
-    const cutoff = new Date(now.getTime() - AI_TEXT_RETENTION_GRACE_MS).toISOString();
+    const textCutoff = new Date(now.getTime() - AI_TEXT_RETENTION_GRACE_MS).toISOString();
+    const previewCutoff = new Date(
+      now.getTime() - AI_PREVIEW_RETENTION_MS - AI_TEXT_RETENTION_GRACE_MS,
+    ).toISOString();
     // A GET for the same reason `checkSupabase` makes one: over HEAD a missing
     // table reads as an empty, healthy answer.
-    const { count, error } = await admin
-      .from('ai_request_text')
-      .select('request_id', { count: 'exact' })
-      .lt('retain_until', cutoff)
-      .limit(1);
-    if (error) {
-      const wrapped = new Error(error.message);
-      const code = error.code?.trim();
-      wrapped.name = code ? `SupabaseError:${code}` : 'SupabaseUnreachableError';
-      throw wrapped;
-    }
-    if (count === null) {
-      // Asked for an exact count and got none: the answer cannot say the
-      // promise holds, so it does not get to say so.
-      const err = new Error('ai_request_text answered without a count.');
-      err.name = 'MissingCountError';
+    const [text, previews] = await Promise.all([
+      admin
+        .from('ai_request_text')
+        .select('request_id', { count: 'exact' })
+        .lt('retain_until', textCutoff)
+        .limit(1),
+      admin
+        .from('ai_requests')
+        .select('request_id', { count: 'exact' })
+        .not('prompt_redacted_preview', 'is', null)
+        .lt('created_at', previewCutoff)
+        .limit(1),
+    ]);
+    const overdueText = exactCount('ai_request_text', text);
+    const overduePreviews = exactCount('ai_requests', previews);
+    if (overdueText > 0) {
+      const err = new Error(`${overdueText} ai_request_text rows are past retain_until by more than 36 hours.`);
+      err.name = `OverdueRetainedTextError:${overdueText}`;
       throw err;
     }
-    if (count > 0) {
-      const err = new Error(`${count} ai_request_text rows are past retain_until by more than 36 hours.`);
-      err.name = `OverdueRetainedTextError:${count}`;
+    if (overduePreviews > 0) {
+      const err = new Error(
+        `${overduePreviews} ai_requests rows keep a prompt_redacted_preview more than 90 days and 36 hours old.`,
+      );
+      err.name = `OverduePreviewError:${overduePreviews}`;
       throw err;
     }
     return '0 overdue';
   });
+}
+
+function exactCount(
+  table: string,
+  { count, error }: { count: number | null; error: { message: string; code?: string } | null },
+): number {
+  if (error) {
+    const wrapped = new Error(error.message);
+    const code = error.code?.trim();
+    wrapped.name = code ? `SupabaseError:${code}` : 'SupabaseUnreachableError';
+    throw wrapped;
+  }
+  if (count === null) {
+    // Asked for an exact count and got none: the answer cannot say the
+    // promise holds, so it does not get to say so.
+    const err = new Error(`${table} answered without a count.`);
+    err.name = 'MissingCountError';
+    throw err;
+  }
+  return count;
 }
 
 export function summarizeHealth(checks: HealthCheck[], checkedAt: Date): HealthReport {

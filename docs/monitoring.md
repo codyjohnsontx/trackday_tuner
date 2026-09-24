@@ -95,10 +95,12 @@ decides what to do**:
   `DataApiUnreachableError` instead means no probe got an answer, so nothing
   was measured - expect `supabase` to be failing beside it.
 - `supabase` - the database did not answer at all.
-- `ai_text_retention` - retained rider question text has outlived its 90 days
-  by more than 36 hours, so the daily purge is not running and the privacy
-  notice is untrue right now. The detail carries the number of rows,
-  `OverdueRetainedTextError:<n>`. See "The `ai_text_retention` check" below.
+- `ai_text_retention` - retained rider question text, or an
+  `ai_requests.prompt_redacted_preview`, has outlived its 90 days by more than
+  36 hours, so the daily purge is not running and the privacy notice is untrue
+  right now. The detail carries the number of rows,
+  `OverdueRetainedTextError:<n>` for text and `OverduePreviewError:<n>` for
+  previews. See "The `ai_text_retention` check" below.
   `SupabaseError:PGRST205` instead means `20260924001700` was never applied.
 
 ### Step 2 - the 15-minute alert (no external account)
@@ -306,13 +308,16 @@ route and fails any that can reach `lib/rag/retriever` without one.
 
 `ai_request_text` holds a rider's question text for 90 days, and a `pg_cron` job
 in the database (`purge-expired-ai-request-text`, 04:17 UTC daily) deletes it.
-Nothing about that job is visible from the app, so this check asks the question
-the notice answers instead: is any row more than 36 hours past its
-`retain_until`? A row already waits up to 24 hours for the next run, so the
-grace absorbs a run up to 12 hours late, and a single missed run can trip it
-when a row expired in the 12 hours after the last run. It reads a
-count and never a row, and it holds whichever trigger does the deleting - if the
-purge moves to Vercel Cron, this check does not change.
+The same job nulls `ai_requests.prompt_redacted_preview` once its request is 90
+days old. Nothing about that job is visible from the app, so this check asks the
+question the notice answers instead, of both copies: is any text row more than
+36 hours past its `retain_until`, and is any preview still held more than 36
+hours past its 90 days? Nothing writes `ai_request_text` yet, so today the
+previews are what prove the job runs. A row already waits up to 24 hours for
+the next run, so the grace absorbs a run up to 12 hours late, and a single
+missed run can trip it when a row expired in the 12 hours after the last run.
+It reads two counts and never a row, and it holds whichever trigger does the
+deleting - if the purge moves to Vercel Cron, this check does not change.
 
 On a failure, read the job's recent runs in the SQL editor:
 

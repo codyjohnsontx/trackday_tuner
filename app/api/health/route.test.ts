@@ -40,10 +40,12 @@ function supabaseReturning(
   },
 ) {
   // `count` answers the `ai_text_retention` check, which filters on
-  // `retain_until` before its limit; zero overdue rows is a healthy purge.
+  // `retain_until`, or on a non-null preview and `created_at`, before its
+  // limit; zero overdue rows is a healthy purge.
   const limit = vi.fn().mockResolvedValue({ count: 0, ...result });
   const lt = vi.fn(() => ({ limit }));
-  const select = vi.fn(() => ({ limit, lt }));
+  const not = vi.fn(() => ({ lt }));
+  const select = vi.fn(() => ({ limit, lt, not }));
   const from = vi.fn(() => ({ select }));
   const rpc = vi.fn().mockResolvedValue(rpcResult);
   return { from, select, limit, rpc };

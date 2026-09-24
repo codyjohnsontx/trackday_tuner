@@ -133,12 +133,23 @@ describe('checkSupabase', () => {
  * A stub PostgREST that also answers the exact count, which PostgREST reports in
  * `Content-Range` (`0-0/3`, or a star over 0 for none) and `postgrest-js` parses into
  * `count`. `contentRange: null` sends no header, so the client reads no count.
+ * Answers are per table; a table not named answers an empty, zero count.
  */
-function stubCountingPostgrest(status: number, payload: unknown, contentRange: string | null) {
+interface CountingAnswer {
+  status: number;
+  payload: unknown;
+  contentRange: string | null;
+}
+
+const NONE_OVERDUE: CountingAnswer = { status: 200, payload: [], contentRange: '*/0' };
+
+function stubCountingPostgrest(byTable: Record<string, CountingAnswer>) {
   const requests: { method: string; url: string; prefer: string | null }[] = [];
   const fetchStub = (async (input: unknown, init?: RequestInit) => {
     const method = (init?.method ?? 'GET').toUpperCase();
     requests.push({ method, url: String(input), prefer: new Headers(init?.headers).get('prefer') });
+    const table = new URL(String(input)).pathname.replace('/rest/v1/', '');
+    const { status, payload, contentRange } = byTable[table] ?? NONE_OVERDUE;
     const headers: Record<string, string> = { 'content-type': 'application/json; charset=utf-8' };
     if (contentRange !== null) headers['content-range'] = contentRange;
     return new Response(method === 'HEAD' ? null : JSON.stringify(payload), { status, headers });
@@ -153,6 +164,12 @@ function stubCountingPostgrest(status: number, payload: unknown, contentRange: s
   return requests;
 }
 
+function requestTo(requests: { method: string; url: string; prefer: string | null }[], table: string) {
+  const found = requests.find((request) => new URL(request.url).pathname === `/rest/v1/${table}`);
+  if (!found) throw new Error(`No request to ${table} in ${JSON.stringify(requests)}`);
+  return { ...found, url: new URL(found.url) };
+}
+
 describe('checkAiTextRetention', () => {
   const now = new Date('2026-12-01T12:00:00.000Z');
 
@@ -162,26 +179,39 @@ describe('checkAiTextRetention', () => {
   });
 
   it('passes when no retained text is overdue, asking only about rows 36 hours past retain_until', async () => {
-    const requests = stubCountingPostgrest(200, [], '*/0');
+    const requests = stubCountingPostgrest({});
 
     const check = await checkAiTextRetention(now);
 
     expect(check.status).toBe('ok');
     expect(check.detail).toBe('0 overdue');
-    expect(requests).toHaveLength(1);
-    expect(requests[0].method).toBe('GET');
-    expect(requests[0].prefer).toContain('count=exact');
-    const url = new URL(requests[0].url);
-    expect(url.pathname).toBe('/rest/v1/ai_request_text');
+    const text = requestTo(requests, 'ai_request_text');
+    expect(text.method).toBe('GET');
+    expect(text.prefer).toContain('count=exact');
     const cutoff = new Date(now.getTime() - AI_TEXT_RETENTION_GRACE_MS).toISOString();
-    expect(url.searchParams.get('retain_until')).toBe(`lt.${cutoff}`);
+    expect(text.url.searchParams.get('retain_until')).toBe(`lt.${cutoff}`);
     expect(cutoff).toBe('2026-11-30T00:00:00.000Z');
+  });
+
+  it('asks only about previews still held 90 days and 36 hours after their request', async () => {
+    const requests = stubCountingPostgrest({});
+
+    const check = await checkAiTextRetention(now);
+
+    expect(check.status).toBe('ok');
+    const previews = requestTo(requests, 'ai_requests');
+    expect(previews.method).toBe('GET');
+    expect(previews.prefer).toContain('count=exact');
+    expect(previews.url.searchParams.get('prompt_redacted_preview')).toBe('not.is.null');
+    expect(previews.url.searchParams.get('created_at')).toBe('lt.2026-09-01T00:00:00.000Z');
   });
 
   // The purge not running is the failure this exists to report. The count is a
   // number of rows, never their text, so it may be named in the public body.
   it('fails naming the count when rows have outlived the grace', async () => {
-    stubCountingPostgrest(200, [{ request_id: 'req-1' }], '0-0/3');
+    stubCountingPostgrest({
+      ai_request_text: { status: 200, payload: [{ request_id: 'req-1' }], contentRange: '0-0/3' },
+    });
 
     const check = await checkAiTextRetention(now);
 
@@ -189,19 +219,55 @@ describe('checkAiTextRetention', () => {
     expect(check.detail).toBe('OverdueRetainedTextError:3');
   });
 
+  // Nothing writes ai_request_text yet, so until it does the previews are the
+  // only rows that show whether the job runs at all.
+  it('fails naming the count when previews have outlived the grace', async () => {
+    stubCountingPostgrest({
+      ai_requests: {
+        status: 200,
+        payload: [{ request_id: 'req-1' }],
+        contentRange: '0-0/5',
+      },
+    });
+
+    const check = await checkAiTextRetention(now);
+
+    expect(check.status).toBe('fail');
+    expect(check.detail).toBe('OverduePreviewError:5');
+    expect(JSON.stringify(check)).not.toContain('req-1');
+  });
+
+  it('fails with the PostgREST code when the previews cannot be read', async () => {
+    stubCountingPostgrest({
+      ai_requests: {
+        status: 403,
+        payload: { code: '42501', details: null, hint: null, message: 'permission denied for table ai_requests' },
+        contentRange: null,
+      },
+    });
+
+    const check = await checkAiTextRetention(now);
+
+    expect(check.status).toBe('fail');
+    expect(check.detail).toBe('SupabaseError:42501');
+    expect(JSON.stringify(check)).not.toContain('permission denied');
+  });
+
   // A project that never got 20260924001700 holds no text, but the code expects
   // a table that is not there, and saying "healthy" would hide that.
   it('fails with the PostgREST code when the table is missing', async () => {
-    stubCountingPostgrest(
-      404,
-      {
-        code: 'PGRST205',
-        details: null,
-        hint: null,
-        message: "Could not find the table 'public.ai_request_text' in the schema cache",
+    stubCountingPostgrest({
+      ai_request_text: {
+        status: 404,
+        payload: {
+          code: 'PGRST205',
+          details: null,
+          hint: null,
+          message: "Could not find the table 'public.ai_request_text' in the schema cache",
+        },
+        contentRange: null,
       },
-      null,
-    );
+    });
 
     const check = await checkAiTextRetention(now);
 
@@ -212,7 +278,7 @@ describe('checkAiTextRetention', () => {
 
   // An answer with no count measured nothing, so it cannot say the promise holds.
   it('fails when the answer carries no count', async () => {
-    stubCountingPostgrest(200, [], null);
+    stubCountingPostgrest({ ai_request_text: { status: 200, payload: [], contentRange: null } });
 
     const check = await checkAiTextRetention(now);
 

@@ -552,11 +552,23 @@ select
 
 Expect `false`, `false`.
 
-Then `curl -s https://<your-app>/api/health` after the deploy should list
+Then run the purge once by hand, so the previews already older than 90 days are
+nulled now rather than at the first 04:17 UTC run:
+
+```sql
+select public.purge_expired_ai_request_text();
+```
+
+Without it the `ai_text_retention` check fails from the deploy until that run,
+with `OverduePreviewError:<n>`, because it counts every preview still held more
+than 36 hours past its 90 days. After it, `curl -s https://<your-app>/api/health`
+after the deploy should list
 `{"name":"ai_text_retention","status":"ok",...,"detail":"0 overdue"}`.
 
-**4. The day after, read whether the job ran.** Nothing in the app can tell you
-the job fired until a row is 36 hours overdue, which is 90 days away:
+**4. The day after, read whether the job ran.** `/api/health` notices a job that
+never fires once a preview it should have nulled is 36 hours overdue, which on a
+project serving AI requests every day is within a day or two. Reading the runs
+answers sooner:
 
 ```sql
 select status, return_message, start_time
