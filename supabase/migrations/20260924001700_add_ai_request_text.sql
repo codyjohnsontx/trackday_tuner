@@ -133,10 +133,12 @@ alter table public.ai_requests
 --
 -- The rule, which the view below states once in SQL: a rider's text is kept
 -- only when notice_seen_at is set, opted_out_at is null, and either
--- requires_opt_in is false or opted_in_at is set. A rider with no profiles row
--- meets none of it, so nothing of theirs is kept. Turning the switch on sets
--- opted_in_at and clears opted_out_at; turning it off does the reverse and
--- deletes what is held.
+-- requires_opt_in is false or opted_in_at is set. Consent is judged as of when
+-- the text was written, not when it is checked: text written before the notice
+-- was seen, or before the latest opt-in, is never kept, even once the rider has
+-- since agreed. A rider with no profiles row meets none of it, so nothing of
+-- theirs is kept. Turning the switch on sets opted_in_at and clears
+-- opted_out_at; turning it off does the reverse and deletes what is held.
 --
 -- Every column is written by a server action through the service client.
 -- authenticated keeps SELECT only on profiles (20260719001100), and these are
@@ -169,6 +171,8 @@ select r.request_id, r.created_at
         and p.ai_question_retention_opted_out_at is null
         and (not p.ai_question_retention_requires_opt_in
              or p.ai_question_retention_opted_in_at is not null)
+        and r.created_at >= greatest(p.ai_question_retention_notice_seen_at,
+                                     p.ai_question_retention_opted_in_at)
    );
 
 revoke all on public.ai_requests_unretainable_previews from public, anon, authenticated;

@@ -329,7 +329,8 @@ the next run, so the grace absorbs a run up to 12 hours late, and a single
 missed run can trip it when a row expired in the 12 hours after the last run.
 The job also nulls every preview of a rider whose text may not be kept - one
 who has not seen the retention notice, has opted out, or started with keeping
-off and has not opted in; the routes still write one for every request until
+off and has not opted in, judged as of when the preview was written, so one
+from before the notice or the latest opt-in counts too; the routes still write one for every request until
 capture gates that write, so a third count asks whether any such preview is
 more than 36 hours old. It reads them through the
 `ai_requests_unretainable_previews` view, which is the one place that rule is

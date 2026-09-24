@@ -438,7 +438,9 @@ recent operational preview data (`npm run ai:requests` prints `-` for them). The
 After that, the daily job keeps both rules: it nulls every preview older than 90
 days, and every preview of a rider whose text may not be kept - one who has not
 seen the notice, has opted out, or signed up where keeping starts off and has
-not opted in. The `ai_requests_unretainable_previews` view is the one place that
+not opted in. Consent is judged as of when the preview was written, so a preview
+from before the rider saw the notice, or before their latest opt-in, goes too.
+The `ai_requests_unretainable_previews` view is the one place that
 rule is written, and the block's own clear, the job and `/api/health` all read
 it. The routes still write a preview for every request until the capture change
 gates that write, so until it ships a new preview of such a rider lives until
@@ -543,6 +545,8 @@ select r.request_id, r.created_at
         and p.ai_question_retention_opted_out_at is null
         and (not p.ai_question_retention_requires_opt_in
              or p.ai_question_retention_opted_in_at is not null)
+        and r.created_at >= greatest(p.ai_question_retention_notice_seen_at,
+                                     p.ai_question_retention_opted_in_at)
    );
 revoke all on public.ai_requests_unretainable_previews from public, anon, authenticated;
 grant select on public.ai_requests_unretainable_previews to service_role;

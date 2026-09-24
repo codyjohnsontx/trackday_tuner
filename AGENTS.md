@@ -277,7 +277,9 @@ foreign key to `ai_requests(request_id, user_id)`, and `retain_until` is capped 
 a before-insert trigger pins `created_at` to the insert time so no writer can date a
 row ahead. The 140-character `ai_requests.prompt_redacted_preview` follows the same
 keep rule as the text: the migration nulled every existing one, and the purge nulls
-any preview whose rider's text may not be kept. The rule is written in SQL once, as
+any preview whose rider's text may not be kept, with consent judged as of when the
+preview was written, so one from before the notice or the latest opt-in goes too.
+The rule is written in SQL once, as
 the `ai_requests_unretainable_previews` view, which that clear, the purge and
 `/api/health` all read.
 A daily `pg_cron` job purges it, and `/api/health`'s `ai_text_retention` check is what

@@ -160,7 +160,8 @@ test.describe('retained AI question text', () => {
     // the default, so their text may be kept; `otherRider` has not seen it.
     // `optedOutRider` saw it and turned keeping off. The last two started with
     // keeping off, as EU and UK signups do: one has not turned it on, one has.
-    const seen = new Date().toISOString();
+    // Consent is dated a week back so the previews the tests seed come after it.
+    const seen = new Date(Date.now() - 7 * DAY_MS).toISOString();
     await recordConsent(rider.userId, { ai_question_retention_notice_seen_at: seen });
     await recordConsent(optedOutRider.userId, {
       ai_question_retention_notice_seen_at: seen,
@@ -249,6 +250,78 @@ test.describe('retained AI question text', () => {
     expect(await preview(admin, cleared.optInPending)).toBeNull();
     expect(await preview(admin, kept.retaining)).toBe('kept by default');
     expect(await preview(admin, kept.optedIn)).toBe('kept after opting in');
+  });
+
+  // Consent is judged as of when the preview was written. A rider who agrees
+  // after asking has agreed to what they ask next, not to what they already
+  // asked, so the earlier preview goes and the later one stays.
+  test('the purge clears a preview written before the rider\'s consent took effect', async ({}, workerInfo) => {
+    const now = Date.now();
+    const hoursAgo = (hours: number) => new Date(now - hours * 60 * 60 * 1000);
+    const project = workerInfo.project.name;
+    const lateNotice = await makeRider(admin, `${project}-late-notice`);
+    const lateOptIn = await makeRider(admin, `${project}-late-opt-in`);
+    const reOptIn = await makeRider(admin, `${project}-re-opt-in`);
+    try {
+      await recordConsent(lateNotice.userId, {
+        ai_question_retention_notice_seen_at: hoursAgo(1).toISOString(),
+      });
+      await recordConsent(lateOptIn.userId, {
+        ai_question_retention_notice_seen_at: hoursAgo(3).toISOString(),
+        ai_question_retention_requires_opt_in: true,
+        ai_question_retention_opted_in_at: hoursAgo(1).toISOString(),
+      });
+      // Asked while opted out, then turned keeping back on: opted_out_at
+      // cleared and opted_in_at stamped after the question.
+      await recordConsent(reOptIn.userId, {
+        ai_question_retention_notice_seen_at: hoursAgo(3).toISOString(),
+        ai_question_retention_opted_out_at: null,
+        ai_question_retention_opted_in_at: hoursAgo(1).toISOString(),
+      });
+
+      const before = {
+        lateNotice: await seedRequest(admin, lateNotice.userId, {
+          createdAt: hoursAgo(2),
+          preview: 'asked before seeing the notice',
+        }),
+        lateOptIn: await seedRequest(admin, lateOptIn.userId, {
+          createdAt: hoursAgo(2),
+          preview: 'asked before opting in',
+        }),
+        reOptIn: await seedRequest(admin, reOptIn.userId, {
+          createdAt: hoursAgo(2),
+          preview: 'asked while opted out',
+        }),
+      };
+      const after = {
+        lateNotice: await seedRequest(admin, lateNotice.userId, {
+          createdAt: hoursAgo(0.5),
+          preview: 'asked after seeing the notice',
+        }),
+        lateOptIn: await seedRequest(admin, lateOptIn.userId, {
+          createdAt: hoursAgo(0.5),
+          preview: 'asked after opting in',
+        }),
+        reOptIn: await seedRequest(admin, reOptIn.userId, {
+          createdAt: hoursAgo(0.5),
+          preview: 'asked after opting back in',
+        }),
+      };
+
+      const { error } = await admin.rpc('purge_expired_ai_request_text');
+      expect(error).toBeNull();
+
+      expect(await preview(admin, before.lateNotice)).toBeNull();
+      expect(await preview(admin, before.lateOptIn)).toBeNull();
+      expect(await preview(admin, before.reOptIn)).toBeNull();
+      expect(await preview(admin, after.lateNotice)).toBe('asked after seeing the notice');
+      expect(await preview(admin, after.lateOptIn)).toBe('asked after opting in');
+      expect(await preview(admin, after.reOptIn)).toBe('asked after opting back in');
+    } finally {
+      for (const each of [lateNotice, lateOptIn, reOptIn]) {
+        await admin.auth.admin.deleteUser(each.userId);
+      }
+    }
   });
 
   test('a rider cannot read the unretainable-previews view', async () => {
