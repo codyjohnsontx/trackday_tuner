@@ -108,7 +108,10 @@ decides what to do**:
   36 hours, so the daily purge is not running and the privacy notice is untrue
   right now. The detail carries the number of rows,
   `OverdueRetainedTextError:<n>` for text and `OverduePreviewError:<n>` for
-  previews. See "The `ai_text_retention` check" below.
+  previews. `UnacknowledgedPreviewError:<n>` is the notice rule instead: a
+  preview more than 36 hours old for a rider who has not seen the retention
+  notice, which the same job should have cleared. See "The `ai_text_retention`
+  check" below.
   `SupabaseError:PGRST205` instead means `20260924001700` was never applied.
 
 ### Step 2 - the 15-minute alert (no external account)
@@ -324,7 +327,13 @@ hours past its 90 days? Nothing writes `ai_request_text` yet, so today the
 previews are what prove the job runs. A row already waits up to 24 hours for
 the next run, so the grace absorbs a run up to 12 hours late, and a single
 missed run can trip it when a row expired in the 12 hours after the last run.
-It reads two counts and never a row, and it holds whichever trigger does the
+The job also nulls every preview of a rider who has not seen the retention
+notice, because nothing of theirs is kept until they have; the routes still
+write one for every request until capture gates that write, so a third count
+asks whether any such preview is more than 36 hours old. It reads them through
+the `ai_requests_unacknowledged_previews` view, since PostgREST cannot join
+`ai_requests` to `profiles`, and a missing view fails with its PostgREST code.
+It reads three counts and never a row, and it holds whichever trigger does the
 deleting - if the purge moves to Vercel Cron, this check does not change.
 
 On a failure, read the job's recent runs in the SQL editor:

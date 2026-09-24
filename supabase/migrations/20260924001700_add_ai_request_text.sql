@@ -125,12 +125,31 @@ alter table public.profiles
   add column if not exists ai_question_retention_opted_in_at timestamptz,
   add column if not exists ai_question_retention_requires_opt_in boolean not null default false;
 
+-- NOTHING OF A RIDER'S IS KEPT UNTIL THEY HAVE SEEN THE NOTICE, and the
+-- 140-character `ai_requests.prompt_redacted_preview` is question text too. So
+-- applying this migration PERMANENTLY DELETES every existing preview whose rider
+-- has not seen it - which, since the column above was just added, is every
+-- preview there is. Owner's decision, 2026-09-24, accepting the loss of recent
+-- operational preview data. The ai_requests rows, fingerprints and verdicts
+-- are kept. A rider with no profiles row has seen nothing, so theirs go too.
+update public.ai_requests r
+   set prompt_redacted_preview = null
+ where r.prompt_redacted_preview is not null
+   and not exists (
+     select 1 from public.profiles p
+      where p.id = r.user_id
+        and p.ai_question_retention_notice_seen_at is not null
+   );
+
 -- THE 90-DAY PURGE
 --
 -- Deletes every text row past its retain_until, and nulls the 140-character
 -- redacted preview on ai_requests rows older than 90 days, because that preview
--- is question text too and the notice promises 90 days for every copy. The
--- ai_requests rows themselves, their fingerprint and their verdict are kept.
+-- is question text too and the notice promises 90 days for every copy. It also
+-- nulls every preview whose rider has not seen the notice: the routes still
+-- write a preview for everyone until the capture step gates that write, so
+-- until then this is what keeps the rule, within a day. The ai_requests rows
+-- themselves, their fingerprint and their verdict are kept.
 --
 -- security definer so the cron job needs no grant on either table; search_path
 -- pinned empty and every name qualified, as security definer requires. Returns
@@ -152,6 +171,15 @@ begin
    where prompt_redacted_preview is not null
      and created_at < now() - interval '90 days';
 
+  update public.ai_requests r
+     set prompt_redacted_preview = null
+   where r.prompt_redacted_preview is not null
+     and not exists (
+       select 1 from public.profiles p
+        where p.id = r.user_id
+          and p.ai_question_retention_notice_seen_at is not null
+     );
+
   return removed;
 end;
 $$;
@@ -167,6 +195,28 @@ create index if not exists ai_requests_preview_created_idx
 
 revoke all on function public.purge_expired_ai_request_text() from public, anon, authenticated;
 grant execute on function public.purge_expired_ai_request_text() to service_role;
+
+-- What /api/health counts to prove the notice rule holds: previews still
+-- stored for a rider who has not seen the notice. PostgREST cannot join
+-- ai_requests to profiles (neither references the other), so the join is a
+-- view. security_invoker so it runs with the caller's privileges and RLS rather
+-- than its owner's; it is for the service role alone, and the revoke is
+-- explicit because hosted's legacy defaults would otherwise hand it to anon and
+-- authenticated. It exposes ids and times, never the preview text.
+create or replace view public.ai_requests_unacknowledged_previews
+  with (security_invoker = true)
+as
+select r.request_id, r.created_at
+  from public.ai_requests r
+ where r.prompt_redacted_preview is not null
+   and not exists (
+     select 1 from public.profiles p
+      where p.id = r.user_id
+        and p.ai_question_retention_notice_seen_at is not null
+   );
+
+revoke all on public.ai_requests_unacknowledged_previews from public, anon, authenticated;
+grant select on public.ai_requests_unacknowledged_previews to service_role;
 
 -- The trigger lives in the database with the data, so the promise does not
 -- depend on a GitHub schedule that goes quiet after 60 days without a commit,

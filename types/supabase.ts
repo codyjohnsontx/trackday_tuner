@@ -1021,7 +1021,15 @@ export type Database = {
         Relationships: [];
       };
     };
-    Views: Record<string, never>;
+    Views: {
+      ai_requests_unacknowledged_previews: {
+        Row: {
+          request_id: string;
+          created_at: string;
+        };
+        Relationships: [];
+      };
+    };
     Functions: {
       create_beta_invite: {
         Args: {

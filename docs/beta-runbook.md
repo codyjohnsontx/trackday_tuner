@@ -426,11 +426,21 @@ Apply it **before** merging the pull request that ships it. That release adds
 the `ai_text_retention` check to `/api/health`, which reads the table and
 answers `503` with `SupabaseError:PGRST205` on a database without it.
 
-Two things change on hosted the first time the job runs, both decided by the
-owner on 2026-09-24 and both intended: every `ai_requests.prompt_redacted_preview`
-older than 90 days is nulled (the preview is question text too, and the notice
-promises 90 days for every copy), and so is each one after, as it turns 90 days
-old. The `ai_requests` rows, their fingerprints and verdicts are kept.
+**Applying this block PERMANENTLY DELETES every existing
+`ai_requests.prompt_redacted_preview`.** Nothing of a rider's is kept until they
+have seen the retention notice, the preview is question text too, and when the
+block runs no rider has seen the notice yet - so every preview there is gets
+nulled, recent ones included. There is no undo: the rollback below does not
+bring them back. The owner decided this on 2026-09-24, accepting the loss of
+recent operational preview data (`npm run ai:requests` prints `-` for them). The
+`ai_requests` rows, their fingerprints and verdicts are kept.
+
+After that, the daily job keeps both rules: it nulls every preview older than 90
+days, and every preview of a rider who has not seen the notice. The routes still
+write a preview for every request until the capture change gates that write, so
+until it ships a new preview of a rider who has not seen the notice lives until
+the next 04:17 UTC run - under a day - and `/api/health` fails
+`ai_text_retention` if one survives 36 hours.
 
 **1. Confirm the project can take it.**
 
@@ -498,6 +508,14 @@ alter table public.profiles
   add column if not exists ai_question_retention_opted_out_at timestamptz,
   add column if not exists ai_question_retention_opted_in_at timestamptz,
   add column if not exists ai_question_retention_requires_opt_in boolean not null default false;
+update public.ai_requests r
+   set prompt_redacted_preview = null
+ where r.prompt_redacted_preview is not null
+   and not exists (
+     select 1 from public.profiles p
+      where p.id = r.user_id
+        and p.ai_question_retention_notice_seen_at is not null
+   );
 create or replace function public.purge_expired_ai_request_text()
 returns integer
 language plpgsql
@@ -513,6 +531,14 @@ begin
      set prompt_redacted_preview = null
    where prompt_redacted_preview is not null
      and created_at < now() - interval '90 days';
+  update public.ai_requests r
+     set prompt_redacted_preview = null
+   where r.prompt_redacted_preview is not null
+     and not exists (
+       select 1 from public.profiles p
+        where p.id = r.user_id
+          and p.ai_question_retention_notice_seen_at is not null
+     );
   return removed;
 end;
 $$;
@@ -521,6 +547,19 @@ create index if not exists ai_requests_preview_created_idx
   where prompt_redacted_preview is not null;
 revoke all on function public.purge_expired_ai_request_text() from public, anon, authenticated;
 grant execute on function public.purge_expired_ai_request_text() to service_role;
+create or replace view public.ai_requests_unacknowledged_previews
+  with (security_invoker = true)
+as
+select r.request_id, r.created_at
+  from public.ai_requests r
+ where r.prompt_redacted_preview is not null
+   and not exists (
+     select 1 from public.profiles p
+      where p.id = r.user_id
+        and p.ai_question_retention_notice_seen_at is not null
+   );
+revoke all on public.ai_requests_unacknowledged_previews from public, anon, authenticated;
+grant select on public.ai_requests_unacknowledged_previews to service_role;
 create extension if not exists pg_cron with schema pg_catalog;
 grant usage on schema cron to postgres;
 select cron.schedule(
@@ -561,6 +600,19 @@ select
 
 Expect `false`, `false`.
 
+```sql
+select grantee, string_agg(privilege_type, ', ' order by privilege_type) as privileges
+from information_schema.role_table_grants
+where table_schema = 'public' and table_name = 'ai_requests_unacknowledged_previews'
+group by grantee;
+
+select count(*) as previews_left from public.ai_requests where prompt_redacted_preview is not null;
+```
+
+Expect no `anon`, `authenticated` or `PUBLIC` row for the view (it lists request
+ids for the health check, and `service_role` is the only reader), and
+`previews_left` of `0`.
+
 Then run the purge once by hand, so the previews already older than 90 days are
 nulled now rather than at the first 04:17 UTC run:
 
@@ -599,6 +651,7 @@ any of it.
 begin;
 select cron.unschedule('purge-expired-ai-request-text');
 drop function if exists public.purge_expired_ai_request_text();
+drop view if exists public.ai_requests_unacknowledged_previews;
 drop table if exists public.ai_request_text;
 alter table public.profiles
   drop column if exists ai_question_retention_notice_seen_at,

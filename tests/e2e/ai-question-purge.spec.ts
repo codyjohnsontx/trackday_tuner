@@ -127,6 +127,13 @@ test.describe('retained AI question text', () => {
     admin = createTestAdminClient();
     rider = await makeRider(admin, `${workerInfo.project.name}-a`);
     otherRider = await makeRider(admin, `${workerInfo.project.name}-b`);
+    // `rider` has seen the retention notice, so a fresh preview of theirs is
+    // kept; `otherRider` has not, so nothing of theirs is.
+    const { error } = await admin
+      .from('profiles')
+      .update({ ai_question_retention_notice_seen_at: new Date().toISOString() })
+      .eq('id', rider.userId);
+    if (error) throw new Error(`recording the notice as seen failed: ${error.message}`);
   });
 
   test.afterAll(async () => {
@@ -158,6 +165,45 @@ test.describe('retained AI question text', () => {
 
     expect(await textRow(admin, fresh)).not.toBeNull();
     expect(await preview(admin, fresh)).toBe('rear steps out on exit');
+  });
+
+  // Nothing of a rider's is kept until they have seen the notice. The routes
+  // still write a preview for everyone until capture gates that write, so the
+  // purge is what clears it - and it keeps the request row, which is the rate
+  // limit.
+  test('the purge clears a fresh preview for a rider who has not seen the notice', async () => {
+    const now = Date.now();
+    const unacknowledged = await seedRequest(admin, otherRider.userId, {
+      createdAt: new Date(now - 60 * 1000),
+      preview: 'asked before seeing the notice',
+    });
+    const acknowledged = await seedRequest(admin, rider.userId, {
+      createdAt: new Date(now - 60 * 1000),
+      preview: 'asked after seeing the notice',
+    });
+
+    // Only the acknowledged side is asserted on the view: the purge is global,
+    // so another device project's run may already have cleared the other one,
+    // which then correctly leaves the view.
+    const pending = expectRows(
+      await admin
+        .from('ai_requests_unacknowledged_previews')
+        .select('request_id')
+        .in('request_id', [unacknowledged, acknowledged]),
+      'reading the unacknowledged-previews view as service_role',
+    );
+    expect(pending.map((row) => row.request_id)).not.toContain(acknowledged);
+
+    const { error } = await admin.rpc('purge_expired_ai_request_text');
+    expect(error).toBeNull();
+
+    expect(await preview(admin, unacknowledged)).toBeNull();
+    expect(await preview(admin, acknowledged)).toBe('asked after seeing the notice');
+  });
+
+  test('a rider cannot read the unacknowledged-previews view', async () => {
+    const { error } = await rider.client.from('ai_requests_unacknowledged_previews').select('request_id');
+    expect(error?.code).toBe('42501');
   });
 
   // A deadline earlier than 90 days is allowed - deleting sooner breaks no

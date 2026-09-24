@@ -237,6 +237,54 @@ describe('checkAiTextRetention', () => {
     expect(JSON.stringify(check)).not.toContain('req-1');
   });
 
+  // Nothing of a rider's is kept until they have seen the notice. The routes
+  // still write a preview for everyone until capture gates that write, so the
+  // daily purge clears those; one older than the grace means it is not.
+  it('asks about previews of riders who have not seen the notice, older than the grace', async () => {
+    const requests = stubCountingPostgrest({});
+
+    const check = await checkAiTextRetention(now);
+
+    expect(check.status).toBe('ok');
+    const unacknowledged = requestTo(requests, 'ai_requests_unacknowledged_previews');
+    expect(unacknowledged.method).toBe('GET');
+    expect(unacknowledged.prefer).toContain('count=exact');
+    expect(unacknowledged.url.searchParams.get('created_at')).toBe('lt.2026-11-30T00:00:00.000Z');
+  });
+
+  it('fails naming the count when a preview outlives the grace for a rider who has not seen the notice', async () => {
+    stubCountingPostgrest({
+      ai_requests_unacknowledged_previews: {
+        status: 200,
+        payload: [{ request_id: 'req-9' }],
+        contentRange: '0-0/2',
+      },
+    });
+
+    const check = await checkAiTextRetention(now);
+
+    expect(check.status).toBe('fail');
+    expect(check.detail).toBe('UnacknowledgedPreviewError:2');
+    expect(JSON.stringify(check)).not.toContain('req-9');
+  });
+
+  // A hosted project without the view holds previews nobody has checked, and
+  // the check must not read that as healthy.
+  it('fails with the PostgREST code when the view is missing', async () => {
+    stubCountingPostgrest({
+      ai_requests_unacknowledged_previews: {
+        status: 404,
+        payload: { code: 'PGRST205', details: null, hint: null, message: 'not in the schema cache' },
+        contentRange: null,
+      },
+    });
+
+    const check = await checkAiTextRetention(now);
+
+    expect(check.status).toBe('fail');
+    expect(check.detail).toBe('SupabaseError:PGRST205');
+  });
+
   it('fails with the PostgREST code when the previews cannot be read', async () => {
     stubCountingPostgrest({
       ai_requests: {
