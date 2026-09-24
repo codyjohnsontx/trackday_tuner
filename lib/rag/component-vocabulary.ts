@@ -169,7 +169,7 @@ function directionKey(value: string): string {
  * a live model might still produce, so the cost of this change is a refusal
  * there rather than bad advice. That cost is tracked, carrying the open question
  * of whether a live model actually emits the canonical strings at all; the echo
- * path below is filed against it as the next task. An ambiguous value carrying
+ * path that compounded it is closed, as recorded below. An ambiguous value carrying
  * two intents (`increase or decrease depending on grip`). A direction curated
  * for a DIFFERENT component: `tire_pressure` accepted `increase negative
  * camber` because that phrase contains `increase`, and `camber` accepted the
