@@ -6,7 +6,6 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: 
 // The components import server actions; rendering never calls them, and the
 // real module reaches for cookies and a service key at import.
 vi.mock('@/lib/actions/ai-question-retention', () => ({
-  acknowledgeQuestionRetentionNotice: vi.fn(),
   deleteAllRetainedQuestions: vi.fn(),
   deleteRetainedQuestion: vi.fn(),
   setQuestionRetention: vi.fn(),
@@ -207,21 +206,13 @@ describe('RiderDate', () => {
 });
 
 describe('one-time notice', () => {
-  it('tells a rider who keeps by default, with a way to decline', () => {
-    const html = text(renderToStaticMarkup(createElement(QuestionRetentionNotice, { requiresOptIn: false })));
-    expect(html).toContain(COPY.notice.title);
-    expect(html).toContain(COPY.notice.body);
-    expect(html).toContain(COPY.notice.acknowledge);
-    expect(html).toContain(COPY.notice.decline);
-    expect(html).toContain('Redline');
-  });
-
-  it('asks a rider who starts with it off, and does not claim it is on', () => {
-    const html = text(renderToStaticMarkup(createElement(QuestionRetentionNotice, { requiresOptIn: true })));
+  it('asks every rider, names Redline, and does not claim keeping is on', () => {
+    const html = text(renderToStaticMarkup(createElement(QuestionRetentionNotice)));
     expect(html).toContain(COPY.notice.optInTitle);
     expect(html).toContain(COPY.notice.optInBody);
     expect(html).toContain(COPY.notice.optIn);
     expect(html).toContain(COPY.notice.notNow);
-    expect(html).not.toContain(COPY.notice.body);
+    expect(html).toContain('Redline');
+    expect(html).not.toContain('From now on we keep');
   });
 });

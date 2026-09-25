@@ -113,7 +113,8 @@ async function nullPreviews(
 }
 
 /**
- * Set the Settings switch. "Keep" turns keeping on; "Do not keep" turns it off
+ * Set the Settings switch, or answer the one-time notice. "Keep" turns keeping
+ * on; "Do not keep" (and the notice's "Not now") turns it off
  * and deletes every held question and preview in the same action (owner
  * decision D3). What each writes is `planRetentionChange`, which works from the
  * profile as stored rather than from what the screen showed.
@@ -190,38 +191,6 @@ export async function setQuestionRetention(
 
   revalidateRetentionScreens();
   return { ok: true, data: { keeping: choice === 'keep' } };
-}
-
-/**
- * The one-time notice's "Got it": the rider has seen the notice and keeps the
- * default, which is keeping unless they start with it off. Stamped only once -
- * the first time is the fact the keep rule reads, and a later press must not
- * move it and so make everything kept since then unretainable.
- */
-export async function acknowledgeQuestionRetentionNotice(): Promise<ActionResult> {
-  const demoError = await assertNotDemoMode();
-  if (demoError) return demoError;
-
-  const user = await getRealUser();
-  if (!user) return { ok: false, error: 'Not authenticated.' };
-
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from('profiles')
-    .update({ ai_question_retention_notice_seen_at: new Date().toISOString() })
-    .eq('id', user.id)
-    .is('ai_question_retention_notice_seen_at', null);
-
-  if (error) {
-    reportError('ai-question-retention', new Error(error.message), {
-      query: 'profiles.notice_seen',
-      userId: user.id,
-    });
-    return { ok: false, error: RETENTION_SAVE_FAILED_MESSAGE };
-  }
-
-  revalidateRetentionScreens();
-  return { ok: true, data: undefined };
 }
 
 /**

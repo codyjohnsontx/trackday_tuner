@@ -45,15 +45,9 @@ export const QUESTION_RETENTION_COPY = {
     deletedUntil: 'Deleted automatically on',
     routes: { tuning_advice: 'Race Engineer', day_plan: 'Morning Plan' },
   },
-  // Every rider sees the opt-in notice (owner, 2026-09-25: retention is off
-  // until each rider turns it on). The keep-by-default variant is shown only
-  // to a rider whose ai_question_retention_requires_opt_in is false, which no
-  // rider is after 20260925001800 and nothing in the app writes.
+  // Retention is off until each rider turns it on (owner, 2026-09-25), so the
+  // notice always asks.
   notice: {
-    title: 'Race Engineer keeps your questions for 90 days',
-    body: "From now on we keep the text of your Race Engineer questions and Morning Plan details for 90 days, so our safety checks can be re-tested against real questions when they change - including in Redline, our separate safety-testing project. Email addresses, phone numbers and links are masked first. Nothing you asked before now is kept, and you can turn this off at any time in Settings.",
-    acknowledge: 'Got it',
-    decline: 'Do not keep',
     optInTitle: 'Keep your Race Engineer questions?',
     optInBody:
       "If you turn this on, we keep the text of your Race Engineer questions and Morning Plan details for 90 days, so our safety checks can be re-tested against real questions when they change - including in Redline, our separate safety-testing project. Email addresses, phone numbers and links are masked first. It stays off unless you turn it on, and you can change it at any time in Settings.",

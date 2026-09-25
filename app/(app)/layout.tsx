@@ -29,7 +29,7 @@ export default async function AuthenticatedAppLayout({
     <>
       {noticeOwed ? (
         <div className="mb-5">
-          <QuestionRetentionNotice requiresOptIn={retention.requiresOptIn} />
+          <QuestionRetentionNotice />
         </div>
       ) : null}
       {children}

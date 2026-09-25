@@ -287,7 +287,11 @@ proves the job runs. The four `profiles.ai_question_retention_*` columns decide
 whether text may be kept at all, and the rule is written once, in that migration's
 header. Since `20260925001800` (owner, 2026-09-25) `requires_opt_in` is
 true for every rider and by default, so nothing is kept until a rider opts in;
-no jurisdiction is detected, and nothing in the app writes that column. Only `lib/actions/ai-question-retention.ts` writes them (service client),
+no jurisdiction is detected, and nothing in the app writes that column. The app
+does not read it either: `resolveQuestionRetention` counts a rider as keeping
+only once `opted_in_at` is set, and the notice's "Not now" stamps
+`opted_out_at`, so the screens stay opt-in on a database the migration has not
+reached. Only `lib/actions/ai-question-retention.ts` writes them (service client),
 and `planRetentionChange` (`lib/ai-question-retention.ts`) decides what: turning
 keeping back on RE-STAMPS `opted_in_at` so text written while off stays
 unretainable, and choosing it while already keeping writes NOTHING, since a

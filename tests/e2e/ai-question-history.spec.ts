@@ -128,10 +128,17 @@ test.describe('a rider controlling their Race Engineer question history', () => 
     expect(await page.evaluate(() => window.scrollY)).toBe(0);
   });
 
-  test('answering the notice "Not now" records it as seen and keeps nothing', async ({ page }) => {
+  test('answering the notice "Not now" records an explicit off, even where requires_opt_in is false', async ({
+    page,
+  }) => {
     const admin = createTestAdminClient();
     rider = await createThrowawayRider('ai-history-not-now');
-    const { error: profileError } = await admin.from('profiles').update({ tier: 'pro' }).eq('id', rider.id);
+    // A database 20260925001800 has not reached still holds false here, and
+    // declining must not rest on the column.
+    const { error: profileError } = await admin
+      .from('profiles')
+      .update({ tier: 'pro', ai_question_retention_requires_opt_in: false })
+      .eq('id', rider.id);
     expect(profileError, profileError?.message).toBeNull();
     const { error: vehicleError } = await admin
       .from('vehicles')
@@ -145,6 +152,7 @@ test.describe('a rider controlling their Race Engineer question history', () => 
 
     const answered = await retentionColumns(admin, rider.id);
     expect(answered.ai_question_retention_notice_seen_at).not.toBeNull();
+    expect(answered.ai_question_retention_opted_out_at).not.toBeNull();
     expect(answered.ai_question_retention_opted_in_at).toBeNull();
 
     await gotoPage(page, '/sessions');

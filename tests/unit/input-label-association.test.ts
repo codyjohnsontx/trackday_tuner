@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
 vi.mock('@/lib/actions/ai-question-retention', () => ({
-  acknowledgeQuestionRetentionNotice: vi.fn(),
   deleteAllRetainedQuestions: vi.fn(),
   deleteRetainedQuestion: vi.fn(),
   setQuestionRetention: vi.fn(),
@@ -170,7 +169,7 @@ describe('Question history control names', () => {
   });
 
   it('labels the one-time notice by its own title', () => {
-    const html = renderToStaticMarkup(createElement(QuestionRetentionNotice, { requiresOptIn: false }));
+    const html = renderToStaticMarkup(createElement(QuestionRetentionNotice));
     expect(html).toContain('aria-labelledby="question-retention-notice-title"');
     expect(html).toContain('id="question-retention-notice-title"');
   });

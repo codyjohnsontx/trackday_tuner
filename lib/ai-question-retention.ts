@@ -5,25 +5,27 @@ import type { Profile } from '@/types';
 /**
  * Whether a rider's AI question text may be kept, read off their profile.
  *
- * The rule itself is written once, in SQL, as the
- * `ai_requests_unretainable_previews` view in
- * `supabase/migrations/20260924001700_add_ai_request_text.sql`: text is kept
- * only when the notice has been seen, keeping has not been turned off, and
- * keeping has been turned on where this rider starts with it off. This is the
- * same rule asked about NOW rather than about a row's write time, which is all
- * a screen needs: what the switch says, and whether the notice is still owed.
- * A rider with no profile row meets none of it, exactly as in SQL.
+ * Keeping is off until each rider turns it on (owner, 2026-09-25): text is
+ * kept only when the notice has been seen, keeping has not been turned off, and
+ * keeping has been turned on. `requires_opt_in` is not read. The database rule
+ * - the `ai_requests_unretainable_previews` view, which the purge and
+ * `/api/health` read - still lets a false `requires_opt_in` stand in for an
+ * opt-in, and `20260925001800` makes it true for everyone; the app never relies
+ * on that having been applied, so a rider who has only seen the notice is not
+ * keeping here whatever the column holds. This is the rule asked about NOW
+ * rather than about a row's write time, which is all a screen needs: what the
+ * switch says, and whether the notice is still owed. A rider with no profile
+ * row meets none of it.
  */
 export type RetentionProfile = Pick<
   Profile,
   | 'ai_question_retention_notice_seen_at'
   | 'ai_question_retention_opted_out_at'
   | 'ai_question_retention_opted_in_at'
-  | 'ai_question_retention_requires_opt_in'
 >;
 
 export const RETENTION_PROFILE_COLUMNS =
-  'ai_question_retention_notice_seen_at, ai_question_retention_opted_out_at, ai_question_retention_opted_in_at, ai_question_retention_requires_opt_in';
+  'ai_question_retention_notice_seen_at, ai_question_retention_opted_out_at, ai_question_retention_opted_in_at';
 
 // The server action's failure messages. They live here rather than in
 // `lib/actions/ai-question-retention.ts` because a 'use server' module may only
@@ -34,26 +36,23 @@ export const RETENTION_PROFILE_MISSING_MESSAGE =
   'Your account profile is missing, so this cannot be saved. Contact support.';
 export const RETENTION_DELETE_FAILED_MESSAGE = 'The question could not be deleted. Try again.';
 export const RETENTION_OPT_OUT_DELETE_FAILED_MESSAGE =
-  'Question history is off, but the questions we hold could not all be deleted. Choose "Do not keep" again to retry.';
+  'Question history is off, but the questions we hold could not all be deleted. Try again.';
 
 export interface QuestionRetentionState {
   noticeSeen: boolean;
-  /** This rider starts with keeping off and has to turn it on. */
-  requiresOptIn: boolean;
   keeping: boolean;
 }
 
 export function resolveQuestionRetention(profile: RetentionProfile | null): QuestionRetentionState {
-  if (!profile) return { noticeSeen: false, requiresOptIn: false, keeping: false };
+  if (!profile) return { noticeSeen: false, keeping: false };
 
   const noticeSeen = profile.ai_question_retention_notice_seen_at !== null;
-  const requiresOptIn = profile.ai_question_retention_requires_opt_in;
   const keeping =
     noticeSeen &&
     profile.ai_question_retention_opted_out_at === null &&
-    (!requiresOptIn || profile.ai_question_retention_opted_in_at !== null);
+    profile.ai_question_retention_opted_in_at !== null;
 
-  return { noticeSeen, requiresOptIn, keeping };
+  return { noticeSeen, keeping };
 }
 
 export type QuestionRetentionChoice = 'keep' | 'off';

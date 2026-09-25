@@ -11,7 +11,11 @@ import type { Json } from '@/types/supabase';
 const NOW = '2026-09-25T12:00:00.000Z';
 const EARLIER = '2026-09-01T12:00:00.000Z';
 
-function profile(overrides: Partial<RetentionProfile> = {}): RetentionProfile {
+// The column the app no longer reads rides along, so each case shows the
+// answer does not move with it.
+type StoredProfile = RetentionProfile & { ai_question_retention_requires_opt_in: boolean };
+
+function profile(overrides: Partial<StoredProfile> = {}): StoredProfile {
   return {
     ai_question_retention_notice_seen_at: null,
     ai_question_retention_opted_out_at: null,
@@ -22,18 +26,35 @@ function profile(overrides: Partial<RetentionProfile> = {}): RetentionProfile {
 }
 
 describe('resolveQuestionRetention', () => {
-  // The same four conditions as the ai_requests_unretainable_previews view in
-  // 20260924001700, asked about now rather than about a row's write time.
+  // Keeping is off until each rider turns it on (owner, 2026-09-25), and the
+  // app holds to that without reading requires_opt_in: a database where
+  // 20260925001800 has not landed still holds false there.
   it('keeps nothing for a rider who has not seen the notice', () => {
-    expect(resolveQuestionRetention(profile())).toEqual({ noticeSeen: false, requiresOptIn: false, keeping: false });
+    expect(resolveQuestionRetention(profile())).toEqual({ noticeSeen: false, keeping: false });
   });
 
   it('keeps nothing for a rider with no profile row', () => {
     expect(resolveQuestionRetention(null).keeping).toBe(false);
   });
 
-  it('keeps once the notice is seen, by default', () => {
-    expect(resolveQuestionRetention(profile({ ai_question_retention_notice_seen_at: EARLIER })).keeping).toBe(true);
+  it.each([false, true])(
+    'keeps nothing for a rider who has only seen the notice, with requires_opt_in %s',
+    (requiresOptIn) => {
+      const seen = profile({
+        ai_question_retention_notice_seen_at: EARLIER,
+        ai_question_retention_requires_opt_in: requiresOptIn,
+      });
+      expect(resolveQuestionRetention(seen)).toEqual({ noticeSeen: true, keeping: false });
+    },
+  );
+
+  it.each([false, true])('keeps once the rider has turned it on, with requires_opt_in %s', (requiresOptIn) => {
+    const optedIn = profile({
+      ai_question_retention_notice_seen_at: EARLIER,
+      ai_question_retention_opted_in_at: NOW,
+      ai_question_retention_requires_opt_in: requiresOptIn,
+    });
+    expect(resolveQuestionRetention(optedIn).keeping).toBe(true);
   });
 
   it('keeps nothing once the rider has turned it off', () => {
@@ -41,12 +62,6 @@ describe('resolveQuestionRetention', () => {
       profile({ ai_question_retention_notice_seen_at: EARLIER, ai_question_retention_opted_out_at: NOW }),
     );
     expect(state.keeping).toBe(false);
-  });
-
-  it('keeps nothing for a rider who starts with it off until they turn it on', () => {
-    const off = profile({ ai_question_retention_notice_seen_at: EARLIER, ai_question_retention_requires_opt_in: true });
-    expect(resolveQuestionRetention(off).keeping).toBe(false);
-    expect(resolveQuestionRetention({ ...off, ai_question_retention_opted_in_at: NOW }).keeping).toBe(true);
   });
 });
 
@@ -57,9 +72,13 @@ describe('currentRetentionChoice', () => {
 
   it('presses the option that matches the stored state', () => {
     const seen = profile({ ai_question_retention_notice_seen_at: EARLIER });
-    expect(currentRetentionChoice(resolveQuestionRetention(seen))).toBe('keep');
+    expect(currentRetentionChoice(resolveQuestionRetention(seen))).toBe('off');
+    const optedIn = { ...seen, ai_question_retention_opted_in_at: EARLIER };
+    expect(currentRetentionChoice(resolveQuestionRetention(optedIn))).toBe('keep');
     expect(
-      currentRetentionChoice(resolveQuestionRetention({ ...seen, ai_question_retention_opted_out_at: NOW })),
+      currentRetentionChoice(
+        resolveQuestionRetention({ ...optedIn, ai_question_retention_opted_in_at: null, ai_question_retention_opted_out_at: NOW }),
+      ),
     ).toBe('off');
   });
 });
@@ -80,7 +99,9 @@ describe('planRetentionChange', () => {
 
   it('writes nothing when a rider who is keeping chooses keep again', () => {
     // A re-stamp here would make everything kept since the notice unretainable.
-    const state = resolveQuestionRetention(profile({ ai_question_retention_notice_seen_at: EARLIER }));
+    const state = resolveQuestionRetention(
+      profile({ ai_question_retention_notice_seen_at: EARLIER, ai_question_retention_opted_in_at: EARLIER }),
+    );
     expect(planRetentionChange(state, 'keep', NOW)).toEqual({ profileUpdate: null, deleteHeld: false });
   });
 
@@ -123,13 +144,28 @@ describe('planRetentionChange', () => {
     );
   });
 
-  it('turns keeping on for a rider who starts with it off', () => {
-    const state = resolveQuestionRetention(
-      profile({ ai_question_retention_notice_seen_at: EARLIER, ai_question_retention_requires_opt_in: true }),
-    );
-    expect(planRetentionChange(state, 'keep', NOW).profileUpdate).toEqual({
-      ai_question_retention_opted_in_at: NOW,
-      ai_question_retention_opted_out_at: null,
+  it.each([false, true])(
+    'turns keeping on for a rider who has only seen the notice, with requires_opt_in %s',
+    (requiresOptIn) => {
+      const state = resolveQuestionRetention(
+        profile({ ai_question_retention_notice_seen_at: EARLIER, ai_question_retention_requires_opt_in: requiresOptIn }),
+      );
+      expect(planRetentionChange(state, 'keep', NOW).profileUpdate).toEqual({
+        ai_question_retention_opted_in_at: NOW,
+        ai_question_retention_opted_out_at: null,
+      });
+    },
+  );
+
+  it('answering "Not now" on the notice records an explicit off, with requires_opt_in false', () => {
+    const state = resolveQuestionRetention(profile({ ai_question_retention_requires_opt_in: false }));
+    expect(planRetentionChange(state, 'off', NOW)).toEqual({
+      profileUpdate: {
+        ai_question_retention_notice_seen_at: NOW,
+        ai_question_retention_opted_out_at: NOW,
+        ai_question_retention_opted_in_at: null,
+      },
+      deleteHeld: true,
     });
   });
 });

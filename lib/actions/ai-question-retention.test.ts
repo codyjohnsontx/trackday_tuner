@@ -23,7 +23,6 @@ import { DEMO_READ_ONLY_ERROR, isDemoMode } from '@/lib/demo/mode';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import {
-  acknowledgeQuestionRetentionNotice,
   deleteAllRetainedQuestions,
   deleteRetainedQuestion,
   getRetainedQuestions,
@@ -96,7 +95,7 @@ function storedProfile(overrides: Record<string, unknown> = {}) {
     data: {
       ai_question_retention_notice_seen_at: SEEN,
       ai_question_retention_opted_out_at: null,
-      ai_question_retention_opted_in_at: null,
+      ai_question_retention_opted_in_at: SEEN,
       ai_question_retention_requires_opt_in: false,
       ...overrides,
     },
@@ -153,7 +152,7 @@ describe('setQuestionRetention', () => {
       {},
       {
         profiles: [
-          storedProfile({ ai_question_retention_opted_out_at: SEEN }),
+          storedProfile({ ai_question_retention_opted_out_at: SEEN, ai_question_retention_opted_in_at: null }),
           { data: [{ id: USER_ID }], error: null },
         ],
       },
@@ -169,7 +168,7 @@ describe('setQuestionRetention', () => {
       {},
       {
         profiles: [
-          storedProfile({ ai_question_retention_opted_out_at: SEEN }),
+          storedProfile({ ai_question_retention_opted_out_at: SEEN, ai_question_retention_opted_in_at: null }),
           { data: [{ id: USER_ID }], error: null },
         ],
       },
@@ -191,6 +190,48 @@ describe('setQuestionRetention', () => {
     expect(verbs(adminQueries[0])).toEqual(['select', 'eq']);
   });
 
+  // The app is opt-in for every rider on its own: a database where
+  // 20260925001800 has not landed still holds requires_opt_in = false, and
+  // neither answer may then leave a rider keeping without an explicit opt-in.
+  it('treats a rider who has only seen the notice as not keeping, whatever requires_opt_in holds', async () => {
+    const { adminQueries } = useClients(
+      {},
+      {
+        profiles: [
+          storedProfile({ ai_question_retention_opted_in_at: null, ai_question_retention_requires_opt_in: false }),
+          { data: [{ id: USER_ID }], error: null },
+        ],
+      },
+    );
+
+    expect(await setQuestionRetention('keep')).toEqual({ ok: true, data: { keeping: true } });
+    expect(adminQueries.map((query) => query.table)).toEqual(['profiles', 'profiles']);
+    const written = adminQueries[1].calls[0][1] as Record<string, unknown>;
+    expect(typeof written.ai_question_retention_opted_in_at).toBe('string');
+  });
+
+  it('answering the notice "Not now" records it as seen and stamps opted_out_at where requires_opt_in is false', async () => {
+    const { adminQueries } = useClients(
+      {},
+      {
+        profiles: [
+          storedProfile({
+            ai_question_retention_notice_seen_at: null,
+            ai_question_retention_opted_in_at: null,
+            ai_question_retention_requires_opt_in: false,
+          }),
+          { data: [{ id: USER_ID }], error: null },
+        ],
+      },
+    );
+
+    expect(await setQuestionRetention('off')).toEqual({ ok: true, data: { keeping: false } });
+    const written = adminQueries[1].calls[0][1] as Record<string, unknown>;
+    expect(typeof written.ai_question_retention_notice_seen_at).toBe('string');
+    expect(typeof written.ai_question_retention_opted_out_at).toBe('string');
+    expect(written.ai_question_retention_opted_in_at).toBeNull();
+  });
+
   it('refuses when the rider has no profile row', async () => {
     useClients({}, { profiles: [{ data: null, error: null }] });
     expect(await setQuestionRetention('off')).toEqual({ ok: false, error: RETENTION_PROFILE_MISSING_MESSAGE });
@@ -207,17 +248,6 @@ describe('setQuestionRetention', () => {
     const { adminQueries } = useClients({}, {});
     expect((await setQuestionRetention('maybe' as never)).ok).toBe(false);
     expect(adminQueries).toHaveLength(0);
-  });
-});
-
-describe('acknowledgeQuestionRetentionNotice', () => {
-  it('stamps notice_seen_at only where it is still null', async () => {
-    const { adminQueries } = useClients({}, { profiles: [{ data: null, error: null }] });
-
-    expect(await acknowledgeQuestionRetentionNotice()).toEqual({ ok: true, data: undefined });
-    const [update] = adminQueries;
-    expect(update.calls).toContainEqual(['eq', 'id', USER_ID]);
-    expect(update.calls).toContainEqual(['is', 'ai_question_retention_notice_seen_at', null]);
   });
 });
 
