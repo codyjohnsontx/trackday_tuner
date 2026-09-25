@@ -171,7 +171,8 @@ export async function setQuestionRetention(
   }
 
   if (plan.deleteHeld) {
-    const { error: deleteError } = await admin.from('ai_request_text').delete().eq('user_id', user.id);
+    const supabase = await createClient();
+    const { error: deleteError } = await supabase.from('ai_request_text').delete().eq('user_id', user.id);
     if (deleteError) {
       reportError('ai-question-retention', new Error(deleteError.message), {
         query: 'ai_request_text.delete_all',
@@ -180,10 +181,10 @@ export async function setQuestionRetention(
     }
     const previewsCleared = await nullPreviews(user.id, null);
 
-    revalidateRetentionScreens();
     if (deleteError || !previewsCleared) {
       return { ok: false, error: RETENTION_OPT_OUT_DELETE_FAILED_MESSAGE };
     }
+    revalidateRetentionScreens();
     return { ok: true, data: { keeping: false } };
   }
 

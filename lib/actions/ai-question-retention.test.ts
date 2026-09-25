@@ -17,6 +17,7 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/monitoring/report-error', () => ({ reportError: vi.fn() }));
 
+import { revalidatePath } from 'next/cache';
 import { getRealUser } from '@/lib/auth';
 import { DEMO_READ_ONLY_ERROR, isDemoMode } from '@/lib/demo/mode';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -116,15 +117,12 @@ describe('setQuestionRetention', () => {
     const result = await setQuestionRetention('off');
 
     expect(result).toEqual({ ok: true, data: { keeping: false } });
-    expect(userQueries).toHaveLength(0);
-    expect(adminQueries.map((query) => query.table)).toEqual([
-      'profiles',
-      'profiles',
-      'ai_request_text',
-      'ai_requests',
-    ]);
+    expect(adminQueries.map((query) => query.table)).toEqual(['profiles', 'profiles', 'ai_requests']);
+    expect(userQueries.map((query) => query.table)).toEqual(['ai_request_text']);
+    expect(revalidatePath).toHaveBeenCalled();
 
-    const [, update, textDelete, previewNull] = adminQueries;
+    const [, update, previewNull] = adminQueries;
+    const [textDelete] = userQueries;
     expect(update.calls[0][0]).toBe('update');
     expect(update.calls[0][1]).toMatchObject({ ai_question_retention_opted_in_at: null });
     expect(typeof (update.calls[0][1] as Record<string, unknown>).ai_question_retention_opted_out_at).toBe('string');
@@ -137,16 +135,30 @@ describe('setQuestionRetention', () => {
     expect(previewNull.calls).toContainEqual(['eq', 'user_id', USER_ID]);
   });
 
-  it('reports a failed delete after opting out rather than claiming it worked', async () => {
+  it('reports a failed delete after opting out rather than claiming it worked, and leaves the screen that shows it mounted', async () => {
     useClients(
-      {},
-      {
-        profiles: [storedProfile(), { data: [{ id: USER_ID }], error: null }],
-        ai_request_text: [{ data: null, error: { message: 'boom' } }],
-      },
+      { ai_request_text: [{ data: null, error: { message: 'boom' } }] },
+      { profiles: [storedProfile(), { data: [{ id: USER_ID }], error: null }] },
     );
 
     expect(await setQuestionRetention('off')).toEqual({ ok: false, error: RETENTION_OPT_OUT_DELETE_FAILED_MESSAGE });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('retries the delete when the rider presses "Do not keep" while already off', async () => {
+    const { userQueries, adminQueries } = useClients(
+      {},
+      {
+        profiles: [
+          storedProfile({ ai_question_retention_opted_out_at: SEEN }),
+          { data: [{ id: USER_ID }], error: null },
+        ],
+      },
+    );
+
+    expect(await setQuestionRetention('off')).toEqual({ ok: true, data: { keeping: false } });
+    expect(userQueries[0].calls).toEqual([['delete'], ['eq', 'user_id', USER_ID]]);
+    expect(adminQueries.map((query) => query.table)).toContain('ai_requests');
   });
 
   it('turning it back on re-stamps opted_in_at, clears opted_out_at and deletes nothing', async () => {
