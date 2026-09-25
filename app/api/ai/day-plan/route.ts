@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { getRealUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
+import { resolveQuestionRetention } from '@/lib/ai-question-retention';
 import { assertNotDemoRoute } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
 import { reportError } from '@/lib/monitoring/report-error';
@@ -13,6 +14,7 @@ import {
   updateRequestLog,
   STORED_TEXT_INJECTION_REFUSAL_REASON,
   STORED_TEXT_INJECTION_REFUSAL_STATUS,
+  type RiderTextCapture,
 } from '@/lib/rag/ai-request-log';
 import {
   buildAiPromptIdentity,
@@ -460,6 +462,20 @@ export async function POST(request: Request) {
     .filter((part) => part.trim().length > 0)
     .join(' | ');
 
+  // What the audit writes keep of that text: nothing, unless this rider has
+  // turned question history on. Opt-in for every rider; see RiderTextCapture in
+  // lib/rag/ai-request-log.ts.
+  const riderTextCapture: RiderTextCapture = {
+    retainRiderText: resolveQuestionRetention(profile).keeping,
+    riderText: {
+      route: 'day_plan',
+      trackName: validated.data.track_name ?? null,
+      weatherCondition: validated.data.weather_condition ?? null,
+      surfaceCondition: validated.data.surface_condition ?? null,
+      targetDate: computedTargetDate,
+    },
+  };
+
   // The refusal throttle runs before the screen below, not after it. Screening
   // first means a refusal returns before the reservation, which is what keeps a
   // probe cheap - but it also meant nothing counted the probe itself, so a rider
@@ -496,6 +512,7 @@ export async function POST(request: Request) {
       refusalReason,
       classifierStage: 'preflight',
       ...buildAiPromptIdentity({ question: promptSubject }),
+      ...riderTextCapture,
     });
 
     return NextResponse.json(
@@ -520,6 +537,7 @@ export async function POST(request: Request) {
     question: promptSubject,
     symptoms: [],
     changeIntent: null,
+    ...riderTextCapture,
   });
   if (!preflight.ok) {
     return errorResponse(

@@ -12,6 +12,7 @@ import {
   isRefusalThrottled,
   reservePendingSlot,
   updateRequestLog,
+  type RiderTextCapture,
 } from '@/lib/rag/ai-request-log';
 import { AI_REQUEST_MAX_BODY_BYTES } from '@/lib/rag/validation';
 
@@ -135,7 +136,7 @@ export async function checkAiRefusalThrottle(params: {
   return { ok: true };
 }
 
-export async function reserveAiRequestSlot(params: AiPromptSubject & {
+export async function reserveAiRequestSlot(params: AiPromptSubject & RiderTextCapture & {
   logTag: string;
   userId: string;
   requestId: string;
@@ -152,6 +153,8 @@ export async function reserveAiRequestSlot(params: AiPromptSubject & {
       requestId: params.requestId,
       promptFingerprint,
       promptRedactedPreview,
+      retainRiderText: params.retainRiderText,
+      riderText: params.riderText,
     });
   } catch {
     return {
@@ -208,7 +211,7 @@ export async function reserveAiRequestSlot(params: AiPromptSubject & {
   return { ok: true, promptFingerprint };
 }
 
-export async function preflightAiRequest(params: AiPromptSubject & {
+export async function preflightAiRequest(params: AiPromptSubject & RiderTextCapture & {
   logTag: string;
   userId: string;
   requestId: string;

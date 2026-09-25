@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { reportError } from '@/lib/monitoring/report-error';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
+import { resolveQuestionRetention } from '@/lib/ai-question-retention';
 import {
   releaseReservation,
   updateRequestLog,
@@ -264,6 +265,15 @@ export async function POST(request: Request) {
     question: validated.data.question,
     symptoms: validated.data.symptoms,
     changeIntent: validated.data.change_intent ?? null,
+    // Opt-in for every rider: a profile that is missing, or has not turned
+    // keeping on, keeps nothing. See RiderTextCapture in lib/rag/ai-request-log.ts.
+    retainRiderText: resolveQuestionRetention(profile).keeping,
+    riderText: {
+      route: 'tuning_advice',
+      question: validated.data.question,
+      symptoms: validated.data.symptoms ?? [],
+      changeIntent: validated.data.change_intent ?? null,
+    },
   });
   if (!preflight.ok) {
     return errorResponse(

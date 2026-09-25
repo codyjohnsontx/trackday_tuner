@@ -414,7 +414,7 @@ commit;
 ### Apply the AI question-text table by hand on a project with no migration history
 
 `20260924001700` creates `ai_request_text`, where the text of a rider's Race
-Engineer question (and a Morning Plan's track name and conditions) will be kept
+Engineer question (and a Morning Plan's track name, conditions and date) is kept
 for 90 days so it can be replayed through new versions of the guards. It also
 schedules the daily `pg_cron` job that deletes that text on time, adds the
 four `profiles` columns that record whether a rider's text may be kept, and adds
@@ -442,10 +442,13 @@ not opted in. Consent is judged as of when the preview was written, so a preview
 from before the rider saw the notice, or before their latest opt-in, goes too.
 The `ai_requests_unretainable_previews` view is the one place that
 rule is written, and the block's own clear, the job and `/api/health` all read
-it. The routes still write a preview for every request until the capture change
-gates that write, so until it ships a new preview of such a rider lives until
-the next 04:17 UTC run - under a day - and `/api/health` fails
-`ai_text_retention` if one survives 36 hours.
+it. The routes write a preview only for a rider who has turned question history
+on, so the job is the backstop rather than the gate: a preview that becomes
+unretainable after it was written - the rider turned keeping off and the
+delete missed one - lives until the next 04:17 UTC run, under a day, and
+`/api/health` fails `ai_text_retention` if one survives 36 hours. Before the
+capture change shipped every request wrote one, and this job was what kept the
+rule.
 
 The block also installs a trigger that stamps every new `ai_request_text` row
 with the time it is inserted and caps its `retain_until` at 90 days after that,
@@ -635,10 +638,10 @@ where prompt_redacted_preview is not null
 
 Expect no `anon`, `authenticated` or `PUBLIC` row for the view (it lists request
 ids for the health check, and `service_role` is the only reader), and
-`previews_left` of `0`. The time bound is there because the routes keep writing
-a preview on every AI request until capture gates that write, so any request
-since the block adds one; those are recent, and the next 04:17 UTC run clears
-them.
+`previews_left` of `0`. The time bound is there because a request made since
+the block can add one - every request did before the capture change, and a
+rider who has turned question history on still does - and those are either
+kept on purpose or cleared by the next 04:17 UTC run.
 
 With no older preview left there is nothing for the first run to catch up on, so
 `curl -s https://<your-app>/api/health` after the deploy should list
@@ -736,6 +739,27 @@ before is not recorded, and under the earlier rule that was every rider.
 alter table public.profiles
   alter column ai_question_retention_requires_opt_in set default false;
 ```
+
+### Confirm question capture after the deploy
+
+The capture change writes `ai_request_text` and needs no SQL: both blocks above
+must already be applied, since the routes insert `ai_requests.app_commit` and
+the text table. A route whose text insert fails still answers the rider and
+reports the failure through `reportError`, so a missing table shows up in the
+logs rather than as broken advice. After the deploy, sign in as a rider with Pro
+access and:
+
+1. Turn question history on under Settings > Race Engineer question history.
+2. Ask Race Engineer one question containing a made-up phone number and link,
+   such as `Front pushes on entry, call 555 123 4567 or see example.com`.
+3. Reload Settings. The question is listed, reading `[phone]` and `[url]` where
+   the number and link were, with a delete date 90 days out.
+4. Delete it from the list, and confirm it is gone after a reload.
+
+`npm run ai:requests` shows the matching `ai_requests` row with its preview, and
+`select app_commit from public.ai_requests order by created_at desc limit 1` in
+the SQL editor returns the deployed commit. Turn keeping off and ask again: the
+new row's preview prints `-` and nothing is listed.
 
 ## Invite a Rider
 
