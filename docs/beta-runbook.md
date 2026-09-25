@@ -418,8 +418,9 @@ Engineer question (and a Morning Plan's track name, conditions and date) is kept
 for 90 days so it can be replayed through new versions of the guards. It also
 schedules the daily `pg_cron` job that deletes that text on time, adds the
 four `profiles` columns that record whether a rider's text may be kept, and adds
-`ai_requests.app_commit`. **Nothing writes the table yet**: the notice and the
-rider's controls ship before capture does. The hosted project has no CLI history,
+`ai_requests.app_commit`. The routes write the table only for a rider who has
+turned question history on (see "Confirm question capture after the deploy"
+below). The hosted project has no CLI history,
 so this block is how it gets there, and the owner runs it.
 
 Apply it **before** merging the pull request that ships it. That release adds
