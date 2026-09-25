@@ -114,9 +114,8 @@ async function nullPreviews(
 
 /**
  * Set the Settings switch, or answer the one-time notice. "Keep" turns keeping
- * on; "Do not keep" (and the notice's "Not now") turns it off
- * and deletes every held question and preview in the same action (owner
- * decision D3). What each writes is `planRetentionChange`, which works from the
+ * on; "Do not keep" (and the notice's "Not now") turns it off and deletes every
+ * held question and preview in the same action (owner decision D3). What each writes is `planRetentionChange`, which works from the
  * profile as stored rather than from what the screen showed.
  */
 export async function setQuestionRetention(
