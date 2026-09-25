@@ -77,6 +77,10 @@ is what makes it runnable against any stack, including the hosted project after
 the grants block in `docs/beta-runbook.md` has been applied there. Playwright
 still starts `next dev` for it unless `PW_SKIP_WEBSERVER=1` is set, which is why
 the runbook's command sets it.
+`tests/e2e/ai-question-purge.spec.ts` has the same shape and needs the same: eight
+throwaway riders made through the admin API, the anon and service-role keys, and
+no dev server. It needs `20260924001700` applied, so it fails rather than skips on
+a stack without it.
 `tests/e2e/plan-limit-gate.spec.ts` makes one too, for the opposite reason to all
 of them: what it tests is a rider the free-plan caps can reach, which the Pro
 account never is. That rider is created through the admin API and seeded to the

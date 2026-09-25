@@ -117,7 +117,25 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
       and to_regclass('public.track_layouts') is not null
       and exists (select 1 from information_schema.columns
               where table_schema='public' and table_name='sessions'
-                and column_name='layout_id'))
+                and column_name='layout_id')),
+  -- The table alone is not the promise: text is only deleted at 90 days if the
+  -- purge job is scheduled, and a hosted project without pg_cron takes the
+  -- table and silently keeps every row. cron.job is read only once pg_cron is
+  -- known to be installed, and through query_to_xml, which plans its query at
+  -- run time: naming cron.job directly fails the WHOLE audit at parse time on
+  -- a database without pg_cron, which no CASE can prevent.
+  -- Whether the job has actually RUN is not answerable here: read
+  -- cron.job_run_details, or /api/health, which fails ai_text_retention on a
+  -- row more than 36 hours past its retain_until, or on an ai_requests preview
+  -- still set more than 90 days and 36 hours after its created_at.
+  (19, '20260924001700_add_ai_request_text', 'cron job',
+      'public.ai_request_text + cron job purge-expired-ai-request-text',
+      to_regclass('public.ai_request_text') is not null
+      and case when to_regclass('cron.job') is null then false
+               else (xpath('count(/table/row)', query_to_xml(
+                       'select jobname from cron.job where jobname = ''purge-expired-ai-request-text''',
+                       false, false, '')))[1]::text::int > 0
+          end)
 )
 select ordinality as "#",
        migration,

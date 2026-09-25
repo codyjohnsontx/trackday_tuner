@@ -15,6 +15,7 @@ export type EnvironmentSource = 'manual' | 'forecast' | 'telemetry';
 export type FeedbackOutcome = 'better' | 'same' | 'worse' | 'unknown';
 export type RecommendationStatus = 'proposed' | 'applied' | 'rejected' | 'superseded';
 export type SessionLapSource = 'manual' | 'import';
+export type AiRequestTextRoute = 'tuning_advice' | 'day_plan';
 export type ProductEventName =
   | 'beta_signup_completed'
   | 'vehicle_created'
@@ -145,6 +146,10 @@ export type Database = {
           stripe_subscription_id: string | null;
           stripe_price_id: string | null;
           stripe_current_period_end: string | null;
+          ai_question_retention_notice_seen_at: string | null;
+          ai_question_retention_opted_out_at: string | null;
+          ai_question_retention_opted_in_at: string | null;
+          ai_question_retention_requires_opt_in: boolean;
         };
         Insert: {
           id: string;
@@ -156,6 +161,10 @@ export type Database = {
           stripe_subscription_id?: string | null;
           stripe_price_id?: string | null;
           stripe_current_period_end?: string | null;
+          ai_question_retention_notice_seen_at?: string | null;
+          ai_question_retention_opted_out_at?: string | null;
+          ai_question_retention_opted_in_at?: string | null;
+          ai_question_retention_requires_opt_in?: boolean;
         };
         Update: {
           id?: string;
@@ -167,6 +176,10 @@ export type Database = {
           stripe_subscription_id?: string | null;
           stripe_price_id?: string | null;
           stripe_current_period_end?: string | null;
+          ai_question_retention_notice_seen_at?: string | null;
+          ai_question_retention_opted_out_at?: string | null;
+          ai_question_retention_opted_in_at?: string | null;
+          ai_question_retention_requires_opt_in?: boolean;
           updated_at?: string;
         };
         Relationships: [];
@@ -522,6 +535,7 @@ export type Database = {
           prompt_fingerprint: string | null;
           prompt_redacted_preview: string | null;
           classifier_stage: string | null;
+          app_commit: string | null;
           model: string | null;
           prompt_tokens: number | null;
           completion_tokens: number | null;
@@ -541,6 +555,7 @@ export type Database = {
           prompt_fingerprint?: string | null;
           prompt_redacted_preview?: string | null;
           classifier_stage?: string | null;
+          app_commit?: string | null;
           model?: string | null;
           prompt_tokens?: number | null;
           completion_tokens?: number | null;
@@ -560,12 +575,43 @@ export type Database = {
           prompt_fingerprint?: string | null;
           prompt_redacted_preview?: string | null;
           classifier_stage?: string | null;
+          app_commit?: string | null;
           model?: string | null;
           prompt_tokens?: number | null;
           completion_tokens?: number | null;
           latency_ms?: number | null;
           error_message?: string | null;
           created_at?: string;
+        };
+        Relationships: [];
+      };
+      ai_request_text: {
+        Row: {
+          request_id: string;
+          user_id: string;
+          route: AiRequestTextRoute;
+          submitted: Json;
+          redaction_version: number;
+          created_at: string;
+          retain_until: string;
+        };
+        Insert: {
+          request_id: string;
+          user_id: string;
+          route: AiRequestTextRoute;
+          submitted: Json;
+          redaction_version: number;
+          created_at?: string;
+          retain_until?: string;
+        };
+        Update: {
+          request_id?: string;
+          user_id?: string;
+          route?: AiRequestTextRoute;
+          submitted?: Json;
+          redaction_version?: number;
+          created_at?: string;
+          retain_until?: string;
         };
         Relationships: [];
       };
@@ -975,7 +1021,15 @@ export type Database = {
         Relationships: [];
       };
     };
-    Views: Record<string, never>;
+    Views: {
+      ai_requests_unretainable_previews: {
+        Row: {
+          request_id: string;
+          created_at: string;
+        };
+        Relationships: [];
+      };
+    };
     Functions: {
       create_beta_invite: {
         Args: {
@@ -994,6 +1048,10 @@ export type Database = {
           p_window_seconds: number;
         };
         Returns: boolean;
+      };
+      purge_expired_ai_request_text: {
+        Args: Record<string, never>;
+        Returns: number;
       };
       record_race_engineer_memory_feedback: {
         Args: {

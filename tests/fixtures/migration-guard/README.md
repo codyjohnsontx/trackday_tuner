@@ -121,3 +121,14 @@ Postgres accepts because its option list is order-independent, and
 `definer_unqualified_name.sql` leaves off the `public.` qualifier, which
 search_path supplies. Both ship the identical world-executable function, so the
 guard has to read both.
+
+Four cover the rider-text grant check on `ai_request_text`, where a rider may
+read and delete their own retained question text and nothing more.
+`grant_update_on_ai_request_text_to_authenticated.sql` is the hazard it exists
+for: RLS picks the row and not the column, so an UPDATE lets a rider push
+`retain_until` past the 90 days the notice promises.
+`grant_insert_on_ai_request_text_to_authenticated.sql` is the other write, and
+`grant_select_on_ai_request_text_to_anon.sql` any grant at all to a role that is
+not signed in, with the table written unqualified.
+`grant_select_delete_on_ai_request_text_to_authenticated.sql` is the control:
+what `20260924001700` grants, which the guard has to stay quiet about.

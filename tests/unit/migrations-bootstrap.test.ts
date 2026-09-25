@@ -667,6 +667,47 @@ function entitlementWriteViolations(migrations: Migration[]): string[] {
   return violations;
 }
 
+// Retained rider question text: a rider may SELECT and DELETE their own rows and
+// nothing more. RLS picks the row, not the column, so any UPDATE lets a rider
+// push `retain_until` past the 90 days the notice promises, or rewrite
+// `submitted` so a stored verdict describes a question never asked; INSERT lets
+// them plant a row that reads as a served request. anon and public reach nothing.
+//
+// Table grants only. Schema-wide and default-privilege grants to these roles are
+// already refused by entitlementWriteViolations, which is what keeps them from
+// reaching this table by that route. The object list is read the way that check
+// reads it - qualified or not, quoted or not, anywhere in a comma list.
+function riderTextGrantViolations(migrations: Migration[]): string[] {
+  const violations: string[] = [];
+  const allowed: Record<string, string[]> = { authenticated: ['select', 'delete'], anon: [], public: [] };
+
+  for (const { file, sql } of migrations) {
+    for (const match of sql.matchAll(
+      /grant\s+([^;]*?)\s+on\s+((?:table\s+)?[^;]+?)\s+to\s+([^;]*)/gi,
+    )) {
+      const [, privilegeText, objects, targets] = match;
+      if (!/\bai_request_text\b/i.test(objects)) continue;
+      // `update (retain_until)` is an update: the column list is dropped before
+      // the privileges are read.
+      const privileges = privilegeText
+        .replace(/\([^)]*\)/g, ' ')
+        .split(',')
+        .map((privilege) => privilege.trim().toLowerCase().replace(/\s+privileges$/, ''))
+        .filter((privilege) => privilege.length > 0);
+
+      for (const [role, permitted] of Object.entries(allowed)) {
+        if (!new RegExp(`\\b${role}\\b`, 'i').test(targets)) continue;
+        const excess = privileges.filter((privilege) => !permitted.includes(privilege));
+        if (excess.length > 0) {
+          violations.push(`${file}: grant ${excess.join(', ')} on ai_request_text to ${role}`);
+        }
+      }
+    }
+  }
+
+  return violations;
+}
+
 const migrations = loadMigrations();
 
 describe('supabase migrations bootstrap a database from nothing', () => {
@@ -748,6 +789,10 @@ describe('supabase migrations bootstrap a database from nothing', () => {
     expect(entitlementWriteViolations(migrations)).toEqual([]);
   });
 
+  it('lets a rider read and delete retained question text and nothing more', () => {
+    expect(riderTextGrantViolations(migrations)).toEqual([]);
+  });
+
   it('reads security definer off the two functions that declare it', () => {
     // Without this the check below could pass by seeing no functions at all. A
     // statement parser that stopped matching would take the execute invariant
@@ -770,6 +815,7 @@ describe('supabase migrations bootstrap a database from nothing', () => {
       'consume_beta_rate_limit',
       'create_beta_invite',
       'handle_new_auth_user',
+      'purge_expired_ai_request_text',
     ]);
   });
 
@@ -1190,6 +1236,36 @@ describe('the entitlement-write check, against migrations written wrongly on pur
       ),
     ).toEqual([
       'grant_all_tables_multi_schema_to_authenticated.sql: schema-wide table grant reaches authenticated',
+    ]);
+  });
+});
+
+describe('the rider-text grant check, against migrations written wrongly on purpose', () => {
+  it('accepts the select and delete grant the real migration makes', () => {
+    expect(
+      riderTextGrantViolations(loadFixtures('grant_select_delete_on_ai_request_text_to_authenticated.sql')),
+    ).toEqual([]);
+  });
+
+  it('catches update granted to authenticated', () => {
+    expect(
+      riderTextGrantViolations(loadFixtures('grant_update_on_ai_request_text_to_authenticated.sql')),
+    ).toEqual([
+      'grant_update_on_ai_request_text_to_authenticated.sql: grant update on ai_request_text to authenticated',
+    ]);
+  });
+
+  it('catches insert granted to authenticated', () => {
+    expect(
+      riderTextGrantViolations(loadFixtures('grant_insert_on_ai_request_text_to_authenticated.sql')),
+    ).toEqual([
+      'grant_insert_on_ai_request_text_to_authenticated.sql: grant insert on ai_request_text to authenticated',
+    ]);
+  });
+
+  it('catches any grant to anon, on the table written unqualified', () => {
+    expect(riderTextGrantViolations(loadFixtures('grant_select_on_ai_request_text_to_anon.sql'))).toEqual([
+      'grant_select_on_ai_request_text_to_anon.sql: grant select on ai_request_text to anon',
     ]);
   });
 });

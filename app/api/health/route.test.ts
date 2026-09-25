@@ -39,8 +39,13 @@ function supabaseReturning(
     error: { code: '22P02', message: 'invalid input syntax for type uuid' },
   },
 ) {
-  const limit = vi.fn().mockResolvedValue(result);
-  const select = vi.fn(() => ({ limit }));
+  // `count` answers the `ai_text_retention` check, which filters on
+  // `retain_until`, or on a non-null preview and `created_at`, before its
+  // limit; zero overdue rows is a healthy purge.
+  const limit = vi.fn().mockResolvedValue({ count: 0, ...result });
+  const lt = vi.fn(() => ({ limit }));
+  const not = vi.fn(() => ({ lt }));
+  const select = vi.fn(() => ({ limit, lt, not }));
   const from = vi.fn(() => ({ select }));
   const rpc = vi.fn().mockResolvedValue(rpcResult);
   return { from, select, limit, rpc };
@@ -93,6 +98,8 @@ describe('GET /api/health', () => {
     expect(check(body, 'rag_index').status).toBe('ok');
     expect(check(body, 'rag_index').detail).toBe('3 chunks');
     expect(check(body, 'schema_contract').status).toBe('ok');
+    expect(check(body, 'ai_text_retention').status).toBe('ok');
+    expect(check(body, 'ai_text_retention').detail).toBe('0 overdue');
     expect(Number.isNaN(Date.parse(body.checked_at))).toBe(false);
   });
 

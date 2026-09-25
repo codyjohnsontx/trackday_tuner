@@ -57,7 +57,15 @@ once, with step 2's last item, rather than assuming it.
 Everything below is a copy-paste step with a way to check it worked. Nothing
 here needs any context from the branch that added it.
 
-### Step 1 - `/api/health` (nothing to do, but verify it)
+### Step 1 - `/api/health` (one database prerequisite, then verify it)
+
+**Before deploying a release that includes the `ai_text_retention` check, apply
+`20260924001700` to the database.** The check reads `ai_request_text`, so on a
+database without it `/api/health` answers `503` with
+`SupabaseError:PGRST205` and the scheduled monitor fails. The hosted project has
+no CLI migration history, so that means the SQL-editor block in
+[`docs/beta-runbook.md`, "Apply the AI question-text table by hand"](beta-runbook.md#apply-the-ai-question-text-table-by-hand-on-a-project-with-no-migration-history),
+run before the pull request merges.
 
 After the next production deploy:
 
@@ -65,13 +73,14 @@ After the next production deploy:
 curl -i https://<your-app>/api/health
 ```
 
-Expect `HTTP/2 200` and a body naming three checks:
+Expect `HTTP/2 200` and a body naming four checks:
 
 ```json
 {"status":"ok","checked_at":"...","checks":[
   {"name":"supabase","status":"ok","duration_ms":10},
   {"name":"rag_index","status":"ok","duration_ms":8,"detail":"75 chunks"},
-  {"name":"schema_contract","status":"ok","duration_ms":12,"detail":"3 rpcs"}]}
+  {"name":"schema_contract","status":"ok","duration_ms":12,"detail":"3 rpcs"},
+  {"name":"ai_text_retention","status":"ok","duration_ms":9,"detail":"0 overdue"}]}
 ```
 
 Anything failing answers `503` and names the check, and **which check it is
@@ -94,6 +103,16 @@ decides what to do**:
   `DataApiUnreachableError` instead means no probe got an answer, so nothing
   was measured - expect `supabase` to be failing beside it.
 - `supabase` - the database did not answer at all.
+- `ai_text_retention` - retained rider question text, or an
+  `ai_requests.prompt_redacted_preview`, has outlived its 90 days by more than
+  36 hours, so the daily purge is not running and the privacy notice is untrue
+  right now. The detail carries the number of rows,
+  `OverdueRetainedTextError:<n>` for text and `OverduePreviewError:<n>` for
+  previews. `UnretainablePreviewError:<n>` is the keep rule instead: a
+  preview more than 36 hours old for a rider whose text may not be kept, which
+  the same job should have cleared. See "The `ai_text_retention`
+  check" below.
+  `SupabaseError:PGRST205` instead means `20260924001700` was never applied.
 
 ### Step 2 - the 15-minute alert (no external account)
 
@@ -277,7 +296,7 @@ is deliberately not among them: nothing in the app reads it, only
 
 | Piece | Answers | Catches R3? |
 | --- | --- | --- |
-| `/api/health` | Is Postgres reachable, does the RAG index load *in this bundle*, and does the Data API still expose the RPCs this code calls? | Yes, on the first deploy |
+| `/api/health` | Is Postgres reachable, does the RAG index load *in this bundle*, does the Data API still expose the RPCs this code calls, and has any retained rider question text, or any `ai_requests` preview, outlived its 90 days? | Yes, on the first deploy |
 | `/api/monitoring/ai-health` | Has anything failed in the last hour? Error rate, p95 latency | Yes, on the first rider call |
 | `.github/workflows/monitoring.yml` | Runs both every 15 minutes and fails the run when either says no | This is what makes them alerts |
 | Sentry | The stack trace behind an individual failure | Yes - but only because handled errors are reported explicitly, see below |
@@ -295,6 +314,45 @@ function is its own bundle - so `/api/health` has its own
 `outputFileTracingIncludes` entry in `next.config.ts`.
 `tests/unit/rag-index-bundling.test.ts` walks the import graph of every API
 route and fails any that can reach `lib/rag/retriever` without one.
+
+#### The `ai_text_retention` check
+
+`ai_request_text` holds a rider's question text for 90 days, and a `pg_cron` job
+in the database (`purge-expired-ai-request-text`, 04:17 UTC daily) deletes it.
+The same job nulls `ai_requests.prompt_redacted_preview` once its request is 90
+days old. Nothing about that job is visible from the app, so this check asks the
+question the notice answers instead, of both copies: is any text row more than
+36 hours past its `retain_until`, and is any preview still held more than 36
+hours past its 90 days? Nothing writes `ai_request_text` yet, so today the
+previews are what prove the job runs. A row already waits up to 24 hours for
+the next run, so the grace absorbs a run up to 12 hours late, and a single
+missed run can trip it when a row expired in the 12 hours after the last run.
+The job also nulls every preview of a rider whose text may not be kept - one
+who has not seen the retention notice, has opted out, or started with keeping
+off and has not opted in, judged as of when the preview was written, so one
+from before the notice or the latest opt-in counts too; the routes still write one for every request until
+capture gates that write, so a third count asks whether any such preview is
+more than 36 hours old. It reads them through the
+`ai_requests_unretainable_previews` view, which is the one place that rule is
+written and which the job itself reads too, since PostgREST cannot join
+`ai_requests` to `profiles`, and a missing view fails with its PostgREST code.
+It reads three counts and never a row, and it holds whichever trigger does the
+deleting - if the purge moves to Vercel Cron, this check does not change.
+
+On a failure, read the job's recent runs in the SQL editor:
+
+```sql
+select status, return_message, start_time
+from cron.job_run_details
+where jobid = (select jobid from cron.job where jobname = 'purge-expired-ai-request-text')
+order by start_time desc
+limit 5;
+```
+
+No rows means the job was never scheduled on this project - apply the block in
+`docs/beta-runbook.md` ("Apply the AI question-text table by hand"). A `failed`
+row carries the error. Either way `select public.purge_expired_ai_request_text();`
+run by hand clears what is overdue while the cause is fixed.
 
 #### The `schema_contract` check
 
@@ -497,7 +555,7 @@ add the `crons` entry to `vercel.json`, set `MONITORING_CRON_SECRET` in Vercel
   one Sentry event. So while a dependency is down, the volume is set by how
   often the endpoint is *called* rather than by the outage: the documented
   callers alone (the 15-minute workflow plus a 5-minute external monitor)
-  produce roughly 48 events an hour with all three checks failing, and anyone can
+  produce roughly 64 events an hour with all four checks failing, and anyone can
   raise that by looping the URL - during exactly the window Sentry's free tier
   needs to still be accepting events. Accepted because a health check that
   reports nothing defeats its own purpose, and it has to stay reachable by an
