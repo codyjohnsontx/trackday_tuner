@@ -35,8 +35,9 @@ const SCHEMELESS_LINK =
 //     95 105 110, shift points 8500 9000 9500 - and a looser grouping masks
 //     those.
 //   - A trunk prefix: a first group starting with 0, then two groups of 3 or 4
-//     digits (020 7946 0958, 07700 900 123, 0412 345 678). Nobody writes a
-//     setup reading with a leading 0.
+//     digits (020 7946 0958, 07700 900 123, 0412 345 678). A 24-hour session
+//     time starts with 0 too, so three 4-digit groups that are all valid
+//     times (0900 1030 1200) are a schedule and are left alone.
 // A date always has a two-digit group, so it is never one.
 // A bare 7-digit local number (555-1234) is deliberately not matched: it is the
 // shape of an rpm range (900-1100 is short of it, but 500-1500 is not), and an
@@ -56,6 +57,11 @@ function countDigits(value: string): number {
   return value.replace(/\D/g, '').length;
 }
 
+function isClockTimeList(value: string): boolean {
+  const groups = value.split(/\D+/).filter(Boolean);
+  return groups.length === 3 && groups.every((group) => /^(?:[01]\d|2[0-3])[0-5]\d$/.test(group));
+}
+
 /**
  * Masks the tokens a rider's AI request text must never be stored with: web
  * links, email addresses, UUIDs, phone numbers and runs of six or more digits.
@@ -65,6 +71,9 @@ function countDigits(value: string): number {
  * - because the privacy notice promises what is masked in one sentence, and two
  * helpers would let one copy keep what the other hides. It does not collapse
  * whitespace or truncate; the preview does that around it.
+ *
+ * When a string could be either, privacy wins over replay fidelity and it is
+ * masked; what is plainly not a phone number, a link or an address is not.
  *
  * Order matters. A scheme link goes first so an address inside one is masked as
  * a link; an email goes before a schemeless link, or its domain would be eaten
@@ -84,7 +93,7 @@ export function redactForStorage(value: string): string {
       const digits = countDigits(match);
       return digits >= 8 && digits <= 15 ? '[phone]' : match;
     })
-    .replace(GROUPED_PHONE, '[phone]')
+    .replace(GROUPED_PHONE, (match) => (isClockTimeList(match) ? match : '[phone]'))
     .replace(/\b\d{6,}\b/g, '[number]');
 }
 

@@ -246,14 +246,21 @@ test.describe('a rider controlling their Race Engineer question history', () => 
 
     // A preview written while the rider was off, as every request wrote one
     // before capture gated it. The database's own rule must still refuse it.
+    // The insert trigger (20260926001900) drops a preview for a rider who is
+    // off, so it is written by a service-role UPDATE after the insert, the way
+    // ai-question-purge.spec.ts seeds one.
     const whileOff = `e2e-history-off-${randomUUID()}`;
     const { error: requestError } = await admin.from('ai_requests').insert({
       user_id: rider.id,
       request_id: whileOff,
       status: 'completed',
-      prompt_redacted_preview: 'Asked while question history was off.',
     });
     expect(requestError, requestError?.message).toBeNull();
+    const { error: previewError } = await admin
+      .from('ai_requests')
+      .update({ prompt_redacted_preview: 'Asked while question history was off.' })
+      .eq('request_id', whileOff);
+    expect(previewError, previewError?.message).toBeNull();
 
     await signInWith(page, rider.email, rider.password);
     await gotoPage(page, '/settings');
