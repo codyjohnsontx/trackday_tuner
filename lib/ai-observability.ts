@@ -24,13 +24,16 @@ export const REDACTION_VERSION = 1;
 const SCHEMELESS_LINK =
   /\bwww\.\S+|\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:com|net|org|io|co|uk|ca|au|de|app|dev|info|ly|gg|tv|xyz)\b(?:\/\S*)?/gi;
 
-// Phone numbers, in the two shapes that cannot be setup data. Neither may
-// touch a digit, letter, colon or decimal point on either side, so a lap time
+// Phone numbers, in the shapes that cannot be setup data. None may touch a
+// digit, letter, colon or decimal point on either side, so a lap time
 // (1:23.456) or a pressure (32.5) never starts or ends one.
 //   - `+` and a country code, then digit groups: 8 to 15 digits in all.
-//   - Three groups, the last two of 3 or 4 digits (555 123 4567,
-//     (020) 7946 0958). A date is 2026-09-25 or 25.09.2026 and always has a
-//     two-digit group in the middle, so it is never one.
+//   - A bracketed area code, then groups of 3 or 4 and exactly 4 digits
+//     ((555) 123-4567, (020) 7946 0958).
+//   - Exactly 3, 3 and 4 digits (555 123 4567). Riders list readings as
+//     numbers of one size - tyre temperatures 180 185 175, spring rates
+//     95 105 110, shift points 8500 9000 9500 - and a looser grouping masks
+//     those. A date always has a two-digit group, so it is never one.
 // A bare 7-digit local number (555-1234) is deliberately not matched: it is the
 // shape of an rpm range (900-1100 is short of it, but 500-1500 is not), and an
 // unseparated run of six or more digits is masked as a long number anyway.
@@ -41,17 +44,12 @@ const INTERNATIONAL_PHONE = new RegExp(
   'g',
 );
 const GROUPED_PHONE = new RegExp(
-  String.raw`${PHONE_EDGE_BEFORE}(?:\(\d{2,5}\)[\s.-]?|\d{2,5}[\s.-])\d{3,4}[\s.-]\d{3,4}${PHONE_EDGE_AFTER}`,
+  String.raw`${PHONE_EDGE_BEFORE}(?:\(\d{2,5}\)[\s.-]?\d{3,4}|\d{3}[\s.-]\d{3})[\s.-]\d{4}${PHONE_EDGE_AFTER}`,
   'g',
 );
 
 function countDigits(value: string): number {
   return value.replace(/\D/g, '').length;
-}
-
-// "2019 2020 2021" has the grouped shape and is a list of model years.
-function isYearList(value: string): boolean {
-  return value.split(/[\s.()-]+/).filter(Boolean).every((group) => /^(?:19|20)\d{2}$/.test(group));
 }
 
 /**
@@ -82,7 +80,7 @@ export function redactForStorage(value: string): string {
       const digits = countDigits(match);
       return digits >= 8 && digits <= 15 ? '[phone]' : match;
     })
-    .replace(GROUPED_PHONE, (match) => (isYearList(match) ? match : '[phone]'))
+    .replace(GROUPED_PHONE, '[phone]')
     .replace(/\b\d{6,}\b/g, '[number]');
 }
 
