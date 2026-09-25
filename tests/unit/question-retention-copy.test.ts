@@ -17,7 +17,7 @@ import { DayPlanPanel } from '@/components/ai/day-plan-panel';
 import { QuestionRetentionLine } from '@/components/ai/question-retention-line';
 import { QuestionRetentionNotice } from '@/components/ai/question-retention-notice';
 import { TuningAdvicePanel } from '@/components/ai/tuning-advice-panel';
-import { QuestionHistorySettings } from '@/components/settings/question-history-settings';
+import { QuestionHistorySettings, RiderDate } from '@/components/settings/question-history-settings';
 import { QUESTION_RETENTION_COPY as COPY } from '@/lib/ai-question-retention-copy';
 import type { RetainedQuestion } from '@/lib/ai-question-retention';
 import type { Vehicle } from '@/types';
@@ -192,6 +192,17 @@ describe('Settings card', () => {
     expect(text(html)).toContain(COPY.settings.demo);
     expect(text(html)).not.toContain(COPY.settings.listHeading);
     expect(html).toMatch(/<button[^>]*disabled/);
+  });
+});
+
+describe('RiderDate', () => {
+  // The rider's calendar day is only knowable in their browser. A date the
+  // server formatted in its own zone stayed on screen after hydration, so the
+  // server renders the machine-readable value alone and the text arrives on
+  // mount (tests/e2e/ai-question-history.spec.ts checks it in a browser).
+  it('renders no server-side calendar day, only the timestamp', () => {
+    const html = renderToStaticMarkup(createElement(RiderDate, { iso: '2026-09-25T01:00:00Z' }));
+    expect(html).toBe('<time dateTime="2026-09-25T01:00:00Z"></time>');
   });
 });
 

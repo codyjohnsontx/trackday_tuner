@@ -30,6 +30,7 @@ import {
   setQuestionRetention,
 } from '@/lib/actions/ai-question-retention';
 import {
+  RETENTION_DELETE_FAILED_MESSAGE,
   RETENTION_LOAD_FAILED_MESSAGE,
   RETENTION_OPT_OUT_DELETE_FAILED_MESSAGE,
   RETENTION_PROFILE_MISSING_MESSAGE,
@@ -51,11 +52,12 @@ interface RecordedQuery {
  * security property here: a preview update without `user_id` would clear
  * every rider's.
  */
-function fakeClient(results: Record<string, Result[]>) {
+function fakeClient(results: Record<string, Result[]>, label: string, order: string[]) {
   const queries: RecordedQuery[] = [];
   const from = vi.fn((table: string) => {
     const record: RecordedQuery = { table, calls: [] };
     queries.push(record);
+    order.push(`${label}:${table}`);
     const result = () => results[table]?.shift() ?? { data: null, error: null };
     let settled: Result | null = null;
     const settle = () => (settled ??= result());
@@ -75,11 +77,12 @@ function fakeClient(results: Record<string, Result[]>) {
 }
 
 function useClients(user: Record<string, Result[]>, admin: Record<string, Result[]>) {
-  const userClient = fakeClient(user);
-  const adminClient = fakeClient(admin);
+  const order: string[] = [];
+  const userClient = fakeClient(user, 'rider', order);
+  const adminClient = fakeClient(admin, 'service', order);
   vi.mocked(createClient).mockResolvedValue(userClient.client as never);
   vi.mocked(createAdminClient).mockReturnValue(adminClient.client as never);
-  return { userQueries: userClient.queries, adminQueries: adminClient.queries };
+  return { userQueries: userClient.queries, adminQueries: adminClient.queries, order };
 }
 
 function verbs(query: RecordedQuery) {
@@ -219,35 +222,47 @@ describe('acknowledgeQuestionRetentionNotice', () => {
 });
 
 describe('deleteRetainedQuestion', () => {
-  it('deletes the text row through the rider client and nulls only that request preview of this rider', async () => {
-    const { userQueries, adminQueries } = useClients({}, {});
+  it('clears only that request preview of this rider, then deletes the text row through the rider client', async () => {
+    const { userQueries, adminQueries, order } = useClients({}, {});
 
     expect(await deleteRetainedQuestion('req-1')).toEqual({ ok: true, data: undefined });
 
-    expect(userQueries).toHaveLength(1);
-    expect(userQueries[0].table).toBe('ai_request_text');
+    expect(order).toEqual(['service:ai_requests', 'rider:ai_request_text']);
     expect(userQueries[0].calls).toEqual([['delete'], ['eq', 'request_id', 'req-1']]);
-
-    expect(adminQueries).toHaveLength(1);
-    expect(adminQueries[0].table).toBe('ai_requests');
     expect(adminQueries[0].calls).toContainEqual(['eq', 'user_id', USER_ID]);
     expect(adminQueries[0].calls).toContainEqual(['eq', 'request_id', 'req-1']);
   });
 
-  it('leaves the preview alone when the text delete failed', async () => {
-    const { adminQueries } = useClients({ ai_request_text: [{ data: null, error: { message: 'boom' } }] }, {});
-    expect((await deleteRetainedQuestion('req-1')).ok).toBe(false);
-    expect(adminQueries).toHaveLength(0);
+  it('keeps the text row, and so the rider retry, when the preview clear fails', async () => {
+    // The row is what lists the question and carries its Delete button. With
+    // the text deleted first, a failed preview clear left the preview held
+    // behind a list that said nothing was.
+    const { userQueries } = useClients({}, { ai_requests: [{ data: null, error: { message: 'boom' } }] });
+
+    expect(await deleteRetainedQuestion('req-1')).toEqual({ ok: false, error: RETENTION_DELETE_FAILED_MESSAGE });
+    expect(userQueries).toHaveLength(0);
+  });
+
+  it('reports a failed text delete after the preview was cleared', async () => {
+    useClients({ ai_request_text: [{ data: null, error: { message: 'boom' } }] }, {});
+    expect(await deleteRetainedQuestion('req-1')).toEqual({ ok: false, error: RETENTION_DELETE_FAILED_MESSAGE });
   });
 });
 
 describe('deleteAllRetainedQuestions', () => {
-  it('deletes through the rider client and leaves the switch alone', async () => {
-    const { userQueries, adminQueries } = useClients({}, {});
+  it('clears every preview of this rider, then deletes through the rider client, and leaves the switch alone', async () => {
+    const { userQueries, order } = useClients({}, {});
 
     expect(await deleteAllRetainedQuestions()).toEqual({ ok: true, data: undefined });
+    expect(order).toEqual(['service:ai_requests', 'rider:ai_request_text']);
     expect(userQueries[0].calls).toEqual([['delete'], ['eq', 'user_id', USER_ID]]);
-    expect(adminQueries.map((query) => query.table)).toEqual(['ai_requests']);
+  });
+
+  it('keeps every text row, and so the list, when the preview clear fails', async () => {
+    const { userQueries } = useClients({}, { ai_requests: [{ data: null, error: { message: 'boom' } }] });
+
+    expect(await deleteAllRetainedQuestions()).toEqual({ ok: false, error: RETENTION_DELETE_FAILED_MESSAGE });
+    expect(userQueries).toHaveLength(0);
   });
 });
 

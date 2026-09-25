@@ -294,4 +294,41 @@ test.describe('a rider controlling their Race Engineer question history', () => 
     await expect(page.getByText(COPY.inline.off)).toBeVisible();
     await expect(page.getByText(COPY.inline.keeping)).toHaveCount(0);
   });
+
+  test.describe('in a browser far from the server time zone', () => {
+    // Kiritimati is UTC+14. The row is dated 11:00 UTC, which is already the
+    // next calendar day there and is the same or the previous day in every zone
+    // from UTC-12 to UTC+12 - so whatever zone the server runs in, a date it
+    // formatted and left in place after hydration shows the wrong day.
+    const timezoneId = 'Pacific/Kiritimati';
+    test.use({ timezoneId, locale: 'en-US' });
+
+    test('prints held-question dates in the rider zone', async ({ page }) => {
+      const admin = createTestAdminClient();
+      rider = await createThrowawayRider('ai-history-zone');
+      const { error: profileError } = await admin
+        .from('profiles')
+        .update({ ai_question_retention_notice_seen_at: new Date().toISOString() })
+        .eq('id', rider.id);
+      expect(profileError, profileError?.message).toBeNull();
+      const requestId = await plantQuestion(admin, rider.id, QUESTIONS[0]);
+      const { error: dateError } = await admin
+        .from('ai_request_text')
+        .update({ created_at: '2026-09-25T11:00:00+00:00', retain_until: '2026-12-24T11:00:00+00:00' })
+        .eq('request_id', requestId);
+      expect(dateError, dateError?.message).toBeNull();
+      const [row] = expectRows(
+        await admin.from('ai_request_text').select('created_at, retain_until').eq('request_id', requestId),
+        'reading the planted row',
+      );
+      const riderDay = (iso: string) =>
+        new Date(iso).toLocaleDateString('en-US', { timeZone: timezoneId, year: 'numeric', month: 'short', day: 'numeric' });
+
+      await signInWith(page, rider.email, rider.password);
+      await page.goto('/settings');
+      const card = historyCard(page);
+      await expect(card.locator(`time[datetime="${row.created_at}"]`)).toHaveText(riderDay(row.created_at));
+      await expect(card.locator(`time[datetime="${row.retain_until}"]`)).toHaveText(riderDay(row.retain_until));
+    });
+  });
 });

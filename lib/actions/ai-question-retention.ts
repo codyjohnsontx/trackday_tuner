@@ -224,7 +224,14 @@ export async function acknowledgeQuestionRetentionNotice(): Promise<ActionResult
   return { ok: true, data: undefined };
 }
 
-/** Delete one held question and the preview of the same request. */
+/**
+ * Delete one held question and the preview of the same request.
+ *
+ * The preview is cleared FIRST. The text row is what puts the question - and
+ * its Delete button - on the rider's list, so if the preview clear fails the
+ * row must still be there for them to retry. The other order let a failed
+ * clear strand the preview behind a list that said nothing was held.
+ */
 export async function deleteRetainedQuestion(requestId: string): Promise<ActionResult> {
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
@@ -236,8 +243,13 @@ export async function deleteRetainedQuestion(requestId: string): Promise<ActionR
   const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
+  if (!(await nullPreviews(user.id, requestId))) {
+    return { ok: false, error: RETENTION_DELETE_FAILED_MESSAGE };
+  }
+
   const supabase = await createClient();
   const { error } = await supabase.from('ai_request_text').delete().eq('request_id', requestId);
+  revalidatePath('/settings');
   if (error) {
     reportError('ai-question-retention', new Error(error.message), {
       query: 'ai_request_text.delete_one',
@@ -246,13 +258,14 @@ export async function deleteRetainedQuestion(requestId: string): Promise<ActionR
     });
     return { ok: false, error: RETENTION_DELETE_FAILED_MESSAGE };
   }
-
-  const previewCleared = await nullPreviews(user.id, requestId);
-  revalidatePath('/settings');
-  return previewCleared ? { ok: true, data: undefined } : { ok: false, error: RETENTION_DELETE_FAILED_MESSAGE };
+  return { ok: true, data: undefined };
 }
 
-/** Delete every held question and every preview, and leave the switch as it is. */
+/**
+ * Delete every held question and every preview, and leave the switch as it is.
+ * Previews first, for the same reason as a single delete: a failed clear must
+ * leave the list, and "Hold to delete all", in place to retry.
+ */
 export async function deleteAllRetainedQuestions(): Promise<ActionResult> {
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
@@ -260,8 +273,13 @@ export async function deleteAllRetainedQuestions(): Promise<ActionResult> {
   const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
+  if (!(await nullPreviews(user.id, null))) {
+    return { ok: false, error: RETENTION_DELETE_FAILED_MESSAGE };
+  }
+
   const supabase = await createClient();
   const { error } = await supabase.from('ai_request_text').delete().eq('user_id', user.id);
+  revalidatePath('/settings');
   if (error) {
     reportError('ai-question-retention', new Error(error.message), {
       query: 'ai_request_text.delete_all',
@@ -269,8 +287,5 @@ export async function deleteAllRetainedQuestions(): Promise<ActionResult> {
     });
     return { ok: false, error: RETENTION_DELETE_FAILED_MESSAGE };
   }
-
-  const previewsCleared = await nullPreviews(user.id, null);
-  revalidatePath('/settings');
-  return previewsCleared ? { ok: true, data: undefined } : { ok: false, error: RETENTION_DELETE_FAILED_MESSAGE };
+  return { ok: true, data: undefined };
 }

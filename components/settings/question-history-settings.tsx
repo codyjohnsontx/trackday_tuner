@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { PreferenceToggle } from '@/components/settings/preference-toggle';
 import { Button } from '@/components/ui/button';
@@ -30,14 +30,17 @@ interface QuestionHistorySettingsProps {
   demoMode: boolean;
 }
 
-// A date the rider reads, in their own locale and zone. The server renders it
-// in the server's, so the text is allowed to differ on hydration.
-function RiderDate({ iso }: { iso: string }) {
-  return (
-    <time dateTime={iso} suppressHydrationWarning>
-      {new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
-    </time>
-  );
+// A date the rider reads, in their own locale and zone. Only the browser knows
+// either, so the text is formatted after mount and the server renders the
+// machine-readable `dateTime` alone. Formatting on both sides and suppressing
+// the mismatch left the server's calendar day on screen after hydration for a
+// rider whose day differs from the server's.
+export function RiderDate({ iso }: { iso: string }) {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    setText(new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }));
+  }, [iso]);
+  return <time dateTime={iso}>{text}</time>;
 }
 
 /**
