@@ -3,6 +3,7 @@ import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { DemoBanner } from '@/components/demo/demo-banner';
 import { getSessionEnvironments, getSessions, getTelemetrySummaries } from '@/lib/actions/sessions';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
+import { resolveQuestionRetention } from '@/lib/ai-question-retention';
 import { isDemoMode } from '@/lib/demo/mode';
 import { DayPlanPanel } from '@/components/ai/day-plan-panel';
 import { Button } from '@/components/ui/button';
@@ -66,7 +67,12 @@ export default async function SessionsPage() {
         }
       />
 
-      <DayPlanPanel vehicles={vehicles} tier={accessTier} demoMode={demoMode} />
+      <DayPlanPanel
+        vehicles={vehicles}
+        tier={accessTier}
+        demoMode={demoMode}
+        keepsQuestionText={resolveQuestionRetention(profile).keeping}
+      />
 
       <SessionExportPanel vehicles={vehicles} tier={accessTier} demoMode={demoMode} />
 

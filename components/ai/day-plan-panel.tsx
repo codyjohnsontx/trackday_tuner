@@ -6,6 +6,7 @@ import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { AdviceReport } from '@/components/ai/advice-report';
 import type { AdviceResponse } from '@/lib/rag/schema';
 import type { Vehicle } from '@/types';
+import { QuestionRetentionLine } from '@/components/ai/question-retention-line';
 import { useTemperatureInput, useTemperatureUnit } from '@/components/ui/temperature-display';
 import {
   displayTemperatureBound,
@@ -23,6 +24,8 @@ interface DayPlanPanelProps {
   vehicles: Vehicle[];
   tier: 'free' | 'pro';
   demoMode?: boolean;
+  /** Whether this rider's Morning Plan details are kept, from their profile. */
+  keepsQuestionText: boolean;
 }
 
 interface DayPlanSuccess {
@@ -141,7 +144,7 @@ export function DayPlanAdviceResult({ advice }: { advice: AdviceResponse }) {
   );
 }
 
-export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelProps) {
+export function DayPlanPanel({ vehicles, tier, demoMode = false, keepsQuestionText }: DayPlanPanelProps) {
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id ?? '');
   const [trackName, setTrackName] = useState('');
   // Typed in the rider's unit; the route stores and reasons in Celsius.
@@ -350,6 +353,8 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false }: DayPlanPanelP
         {selectedVehicle ? (
           <p className="text-xs text-ink-faint">Planning for {selectedVehicle.nickname}.</p>
         ) : null}
+
+        {demoMode ? null : <QuestionRetentionLine keeping={keepsQuestionText} />}
 
         {/* In demo the button is a label, not an offer — a white fill would make
             the loudest thing on the page something you cannot press. */}

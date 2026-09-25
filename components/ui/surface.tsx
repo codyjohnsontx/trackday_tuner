@@ -13,11 +13,16 @@ import { cn } from '@/lib/utils';
 interface CardProps {
   children: ReactNode;
   className?: string;
+  id?: string;
 }
 
 /** A borderless raised panel sitting directly on the canvas. */
-export function Card({ children, className }: CardProps) {
-  return <div className={cn('rounded-card bg-surface p-5', className)}>{children}</div>;
+export function Card({ children, className, id }: CardProps) {
+  return (
+    <div id={id} className={cn('rounded-card bg-surface p-5', className)}>
+      {children}
+    </div>
+  );
 }
 
 interface EyebrowProps {
