@@ -740,11 +740,89 @@ alter table public.profiles
   alter column ai_question_retention_requires_opt_in set default false;
 ```
 
+### Re-check the keep rule when capture writes, by hand
+
+`20260926001900` makes the database ask again, at insert, whether the rider is
+keeping: an `ai_request_text` row is dropped and an `ai_requests` preview is
+written as null unless the notice has been seen, `opted_out_at` is null and
+`opted_in_at` is set. It closes the window where a rider turns keeping off while
+a question is in flight, which would otherwise leave a text row behind the
+delete that turning it off runs. Apply it after the two blocks above, and before
+merging the pull request that ships capture.
+
+**1. Apply.**
+
+```sql
+-- hosted-capture-keep-rule: mirror of supabase/migrations/20260926001900_guard_rider_text_capture_at_write.sql
+begin;
+create or replace function public.enforce_rider_text_keep_rule()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  perform 1
+     from public.profiles p
+    where p.id = new.user_id
+      and p.ai_question_retention_notice_seen_at is not null
+      and p.ai_question_retention_opted_out_at is null
+      and p.ai_question_retention_opted_in_at is not null
+      for share;
+
+  if found then
+    return new;
+  end if;
+
+  if tg_table_name = 'ai_requests' then
+    new.prompt_redacted_preview := null;
+    return new;
+  end if;
+
+  return null;
+end;
+$$;
+
+create or replace trigger ai_request_text_enforce_keep_rule
+  before insert on public.ai_request_text
+  for each row execute function public.enforce_rider_text_keep_rule();
+
+create or replace trigger ai_requests_enforce_keep_rule
+  before insert on public.ai_requests
+  for each row
+  when (new.prompt_redacted_preview is not null)
+  execute function public.enforce_rider_text_keep_rule();
+commit;
+```
+
+**2. Verify.**
+
+```sql
+select tgname, tgrelid::regclass as on_table, tgenabled
+from pg_trigger
+where tgname in ('ai_request_text_enforce_keep_rule', 'ai_requests_enforce_keep_rule')
+order by tgname;
+```
+
+Expect two rows, `ai_request_text_enforce_keep_rule` on `ai_request_text` and
+`ai_requests_enforce_keep_rule` on `ai_requests`, each with `tgenabled` `O`.
+
+**3. Rollback.**
+
+```sql
+-- hosted-capture-keep-rule-rollback
+begin;
+drop trigger if exists ai_request_text_enforce_keep_rule on public.ai_request_text;
+drop trigger if exists ai_requests_enforce_keep_rule on public.ai_requests;
+drop function if exists public.enforce_rider_text_keep_rule();
+commit;
+```
+
 ### Confirm question capture after the deploy
 
-The capture change writes `ai_request_text` and needs no SQL: both blocks above
-must already be applied, since the routes insert `ai_requests.app_commit` and
-the text table. A route whose text insert fails still answers the rider and
+The capture change writes `ai_request_text` and needs no SQL beyond the three
+blocks above, which must already be applied, since the routes insert
+`ai_requests.app_commit` and the text table. A route whose text insert fails still answers the rider and
 reports the failure through `reportError`, so a missing table shows up in the
 logs rather than as broken advice. After the deploy, sign in as a rider with Pro
 access and:

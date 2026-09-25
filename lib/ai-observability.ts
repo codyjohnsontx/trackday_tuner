@@ -33,7 +33,11 @@ const SCHEMELESS_LINK =
 //   - Exactly 3, 3 and 4 digits (555 123 4567). Riders list readings as
 //     numbers of one size - tyre temperatures 180 185 175, spring rates
 //     95 105 110, shift points 8500 9000 9500 - and a looser grouping masks
-//     those. A date always has a two-digit group, so it is never one.
+//     those.
+//   - A trunk prefix: a first group starting with 0, then two groups of 3 or 4
+//     digits (020 7946 0958, 07700 900 123, 0412 345 678). Nobody writes a
+//     setup reading with a leading 0.
+// A date always has a two-digit group, so it is never one.
 // A bare 7-digit local number (555-1234) is deliberately not matched: it is the
 // shape of an rpm range (900-1100 is short of it, but 500-1500 is not), and an
 // unseparated run of six or more digits is masked as a long number anyway.
@@ -44,7 +48,7 @@ const INTERNATIONAL_PHONE = new RegExp(
   'g',
 );
 const GROUPED_PHONE = new RegExp(
-  String.raw`${PHONE_EDGE_BEFORE}(?:\(\d{2,5}\)[\s.-]?\d{3,4}|\d{3}[\s.-]\d{3})[\s.-]\d{4}${PHONE_EDGE_AFTER}`,
+  String.raw`${PHONE_EDGE_BEFORE}(?:\(\d{2,5}\)[\s.-]?\d{3,4}[\s.-]\d{4}|\d{3}[\s.-]\d{3}[\s.-]\d{4}|0\d{1,4}[\s.-]\d{3,4}[\s.-]\d{3,4})${PHONE_EDGE_AFTER}`,
   'g',
 );
 

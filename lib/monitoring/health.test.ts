@@ -219,8 +219,8 @@ describe('checkAiTextRetention', () => {
     expect(check.detail).toBe('OverdueRetainedTextError:3');
   });
 
-  // Previews are the job's other half, and a rider who keeps may hold previews
-  // with no text row left beside them.
+  // Previews are the job's other half, and a keeping rider's preview outlives a
+  // text row whose insert failed.
   it('fails naming the count when previews have outlived the grace', async () => {
     stubCountingPostgrest({
       ai_requests: {

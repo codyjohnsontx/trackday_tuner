@@ -280,8 +280,9 @@ keep rule as the text: the routes write it only for a keeping rider, the migrati
 nulled every existing one, and the purge nulls any preview whose rider's text may
 not be kept, with consent judged as of when the preview was written, so one from
 before the notice or the latest opt-in goes too. That migration's purge comment
-says the routes write a preview for everyone; that was true until capture shipped
-and the file is not edited.
+says the routes write a preview for everyone, and `20260925001800` says nothing
+writes the text table yet; both were true until capture shipped and neither file
+is edited.
 The rule is written in SQL once, as
 the `ai_requests_unretainable_previews` view, which that clear, the purge and
 `/api/health` all read.
@@ -311,8 +312,12 @@ required `retainRiderText` with no default (`RiderTextCapture`), so a third AI r
 cannot compile without answering it, and both routes answer it with
 `resolveQuestionRetention(profile).keeping` - opt-in in the code, never reading
 `requires_opt_in`. False writes no text row and a NULL preview, which is what makes
-"This question is not kept after it is answered" true. A failed text insert is
-reported and the rider still gets their answer. What is masked is
+"This question is not kept after it is answered" true. The database asks again at
+insert (`20260926001900`): a text row is dropped and a preview nulled unless the
+rider is keeping at that moment, by the same opt-in rule, and the profile row is
+read `for share`, so a rider turning keeping off while a question is in flight
+either wins and nothing is written or waits and then deletes what was. A failed
+text insert is reported and the rider still gets their answer. What is masked is
 `redactForStorage` (`lib/ai-observability.ts`), the one helper for BOTH copies,
 because the notice promises the masked kinds in one sentence: change what it masks
 and bump `REDACTION_VERSION` and check that sentence in the same change.

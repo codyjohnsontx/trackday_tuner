@@ -60,7 +60,12 @@ async function makeRider(admin: SupabaseClient<Database>, label: string): Promis
 }
 
 // An ai_requests row and, optionally, its text. The foreign key needs the
-// request first, the way the capture step will write them.
+// request first, the way capture writes them.
+//
+// The database drops a preview at insert for a rider who is not keeping
+// (20260926001900), so the preview is written by a service-role UPDATE after
+// the insert: these tests are about the purge, which has to clear one that got
+// there another way, such as a rider's consent changing afterwards.
 //
 // A text row cannot be inserted already old: the database stamps created_at
 // with the insert time and caps retain_until at 90 days after it, whatever the
@@ -77,9 +82,16 @@ async function seedRequest(
     request_id: requestId,
     status: 'completed',
     created_at: options.createdAt.toISOString(),
-    prompt_redacted_preview: options.preview ?? null,
   });
   if (requestError) throw new Error(`seeding ai_requests failed: ${requestError.message}`);
+
+  if (options.preview) {
+    const { error: previewError } = await admin
+      .from('ai_requests')
+      .update({ prompt_redacted_preview: options.preview })
+      .eq('request_id', requestId);
+    if (previewError) throw new Error(`seeding the preview failed: ${previewError.message}`);
+  }
 
   if (options.retainUntil) {
     const { error: textError } = await admin.from('ai_request_text').insert({
@@ -337,6 +349,62 @@ test.describe('retained AI question text', () => {
     }
   });
 
+  // The routes decide from the profile they read when the request began, and
+  // write a few queries later. A rider who turns keeping off in between has had
+  // what was held deleted already, so the database asks again at insert: the
+  // text row is dropped and the preview goes in null, while the request row,
+  // which is the rate limit, is stored. requires_opt_in = false is not consent.
+  test('capture keeps nothing for a rider who is not keeping when it writes', async ({}, workerInfo) => {
+    const neverOptedIn = await makeRider(admin, `${workerInfo.project.name}-no-opt-in-flag`);
+    try {
+      await recordConsent(neverOptedIn.userId, {
+        ai_question_retention_notice_seen_at: new Date(Date.now() - DAY_MS).toISOString(),
+        ai_question_retention_requires_opt_in: false,
+      });
+
+      const capture = async (userId: string, question: string) => {
+        const requestId = `e2e-ai-text-capture-${randomUUID()}`;
+        const { error: requestError } = await admin.from('ai_requests').insert({
+          user_id: userId,
+          request_id: requestId,
+          status: 'pending',
+          prompt_redacted_preview: question,
+        });
+        expect(requestError).toBeNull();
+        const { error: textError } = await admin.from('ai_request_text').insert({
+          request_id: requestId,
+          user_id: userId,
+          route: 'tuning_advice',
+          submitted: { question, symptoms: [], change_intent: null },
+          redaction_version: 1,
+        });
+        expect(textError).toBeNull();
+        return requestId;
+      };
+
+      const refused = {
+        optedOut: await capture(optedOutRider.userId, 'asked while turning keeping off'),
+        notSeen: await capture(otherRider.userId, 'asked before the notice'),
+        optInPending: await capture(optInPendingRider.userId, 'asked before opting in'),
+        neverOptedIn: await capture(neverOptedIn.userId, 'asked with requires_opt_in false'),
+      };
+      for (const requestId of Object.values(refused)) {
+        expect(await textRow(admin, requestId)).toBeNull();
+        expect(await preview(admin, requestId)).toBeNull();
+      }
+
+      const kept = await capture(rider.userId, 'asked while keeping');
+      expect((await textRow(admin, kept))?.submitted).toEqual({
+        question: 'asked while keeping',
+        symptoms: [],
+        change_intent: null,
+      });
+      expect(await preview(admin, kept)).toBe('asked while keeping');
+    } finally {
+      await admin.auth.admin.deleteUser(neverOptedIn.userId);
+    }
+  });
+
   test('a rider cannot read the unretainable-previews view', async () => {
     const { error } = await rider.client.from('ai_requests_unretainable_previews').select('request_id');
     expect(error?.code).toBe('42501');
@@ -429,7 +497,7 @@ test.describe('retained AI question text', () => {
 
     const { error } = await admin.from('ai_request_text').insert({
       request_id: requestId,
-      user_id: otherRider.userId,
+      user_id: optedInRider.userId,
       route: 'tuning_advice',
       submitted: { question: 'rider A question' },
       redaction_version: 1,
@@ -438,7 +506,7 @@ test.describe('retained AI question text', () => {
     expect(await textRow(admin, requestId)).toBeNull();
 
     const visibleToOther = expectRows(
-      await otherRider.client.from('ai_request_text').select('request_id').eq('request_id', requestId),
+      await optedInRider.client.from('ai_request_text').select('request_id').eq('request_id', requestId),
       'reading ai_request_text as the other rider',
     );
     expect(visibleToOther).toEqual([]);
@@ -455,7 +523,7 @@ test.describe('retained AI question text', () => {
       createdAt: new Date(now),
       retainUntil: new Date(now + 90 * DAY_MS),
     });
-    const theirs = await seedRequest(admin, otherRider.userId, {
+    const theirs = await seedRequest(admin, optedInRider.userId, {
       createdAt: new Date(now),
       retainUntil: new Date(now + 90 * DAY_MS),
     });
@@ -502,7 +570,7 @@ test.describe('retained AI question text', () => {
       createdAt: new Date(now),
       retainUntil: new Date(now + 90 * DAY_MS),
     });
-    const theirs = await seedRequest(admin, otherRider.userId, {
+    const theirs = await seedRequest(admin, optedInRider.userId, {
       createdAt: new Date(now),
       retainUntil: new Date(now + 90 * DAY_MS),
     });

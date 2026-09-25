@@ -151,8 +151,10 @@ export async function setQuestionRetention(
     new Date().toISOString(),
   );
 
-  // The flag is written before anything is deleted, so no capture can land
-  // between the delete and the switch turning off.
+  // The flag is written before anything is deleted. A capture already in
+  // flight re-reads it at insert and locks the profile row while it does
+  // (20260926001900), so it either sees the switch off and keeps nothing, or
+  // commits before this update and is caught by the delete below.
   if (plan.profileUpdate) {
     const { data: updated, error: updateError } = await admin
       .from('profiles')
