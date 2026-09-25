@@ -81,6 +81,19 @@ async function hold(page: Page, name: string, ms: number) {
   await page.mouse.up();
 }
 
+// Answer the one-time notice. A click on the streamed HTML before React
+// hydrates does nothing, so it is retried - but only while the button is
+// enabled: once an answer is in flight the buttons are disabled until it
+// lands, and clicking again then only times out.
+async function answerNotice(page: Page, name: string) {
+  const notice = page.getByRole('region', { name: COPY.notice.optInTitle });
+  const button = notice.getByRole('button', { name });
+  await expect(async () => {
+    if (await button.isEnabled()) await button.click({ timeout: 2_000 });
+    await expect(notice).toBeHidden({ timeout: 10_000 });
+  }).toPass({ timeout: 45_000 });
+}
+
 function historyCard(page: Page) {
   return page.locator('#question-history');
 }
@@ -105,14 +118,42 @@ test.describe('a rider controlling their Race Engineer question history', () => 
     // able to read it where they land. Wait for the page itself, because the
     // router scrolls once the segment below the notice has streamed in.
     await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
-    const notice = page.getByRole('region', { name: COPY.notice.title });
+    const notice = page.getByRole('region', { name: COPY.notice.optInTitle });
     await expect(notice).toBeVisible();
 
     const headerBottom = (await page.locator('header').first().boundingBox())?.height ?? 0;
-    const titleBox = await notice.getByRole('heading', { name: COPY.notice.title }).boundingBox();
+    const titleBox = await notice.getByRole('heading', { name: COPY.notice.optInTitle }).boundingBox();
     expect(titleBox, 'the notice title has a box').not.toBeNull();
     expect(titleBox!.y, 'the notice title sits below the sticky header').toBeGreaterThanOrEqual(headerBottom);
     expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  });
+
+  test('answering the notice "Not now" records it as seen and keeps nothing', async ({ page }) => {
+    const admin = createTestAdminClient();
+    rider = await createThrowawayRider('ai-history-not-now');
+    const { error: profileError } = await admin.from('profiles').update({ tier: 'pro' }).eq('id', rider.id);
+    expect(profileError, profileError?.message).toBeNull();
+    const { error: vehicleError } = await admin
+      .from('vehicles')
+      .insert({ user_id: rider.id, nickname: 'Not Now R6', type: 'motorcycle' });
+    expect(vehicleError, vehicleError?.message).toBeNull();
+
+    await signInWith(page, rider.email, rider.password);
+    const notice = page.getByRole('region', { name: COPY.notice.optInTitle });
+    await expect(notice).toBeVisible();
+    await answerNotice(page, COPY.notice.notNow);
+
+    const answered = await retentionColumns(admin, rider.id);
+    expect(answered.ai_question_retention_notice_seen_at).not.toBeNull();
+    expect(answered.ai_question_retention_opted_in_at).toBeNull();
+
+    await gotoPage(page, '/sessions');
+    await expect(page.getByText(COPY.inline.off)).toBeVisible();
+    await gotoPage(page, '/settings');
+    await expect(historyCard(page).getByRole('button', { name: COPY.settings.options.off })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 
   test('sees the notice once, then sees, deletes and switches off what is held', async ({ page }) => {
@@ -121,19 +162,16 @@ test.describe('a rider controlling their Race Engineer question history', () => 
 
     await signInWith(page, rider.email, rider.password);
 
-    // The one-time notice, and nothing recorded until it is answered.
-    const notice = page.getByRole('region', { name: COPY.notice.title });
+    // The one-time notice asks: every rider starts with keeping off
+    // (20260925001800), and nothing is recorded until it is answered.
+    const notice = page.getByRole('region', { name: COPY.notice.optInTitle });
     await expect(notice).toBeVisible();
     expect((await retentionColumns(admin, rider.id)).ai_question_retention_notice_seen_at).toBeNull();
 
-    // A click on the streamed HTML before React hydrates does nothing, so
-    // retry until the answer is taken.
-    await expect(async () => {
-      await notice.getByRole('button', { name: COPY.notice.acknowledge }).click({ timeout: 2_000 });
-      await expect(notice).toBeHidden({ timeout: 5_000 });
-    }).toPass({ timeout: 20_000 });
+    await answerNotice(page, COPY.notice.optIn);
     const acknowledged = await retentionColumns(admin, rider.id);
     expect(acknowledged.ai_question_retention_notice_seen_at).not.toBeNull();
+    expect(acknowledged.ai_question_retention_opted_in_at).not.toBeNull();
     expect(acknowledged.ai_question_retention_opted_out_at).toBeNull();
 
     // Planted only now: a preview written before the notice was seen is
@@ -146,7 +184,7 @@ test.describe('a rider controlling their Race Engineer question history', () => 
 
     // It does not come back on the next screen.
     await gotoPage(page, '/settings');
-    await expect(page.getByRole('region', { name: COPY.notice.title })).toHaveCount(0);
+    await expect(page.getByRole('region', { name: COPY.notice.optInTitle })).toHaveCount(0);
 
     const card = historyCard(page);
     await expect(card.getByRole('button', { name: COPY.settings.options.keep })).toHaveAttribute(
@@ -267,7 +305,11 @@ test.describe('a rider controlling their Race Engineer question history', () => 
     rider = await createThrowawayRider('ai-history-line');
     const { error: profileError } = await admin
       .from('profiles')
-      .update({ tier: 'pro', ai_question_retention_notice_seen_at: new Date().toISOString() })
+      .update({
+        tier: 'pro',
+        ai_question_retention_notice_seen_at: new Date().toISOString(),
+        ai_question_retention_opted_in_at: new Date().toISOString(),
+      })
       .eq('id', rider.id);
     expect(profileError, profileError?.message).toBeNull();
     // The Morning Plan form only renders once there is a vehicle to plan for.
@@ -328,7 +370,10 @@ test.describe('a rider controlling their Race Engineer question history', () => 
       rider = await createThrowawayRider('ai-history-zone');
       const { error: profileError } = await admin
         .from('profiles')
-        .update({ ai_question_retention_notice_seen_at: new Date().toISOString() })
+        .update({
+          ai_question_retention_notice_seen_at: new Date().toISOString(),
+          ai_question_retention_opted_in_at: new Date().toISOString(),
+        })
         .eq('id', rider.id);
       expect(profileError, profileError?.message).toBeNull();
       const requestId = await plantQuestion(admin, rider.id, QUESTIONS[0]);

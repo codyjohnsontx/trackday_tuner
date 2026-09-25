@@ -17,8 +17,8 @@ export const QUESTION_RETENTION_COPY = {
     heading: 'AI processing and question history',
     paragraphs: [
       'When you ask Race Engineer a question or generate a Morning Plan, the text you type is sent to our AI provider to produce the answer. That text is your question, any symptom tags and change intent you pick, and for a Morning Plan the track name and conditions you enter. Recommendations and their outcomes are kept so your future guidance can learn from them.',
-      "We also keep a copy of that text for 90 days so we can re-test Race Engineer's safety checks against real questions when we change them. Before the copy is saved, email addresses, phone numbers, web links and long numbers are replaced with placeholders. It is used only to test and improve those safety checks, including in Redline, our separate safety-testing project run by the same person who runs Track Tuner. The text is never published, never used to train a model, never shown to another rider, and never sold. Aggregate results, such as how often a check refuses a question, may be published without any question text.",
-      'You can see the questions we hold, delete any of them, or turn this off under Settings > Race Engineer question history. Turning it off deletes what we hold. Each question is deleted automatically after 90 days, and deleting your account deletes them straight away. Do not enter secrets or information you do not want processed.',
+      "If you turn on question history, we also keep a copy of that text for 90 days so we can re-test Race Engineer's safety checks against real questions when we change them. It is off until you turn it on. Before the copy is saved, email addresses, phone numbers, web links and long numbers are replaced with placeholders. It is used only to test and improve those safety checks, including in Redline, our separate safety-testing project run by the same person who runs Track Tuner. The text is never published, never used to train a model, never shown to another rider, and never sold. Aggregate results, such as how often a check refuses a question, may be published without any question text.",
+      'You can turn question history on or off, see the questions we hold, and delete any of them under Settings > Race Engineer question history. Turning it off deletes what we hold. Each question is deleted automatically after 90 days, and deleting your account deletes them straight away. Do not enter secrets or information you do not want processed.',
     ],
   },
   inline: {
@@ -29,10 +29,10 @@ export const QUESTION_RETENTION_COPY = {
   settings: {
     title: 'Race Engineer question history',
     description:
-      'We keep the text of your Race Engineer questions and Morning Plan details for 90 days so our safety checks can be re-tested against real questions when they change. Email addresses, phone numbers and links are masked before saving. Turning this off deletes the questions we hold.',
+      'If you turn this on, we keep the text of your Race Engineer questions and Morning Plan details for 90 days so our safety checks can be re-tested against real questions when they change. It is off until you turn it on. Email addresses, phone numbers and links are masked before saving. Turning it off deletes the questions we hold.',
     label: 'Question history',
     options: { keep: 'Keep for 90 days', off: 'Do not keep' },
-    undecided: 'Nothing of yours is kept until you choose.',
+    undecided: 'Off until you choose. Nothing of yours is kept.',
     demo: 'Demo accounts keep no questions.',
     listHeading: 'Questions we hold',
     empty: 'We hold no questions of yours right now.',
@@ -45,6 +45,10 @@ export const QUESTION_RETENTION_COPY = {
     deletedUntil: 'Deleted automatically on',
     routes: { tuning_advice: 'Race Engineer', day_plan: 'Morning Plan' },
   },
+  // Every rider sees the opt-in notice (owner, 2026-09-25: retention is off
+  // until each rider turns it on). The keep-by-default variant is shown only
+  // to a rider whose ai_question_retention_requires_opt_in is false, which no
+  // rider is after 20260925001800 and nothing in the app writes.
   notice: {
     title: 'Race Engineer keeps your questions for 90 days',
     body: "From now on we keep the text of your Race Engineer questions and Morning Plan details for 90 days, so our safety checks can be re-tested against real questions when they change - including in Redline, our separate safety-testing project. Email addresses, phone numbers and links are masked first. Nothing you asked before now is kept, and you can turn this off at any time in Settings.",

@@ -285,7 +285,9 @@ the `ai_requests_unretainable_previews` view, which that clear, the purge and
 A daily `pg_cron` job purges it, and `/api/health`'s `ai_text_retention` check is what
 proves the job runs. The four `profiles.ai_question_retention_*` columns decide
 whether text may be kept at all, and the rule is written once, in that migration's
-header. Only `lib/actions/ai-question-retention.ts` writes them (service client),
+header. Since `20260925001800` (owner, 2026-09-25) `requires_opt_in` is
+true for every rider and by default, so nothing is kept until a rider opts in;
+no jurisdiction is detected, and nothing in the app writes that column. Only `lib/actions/ai-question-retention.ts` writes them (service client),
 and `planRetentionChange` (`lib/ai-question-retention.ts`) decides what: turning
 keeping back on RE-STAMPS `opted_in_at` so text written while off stays
 unretainable, and choosing it while already keeping writes NOTHING, since a

@@ -44,7 +44,7 @@ export const DEMO_PROFILE: Profile = {
   ai_question_retention_notice_seen_at: null,
   ai_question_retention_opted_out_at: null,
   ai_question_retention_opted_in_at: null,
-  ai_question_retention_requires_opt_in: false,
+  ai_question_retention_requires_opt_in: true,
 };
 
 export const DEMO_VEHICLES: Vehicle[] = [
