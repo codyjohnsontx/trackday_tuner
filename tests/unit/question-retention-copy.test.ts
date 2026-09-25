@@ -90,6 +90,25 @@ describe('the line under a question box', () => {
     }
   });
 
+  it('is not on the demo Race Engineer, which keeps nothing', () => {
+    for (const keeping of [true, false]) {
+      const html = text(
+        renderToStaticMarkup(
+          createElement(TuningAdvicePanel, {
+            sessionId: 's1',
+            vehicleId: 'v1',
+            tier: 'pro',
+            demoMode: true,
+            keepsQuestionText: keeping,
+          }),
+        ),
+      );
+      expect(html).toContain('Static sample advice from the demo history.');
+      expect(html).not.toContain(COPY.inline.keeping);
+      expect(html).not.toContain(COPY.inline.off);
+    }
+  });
+
   it('is on the Morning Plan form', () => {
     const vehicles = [{ id: 'v1', nickname: 'R6' } as Vehicle];
     for (const keeping of [true, false]) {
