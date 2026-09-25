@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { signInWith } from '@/tests/e2e/helpers/auth';
+import { gotoPage } from '@/tests/e2e/helpers/navigation';
 import { createTestAdminClient, expectRows, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { createThrowawayRider, deleteThrowawayRider, type ThrowawayRider } from '@/tests/e2e/helpers/throwaway-rider';
 import { QUESTION_RETENTION_COPY as COPY } from '@/lib/ai-question-retention-copy';
@@ -95,6 +96,25 @@ test.describe('a rider controlling their Race Engineer question history', () => 
     rider = null;
   });
 
+  test('lands on the notice text, not scrolled past it, right after signing in', async ({ page }) => {
+    rider = await createThrowawayRider('ai-history');
+
+    await signInWith(page, rider.email, rider.password);
+
+    // Answering is what records the notice as seen, so the rider has to be
+    // able to read it where they land. Wait for the page itself, because the
+    // router scrolls once the segment below the notice has streamed in.
+    await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
+    const notice = page.getByRole('region', { name: COPY.notice.title });
+    await expect(notice).toBeVisible();
+
+    const headerBottom = (await page.locator('header').first().boundingBox())?.height ?? 0;
+    const titleBox = await notice.getByRole('heading', { name: COPY.notice.title }).boundingBox();
+    expect(titleBox, 'the notice title has a box').not.toBeNull();
+    expect(titleBox!.y, 'the notice title sits below the sticky header').toBeGreaterThanOrEqual(headerBottom);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  });
+
   test('sees the notice once, then sees, deletes and switches off what is held', async ({ page }) => {
     const admin = createTestAdminClient();
     rider = await createThrowawayRider('ai-history');
@@ -125,7 +145,7 @@ test.describe('a rider controlling their Race Engineer question history', () => 
     ];
 
     // It does not come back on the next screen.
-    await page.goto('/settings');
+    await gotoPage(page, '/settings');
     await expect(page.getByRole('region', { name: COPY.notice.title })).toHaveCount(0);
 
     const card = historyCard(page);
@@ -188,7 +208,7 @@ test.describe('a rider controlling their Race Engineer question history', () => 
     expect(requestError, requestError?.message).toBeNull();
 
     await signInWith(page, rider.email, rider.password);
-    await page.goto('/settings');
+    await gotoPage(page, '/settings');
     const card = historyCard(page);
     await expect(card.getByRole('button', { name: COPY.settings.options.off })).toHaveAttribute(
       'aria-pressed',
@@ -259,14 +279,14 @@ test.describe('a rider controlling their Race Engineer question history', () => 
     await plantQuestion(admin, rider.id, QUESTIONS[1]);
 
     await signInWith(page, rider.email, rider.password);
-    await page.goto('/sessions');
+    await gotoPage(page, '/sessions');
     await expect(page.getByText(COPY.inline.keeping)).toBeVisible();
     await expect(page.getByRole('link', { name: COPY.inline.keepingLink })).toHaveAttribute(
       'href',
       '/settings#question-history',
     );
 
-    await page.goto('/settings');
+    await gotoPage(page, '/settings');
     const card = historyCard(page);
     await expect(card.getByText(QUESTIONS[1])).toBeVisible();
     await hold(page, COPY.settings.deleteAll, 1_400);
@@ -290,7 +310,7 @@ test.describe('a rider controlling their Race Engineer question history', () => 
     // The switch stays disabled until the action and its refresh have landed;
     // navigating before that races the refresh on WebKit.
     await expect(card.getByRole('button', { name: COPY.settings.options.keep })).toBeEnabled();
-    await page.goto('/sessions');
+    await gotoPage(page, '/sessions');
     await expect(page.getByText(COPY.inline.off)).toBeVisible();
     await expect(page.getByText(COPY.inline.keeping)).toHaveCount(0);
   });
@@ -325,7 +345,7 @@ test.describe('a rider controlling their Race Engineer question history', () => 
         new Date(iso).toLocaleDateString('en-US', { timeZone: timezoneId, year: 'numeric', month: 'short', day: 'numeric' });
 
       await signInWith(page, rider.email, rider.password);
-      await page.goto('/settings');
+      await gotoPage(page, '/settings');
       const card = historyCard(page);
       await expect(card.locator(`time[datetime="${row.created_at}"]`)).toHaveText(riderDay(row.created_at));
       await expect(card.locator(`time[datetime="${row.retain_until}"]`)).toHaveText(riderDay(row.retain_until));

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ShieldCheck } from 'lucide-react';
@@ -34,6 +34,16 @@ export function QuestionRetentionNotice({ requiresOptIn }: QuestionRetentionNoti
   const [isPending, startTransition] = useTransition();
   const [pendingAction, setPendingAction] = useState<'primary' | 'secondary' | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // The notice sits above the page, and on the navigation that mounts it -
+  // signing in, above all - the router scrolls the new page segment into view
+  // whenever its top is below the fold, which on a phone leaves the rider on
+  // the two answers with the text they answer scrolled away under the header.
+  // Answering records the notice as seen, so bring it back into view. This is
+  // a passive effect, so it runs after the router's scroll in the same commit.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   function answer(which: 'primary' | 'secondary') {
     if (isPending) return;
