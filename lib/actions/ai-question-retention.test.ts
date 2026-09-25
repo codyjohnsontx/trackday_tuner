@@ -36,7 +36,7 @@ import {
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 
-type Result = { data?: unknown; error?: { message: string } | null };
+type Result = { data?: unknown; error?: { message: string } | null; count?: number | null };
 
 interface RecordedQuery {
   table: string;
@@ -255,6 +255,7 @@ describe('getRetainedQuestions', () => {
               },
             ],
             error: null,
+            count: 1,
           },
         ],
       },
@@ -263,17 +264,52 @@ describe('getRetainedQuestions', () => {
 
     expect(await getRetainedQuestions()).toEqual({
       ok: true,
-      data: [
-        {
-          requestId: 'req-1',
-          route: 'tuning_advice',
-          text: 'Front pushes.',
-          createdAt: '2026-09-20T00:00:00Z',
-          retainUntil: '2026-12-19T00:00:00Z',
-        },
-      ],
+      data: {
+        questions: [
+          {
+            requestId: 'req-1',
+            route: 'tuning_advice',
+            text: 'Front pushes.',
+            createdAt: '2026-09-20T00:00:00Z',
+            retainUntil: '2026-12-19T00:00:00Z',
+          },
+        ],
+        total: 1,
+      },
     });
     expect(userQueries[0].calls).toContainEqual(['order', 'created_at', { ascending: false }]);
+  });
+
+  it('reports every held row in the total when the list is cut', async () => {
+    const { userQueries } = useClients(
+      {
+        ai_request_text: [
+          {
+            data: [
+              {
+                request_id: 'req-1',
+                route: 'tuning_advice',
+                submitted: { question: 'Front pushes.' },
+                created_at: '2026-09-20T00:00:00Z',
+                retain_until: '2026-12-19T00:00:00Z',
+              },
+            ],
+            error: null,
+            count: 250,
+          },
+        ],
+      },
+      {},
+    );
+
+    const result = await getRetainedQuestions();
+    expect(result.ok && result.data.total).toBe(250);
+    expect(result.ok && result.data.questions).toHaveLength(1);
+    expect(userQueries[0].calls).toContainEqual([
+      'select',
+      'request_id, route, submitted, created_at, retain_until',
+      { count: 'exact' },
+    ]);
   });
 
   it('reports a failed read as a failure, never as holding nothing', async () => {

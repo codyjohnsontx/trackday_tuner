@@ -36,6 +36,8 @@ export const QUESTION_RETENTION_COPY = {
     demo: 'Demo accounts keep no questions.',
     listHeading: 'Questions we hold',
     empty: 'We hold no questions of yours right now.',
+    truncated: (shown: number, total: number) =>
+      `Showing the newest ${shown} of the ${total} questions we hold. "Hold to delete all" deletes every one of them.`,
     loadFailed: 'Your question history could not be loaded. Reload the page to try again.',
     deleteRow: 'Delete',
     deleteAll: 'Hold to delete all',

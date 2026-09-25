@@ -122,7 +122,12 @@ describe('the line under a question box', () => {
 describe('Settings card', () => {
   function render(props: Partial<Parameters<typeof QuestionHistorySettings>[0]> = {}) {
     return renderToStaticMarkup(
-      createElement(QuestionHistorySettings, { choice: 'keep', questions: [], demoMode: false, ...props }),
+      createElement(QuestionHistorySettings, {
+        choice: 'keep',
+        history: { questions: [], total: 0 },
+        demoMode: false,
+        ...props,
+      }),
     );
   }
 
@@ -142,16 +147,23 @@ describe('Settings card', () => {
   });
 
   it('lists each held question with its own delete', () => {
-    const html = render({ questions: [QUESTION] });
+    const html = render({ history: { questions: [QUESTION], total: 1 } });
     expect(text(html)).toContain(QUESTION.text);
     expect(text(html)).toContain(COPY.settings.routes.tuning_advice);
     expect(html).toContain(`aria-label="${COPY.settings.deleteRow}: ${QUESTION.text}"`);
     expect(text(html)).toContain(COPY.settings.deleteAll);
+    expect(text(html)).not.toContain(COPY.settings.truncated(1, 1));
+  });
+
+  it('says when the list shows only the newest of what is held', () => {
+    const html = text(render({ history: { questions: [QUESTION], total: 250 } }));
+    expect(html).toContain(COPY.settings.truncated(1, 250));
+    expect(html).toContain(QUESTION.text);
   });
 
   it('says it holds nothing only when the read succeeded', () => {
-    expect(text(render({ questions: [] }))).toContain(COPY.settings.empty);
-    const failed = text(render({ questions: null }));
+    expect(text(render({ history: { questions: [], total: 0 } }))).toContain(COPY.settings.empty);
+    const failed = text(render({ history: null }));
     expect(failed).toContain(COPY.settings.loadFailed);
     expect(failed).not.toContain(COPY.settings.empty);
   });

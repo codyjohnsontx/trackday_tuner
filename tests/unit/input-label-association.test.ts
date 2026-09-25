@@ -132,7 +132,11 @@ describe('Question history control names', () => {
 
   it('names the switch group and each of its options', () => {
     const html = renderToStaticMarkup(
-      createElement(QuestionHistorySettings, { choice: 'keep', questions, demoMode: false }),
+      createElement(QuestionHistorySettings, {
+        choice: 'keep',
+        history: { questions, total: questions.length },
+        demoMode: false,
+      }),
     );
 
     expect(html).toContain(`role="group" aria-label="${QUESTION_RETENTION_COPY.settings.title}"`);
@@ -142,7 +146,11 @@ describe('Question history control names', () => {
 
   it('names each row delete after the question it deletes, or its route when the row holds no text', () => {
     const html = renderToStaticMarkup(
-      createElement(QuestionHistorySettings, { choice: 'keep', questions, demoMode: false }),
+      createElement(QuestionHistorySettings, {
+        choice: 'keep',
+        history: { questions, total: questions.length },
+        demoMode: false,
+      }),
     );
     const names = [...html.matchAll(/<button[^>]*aria-label="([^"]*)"/g)].map((match) => match[1]);
 
@@ -151,7 +159,11 @@ describe('Question history control names', () => {
 
   it('gives the list a heading it is labelled by', () => {
     const html = renderToStaticMarkup(
-      createElement(QuestionHistorySettings, { choice: 'keep', questions, demoMode: false }),
+      createElement(QuestionHistorySettings, {
+        choice: 'keep',
+        history: { questions, total: questions.length },
+        demoMode: false,
+      }),
     );
     expect(html).toContain('aria-labelledby="question-history-list"');
     expect(html).toContain('id="question-history-list"');

@@ -79,7 +79,7 @@ export default async function SettingsPage() {
       <TemperatureUnitSettings />
       <QuestionHistorySettings
         choice={currentRetentionChoice(resolveQuestionRetention(profile))}
-        questions={retainedQuestions.ok ? retainedQuestions.data : null}
+        history={retainedQuestions.ok ? retainedQuestions.data : null}
         demoMode={demoMode}
       />
     </div>

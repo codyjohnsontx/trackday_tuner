@@ -139,6 +139,13 @@ export interface RetainedQuestion {
   retainUntil: string;
 }
 
+export interface RetainedQuestionHistory {
+  /** The newest held rows, at most the page the list shows. */
+  questions: RetainedQuestion[];
+  /** Every row held, which is more than `questions` once the list is cut. */
+  total: number;
+}
+
 function stringLeaf(value: Json | undefined): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();

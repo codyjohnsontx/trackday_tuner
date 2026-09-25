@@ -11,7 +11,7 @@ import {
   setQuestionRetention,
 } from '@/lib/actions/ai-question-retention';
 import { QUESTION_RETENTION_COPY } from '@/lib/ai-question-retention-copy';
-import type { QuestionRetentionChoice, RetainedQuestion } from '@/lib/ai-question-retention';
+import type { QuestionRetentionChoice, RetainedQuestionHistory } from '@/lib/ai-question-retention';
 
 const COPY = QUESTION_RETENTION_COPY.settings;
 
@@ -26,7 +26,7 @@ interface QuestionHistorySettingsProps {
   /** `null` until the rider has seen the notice and so has not chosen. */
   choice: QuestionRetentionChoice | null;
   /** `null` when the read failed, which is not the same as holding nothing. */
-  questions: RetainedQuestion[] | null;
+  history: RetainedQuestionHistory | null;
   demoMode: boolean;
 }
 
@@ -44,7 +44,7 @@ function RiderDate({ iso }: { iso: string }) {
  * The rider's control over the text of their AI questions: the switch, the
  * list of what is held, and a delete for each row and for all of them.
  */
-export function QuestionHistorySettings({ choice, questions, demoMode }: QuestionHistorySettingsProps) {
+export function QuestionHistorySettings({ choice, history, demoMode }: QuestionHistorySettingsProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [pendingChoice, setPendingChoice] = useState<QuestionRetentionChoice | null>(null);
@@ -62,7 +62,7 @@ export function QuestionHistorySettings({ choice, questions, demoMode }: Questio
   }
 
   function handleChoice(next: QuestionRetentionChoice) {
-    if (isPending || demoMode || next === choice) return;
+    if (isPending || demoMode || (next === 'keep' && choice === 'keep')) return;
     setPendingChoice(next);
     run(() => setQuestionRetention(next), () => setPendingChoice(null));
   }
@@ -108,14 +108,17 @@ export function QuestionHistorySettings({ choice, questions, demoMode }: Questio
             <h3 id="question-history-list" className="text-sm font-medium text-ink">
               {COPY.listHeading}
             </h3>
-            {questions === null ? (
+            {history === null ? (
               <p className="text-sm text-slower">{COPY.loadFailed}</p>
-            ) : questions.length === 0 ? (
+            ) : history.questions.length === 0 ? (
               <p className="text-sm text-ink-dim">{COPY.empty}</p>
             ) : (
               <>
+                {history.total > history.questions.length ? (
+                  <p className="text-sm text-ink-dim">{COPY.truncated(history.questions.length, history.total)}</p>
+                ) : null}
                 <ul className="space-y-2">
-                  {questions.map((question) => (
+                  {history.questions.map((question) => (
                     <li key={question.requestId}>
                       <GroupRow className="flex items-start justify-between gap-3 p-3">
                         <div className="min-w-0 space-y-1">

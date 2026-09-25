@@ -17,7 +17,7 @@ import {
   planRetentionChange,
   resolveQuestionRetention,
   type QuestionRetentionChoice,
-  type RetainedQuestion,
+  type RetainedQuestionHistory,
   type RetainedQuestionRoute,
   type RetentionProfile,
 } from '@/lib/ai-question-retention';
@@ -56,16 +56,16 @@ function revalidateRetentionScreens() {
  * yours" is a privacy statement, and printing it because a query failed would
  * be a false one.
  */
-export async function getRetainedQuestions(): Promise<ActionResult<RetainedQuestion[]>> {
-  if (await isDemoMode()) return { ok: true, data: [] };
+export async function getRetainedQuestions(): Promise<ActionResult<RetainedQuestionHistory>> {
+  if (await isDemoMode()) return { ok: true, data: { questions: [], total: 0 } };
 
   const user = await getRealUser();
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const { data, error, count } = await supabase
     .from('ai_request_text')
-    .select('request_id, route, submitted, created_at, retain_until')
+    .select('request_id, route, submitted, created_at, retain_until', { count: 'exact' })
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(HISTORY_LIMIT);
@@ -78,16 +78,14 @@ export async function getRetainedQuestions(): Promise<ActionResult<RetainedQuest
     return { ok: false, error: RETENTION_LOAD_FAILED_MESSAGE };
   }
 
-  return {
-    ok: true,
-    data: (data ?? []).map((row) => ({
-      requestId: row.request_id,
-      route: row.route as RetainedQuestionRoute,
-      text: describeRetainedText(row.route, row.submitted),
-      createdAt: row.created_at,
-      retainUntil: row.retain_until,
-    })),
-  };
+  const questions = (data ?? []).map((row) => ({
+    requestId: row.request_id,
+    route: row.route as RetainedQuestionRoute,
+    text: describeRetainedText(row.route, row.submitted),
+    createdAt: row.created_at,
+    retainUntil: row.retain_until,
+  }));
+  return { ok: true, data: { questions, total: count ?? questions.length } };
 }
 
 async function nullPreviews(
