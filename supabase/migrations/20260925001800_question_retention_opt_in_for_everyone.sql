@@ -26,8 +26,9 @@ update public.profiles
 -- default and is not now, so their previews just became unretainable. Clear
 -- them here, as 20260924001700 did, rather than leaving them to the daily
 -- purge: /api/health fails ai_text_retention on an unretainable preview more
--- than 36 hours old. ai_request_text rows are not touched - nothing writes that
--- table yet, and a held row is the rider's to delete from Settings.
+-- than 36 hours old. ai_request_text rows are not touched - the app writes one
+-- only for a rider with opted_in_at set, and a held row is the rider's to
+-- delete from Settings.
 update public.ai_requests r
    set prompt_redacted_preview = null
   from public.ai_requests_unretainable_previews v

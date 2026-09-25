@@ -228,11 +228,11 @@ export const AI_PREVIEW_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
  * project where it was never scheduled, or where it fails every night, looks
  * exactly like one where it works, until a rider's text outlives the notice.
  * The same job nulls the 140-character `ai_requests.prompt_redacted_preview`
- * after 90 days, and that half acts on rows every AI request writes today, so
- * it is counted too. So is the keep rule: a rider's text is kept only once
- * they have seen the notice and while their consent stands, the routes still
- * write a preview for everyone until capture gates that write, and the purge
- * nulls the rest daily - so a preview for a rider whose text may not be kept,
+ * after 90 days, and that half acts on rows a keeping rider's request writes
+ * even after the rider deletes the text, so it is counted too. So is the keep rule: a rider's text is kept only once
+ * they have seen the notice and while their consent stands, the routes write
+ * a preview only for a rider who is keeping, and the purge nulls any other
+ * daily - so a preview for a rider whose text may not be kept,
  * older than the same 36-hour grace, means the purge is not keeping that rule
  * either. Those rows are read through the `ai_requests_unretainable_previews`
  * view, the one place the rule is written and the one the purge reads too,

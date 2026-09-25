@@ -222,9 +222,8 @@ test.describe('retained AI question text', () => {
   });
 
   // A preview is kept only for a rider whose text may be kept. The routes
-  // still write a preview for everyone until capture gates that write, so the
-  // purge is what clears the rest - and it keeps the request row, which is the
-  // rate limit.
+  // write one only for a rider who is keeping, and the purge clears any other -
+  // and it keeps the request row, which is the rate limit.
   test('the purge clears a fresh preview for every rider whose text may not be kept', async () => {
     const createdAt = new Date(Date.now() - 60 * 1000);
     const cleared = {
