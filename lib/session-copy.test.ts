@@ -38,6 +38,7 @@ const previous: Session = {
     drivetrain: { front_sprocket: '15', rear_sprocket: '45', chain_length: '118', notes: 'baseline' },
   },
   notes: 'Do not copy this note.',
+  photo_url: null,
   created_at: '2026-05-01T09:00:00Z',
   updated_at: '2026-05-01T09:00:00Z',
 };
@@ -67,5 +68,22 @@ describe('copyLastSessionSetup', () => {
     expect(copied).not.toHaveProperty('conditions');
     // The tire condition is part of the setup, and does come over.
     expect(copied.tireCondition).toBe('used');
+  });
+
+  it('leaves the hot pressures behind, since they were read off the last session', () => {
+    const copied = copyLastSessionSetup(
+      {
+        ...previous,
+        tires: {
+          front: { ...previous.tires.front, hot_pressure: '34' },
+          rear: { ...previous.tires.rear, hot_pressure: '27' },
+          condition: 'used',
+        },
+      },
+      'motorcycle',
+    );
+
+    expect(copied.frontTire).toEqual({ brand: 'Pirelli', compound: 'SC1', pressure: '31' });
+    expect(copied.rearTire).toEqual({ brand: 'Pirelli', compound: 'SC0', pressure: '24' });
   });
 });

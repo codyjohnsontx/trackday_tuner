@@ -150,7 +150,16 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
       'ai_request_text_enforce_keep_rule + ai_requests_enforce_keep_rule',
       (select count(*) from pg_trigger
         where tgname in ('ai_request_text_enforce_keep_rule', 'ai_requests_enforce_keep_rule')
-          and not tgisinternal) = 2)
+          and not tgisinternal) = 2),
+  -- The bucket itself: select public from storage.buckets where id = 'session-photos' (true).
+  (22, '20260926002000_add_session_photos', 'column + policies',
+      'public.sessions.photo_url + 4 session-photos policies (storage.objects)',
+      exists (select 1 from information_schema.columns
+              where table_schema='public' and table_name='sessions'
+                and column_name='photo_url')
+      and (select count(*) from pg_policies
+           where schemaname='storage' and tablename='objects'
+             and policyname like 'session-photos: % own') = 4)
 )
 select ordinality as "#",
        migration,

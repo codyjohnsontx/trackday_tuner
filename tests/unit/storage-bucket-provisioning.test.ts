@@ -37,6 +37,9 @@ import { describe, expect, it } from 'vitest';
 //     existing object is also an update that an insert-only policy refuses.
 //     `auth.uid()` is what makes it owner-scoped, matching how every table policy
 //     in the migrations reads
+//   - the same missing policies on a bucket config.toml declares that nothing in
+//     app/, components/ or lib/ uploads to, which is session-photos: the mobile
+//     app writes it, from outside the roots this file scans
 //
 // WHAT IT DOES NOT CATCH: whether the bucket is actually seeded, which depends on
 // the CLI reading the block; whether the predicate is *right* - a policy naming
@@ -184,21 +187,38 @@ export function provisioningViolations(
       );
     }
 
-    // `for all` covers every verb; otherwise each of the three the upsert needs
-    // has to be written, and each has to be scoped to the owner.
-    for (const verb of ['select', 'insert', 'update']) {
-      const covering = policies.filter(
-        (policy) => policy.bucket === use.name && (policy.command === verb || policy.command === 'all'),
+    violations.push(...ownerPolicyViolations(use.name, policies));
+  }
+
+  // A bucket declared for a client outside app/, components/ and lib/ - the
+  // mobile app writes session-photos - is read by no scan above, and would ship
+  // with no write policy until that client's first upload was refused. Declaring
+  // a bucket is the commitment, so it carries the same policies.
+  for (const bucket of declared) {
+    if (uses.some((use) => use.name === bucket.name)) continue;
+    violations.push(...ownerPolicyViolations(bucket.name, policies));
+  }
+
+  return violations;
+}
+
+function ownerPolicyViolations(bucket: string, policies: StoragePolicy[]): string[] {
+  const violations: string[] = [];
+
+  // `for all` covers every verb; otherwise each of the three the upsert needs
+  // has to be written, and each has to be scoped to the owner.
+  for (const verb of ['select', 'insert', 'update']) {
+    const covering = policies.filter(
+      (policy) => policy.bucket === bucket && (policy.command === verb || policy.command === 'all'),
+    );
+    if (covering.length === 0) {
+      violations.push(`no migration writes a ${verb} policy on storage.objects for bucket ${bucket}`);
+      continue;
+    }
+    if (!covering.some((policy) => policy.ownerScoped)) {
+      violations.push(
+        `${covering.map((policy) => policy.file).join(', ')}: the ${verb} policy on storage.objects for bucket ${bucket} is not scoped to auth.uid()`,
       );
-      if (covering.length === 0) {
-        violations.push(`no migration writes a ${verb} policy on storage.objects for bucket ${use.name}`);
-        continue;
-      }
-      if (!covering.some((policy) => policy.ownerScoped)) {
-        violations.push(
-          `${covering.map((policy) => policy.file).join(', ')}: the ${verb} policy on storage.objects for bucket ${use.name} is not scoped to auth.uid()`,
-        );
-      }
     }
   }
 
@@ -234,6 +254,12 @@ describe('every storage bucket the application uploads to is provisioned by the 
 
   it('declares each one in supabase/config.toml and gives its owners select and write policies', () => {
     expect(provisioningViolations(uses, declared, policies)).toEqual([]);
+  });
+
+  it('declares the session photo bucket the mobile app uploads to, public like the bike photo', () => {
+    // No website code uploads here, so the scan above cannot see it; the check
+    // above still holds it to owner-scoped policies because it is declared.
+    expect(declared).toContainEqual({ name: 'session-photos', public: true });
   });
 });
 
@@ -316,8 +342,12 @@ enabled = true
 [storage.buckets.vehicle_photos]
 public = true
 `);
+    // The misspelt bucket is declared, so it is also held to policies it lacks.
     expect(provisioningViolations(formUses, renamed, ownerPolicies)).toEqual([
       'components/garage/vehicle-form.tsx uploads to bucket vehicle-photos, which supabase/config.toml never declares',
+      'no migration writes a select policy on storage.objects for bucket vehicle_photos',
+      'no migration writes a insert policy on storage.objects for bucket vehicle_photos',
+      'no migration writes a update policy on storage.objects for bucket vehicle_photos',
     ]);
   });
 
@@ -419,6 +449,23 @@ public = true
       },
     ]);
     expect(provisioningViolations(formUses, declaredPublic, forAll)).toEqual([]);
+  });
+
+  it('catches a declared bucket nothing in the website uploads to that has no policies', () => {
+    // The mobile app's bucket: declared, public, and written only from outside
+    // the scanned roots.
+    const withAppBucket = bucketsDeclaredIn(`
+[storage.buckets.vehicle-photos]
+public = true
+
+[storage.buckets.session-photos]
+public = true
+`);
+    expect(provisioningViolations(formUses, withAppBucket, ownerPolicies)).toEqual([
+      'no migration writes a select policy on storage.objects for bucket session-photos',
+      'no migration writes a insert policy on storage.objects for bucket session-photos',
+      'no migration writes a update policy on storage.objects for bucket session-photos',
+    ]);
   });
 
   it('ignores a bucket named only inside a comment', () => {

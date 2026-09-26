@@ -239,14 +239,16 @@ it: `tests/e2e/profile-entitlement-columns.spec.ts` sends the escalation as a
 rider and as nobody, needs no dev server, and is what to run against a stack
 after applying either path
 
-What it builds is the schema and the storage bucket, and the bucket comes from a
+What it builds is the schema and the storage buckets, and the buckets come from a
 different file. The CLI provisions buckets from `[storage.buckets.*]` in
 `supabase/config.toml`, not from migrations: `supabase start` and `db reset` seed
-`vehicle-photos` locally, and the hosted project gets it from a one-time
-`npx supabase seed buckets --linked` after `supabase link` (README "Local Run"),
-which `db push` does not do. The policies on `storage.objects` that scope writes
-to the rider's own folder are SQL, so they are a migration
-(`20260824001300`). Before that block existed every `[storage.buckets.*]` line was
+`vehicle-photos` and `session-photos` locally, and a linked hosted project gets
+them from `npx supabase seed buckets --linked` (README "Local Run"), which
+`db push` does not do; the hand-apply blocks in `docs/beta-runbook.md` create
+`session-photos` in SQL instead. The policies on `storage.objects` that scope
+writes to the rider's own folder are SQL, so they are migrations
+(`20260824001300`, `20260926002000`). A declared bucket is held to those policies
+even when only the mobile app writes it. Before that block existed every `[storage.buckets.*]` line was
 the CLI's commented-out template, a fresh database applied every migration cleanly,
 and `components/garage/vehicle-form.tsx` answered the first photo with
 `Photo upload failed: Bucket not found` - invisible on any stack somebody had

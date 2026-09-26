@@ -49,6 +49,9 @@
    `20260924001700` (retained AI question text and its 90-day purge) also goes
    in by hand on a project with no migration history, and also before the
    release that ships it - see "Apply the AI question-text table by hand" below.
+   `20260926002000` (the session photo column, the `session-photos` bucket and
+   its policies) goes in by hand the same way, bucket included - see "Apply
+   session photos by hand" below.
 2. Set `BETA_INVITE_ONLY=true`, a long random `BETA_INVITE_SECRET`, and a distinct
    `BETA_FORM_RATE_LIMIT_SECRET` in the deployment environment.
 3. Deploy and verify the public home page, waitlist, invitation signup, session
@@ -839,6 +842,130 @@ access and:
 `select app_commit from public.ai_requests order by created_at desc limit 1` in
 the SQL editor returns the deployed commit. Turn keeping off and ask again: the
 new row's preview prints `-` and nothing is listed.
+
+### Apply session photos by hand
+
+`20260926002000` carries the owner's decisions D2 and D3 of 2026-09-26 for the
+mobile app. It adds `sessions.photo_url` (text, null until a photo is set), and
+four owner-scoped policies on `storage.objects` for a public `session-photos`
+bucket, the same four `vehicle-photos` has: a rider writes and deletes only under
+their own `<user id>/` folder, and anyone holding the URL can view. The bucket
+itself comes from `[storage.buckets.session-photos]` in `supabase/config.toml`,
+which the SQL editor cannot read, so step 2 creates it with the same settings;
+on a linked project `npx supabase seed buckets --linked` does the same. Hot tire
+pressures (D2) need nothing here: they are optional keys inside the existing
+`sessions.tires` JSON.
+
+Apply it before merging the pull request that adds the migration: the website's
+`sessions` type declares `photo_url` from that merge on, and the mobile app writes
+it.
+
+**1. Precheck (read-only).**
+
+```sql
+select
+  exists (select 1 from information_schema.columns
+           where table_schema = 'public' and table_name = 'sessions'
+             and column_name = 'photo_url') as photo_url_column,
+  (select count(*) from pg_policies
+    where schemaname = 'storage' and tablename = 'objects'
+      and policyname like 'session-photos: % own') as session_photo_policies,
+  (select count(*) from storage.buckets where id = 'session-photos') as bucket_rows,
+  has_table_privilege('authenticated', 'public.sessions', 'update') as rider_can_update_sessions;
+```
+
+Expect `false`, `0`, `0`, `true` on a project that has none of it. Anything else
+means part of it is already there: stop and compare against the migration
+rather than applying over it, because `create policy` is not idempotent and the
+transaction below would roll back on the first duplicate. The last column must be
+`true` - it is the grant that lets a rider set `photo_url` on their own session
+(`20260719001100`); if it is `false`, that section of this runbook comes first.
+
+**2. Apply.**
+
+```sql
+-- hosted-session-photos: mirror of supabase/migrations/20260926002000_add_session_photos.sql
+-- plus the bucket that supabase/config.toml declares
+begin;
+alter table public.sessions add column if not exists photo_url text;
+
+create policy "session-photos: select own"
+  on storage.objects for select
+  to authenticated
+  using (
+    bucket_id = 'session-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "session-photos: insert own"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'session-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "session-photos: update own"
+  on storage.objects for update
+  to authenticated
+  using (
+    bucket_id = 'session-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  )
+  with check (
+    bucket_id = 'session-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "session-photos: delete own"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'session-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+insert into storage.buckets (id, name, public, allowed_mime_types)
+values ('session-photos', 'session-photos', true, array['image/*'])
+on conflict (id) do update
+  set public = excluded.public,
+      allowed_mime_types = excluded.allowed_mime_types;
+commit;
+```
+
+**3. Verify.**
+
+```sql
+select
+  exists (select 1 from information_schema.columns
+           where table_schema = 'public' and table_name = 'sessions'
+             and column_name = 'photo_url') as photo_url_column,
+  (select string_agg(cmd, ',' order by cmd) from pg_policies
+    where schemaname = 'storage' and tablename = 'objects'
+      and policyname like 'session-photos: % own') as session_photo_policies,
+  (select public from storage.buckets where id = 'session-photos') as bucket_public,
+  (select allowed_mime_types from storage.buckets where id = 'session-photos') as bucket_mime_types;
+```
+
+Expect `true`, `DELETE,INSERT,SELECT,UPDATE`, `true`, `{image/*}`. Row 22 of
+`scripts/sql/audit-migrations-against-database.sql` then reads `present`.
+
+**4. Rollback.** Dropping the column discards every `photo_url`, so this is for
+before any photo is stored. Storage refuses a delete from `storage.buckets` in
+SQL ("Direct deletion from storage tables is not allowed"), so after this block
+delete the `session-photos` bucket from the dashboard's Storage page, emptying it
+first if it holds anything.
+
+```sql
+-- hosted-session-photos-rollback
+begin;
+drop policy if exists "session-photos: select own" on storage.objects;
+drop policy if exists "session-photos: insert own" on storage.objects;
+drop policy if exists "session-photos: update own" on storage.objects;
+drop policy if exists "session-photos: delete own" on storage.objects;
+alter table public.sessions drop column if exists photo_url;
+commit;
+```
 
 ## Invite a Rider
 
