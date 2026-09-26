@@ -414,12 +414,13 @@ commit;
 ### Apply the AI question-text table by hand on a project with no migration history
 
 `20260924001700` creates `ai_request_text`, where the text of a rider's Race
-Engineer question (and a Morning Plan's track name and conditions) will be kept
+Engineer question (and a Morning Plan's track name, conditions and date) is kept
 for 90 days so it can be replayed through new versions of the guards. It also
 schedules the daily `pg_cron` job that deletes that text on time, adds the
 four `profiles` columns that record whether a rider's text may be kept, and adds
-`ai_requests.app_commit`. **Nothing writes the table yet**: the notice and the
-rider's controls ship before capture does. The hosted project has no CLI history,
+`ai_requests.app_commit`. The routes write the table only for a rider who has
+turned question history on (see "Confirm question capture after the deploy"
+below). The hosted project has no CLI history,
 so this block is how it gets there, and the owner runs it.
 
 Apply it **before** merging the pull request that ships it. That release adds
@@ -442,10 +443,13 @@ not opted in. Consent is judged as of when the preview was written, so a preview
 from before the rider saw the notice, or before their latest opt-in, goes too.
 The `ai_requests_unretainable_previews` view is the one place that
 rule is written, and the block's own clear, the job and `/api/health` all read
-it. The routes still write a preview for every request until the capture change
-gates that write, so until it ships a new preview of such a rider lives until
-the next 04:17 UTC run - under a day - and `/api/health` fails
-`ai_text_retention` if one survives 36 hours.
+it. The routes write a preview only for a rider who has turned question history
+on, so the job is the backstop rather than the gate: a preview that becomes
+unretainable after it was written - the rider turned keeping off and the
+delete missed one - lives until the next 04:17 UTC run, under a day, and
+`/api/health` fails `ai_text_retention` if one survives 36 hours. Before the
+capture change shipped every request wrote one, and this job was what kept the
+rule.
 
 The block also installs a trigger that stamps every new `ai_request_text` row
 with the time it is inserted and caps its `retain_until` at 90 days after that,
@@ -635,10 +639,10 @@ where prompt_redacted_preview is not null
 
 Expect no `anon`, `authenticated` or `PUBLIC` row for the view (it lists request
 ids for the health check, and `service_role` is the only reader), and
-`previews_left` of `0`. The time bound is there because the routes keep writing
-a preview on every AI request until capture gates that write, so any request
-since the block adds one; those are recent, and the next 04:17 UTC run clears
-them.
+`previews_left` of `0`. The time bound is there because a request made since
+the block can add one - every request did before the capture change, and a
+rider who has turned question history on still does - and those are either
+kept on purpose or cleared by the next 04:17 UTC run.
 
 With no older preview left there is nothing for the first run to catch up on, so
 `curl -s https://<your-app>/api/health` after the deploy should list
@@ -736,6 +740,105 @@ before is not recorded, and under the earlier rule that was every rider.
 alter table public.profiles
   alter column ai_question_retention_requires_opt_in set default false;
 ```
+
+### Re-check the keep rule when capture writes, by hand
+
+`20260926001900` makes the database ask again, at insert, whether the rider is
+keeping: an `ai_request_text` row is dropped and an `ai_requests` preview is
+written as null unless the notice has been seen, `opted_out_at` is null and
+`opted_in_at` is set. It closes the window where a rider turns keeping off while
+a question is in flight, which would otherwise leave a text row behind the
+delete that turning it off runs. Apply it after the two blocks above, and before
+merging the pull request that ships capture.
+
+**1. Apply.**
+
+```sql
+-- hosted-capture-keep-rule: mirror of supabase/migrations/20260926001900_guard_rider_text_capture_at_write.sql
+begin;
+create or replace function public.enforce_rider_text_keep_rule()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  perform 1
+     from public.profiles p
+    where p.id = new.user_id
+      and p.ai_question_retention_notice_seen_at is not null
+      and p.ai_question_retention_opted_out_at is null
+      and p.ai_question_retention_opted_in_at is not null
+      for share;
+
+  if found then
+    return new;
+  end if;
+
+  if tg_table_name = 'ai_requests' then
+    new.prompt_redacted_preview := null;
+    return new;
+  end if;
+
+  return null;
+end;
+$$;
+
+create or replace trigger ai_request_text_enforce_keep_rule
+  before insert on public.ai_request_text
+  for each row execute function public.enforce_rider_text_keep_rule();
+
+create or replace trigger ai_requests_enforce_keep_rule
+  before insert on public.ai_requests
+  for each row
+  when (new.prompt_redacted_preview is not null)
+  execute function public.enforce_rider_text_keep_rule();
+commit;
+```
+
+**2. Verify.**
+
+```sql
+select tgname, tgrelid::regclass as on_table, tgenabled
+from pg_trigger
+where tgname in ('ai_request_text_enforce_keep_rule', 'ai_requests_enforce_keep_rule')
+order by tgname;
+```
+
+Expect two rows, `ai_request_text_enforce_keep_rule` on `ai_request_text` and
+`ai_requests_enforce_keep_rule` on `ai_requests`, each with `tgenabled` `O`.
+
+**3. Rollback.**
+
+```sql
+-- hosted-capture-keep-rule-rollback
+begin;
+drop trigger if exists ai_request_text_enforce_keep_rule on public.ai_request_text;
+drop trigger if exists ai_requests_enforce_keep_rule on public.ai_requests;
+drop function if exists public.enforce_rider_text_keep_rule();
+commit;
+```
+
+### Confirm question capture after the deploy
+
+The capture change writes `ai_request_text` and needs no SQL beyond the three
+blocks above, which must already be applied, since the routes insert
+`ai_requests.app_commit` and the text table. A route whose text insert fails still answers the rider and
+reports the failure through `reportError`, so a missing table shows up in the
+logs rather than as broken advice. After the deploy, sign in as a rider with Pro
+access and:
+
+1. Turn question history on under Settings > Race Engineer question history.
+2. Ask Race Engineer one question containing a made-up phone number and link,
+   such as `Front pushes on entry, call 555 123 4567 or see example.com`.
+3. Reload Settings. The question is listed, reading `[phone]` and `[url]` where
+   the number and link were, with a delete date 90 days out.
+4. Delete it from the list, and confirm it is gone after a reload.
+
+`npm run ai:requests` shows the matching `ai_requests` row with its preview, and
+`select app_commit from public.ai_requests order by created_at desc limit 1` in
+the SQL editor returns the deployed commit. Turn keeping off and ask again: the
+new row's preview prints `-` and nothing is listed.
 
 ## Invite a Rider
 

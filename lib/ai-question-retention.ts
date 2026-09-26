@@ -46,11 +46,15 @@ export interface QuestionRetentionState {
 export function resolveQuestionRetention(profile: RetentionProfile | null): QuestionRetentionState {
   if (!profile) return { noticeSeen: false, keeping: false };
 
-  const noticeSeen = profile.ai_question_retention_notice_seen_at !== null;
+  // `!= null` rather than `!== null`: both AI routes decide whether to store a
+  // rider's text from this, off a `select('*')` row, so a column that is absent
+  // - a row read before the migration, or a narrower select - must read as
+  // unset and keep nothing, never as a timestamp.
+  const noticeSeen = profile.ai_question_retention_notice_seen_at != null;
   const keeping =
     noticeSeen &&
-    profile.ai_question_retention_opted_out_at === null &&
-    profile.ai_question_retention_opted_in_at !== null;
+    profile.ai_question_retention_opted_out_at == null &&
+    profile.ai_question_retention_opted_in_at != null;
 
   return { noticeSeen, keeping };
 }

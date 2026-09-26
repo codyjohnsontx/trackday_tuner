@@ -219,8 +219,8 @@ describe('checkAiTextRetention', () => {
     expect(check.detail).toBe('OverdueRetainedTextError:3');
   });
 
-  // Nothing writes ai_request_text yet, so until it does the previews are the
-  // only rows that show whether the job runs at all.
+  // Previews are the job's other half, and a keeping rider's preview outlives a
+  // text row whose insert failed.
   it('fails naming the count when previews have outlived the grace', async () => {
     stubCountingPostgrest({
       ai_requests: {
@@ -238,8 +238,8 @@ describe('checkAiTextRetention', () => {
   });
 
   // A preview is kept only for a rider whose text may be kept. The routes
-  // still write a preview for everyone until capture gates that write, so the
-  // daily purge clears the rest; one older than the grace means it is not.
+  // write one only for a rider who is keeping, and the daily purge clears any
+  // other; one older than the grace means it is not.
   it('asks about previews of riders whose text may not be kept, older than the grace', async () => {
     const requests = stubCountingPostgrest({});
 

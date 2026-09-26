@@ -323,16 +323,18 @@ The same job nulls `ai_requests.prompt_redacted_preview` once its request is 90
 days old. Nothing about that job is visible from the app, so this check asks the
 question the notice answers instead, of both copies: is any text row more than
 36 hours past its `retain_until`, and is any preview still held more than 36
-hours past its 90 days? Nothing writes `ai_request_text` yet, so today the
-previews are what prove the job runs. A row already waits up to 24 hours for
+hours past its 90 days? Both copies are written only for a rider who has
+turned question history on, so until one has, both counts read zero whether or
+not the job runs. A row already waits up to 24 hours for
 the next run, so the grace absorbs a run up to 12 hours late, and a single
 missed run can trip it when a row expired in the 12 hours after the last run.
 The job also nulls every preview of a rider whose text may not be kept - one
 who has not seen the retention notice, has opted out, or started with keeping
 off and has not opted in, judged as of when the preview was written, so one
-from before the notice or the latest opt-in counts too; the routes still write one for every request until
-capture gates that write, so a third count asks whether any such preview is
-more than 36 hours old. It reads them through the
+from before the notice or the latest opt-in counts too. The routes and the
+database write a preview only for a rider who is keeping, so such a preview is
+one that became unretainable after it was written, and a third count asks
+whether any is more than 36 hours old. It reads them through the
 `ai_requests_unretainable_previews` view, which is the one place that rule is
 written and which the job itself reads too, since PostgREST cannot join
 `ai_requests` to `profiles`, and a missing view fails with its PostgREST code.

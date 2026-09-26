@@ -276,9 +276,13 @@ foreign key to `ai_requests(request_id, user_id)`, and `retain_until` is capped 
 `created_at + 90 days` by a CHECK - the purge and the health check both trust it - and
 a before-insert trigger pins `created_at` to the insert time so no writer can date a
 row ahead. The 140-character `ai_requests.prompt_redacted_preview` follows the same
-keep rule as the text: the migration nulled every existing one, and the purge nulls
-any preview whose rider's text may not be kept, with consent judged as of when the
-preview was written, so one from before the notice or the latest opt-in goes too.
+keep rule as the text: the routes write it only for a keeping rider, the migration
+nulled every existing one, and the purge nulls any preview whose rider's text may
+not be kept, with consent judged as of when the preview was written, so one from
+before the notice or the latest opt-in goes too. That migration's purge comment
+says the routes write a preview for everyone, and `20260925001800` says nothing
+writes the text table yet; both were true until capture shipped and neither file
+is edited.
 The rule is written in SQL once, as
 the `ai_requests_unretainable_previews` view, which that clear, the purge and
 `/api/health` all read.
@@ -298,6 +302,26 @@ unretainable, and choosing it while already keeping writes NOTHING, since a
 re-stamp would make everything kept so far unretainable. Every word a rider reads
 about it - privacy page, the line under both question boxes, the Settings card,
 the one-time notice - comes from `lib/ai-question-retention-copy.ts`.
+
+**Capture is one decision, made by the route and required by the type.**
+`reservePendingSlot` and `recordRefusedRequest` (`lib/rag/ai-request-log.ts`) write
+the text row beside the audit row they insert, at reservation so a refusal, limit
+or crash keeps its text too, and a released reservation takes it with it through
+the cascade; `updateRequestLog`, the third write, never touches text. Both take a
+required `retainRiderText` with no default (`RiderTextCapture`), so a third AI route
+cannot compile without answering it, and both routes answer it with
+`resolveQuestionRetention(profile).keeping` - opt-in in the code, never reading
+`requires_opt_in`. False writes no text row and a NULL preview, which is what makes
+"This question is not kept after it is answered" true. The database asks again at
+insert (`20260926001900`): a text row is dropped and a preview nulled unless the
+rider is keeping at that moment, by the same opt-in rule, and the profile row is
+read `for share`, so a rider turning keeping off while a question is in flight
+either wins and nothing is written or waits and then deletes what was. A failed
+text insert is reported and the rider still gets their answer. What is masked is
+`redactForStorage` (`lib/ai-observability.ts`), the one helper for BOTH copies,
+because the notice promises the masked kinds in one sentence: change what it masks
+and bump `REDACTION_VERSION` and check that sentence in the same change.
+`ai_requests.app_commit` is `VERCEL_GIT_COMMIT_SHA` at write time, null locally.
 
 Functions are deliberately *not* granted schema-wide. RLS contains a table; it does
 not contain a `security definer` function, which runs as its owner and bypasses

@@ -145,7 +145,12 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
       exists (select 1 from information_schema.columns
               where table_schema='public' and table_name='profiles'
                 and column_name='ai_question_retention_requires_opt_in'
-                and column_default = 'true'))
+                and column_default = 'true')),
+  (21, '20260926001900_guard_rider_text_capture_at_write', 'trigger',
+      'ai_request_text_enforce_keep_rule + ai_requests_enforce_keep_rule',
+      (select count(*) from pg_trigger
+        where tgname in ('ai_request_text_enforce_keep_rule', 'ai_requests_enforce_keep_rule')
+          and not tgisinternal) = 2)
 )
 select ordinality as "#",
        migration,

@@ -2,6 +2,8 @@
 // handlers, and the admin client it uses already pulls `lib/env.server`, which
 // carries that guard. Importing it directly would also make the module
 // unloadable in the unit suite, where `server-only` does not resolve.
+import { REDACTION_VERSION, redactForStorage } from '@/lib/ai-observability';
+import { reportError } from '@/lib/monitoring/report-error';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 /**
@@ -48,7 +50,125 @@ export interface UpdateRequestLogParams {
   classifierStage?: string | null;
 }
 
-export async function reservePendingSlot(params: {
+/**
+ * The rider-authored fields of one AI request, exactly as the route validated
+ * them. It is what `ai_request_text.submitted` holds once redacted, one shape
+ * per route, so a replay can rebuild the request field by field.
+ */
+export type RiderTextSubmission =
+  | {
+      route: 'tuning_advice';
+      question: string;
+      symptoms: string[];
+      changeIntent: string | null;
+    }
+  | {
+      route: 'day_plan';
+      trackName: string | null;
+      weatherCondition: string | null;
+      surfaceCondition: string | null;
+      targetDate: string;
+    };
+
+/**
+ * WHAT A REQUEST'S AUDIT WRITE KEEPS OF THE RIDER'S TEXT.
+ *
+ * `retainRiderText` is required with no default, on every write path, so a new
+ * AI route cannot compile without answering whether its rider is keeping - the
+ * same shape as `RiderTextField.onMatch`. A route answers it with
+ * `resolveQuestionRetention(profile).keeping` (`lib/ai-question-retention.ts`),
+ * which is opt-in for every rider in the code itself: it needs `opted_in_at`
+ * and never reads `requires_opt_in`, so keeping cannot switch on for anybody
+ * because a database default was not applied.
+ *
+ * It gates BOTH copies. When false, no `ai_request_text` row is written and the
+ * 140-character `prompt_redacted_preview` is written as null, so the audit row
+ * holds a fingerprint (an HMAC, not text), a status and a verdict and nothing a
+ * rider typed. That is what makes the line under the question box - "This
+ * question is not kept after it is answered" - true.
+ */
+export interface RiderTextCapture {
+  retainRiderText: boolean;
+  riderText: RiderTextSubmission;
+}
+
+type StoredRoute = RiderTextSubmission['route'];
+
+function redactOptional(value: string | null): string | null {
+  return value === null ? null : redactForStorage(value);
+}
+
+/**
+ * The `submitted` object for `ai_request_text`, every string through the one
+ * redaction the preview uses. Keys are the request's own wire names, which is
+ * what `describeRetainedText` reads back on Settings.
+ */
+export function buildSubmittedText(riderText: RiderTextSubmission): {
+  route: StoredRoute;
+  submitted: Record<string, string | string[] | null>;
+} {
+  if (riderText.route === 'tuning_advice') {
+    return {
+      route: 'tuning_advice',
+      submitted: {
+        question: redactForStorage(riderText.question),
+        symptoms: riderText.symptoms.map((tag) => redactForStorage(tag)),
+        change_intent: redactOptional(riderText.changeIntent),
+      },
+    };
+  }
+  return {
+    route: 'day_plan',
+    submitted: {
+      track_name: redactOptional(riderText.trackName),
+      weather_condition: redactOptional(riderText.weatherCondition),
+      surface_condition: redactOptional(riderText.surfaceCondition),
+      target_date: redactForStorage(riderText.targetDate),
+    },
+  };
+}
+
+/**
+ * Which commit's guards produced a verdict. Vercel provides it on every
+ * deployment; locally it is unset and the column stays null. Read here rather
+ * than through `lib/env.server` because it is platform metadata with no
+ * fallback to validate, and a replay compares it rather than trusting it.
+ */
+function currentAppCommit(): string | null {
+  return process.env.VERCEL_GIT_COMMIT_SHA?.trim() || null;
+}
+
+/**
+ * Writes the rider's text beside an `ai_requests` row that now exists - the
+ * foreign key is on (request_id, user_id), so the parent must be there first.
+ * A failure is reported and swallowed: losing a copy kept for replay must never
+ * cost a rider the answer they asked for.
+ */
+async function insertRiderText(params: {
+  logTag: string;
+  userId: string;
+  requestId: string;
+  riderText: RiderTextSubmission;
+}): Promise<void> {
+  try {
+    const { route, submitted } = buildSubmittedText(params.riderText);
+    const admin = createAdminClient();
+    const { error } = await admin.from('ai_request_text').insert({
+      request_id: params.requestId,
+      user_id: params.userId,
+      route,
+      submitted,
+      redaction_version: REDACTION_VERSION,
+    });
+    if (error) {
+      reportError(params.logTag, error, { requestId: params.requestId, write: 'ai_request_text' });
+    }
+  } catch (thrown) {
+    reportError(params.logTag, thrown, { requestId: params.requestId, write: 'ai_request_text' });
+  }
+}
+
+export async function reservePendingSlot(params: RiderTextCapture & {
   logTag: string;
   userId: string;
   requestId: string;
@@ -68,14 +188,27 @@ export async function reservePendingSlot(params: {
     request_id: params.requestId,
     status: 'pending',
     prompt_fingerprint: params.promptFingerprint,
-    prompt_redacted_preview: params.promptRedactedPreview,
+    prompt_redacted_preview: params.retainRiderText ? params.promptRedactedPreview : null,
+    app_commit: currentAppCommit(),
   });
   if (error) {
     console.error(`[${params.logTag}] reservation insert failed`, error);
     throw new ReservationError(error);
   }
+  // Written at reservation, before the model is called, so a refusal, a
+  // timeout or a crash still has its text. A released reservation deletes its
+  // ai_requests row and the text goes with it through the cascade.
+  if (params.retainRiderText) {
+    await insertRiderText(params);
+  }
 }
 
+/**
+ * The verdict path, and the third write this module makes. It takes no rider
+ * text and writes none: the text and the preview were settled when the row was
+ * inserted, and a verdict never needs to revisit that decision. Its patch
+ * therefore never names `prompt_redacted_preview` or `ai_request_text`.
+ */
 export async function updateRequestLog(params: UpdateRequestLogParams): Promise<void> {
   const patch: Record<string, unknown> = {
     status: params.status,
@@ -243,7 +376,7 @@ export async function isRefusalThrottled(logTag: string, userId: string): Promis
  * the finished row directly rather than reserving and immediately updating, so
  * the refusal costs one write and no vehicle lookup.
  */
-export async function recordRefusedRequest(params: {
+export async function recordRefusedRequest(params: RiderTextCapture & {
   logTag: string;
   userId: string;
   requestId: string;
@@ -265,10 +398,17 @@ export async function recordRefusedRequest(params: {
       policy_violations: [],
       classifier_stage: params.classifierStage,
       prompt_fingerprint: params.promptFingerprint,
-      prompt_redacted_preview: params.promptRedactedPreview,
+      prompt_redacted_preview: params.retainRiderText ? params.promptRedactedPreview : null,
+      app_commit: currentAppCommit(),
     });
     if (error) {
       console.error(`[${params.logTag}] recordRefusedRequest failed`, { requestId: params.requestId }, error);
+      return;
+    }
+    // A refused request is the one Redline most needs to replay, so it keeps
+    // its text too - but only once its audit row exists to hang it on.
+    if (params.retainRiderText) {
+      await insertRiderText(params);
     }
   } catch (thrown) {
     // Never let the audit write shadow the refusal the rider is owed.
