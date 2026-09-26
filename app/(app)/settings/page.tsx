@@ -3,15 +3,22 @@ import {
   UpgradeToProButton,
 } from '@/components/billing/billing-buttons';
 import { DemoBanner } from '@/components/demo/demo-banner';
+import { QuestionHistorySettings } from '@/components/settings/question-history-settings';
 import { TemperatureUnitSettings } from '@/components/settings/temperature-unit-settings';
 import { TimeFormatSettings } from '@/components/settings/time-format-settings';
+import { getRetainedQuestions } from '@/lib/actions/ai-question-retention';
 import { getUserProfile } from '@/lib/actions/vehicles';
+import { currentRetentionChoice, resolveQuestionRetention } from '@/lib/ai-question-retention';
 import { isDemoMode } from '@/lib/demo/mode';
 import { PageHeader } from '@/components/ui/page-header';
 import { resolveUserAccess } from '@/lib/access';
 
 export default async function SettingsPage() {
-  const [profile, demoMode] = await Promise.all([getUserProfile(), isDemoMode()]);
+  const [profile, demoMode, retainedQuestions] = await Promise.all([
+    getUserProfile(),
+    isDemoMode(),
+    getRetainedQuestions(),
+  ]);
   const access = resolveUserAccess(profile);
   const isPro = access.hasProAccess;
   const billingRenewal = profile?.stripe_current_period_end
@@ -24,7 +31,7 @@ export default async function SettingsPage() {
 
       <PageHeader
         title="Settings"
-        sub="Preferences for how Trackday Tuner displays data on your device."
+        sub="Your preferences, and what Trackday Tuner keeps."
       />
 
       {demoMode ? (
@@ -70,6 +77,11 @@ export default async function SettingsPage() {
 
       <TimeFormatSettings />
       <TemperatureUnitSettings />
+      <QuestionHistorySettings
+        choice={currentRetentionChoice(resolveQuestionRetention(profile))}
+        history={retainedQuestions.ok ? retainedQuestions.data : null}
+        demoMode={demoMode}
+      />
     </div>
   );
 }

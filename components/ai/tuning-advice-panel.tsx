@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
+import { QuestionRetentionLine } from '@/components/ai/question-retention-line';
+import { INTENT_OPTIONS, SYMPTOM_OPTIONS } from '@/lib/race-engineer-options';
 import { AdviceReport } from '@/components/ai/advice-report';
 import { useTemperatureInput, useTemperatureUnit } from '@/components/ui/temperature-display';
 import { classifyRaceEngineerQuestion } from '@/lib/rag/domain-guard';
@@ -17,32 +19,13 @@ import { cn } from '@/lib/utils';
 const MIN_TEMPERATURE_C = -40;
 const MAX_TEMPERATURE_C = 70;
 
-const SYMPTOM_OPTIONS = [
-  { id: 'understeer_entry', label: 'Understeer on entry' },
-  { id: 'understeer_mid', label: 'Understeer mid-corner' },
-  { id: 'oversteer_entry', label: 'Oversteer on entry' },
-  { id: 'oversteer_exit', label: 'Oversteer on exit' },
-  { id: 'front_chatter', label: 'Front chatter' },
-  { id: 'rear_wallow', label: 'Rear wallow' },
-  { id: 'packing_down', label: 'Packing down' },
-  { id: 'brake_dive', label: 'Brake dive' },
-  { id: 'low_grip_cold', label: 'Low grip (cold)' },
-  { id: 'overheating_tire', label: 'Overheating tire' },
-];
-
-const INTENT_OPTIONS: Array<{ id: string; label: string }> = [
-  { id: 'stability_over_entry', label: 'Stability on entry' },
-  { id: 'sharper_turn_in', label: 'Sharper turn-in' },
-  { id: 'more_exit_grip', label: 'More exit grip' },
-  { id: 'reduce_tire_wear', label: 'Reduce tire wear' },
-  { id: 'better_feel', label: 'Better feel' },
-];
-
 interface TuningAdvicePanelProps {
   sessionId: string;
   vehicleId: string;
   tier: 'free' | 'pro';
   demoMode?: boolean;
+  /** Whether this rider's question text is kept, from their profile. */
+  keepsQuestionText: boolean;
 }
 
 interface ApiErrorBody {
@@ -142,7 +125,13 @@ export const demoTuningAdvice: AdviceResponse = {
   refusal: null,
 };
 
-export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false }: TuningAdvicePanelProps) {
+export function TuningAdvicePanel({
+  sessionId,
+  vehicleId,
+  tier,
+  demoMode = false,
+  keepsQuestionText,
+}: TuningAdvicePanelProps) {
   const [question, setQuestion] = useState('');
   const [symptoms, setSymptoms] = useState<string[]>([]);
   const [intent, setIntent] = useState<string>('');
@@ -309,6 +298,9 @@ export function TuningAdvicePanel({ sessionId, vehicleId, tier, demoMode = false
           </span>
           <span className="text-xs text-ink-faint">{question.length}/1000</span>
         </label>
+        {/* Outside the label: a link inside it would be part of the textarea's
+            accessible name, and a tap on the line would focus the box. */}
+        <QuestionRetentionLine keeping={keepsQuestionText} />
 
         {showQuestionWarning ? (
           <div

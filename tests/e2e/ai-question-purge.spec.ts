@@ -156,13 +156,17 @@ test.describe('retained AI question text', () => {
     optInPendingRider = await makeRider(admin, `${project}-pending`);
     optedInRider = await makeRider(admin, `${project}-in`);
 
-    // One rider per arm of the keep rule. `rider` has seen the notice and kept
-    // the default, so their text may be kept; `otherRider` has not seen it.
-    // `optedOutRider` saw it and turned keeping off. The last two started with
-    // keeping off, as EU and UK signups do: one has not turned it on, one has.
+    // One rider per arm of the keep rule. Every rider starts with keeping off
+    // (20260925001800). `rider` has seen the notice and turned it on, so their
+    // text may be kept; `otherRider` has not seen it. `optedOutRider` saw it
+    // and turned keeping off. `optInPendingRider` saw it and has not turned it
+    // on; `optedInRider` is the same rider stated with every column explicit.
     // Consent is dated a week back so the previews the tests seed come after it.
     const seen = new Date(Date.now() - 7 * DAY_MS).toISOString();
-    await recordConsent(rider.userId, { ai_question_retention_notice_seen_at: seen });
+    await recordConsent(rider.userId, {
+      ai_question_retention_notice_seen_at: seen,
+      ai_question_retention_opted_in_at: seen,
+    });
     await recordConsent(optedOutRider.userId, {
       ai_question_retention_notice_seen_at: seen,
       ai_question_retention_opted_out_at: seen,
@@ -271,8 +275,10 @@ test.describe('retained AI question text', () => {
     const lateOptIn = await makeRider(admin, `${project}-late-opt-in`);
     const reOptIn = await makeRider(admin, `${project}-re-opt-in`);
     try {
+      // Saw the notice and turned keeping on in the same answer.
       await recordConsent(lateNotice.userId, {
         ai_question_retention_notice_seen_at: hoursAgo(1).toISOString(),
+        ai_question_retention_opted_in_at: hoursAgo(1).toISOString(),
       });
       await recordConsent(lateOptIn.userId, {
         ai_question_retention_notice_seen_at: hoursAgo(3).toISOString(),

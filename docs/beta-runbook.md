@@ -683,6 +683,60 @@ drop index if exists public.ai_requests_request_id_user_id_key;
 commit;
 ```
 
+### Make question retention opt-in for every rider, by hand
+
+`20260925001800` carries the owner's decision of 2026-09-25: for the beta, no
+rider's question text is kept until they turn it on, and no jurisdiction is
+detected. It makes `profiles.ai_question_retention_requires_opt_in` true for
+every existing rider and the default for new ones, so the keep rule
+`20260924001700` already states - through the `ai_requests_unretainable_previews`
+view - keeps nothing for a rider until `opted_in_at` is set. It clears any
+preview that stops being retainable, for the same `/api/health` reason as the
+block above. Apply it after that block, and before merging the pull request that
+ships the notice and controls.
+
+**1. Apply.**
+
+```sql
+-- hosted-question-retention-opt-in: mirror of supabase/migrations/20260925001800_question_retention_opt_in_for_everyone.sql
+begin;
+alter table public.profiles
+  alter column ai_question_retention_requires_opt_in set default true;
+
+update public.profiles
+   set ai_question_retention_requires_opt_in = true
+ where not ai_question_retention_requires_opt_in;
+
+update public.ai_requests r
+   set prompt_redacted_preview = null
+  from public.ai_requests_unretainable_previews v
+ where v.request_id = r.request_id;
+commit;
+```
+
+**2. Verify.**
+
+```sql
+select
+  (select column_default from information_schema.columns
+    where table_schema = 'public' and table_name = 'profiles'
+      and column_name = 'ai_question_retention_requires_opt_in') as default_value,
+  (select count(*) from public.profiles
+    where not ai_question_retention_requires_opt_in) as riders_keeping_by_default,
+  (select count(*) from public.ai_requests_unretainable_previews) as previews_left;
+```
+
+Expect `true`, `0`, `0`.
+
+**3. Rollback.** Only the default can be put back; which riders were `false`
+before is not recorded, and under the earlier rule that was every rider.
+
+```sql
+-- hosted-question-retention-opt-in-rollback
+alter table public.profiles
+  alter column ai_question_retention_requires_opt_in set default false;
+```
+
 ## Invite a Rider
 
 ```bash

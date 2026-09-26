@@ -6,6 +6,7 @@ import { getSessionChangeRecords } from '@/lib/actions/session-changes';
 import { getComparableSessions, getPreviousSession, getSession, getSessionEnvironment, getSessionLaps } from '@/lib/actions/sessions';
 import { getOutstandingRecommendations, getSessionOutcome, getVehicleOutcomeHistory } from '@/lib/actions/outcomes';
 import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
+import { resolveQuestionRetention } from '@/lib/ai-question-retention';
 import { getTracks } from '@/lib/actions/tracks';
 import { DemoBanner } from '@/components/demo/demo-banner';
 import { isDemoMode } from '@/lib/demo/mode';
@@ -423,7 +424,13 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
 
       <VehicleOutcomeHistory outcomes={outcomeHistory} />
 
-      <TuningAdvicePanel sessionId={session.id} vehicleId={session.vehicle_id} tier={tier} demoMode={demoMode} />
+      <TuningAdvicePanel
+        sessionId={session.id}
+        vehicleId={session.vehicle_id}
+        tier={tier}
+        demoMode={demoMode}
+        keepsQuestionText={resolveQuestionRetention(profile).keeping}
+      />
 
       {/* A failed read arrives as `null`, not as an empty list: the panel offers
           a destructive replace on an empty list, so the two cannot be flattened

@@ -1,7 +1,19 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
+vi.mock('@/lib/actions/ai-question-retention', () => ({
+  deleteAllRetainedQuestions: vi.fn(),
+  deleteRetainedQuestion: vi.fn(),
+  setQuestionRetention: vi.fn(),
+}));
+
+import { QuestionRetentionNotice } from '@/components/ai/question-retention-notice';
+import { TuningAdvicePanel } from '@/components/ai/tuning-advice-panel';
+import { QuestionHistorySettings } from '@/components/settings/question-history-settings';
 import { Input } from '@/components/ui/input';
+import { QUESTION_RETENTION_COPY } from '@/lib/ai-question-retention-copy';
 
 // `Input` once derived its id from the label text, so two fields asking the same
 // question collided. The Sag calculator does exactly that: Front and Rear each
@@ -91,5 +103,85 @@ describe('Input label association', () => {
     expect(inputId).toBeTruthy();
     expect(html).toContain(`aria-describedby="${inputId}-error"`);
     expect(html).toContain(`<p id="${inputId}-error"`);
+  });
+});
+
+// The question-history controls are buttons rather than labelled inputs, so
+// what this checks for them is the same property by other means: every control
+// has a name a screen reader can say, and it is the RIGHT one - a row's delete
+// names the question it deletes, since "Delete" read out N times in a list says
+// nothing about which.
+describe('Question history control names', () => {
+  const questions = [
+    {
+      requestId: 'req-1',
+      route: 'tuning_advice' as const,
+      text: 'Front pushes mid-corner.',
+      createdAt: '2026-09-20T12:00:00Z',
+      retainUntil: '2026-12-19T12:00:00Z',
+    },
+    {
+      requestId: 'req-2',
+      route: 'day_plan' as const,
+      text: null,
+      createdAt: '2026-09-21T12:00:00Z',
+      retainUntil: '2026-12-20T12:00:00Z',
+    },
+  ];
+
+  it('names the switch group and each of its options', () => {
+    const html = renderToStaticMarkup(
+      createElement(QuestionHistorySettings, {
+        choice: 'keep',
+        history: { questions, total: questions.length },
+        demoMode: false,
+      }),
+    );
+
+    expect(html).toContain(`role="group" aria-label="${QUESTION_RETENTION_COPY.settings.title}"`);
+    expect(html).toMatch(/aria-pressed="true"[^>]*>Keep for 90 days</);
+    expect(html).toMatch(/aria-pressed="false"[^>]*>Do not keep</);
+  });
+
+  it('names each row delete after the question it deletes, or its route when the row holds no text', () => {
+    const html = renderToStaticMarkup(
+      createElement(QuestionHistorySettings, {
+        choice: 'keep',
+        history: { questions, total: questions.length },
+        demoMode: false,
+      }),
+    );
+    const names = [...html.matchAll(/<button[^>]*aria-label="([^"]*)"/g)].map((match) => match[1]);
+
+    expect(names).toEqual(['Delete: Front pushes mid-corner.', 'Delete: Morning Plan']);
+  });
+
+  it('gives the list a heading it is labelled by', () => {
+    const html = renderToStaticMarkup(
+      createElement(QuestionHistorySettings, {
+        choice: 'keep',
+        history: { questions, total: questions.length },
+        demoMode: false,
+      }),
+    );
+    expect(html).toContain('aria-labelledby="question-history-list"');
+    expect(html).toContain('id="question-history-list"');
+  });
+
+  it('labels the one-time notice by its own title', () => {
+    const html = renderToStaticMarkup(createElement(QuestionRetentionNotice));
+    expect(html).toContain('aria-labelledby="question-retention-notice-title"');
+    expect(html).toContain('id="question-retention-notice-title"');
+  });
+
+  it('keeps the retention line out of the Race Engineer question box accessible name', () => {
+    const html = renderToStaticMarkup(
+      createElement(TuningAdvicePanel, { sessionId: 's1', vehicleId: 'v1', tier: 'pro', keepsQuestionText: true }),
+    );
+    const label = /<label for="race_engineer_question"[^>]*>([\s\S]*?)<\/label>/.exec(html)?.[1] ?? '';
+
+    expect(label).toContain('What did you feel?');
+    expect(label).not.toContain('90 days');
+    expect(html).toContain('90 days');
   });
 });

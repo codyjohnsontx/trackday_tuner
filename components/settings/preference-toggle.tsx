@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Card } from '@/components/ui/surface';
 import { cn } from '@/lib/utils';
 
@@ -12,8 +13,14 @@ interface PreferenceToggleProps<T extends string> {
   /** Accessible name for the button group. */
   groupLabel: string;
   options: readonly { value: T; label: string }[];
-  value: T;
+  /** `null` presses no option: the rider has not chosen yet. */
+  value: T | null;
   onChange: (value: T) => void;
+  disabled?: boolean;
+  /** Anchor for links that land on this card, e.g. `question-history`. */
+  id?: string;
+  /** Rendered under the control, inside the same card. */
+  children?: ReactNode;
 }
 
 /**
@@ -28,9 +35,12 @@ export function PreferenceToggle<T extends string>({
   options,
   value,
   onChange,
+  disabled = false,
+  id,
+  children,
 }: PreferenceToggleProps<T>) {
   return (
-    <Card className="p-4">
+    <Card id={id} className="scroll-mt-20 p-4">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">{title}</h2>
       <p className="mt-2 text-sm text-ink-dim">{description}</p>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
@@ -51,9 +61,10 @@ export function PreferenceToggle<T extends string>({
               key={option.value}
               type="button"
               aria-pressed={value === option.value}
+              disabled={disabled}
               onClick={() => onChange(option.value)}
               className={cn(
-                'inline-flex min-h-11 items-center rounded-row px-4 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80',
+                'inline-flex min-h-11 items-center rounded-row px-4 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 disabled:cursor-not-allowed disabled:opacity-60',
                 value === option.value ? 'bg-ink text-canvas' : 'text-ink-dim hover:text-ink',
               )}
             >
@@ -62,6 +73,7 @@ export function PreferenceToggle<T extends string>({
           ))}
         </div>
       </div>
+      {children}
     </Card>
   );
 }
