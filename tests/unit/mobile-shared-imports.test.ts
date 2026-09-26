@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { builtinModules } from 'node:module';
 import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
@@ -18,6 +19,11 @@ import { describe, expect, it } from 'vitest';
  * followed, and one that does not is skipped, because Metro already fails an
  * import it cannot resolve.
  *
+ * The app's own files are checked too, against the same packages minus `react`,
+ * which a React Native app imports as a matter of course. Node built-ins are
+ * refused only in shared modules: Metro cannot bundle `node:crypto` or `fs`, and
+ * the app itself may import an npm polyfill that shares a built-in's name.
+ *
  * Until `mobile/` exists there is nothing to walk and it passes. The fixtures
  * under `tests/fixtures/mobile-shared-imports/` are what show it can fail.
  */
@@ -30,6 +36,9 @@ const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'web-build', 'andro
 
 /** Packages that only exist in the website's runtime. */
 const FORBIDDEN_PACKAGES = ['next', 'server-only', 'react', 'react-dom', '@supabase/ssr'];
+
+/** What the app's own files may not import: the same, less the React the app runs on. */
+const FORBIDDEN_APP_PACKAGES = FORBIDDEN_PACKAGES.filter((name) => name !== 'react');
 
 /**
  * First-party modules that are server or Next code by definition: cookie and
@@ -53,8 +62,13 @@ interface Violation {
   chain: string[];
 }
 
-function isForbiddenPackage(specifier: string): boolean {
-  return FORBIDDEN_PACKAGES.some((name) => specifier === name || specifier.startsWith(`${name}/`));
+function isPackage(specifier: string, names: readonly string[]): boolean {
+  return names.some((name) => specifier === name || specifier.startsWith(`${name}/`));
+}
+
+/** `node:crypto`, `crypto`, `fs/promises` and the rest of Node's own modules. */
+function isNodeBuiltin(specifier: string): boolean {
+  return specifier.startsWith('node:') || isPackage(specifier, builtinModules);
 }
 
 function resolveSpecifier(root: string, specifier: string, fromFile: string): string | null {
@@ -94,15 +108,37 @@ function specifiersOf(source: string): string[] {
   return ts.preProcessFile(source, true, true).importedFiles.map((imported) => imported.fileName);
 }
 
-/** The `"use server"` or `"use client"` directive in the file's prologue, if any. */
-function directiveOf(file: string, source: string): string | null {
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest);
-  for (const statement of sourceFile.statements) {
+function prologueDirectives(statements: ts.NodeArray<ts.Statement>): string[] {
+  const directives: string[] = [];
+  for (const statement of statements) {
     if (!ts.isExpressionStatement(statement) || !ts.isStringLiteral(statement.expression)) break;
-    const text = statement.expression.text;
-    if (text === 'use server' || text === 'use client') return text;
+    directives.push(statement.expression.text);
   }
-  return null;
+  return directives;
+}
+
+/**
+ * Why the file's directives rule it out, if they do: a `"use server"` or
+ * `"use client"` prologue on the file, or a `"use server"` prologue on a function
+ * body, which Next also reads as a server function.
+ */
+function directiveViolationOf(file: string, source: string): string | null {
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest);
+  const fileDirective = prologueDirectives(sourceFile.statements).find(
+    (text) => text === 'use server' || text === 'use client',
+  );
+  if (fileDirective) return `has a "${fileDirective}" directive`;
+
+  let inFunction = false;
+  const visit = (node: ts.Node): void => {
+    if (inFunction) return;
+    if (ts.isFunctionLike(node) && 'body' in node && node.body && ts.isBlock(node.body)) {
+      inFunction = prologueDirectives(node.body.statements).includes('use server');
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return inFunction ? 'has a function-level "use server" directive' : null;
 }
 
 /** Every shared module the app under `<root>/mobile` reaches that the app cannot load. */
@@ -118,6 +154,10 @@ function findMobileSharedImportViolations(root: string): Violation[] {
 
   for (const appFile of findSourceFiles(mobileRoot)) {
     for (const specifier of specifiersOf(readFileSync(appFile, 'utf8'))) {
+      if (isPackage(specifier, FORBIDDEN_APP_PACKAGES)) {
+        violations.push({ module: relative(appFile), reason: `imports ${specifier}`, chain: [relative(appFile)] });
+        continue;
+      }
       // `@/lib` and `@/types` are the two aliases Metro maps to the repository
       // root. Any other `@/` is the app's own business, and a relative import only
       // counts once it climbs out of mobile/.
@@ -142,13 +182,11 @@ function findMobileSharedImportViolations(root: string): Violation[] {
     }
 
     const source = readFileSync(file, 'utf8');
-    const directive = directiveOf(file, source);
-    if (directive) {
-      violations.push({ module: moduleName, reason: `has a "${directive}" directive`, chain });
-    }
+    const directive = directiveViolationOf(file, source);
+    if (directive) violations.push({ module: moduleName, reason: directive, chain });
 
     for (const specifier of specifiersOf(source)) {
-      if (isForbiddenPackage(specifier)) {
+      if (isPackage(specifier, FORBIDDEN_PACKAGES) || isNodeBuiltin(specifier)) {
         violations.push({ module: moduleName, reason: `imports ${specifier}`, chain });
         continue;
       }
@@ -192,6 +230,25 @@ describe('modules the mobile app shares with the website', () => {
     it('fails on a shared module carrying a client directive', () => {
       expect(describeViolations(findMobileSharedImportViolations(path.join(FIXTURES, 'client-directive')))).toEqual([
         'lib/unit-toggle.ts has a "use client" directive (mobile/app/index.tsx -> lib/unit-toggle.ts)',
+      ]);
+    });
+
+    it('fails on a website-only import in the app itself, and lets React through', () => {
+      expect(describeViolations(findMobileSharedImportViolations(path.join(FIXTURES, 'direct-next')))).toEqual([
+        'mobile/app/index.tsx imports next/headers (mobile/app/index.tsx)',
+      ]);
+    });
+
+    it('fails on Node built-ins reached through a shared module, prefixed or bare', () => {
+      expect(describeViolations(findMobileSharedImportViolations(path.join(FIXTURES, 'node-builtin')))).toEqual([
+        'lib/fingerprint.ts imports node:crypto (mobile/app/index.tsx -> lib/fingerprint.ts)',
+        'lib/file-name.ts imports path (mobile/app/index.tsx -> lib/fingerprint.ts -> lib/file-name.ts)',
+      ]);
+    });
+
+    it('fails on a shared module with a function-level server directive', () => {
+      expect(describeViolations(findMobileSharedImportViolations(path.join(FIXTURES, 'inline-server')))).toEqual([
+        'lib/save-lap.ts has a function-level "use server" directive (mobile/app/index.tsx -> lib/save-lap.ts)',
       ]);
     });
 
