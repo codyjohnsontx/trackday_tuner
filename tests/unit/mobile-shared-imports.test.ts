@@ -1,5 +1,4 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { builtinModules } from 'node:module';
 import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
@@ -19,10 +18,16 @@ import { describe, expect, it } from 'vitest';
  * followed, and one that does not is skipped, because Metro already fails an
  * import it cannot resolve.
  *
- * The app's own files are checked too, against the same packages minus `react`,
- * which a React Native app imports as a matter of course. Node built-ins are
- * refused only in shared modules: Metro cannot bundle `node:crypto` or `fs`, and
- * the app itself may import an npm polyfill that shares a built-in's name.
+ * The app's own files are checked too, but only for the packages that exist
+ * solely in the website's runtime: `next`, `server-only` and `@supabase/ssr`.
+ * `react` is allowed because the app runs on it, and `react-dom` because the
+ * Expo web build depends on it through `react-native-web`.
+ *
+ * Shared modules are also refused Node modules that cannot run under Metro: any
+ * `node:` import, and the bare `fs`, `child_process`, `net`, `tls`, `dgram`,
+ * `cluster`, `worker_threads`, `http2` and `crypto` with their subpaths. Other
+ * bare built-in names such as `buffer`, `events`, `url`, `util` and `path` are
+ * allowed, because each has an npm stand-in the app can bundle in its place.
  *
  * Until `mobile/` exists there is nothing to walk and it passes. The fixtures
  * under `tests/fixtures/mobile-shared-imports/` are what show it can fail.
@@ -37,8 +42,21 @@ const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'web-build', 'andro
 /** Packages that only exist in the website's runtime. */
 const FORBIDDEN_PACKAGES = ['next', 'server-only', 'react', 'react-dom', '@supabase/ssr'];
 
-/** What the app's own files may not import: the same, less the React the app runs on. */
-const FORBIDDEN_APP_PACKAGES = FORBIDDEN_PACKAGES.filter((name) => name !== 'react');
+/** What the app's own files may not import: the packages the app has no use for at all. */
+const FORBIDDEN_APP_PACKAGES = ['next', 'server-only', '@supabase/ssr'];
+
+/** Bare Node modules with no npm stand-in Metro could bundle instead. */
+const UNBUNDLABLE_NODE_MODULES = [
+  'fs',
+  'child_process',
+  'net',
+  'tls',
+  'dgram',
+  'cluster',
+  'worker_threads',
+  'http2',
+  'crypto',
+];
 
 /**
  * First-party modules that are server or Next code by definition: cookie and
@@ -66,9 +84,9 @@ function isPackage(specifier: string, names: readonly string[]): boolean {
   return names.some((name) => specifier === name || specifier.startsWith(`${name}/`));
 }
 
-/** `node:crypto`, `crypto`, `fs/promises` and the rest of Node's own modules. */
-function isNodeBuiltin(specifier: string): boolean {
-  return specifier.startsWith('node:') || isPackage(specifier, builtinModules);
+/** `node:crypto`, `crypto`, `fs/promises`: Node modules the app cannot run. */
+function isUnbundlableNodeModule(specifier: string): boolean {
+  return specifier.startsWith('node:') || isPackage(specifier, UNBUNDLABLE_NODE_MODULES);
 }
 
 function resolveSpecifier(root: string, specifier: string, fromFile: string): string | null {
@@ -186,7 +204,7 @@ function findMobileSharedImportViolations(root: string): Violation[] {
     if (directive) violations.push({ module: moduleName, reason: directive, chain });
 
     for (const specifier of specifiersOf(source)) {
-      if (isPackage(specifier, FORBIDDEN_PACKAGES) || isNodeBuiltin(specifier)) {
+      if (isPackage(specifier, FORBIDDEN_PACKAGES) || isUnbundlableNodeModule(specifier)) {
         violations.push({ module: moduleName, reason: `imports ${specifier}`, chain });
         continue;
       }
@@ -233,16 +251,16 @@ describe('modules the mobile app shares with the website', () => {
       ]);
     });
 
-    it('fails on a website-only import in the app itself, and lets React through', () => {
+    it('fails on a website-only import in the app itself, and lets React and React DOM through', () => {
       expect(describeViolations(findMobileSharedImportViolations(path.join(FIXTURES, 'direct-next')))).toEqual([
         'mobile/app/index.tsx imports next/headers (mobile/app/index.tsx)',
       ]);
     });
 
-    it('fails on Node built-ins reached through a shared module, prefixed or bare', () => {
+    it('fails on Node modules the app cannot run, prefixed or bare, and lets polyfillable names through', () => {
       expect(describeViolations(findMobileSharedImportViolations(path.join(FIXTURES, 'node-builtin')))).toEqual([
         'lib/fingerprint.ts imports node:crypto (mobile/app/index.tsx -> lib/fingerprint.ts)',
-        'lib/file-name.ts imports path (mobile/app/index.tsx -> lib/fingerprint.ts -> lib/file-name.ts)',
+        'lib/file-name.ts imports fs (mobile/app/index.tsx -> lib/fingerprint.ts -> lib/file-name.ts)',
       ]);
     });
 
