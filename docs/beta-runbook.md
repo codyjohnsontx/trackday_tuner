@@ -873,6 +873,16 @@ with `42703`: every session delete fails, the bike delete confirmation cannot
 load, and no bike can be deleted. The mobile app writes the column too. The
 bike delete also needs the function in the next section.
 
+The photo of a session is always the object `<user id>/<session id>.jpg`. After
+a delete succeeds the website removes that path once more for every session it
+deleted, which catches a phone upload that landed during the delete without
+changing `photo_url` - a replacement under the same URL, or a first photo on a
+session that had none. That second removal is best effort: a failure is
+reported and the delete stands. It cannot see an upload that finishes after it,
+so the mobile app carries the other half: upload with upsert to that path, then
+set `photo_url`, and if that update affects zero rows - the session is gone -
+remove the object it just uploaded.
+
 **1. Precheck (read-only).**
 
 ```sql
@@ -1027,8 +1037,11 @@ commit;
 which `deleteVehicle` calls instead of a plain delete. The website removes the
 photos of every session on the bike first, then calls it with the sessions it
 read; the function locks the bike and those sessions, and deletes only if they
-are still exactly those - a session or a photo synced from a phone in between
-raises `TT409`, the bike stays, and the rider is asked to reload. It is
+are still exactly those - a session, or a photo under a new URL, synced from a
+phone in between raises `TT409`, the bike stays, and the rider is asked to
+reload. A photo uploaded to a session's existing path does not change its URL
+and passes; the website removes every cascaded session's path again after the
+delete for that case (see the section above). It is
 `security invoker`, so RLS applies as for any rider query. Apply it right after
 "Apply session photos by hand", and before merging the pull request that adds
 it: without it every bike delete fails.

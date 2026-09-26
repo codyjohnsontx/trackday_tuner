@@ -317,7 +317,7 @@ describe('vehicles actions', () => {
 
     const result = await deleteVehicle('veh-1', 2);
 
-    expect(result).toEqual({ ok: true, data: undefined });
+    expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
     expect(lastRpc).toHaveBeenCalledWith('delete_vehicle_if_sessions_unchanged', {
       p_vehicle_id: 'veh-1',
       p_expected_sessions: [
@@ -325,7 +325,8 @@ describe('vehicles actions', () => {
         { id: 'sess-1', photo_url: null },
       ],
     });
-    expect(lastRemove).not.toHaveBeenCalled();
+    expect(lastEvents).toEqual(['delete vehicle', 'storage session-photos', 'remove 2']);
+    expect(lastRemove).toHaveBeenCalledWith(['user-1/sess-0.jpg', 'user-1/sess-1.jpg']);
     for (const path of ['/garage', '/dashboard', '/sessions', '/sessions/new', '/tracks']) {
       expect(revalidatePath).toHaveBeenCalledWith(path);
     }
@@ -352,9 +353,15 @@ describe('vehicles actions', () => {
 
     const result = await deleteVehicle('veh-1', 2);
 
-    expect(result).toEqual({ ok: true, data: undefined });
-    expect(lastRemove).toHaveBeenCalledWith(['user-1/sess-1.jpg']);
-    expect(lastEvents).toEqual(['storage session-photos', 'remove 1', 'delete vehicle']);
+    expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
+    expect(lastRemove).toHaveBeenNthCalledWith(1, ['user-1/sess-1.jpg']);
+    expect(lastEvents).toEqual([
+      'storage session-photos',
+      'remove 1',
+      'delete vehicle',
+      'storage session-photos',
+      'remove 2',
+    ]);
     expect(lastRpc).toHaveBeenCalledWith('delete_vehicle_if_sessions_unchanged', {
       p_vehicle_id: 'veh-1',
       p_expected_sessions: [
@@ -363,6 +370,93 @@ describe('vehicles actions', () => {
       ],
     });
     expect(reportError).not.toHaveBeenCalled();
+  });
+
+  describe('a phone uploading to a session photo path while the bike is deleted', () => {
+    // The bucket as Storage holds it: `remove` deletes what is there and reports
+    // it, and the phone's upload lands while the guarded delete runs.
+    function bucketWith(objects: string[]) {
+      const bucket = new Set(objects);
+      const remove = vi.fn(async (paths: string[]) => ({
+        data: paths.filter((path) => bucket.delete(path)).map((name) => ({ name })),
+        error: null,
+      }));
+      return { bucket, remove };
+    }
+
+    function uploadDuringDelete(bucket: Set<string>, object: string) {
+      lastRpc.mockImplementationOnce(async () => {
+        lastEvents.push('delete vehicle');
+        bucket.add(object);
+        return { data: { id: 'veh-1', photo_url: null }, error: null };
+      });
+    }
+
+    it('removes a replacement uploaded under the same URL after the first removal', async () => {
+      vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+      const { bucket, remove } = bucketWith(['user-1/sess-0.jpg']);
+      clientFor(
+        {
+          sessions: [photoSessionPage(1)],
+          session_laps: lapCounts(1),
+          vehicle_baselines: [baselineCount(0)],
+          ...aiRecords(),
+        },
+        remove,
+      );
+      uploadDuringDelete(bucket, 'user-1/sess-0.jpg');
+
+      const result = await deleteVehicle('veh-1', 1);
+
+      expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
+      expect(bucket.size).toBe(0);
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    it('removes a first photo uploaded to a session that had none when it was read', async () => {
+      vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+      const { bucket, remove } = bucketWith([]);
+      clientFor(
+        {
+          sessions: [sessionIdPage(1)],
+          session_laps: lapCounts(1),
+          vehicle_baselines: [baselineCount(0)],
+          ...aiRecords(),
+        },
+        remove,
+      );
+      uploadDuringDelete(bucket, 'user-1/sess-0.jpg');
+
+      const result = await deleteVehicle('veh-1', 1);
+
+      expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
+      expect(bucket.size).toBe(0);
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    it('keeps the delete and says so when the removal after it fails', async () => {
+      vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+      clientFor(
+        {
+          sessions: [sessionIdPage(1)],
+          session_laps: lapCounts(1),
+          vehicle_baselines: [baselineCount(0)],
+          ...aiRecords(),
+        },
+        vi.fn(async () => ({ data: null, error: { message: 'storage down' } })),
+      );
+
+      const result = await deleteVehicle('veh-1', 1);
+
+      expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: true } });
+      expect(lastEvents).toEqual(['delete vehicle', 'storage session-photos', 'remove 1']);
+      expect(reportError).toHaveBeenCalledWith(
+        'session-photo-delete',
+        expect.any(Error),
+        expect.objectContaining({ bucket: 'session-photos', object: 'user-1/sess-0.jpg', vehicleId: 'veh-1' }),
+      );
+      expect(revalidatePath).toHaveBeenCalledWith('/garage');
+    });
   });
 
   it('keeps the bike and every session when storage refuses to remove a session photo', async () => {
@@ -401,9 +495,18 @@ describe('vehicles actions', () => {
 
     const result = await deleteVehicle('veh-1', total);
 
-    expect(result).toEqual({ ok: true, data: undefined });
-    expect(lastRemove.mock.calls.map(([paths]) => (paths as string[]).length)).toEqual([STORAGE_REMOVE_BATCH_LIMIT, 1]);
-    expect(lastEvents.at(-1)).toBe('delete vehicle');
+    expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
+    expect(lastEvents).toEqual([
+      'storage session-photos',
+      `remove ${STORAGE_REMOVE_BATCH_LIMIT}`,
+      'storage session-photos',
+      'remove 1',
+      'delete vehicle',
+      'storage session-photos',
+      `remove ${STORAGE_REMOVE_BATCH_LIMIT}`,
+      'storage session-photos',
+      'remove 1',
+    ]);
     const [, args] = lastRpc.mock.calls[0] as unknown as [string, { p_expected_sessions: unknown[] }];
     expect(args.p_expected_sessions).toHaveLength(total);
   });
@@ -488,7 +591,7 @@ describe('vehicles actions', () => {
 
     const result = await deleteVehicle('veh-1', 0);
 
-    expect(result).toEqual({ ok: true, data: undefined });
+    expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
     expect(lastEvents).toEqual(['delete vehicle', 'storage vehicle-photos', 'remove 1']);
     expect(lastRemove).toHaveBeenCalledWith(['user-1/1700_my bike.jpg']);
     expect(reportError).not.toHaveBeenCalled();
@@ -505,7 +608,7 @@ describe('vehicles actions', () => {
 
     const result = await deleteVehicle('veh-1', 0);
 
-    expect(result).toEqual({ ok: true, data: undefined });
+    expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
     expect(lastRemove).not.toHaveBeenCalled();
     expect(reportError).toHaveBeenCalledWith(
       'vehicle-photo-delete',
@@ -529,7 +632,7 @@ describe('vehicles actions', () => {
 
     const result = await deleteVehicle('veh-1', 0);
 
-    expect(result).toEqual({ ok: true, data: undefined });
+    expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
     expect(reportError).toHaveBeenCalledWith(
       'vehicle-photo-delete',
       expect.any(Error),

@@ -6,9 +6,12 @@
 -- its photo online. Deleting a bike cascades to every session on it, so
 -- lib/actions/vehicles.ts reads the bike's sessions, removes their photos, and
 -- then deletes the bike. Between that read and the delete a phone can sync a new
--- session, or a new photo onto an existing one. A plain delete would cascade that
--- session and orphan a photo nobody removed. This function is the delete, with
--- the re-check inside it.
+-- session, or a new photo URL onto an existing one. A plain delete would cascade
+-- that session and orphan a photo nobody removed. This function is the delete,
+-- with the re-check inside it. It compares URLs, so a photo uploaded to a
+-- session's fixed object path without changing `photo_url` passes it; the
+-- caller removes each cascaded session's path once more after the delete for
+-- that case.
 --
 -- It locks the vehicle row `for update` first. A session insert checks its
 -- foreign key with `for key share` on that row, which conflicts, so no session

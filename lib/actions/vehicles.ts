@@ -19,8 +19,8 @@ import {
   VEHICLE_PHOTO_BUCKET,
   type VehicleDeletionCounts,
 } from '@/lib/vehicle-delete';
-import { SESSION_PHOTO_BUCKET } from '@/lib/session-delete';
-import { removeOwnedPhotos } from '@/lib/storage-photo-removal';
+import { SESSION_PHOTO_BUCKET, sessionPhotoObjectPath } from '@/lib/session-delete';
+import { removeObjectsAfterDelete, removeOwnedPhotos } from '@/lib/storage-photo-removal';
 import type { TableInsert } from '@/types/supabase';
 import type { ActionResult, CreateVehicleInput, UpdateVehicleInput, Profile, Vehicle } from '@/types';
 
@@ -297,11 +297,16 @@ export async function getVehicleDeletionCounts(vehicleId: string): Promise<Actio
  * session's photo is removed from the public bucket, and the bike is deleted
  * only once Storage has confirmed all of them. The delete itself is
  * `delete_vehicle_if_sessions_unchanged` (20260926002100), which locks the bike
- * and its sessions and refuses unless they are exactly the ones read here - so a
- * session, or a photo, synced after that read is never cascaded with a photo
- * nobody removed. That closes the window the count check alone only narrowed.
+ * and its sessions and refuses unless they are exactly the ones read here, as
+ * (id, photo_url) pairs - so a new session, or a photo under a new URL, synced
+ * after that read keeps the bike. A photo uploaded to a session's fixed path
+ * without changing its URL is invisible to that check, so each cascaded
+ * session's path is removed once more after the delete, best effort.
  */
-export async function deleteVehicle(id: string, expectedSessionCount: number): Promise<ActionResult> {
+export async function deleteVehicle(
+  id: string,
+  expectedSessionCount: number,
+): Promise<ActionResult<{ sessionPhotoCleanupFailed: boolean }>> {
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
 
@@ -355,6 +360,14 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
   const deleted = data as { id: string; photo_url: string | null } | null;
   if (!deleted) return { ok: false, error: VEHICLE_DELETE_NOT_FOUND_MESSAGE };
 
+  const sessionPhotosSwept = await removeObjectsAfterDelete(supabase, {
+    bucket: SESSION_PHOTO_BUCKET,
+    objects: recount.sessions.map((session) => sessionPhotoObjectPath(user.id, session.id)),
+    ownerId: user.id,
+    event: 'session-photo-delete',
+    context: { vehicleId: id },
+  });
+
   // The bike's own photo is still removed after its row, and a failure there is
   // reported rather than undoing a delete that happened.
   await removeOwnedPhotos(supabase, {
@@ -371,5 +384,5 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
   revalidatePath('/sessions');
   revalidatePath('/sessions/new');
   revalidatePath('/tracks');
-  return { ok: true, data: undefined };
+  return { ok: true, data: { sessionPhotoCleanupFailed: !sessionPhotosSwept } };
 }

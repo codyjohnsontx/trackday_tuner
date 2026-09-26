@@ -65,8 +65,9 @@ export const STORAGE_REMOVE_BATCH_LIMIT = 1000;
  * session a rider was told is gone. Session photos are removed BEFORE their rows
  * (owner's decision, 2026-09-26): the answer is `true` only when every batch came
  * back without an error, and a caller keeps the row on `false` so the rider can
- * try again with nothing orphaned. The bike's own photo is still removed after
- * its row, and that caller ignores the answer.
+ * try again with nothing orphaned; `removeObjectsAfterDelete` then sweeps their
+ * fixed paths once the rows are gone. The bike's own photo is still removed
+ * after its row, and that caller ignores the answer.
  *
  * `remove` deletes what RLS admits and reports what it deleted, so an object
  * already gone comes back missing from the result rather than as an error. That
@@ -115,10 +116,59 @@ export async function removeOwnedPhotos(
     }
   }
 
-  let confirmed = true;
-  const all = [...objects];
-  for (let start = 0; start < all.length; start += STORAGE_REMOVE_BATCH_LIMIT) {
-    const batch = all.slice(start, start + STORAGE_REMOVE_BATCH_LIMIT);
+  const { missing, failed } = await removeObjects(supabase, bucket, [...objects]);
+  for (const object of missing) {
+    reportError(event, new Error('storage removed no object'), { bucket, object, userId: ownerId, ...context });
+  }
+  reportFailures(failed, { bucket, event, ownerId, context });
+  return failed.length === 0;
+}
+
+/**
+ * Remove objects at known paths once their rows are already gone, and say
+ * whether Storage confirmed it.
+ *
+ * A session photo lives at the one path `sessionPhotoObjectPath` derives, and a
+ * phone can upload to it between the removal before a delete and the delete
+ * itself - with the same URL, or onto a session whose `photo_url` was still null
+ * when it was read - so the delete's own check cannot see it. This second pass
+ * removes that path again after the delete. It is best effort: an object that
+ * is not there is the ordinary case and is not reported, a failure is reported,
+ * and nothing here can undo the delete, so the caller only passes the answer on.
+ */
+export async function removeObjectsAfterDelete(
+  supabase: Pick<SupabaseClient, 'storage'>,
+  {
+    bucket,
+    objects,
+    ownerId,
+    event,
+    context,
+  }: {
+    bucket: string;
+    objects: string[];
+    ownerId: string;
+    event: string;
+    context: Record<string, unknown>;
+  },
+): Promise<boolean> {
+  if (objects.length === 0) return true;
+  const { failed } = await removeObjects(supabase, bucket, [...new Set(objects)]);
+  reportFailures(failed, { bucket, event, ownerId, context });
+  return failed.length === 0;
+}
+
+type ObjectFailure = { object: string; message: string };
+
+async function removeObjects(
+  supabase: Pick<SupabaseClient, 'storage'>,
+  bucket: string,
+  objects: string[],
+): Promise<{ missing: string[]; failed: ObjectFailure[] }> {
+  const missing: string[] = [];
+  const failed: ObjectFailure[] = [];
+  for (let start = 0; start < objects.length; start += STORAGE_REMOVE_BATCH_LIMIT) {
+    const batch = objects.slice(start, start + STORAGE_REMOVE_BATCH_LIMIT);
     let removed = new Set<string>();
     let failure: string | null = null;
     try {
@@ -128,17 +178,19 @@ export async function removeOwnedPhotos(
     } catch (thrown) {
       failure = thrown instanceof Error ? thrown.message : String(thrown);
     }
-    if (failure !== null) confirmed = false;
     for (const object of batch) {
-      if (failure === null && removed.has(object)) continue;
-      reportError(event, new Error(failure ?? 'storage removed no object'), {
-        bucket,
-        object,
-        userId: ownerId,
-        ...context,
-      });
+      if (failure !== null) failed.push({ object, message: failure });
+      else if (!removed.has(object)) missing.push(object);
     }
   }
+  return { missing, failed };
+}
 
-  return confirmed;
+function reportFailures(
+  failed: ObjectFailure[],
+  { bucket, event, ownerId, context }: { bucket: string; event: string; ownerId: string; context: Record<string, unknown> },
+) {
+  for (const { object, message } of failed) {
+    reportError(event, new Error(message), { bucket, object, userId: ownerId, ...context });
+  }
 }

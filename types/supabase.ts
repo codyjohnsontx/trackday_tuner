@@ -336,6 +336,13 @@ export type Database = {
           enabled_modules: SessionEnabledModules | null;
           extra_modules: ExtraModules | null;
           notes: string | null;
+          /**
+           * Public URL of `session-photos/<user id>/<session id>.jpg`, written by
+           * the mobile app after it uploads there with upsert. If that update
+           * affects zero rows the session was deleted meanwhile, and the app must
+           * remove the object it just uploaded - see `SESSION_PHOTO_BUCKET`
+           * (`lib/session-delete.ts`).
+           */
           photo_url: string | null;
           created_at: string;
           updated_at: string;
@@ -1049,8 +1056,10 @@ export type Database = {
            * Every session on the bike as the caller read it, `{ id, photo_url }`,
            * after removing those photos from storage. The function locks the bike
            * and its sessions and raises `TT409` unless the stored sessions are
-           * exactly these, so a session synced mid-delete is never cascaded with
-           * a photo nobody removed (20260926002100).
+           * exactly these, so a new session or a new `photo_url` synced mid-delete
+           * keeps the bike (20260926002100). A photo uploaded to a session's fixed
+           * path without changing its URL passes; the caller removes those paths
+           * again after the delete.
            */
           p_expected_sessions: Json;
         };

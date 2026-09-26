@@ -25,7 +25,26 @@ export const SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE =
 export const SESSION_DELETE_FAILED_AFTER_PHOTO_MESSAGE =
   'This session was not deleted - something went wrong on our end. The session is still here, though its photo may already have been removed. Try again in a moment.';
 
+/**
+ * The public bucket session photos live in, one object per session at
+ * `sessionPhotoObjectPath`.
+ *
+ * The mobile app owns the upload and the website owns the delete, and the two
+ * meet at that one path. The website removes the object before deleting the
+ * row and once more after, so an upload that lands while the delete runs is
+ * still removed. What the website cannot see is an upload that finishes after
+ * that second removal. So the contract on the phone is: upload with upsert to
+ * `sessionPhotoObjectPath(user id, session id)`, then set `photo_url`, and when
+ * that update affects zero rows - the session was deleted meanwhile - remove
+ * the object just uploaded. `docs/beta-runbook.md` ("Apply session photos by
+ * hand") carries the same contract.
+ */
 export const SESSION_PHOTO_BUCKET = 'session-photos';
+
+/** The one object a session's photo is stored as, derived from ids rather than read off `photo_url`. */
+export function sessionPhotoObjectPath(userId: string, sessionId: string): string {
+  return `${userId}/${sessionId}.jpg`;
+}
 
 export interface SessionDeletionContents {
   lapCount: number;

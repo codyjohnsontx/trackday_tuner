@@ -29,8 +29,9 @@ import {
   SESSION_DELETE_NOT_FOUND_MESSAGE,
   SESSION_DELETE_PHOTO_FAILED_MESSAGE,
   SESSION_PHOTO_BUCKET,
+  sessionPhotoObjectPath,
 } from '@/lib/session-delete';
-import { removeOwnedPhotos } from '@/lib/storage-photo-removal';
+import { removeObjectsAfterDelete, removeOwnedPhotos } from '@/lib/storage-photo-removal';
 import { reportError } from '@/lib/monitoring/report-error';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
@@ -507,7 +508,7 @@ export async function replaceSessionLaps(
   return { ok: true, data: undefined };
 }
 
-export async function deleteSession(id: string): Promise<ActionResult> {
+export async function deleteSession(id: string): Promise<ActionResult<{ sessionPhotoCleanupFailed: boolean }>> {
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
 
@@ -551,11 +552,12 @@ export async function deleteSession(id: string): Promise<ActionResult> {
   });
   if (!photoRemoved) return { ok: false, error: SESSION_DELETE_PHOTO_FAILED_MESSAGE };
 
-  // Deleted only while the photo is still the one just removed: a phone syncing
-  // a new photo onto this session in between would otherwise have it deleted
-  // with the row and left online. The rows are selected back because RLS and the
-  // user_id filter turn a row already gone, or one whose photo moved, into zero
-  // rows rather than an error.
+  // Deleted only while `photo_url` is still the one just read, so a photo synced
+  // in between under a different URL keeps the row. A phone replacing the photo
+  // at the same path, or giving a photo-less session its first one, does not
+  // change what was read; the removal after the delete is what catches those.
+  // The rows are selected back because RLS and the user_id filter turn a row
+  // already gone, or one whose photo moved, into zero rows rather than an error.
   const deleteQuery = supabase.from('sessions').delete().eq('id', id).eq('user_id', user.id);
   const { data, error } = await (photoUrl === null
     ? deleteQuery.is('photo_url', null)
@@ -566,12 +568,21 @@ export async function deleteSession(id: string): Promise<ActionResult> {
     reportDeleteError(error);
     return { ok: false, error: photoUrl === null ? SESSION_DELETE_FAILED_MESSAGE : SESSION_DELETE_FAILED_AFTER_PHOTO_MESSAGE };
   }
-  if ((data ?? []).length === 0) {
+  const deleted = (data ?? []) as { id: string }[];
+  if (deleted.length === 0) {
     return { ok: false, error: photoUrl === null ? SESSION_DELETE_CHANGED_MESSAGE : SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE };
   }
+
+  const photoSwept = await removeObjectsAfterDelete(supabase, {
+    bucket: SESSION_PHOTO_BUCKET,
+    objects: deleted.map((session) => sessionPhotoObjectPath(user.id, session.id)),
+    ownerId: user.id,
+    event: 'session-photo-delete',
+    context: { sessionId: id },
+  });
 
   revalidatePath('/sessions');
   revalidatePath('/dashboard');
   revalidatePath(`/sessions/${id}`);
-  return { ok: true, data: undefined };
+  return { ok: true, data: { sessionPhotoCleanupFailed: !photoSwept } };
 }
