@@ -422,6 +422,83 @@ describe('vehicles actions', () => {
     expect(revalidatePath).toHaveBeenCalledWith('/garage');
   });
 
+  it('removes the photo of every session the bike took with it, and only from the rider own folder', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const remove = vi.fn(async () => ({ data: [{ name: 'user-1/sess-1.jpg' }], error: null }));
+    const foreign = `${SUPABASE_URL}/storage/v1/object/public/session-photos/user-2/sess-9.jpg`;
+    clientFor(
+      {
+        sessions: [
+          createQuery({
+            base: {
+              data: [
+                { id: 'sess-1', photo_url: `${SUPABASE_URL}/storage/v1/object/public/session-photos/user-1/sess-1.jpg` },
+                { id: 'sess-2', photo_url: null },
+                { id: 'sess-3', photo_url: foreign },
+              ],
+              error: null,
+            },
+          }),
+        ],
+        session_laps: [createQuery({ base: { data: null, error: null, count: 0 } })],
+        vehicle_baselines: [baselineCount(0)],
+        ...aiRecords(),
+        vehicles: [createQuery({ base: { data: [{ id: 'veh-1', photo_url: null }], error: null } })],
+      },
+      remove,
+    );
+
+    const result = await deleteVehicle('veh-1', 3);
+
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(lastStorageFrom).toHaveBeenCalledTimes(1);
+    expect(lastStorageFrom).toHaveBeenCalledWith('session-photos');
+    expect(remove).toHaveBeenCalledWith(['user-1/sess-1.jpg']);
+    expect(reportError).toHaveBeenCalledTimes(1);
+    expect(reportError).toHaveBeenCalledWith(
+      'session-photo-delete',
+      expect.any(Error),
+      expect.objectContaining({ bucket: 'session-photos', photoUrl: foreign, vehicleId: 'veh-1' }),
+    );
+  });
+
+  it('keeps the delete and reports each session photo storage did not remove', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const remove = vi.fn(async () => ({ data: [{ name: 'user-1/sess-1.jpg' }], error: null }));
+    clientFor(
+      {
+        sessions: [
+          createQuery({
+            base: {
+              data: [
+                { id: 'sess-1', photo_url: `${SUPABASE_URL}/storage/v1/object/public/session-photos/user-1/sess-1.jpg` },
+                { id: 'sess-2', photo_url: `${SUPABASE_URL}/storage/v1/object/public/session-photos/user-1/sess-2.jpg` },
+              ],
+              error: null,
+            },
+          }),
+        ],
+        session_laps: [createQuery({ base: { data: null, error: null, count: 0 } })],
+        vehicle_baselines: [baselineCount(0)],
+        ...aiRecords(),
+        vehicles: [createQuery({ base: { data: [{ id: 'veh-1', photo_url: null }], error: null } })],
+      },
+      remove,
+    );
+
+    const result = await deleteVehicle('veh-1', 2);
+
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(remove).toHaveBeenCalledWith(['user-1/sess-1.jpg', 'user-1/sess-2.jpg']);
+    expect(reportError).toHaveBeenCalledTimes(1);
+    expect(reportError).toHaveBeenCalledWith(
+      'session-photo-delete',
+      expect.any(Error),
+      expect.objectContaining({ bucket: 'session-photos', object: 'user-1/sess-2.jpg', vehicleId: 'veh-1' }),
+    );
+    expect(revalidatePath).toHaveBeenCalledWith('/garage');
+  });
+
   it('refuses when a session was logged on the bike after the rider read the count', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     const from = clientFor({

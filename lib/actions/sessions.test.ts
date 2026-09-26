@@ -2228,6 +2228,80 @@ describe('sessions actions', () => {
     expect(revalidatePath).toHaveBeenCalledWith('/sessions/sess-1');
   });
 
+  it("removes the session's photo from the public bucket once the row is gone", async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://project.supabase.co';
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const deleteQuery = createQuery({
+      base: {
+        data: [
+          { id: 'sess-1', photo_url: 'https://project.supabase.co/storage/v1/object/public/session-photos/user-1/sess-1.jpg' },
+        ],
+        error: null,
+      },
+    });
+    const remove = vi.fn(async () => ({ data: [{ name: 'user-1/sess-1.jpg' }], error: null }));
+    const storageFrom = vi.fn(() => ({ remove }));
+    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => deleteQuery), storage: { from: storageFrom } } as never);
+
+    const result = await deleteSession('sess-1');
+
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(deleteQuery.select).toHaveBeenCalledWith('id, photo_url');
+    expect(storageFrom).toHaveBeenCalledWith('session-photos');
+    expect(remove).toHaveBeenCalledWith(['user-1/sess-1.jpg']);
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it("leaves another rider's photo alone when the session's URL names one", async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://project.supabase.co';
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const foreign = 'https://project.supabase.co/storage/v1/object/public/session-photos/user-2/sess-1.jpg';
+    const deleteQuery = createQuery({ base: { data: [{ id: 'sess-1', photo_url: foreign }], error: null } });
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    vi.mocked(createClient).mockResolvedValue({
+      from: vi.fn(() => deleteQuery),
+      storage: { from: vi.fn(() => ({ remove })) },
+    } as never);
+
+    const result = await deleteSession('sess-1');
+
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(remove).not.toHaveBeenCalled();
+    expect(reportError).toHaveBeenCalledWith(
+      'session-photo-delete',
+      expect.any(Error),
+      expect.objectContaining({ photoUrl: foreign, sessionId: 'sess-1' }),
+    );
+  });
+
+  it('keeps the delete and reports the photo when storage refuses to remove it', async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://project.supabase.co';
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const deleteQuery = createQuery({
+      base: {
+        data: [
+          { id: 'sess-1', photo_url: 'https://project.supabase.co/storage/v1/object/public/session-photos/user-1/sess-1.jpg' },
+        ],
+        error: null,
+      },
+    });
+    const remove = vi.fn(async () => ({ data: null, error: { message: 'storage down' } }));
+    vi.mocked(createClient).mockResolvedValue({
+      from: vi.fn(() => deleteQuery),
+      storage: { from: vi.fn(() => ({ remove })) },
+    } as never);
+
+    const result = await deleteSession('sess-1');
+
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(reportError).toHaveBeenCalledWith(
+      'session-photo-delete',
+      expect.any(Error),
+      expect.objectContaining({ bucket: 'session-photos', object: 'user-1/sess-1.jpg', sessionId: 'sess-1' }),
+    );
+    expect(revalidatePath).toHaveBeenCalledWith('/sessions');
+  });
+
   it('reports a failure when the delete matched no session', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     // RLS plus the user_id filter make another rider's id delete zero rows rather

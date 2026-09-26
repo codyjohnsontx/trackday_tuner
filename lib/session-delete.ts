@@ -13,6 +13,8 @@ export const SESSION_DELETE_FAILED_MESSAGE =
 export const SESSION_DELETE_NOT_FOUND_MESSAGE =
   'This session could not be found. It may already have been deleted - check your sessions list.';
 
+export const SESSION_PHOTO_BUCKET = 'session-photos';
+
 export interface SessionDeletionContents {
   lapCount: number;
   hasOutcome: boolean;
