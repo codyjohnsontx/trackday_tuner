@@ -371,6 +371,7 @@ components/auth/     # auth form, set-password form
 components/sessions/ # session form
 components/garage/   # vehicle form
 lib/actions/         # server actions (sessions, tracks, vehicles, sag)
+lib/sessions/        # session create orchestration, client and rider passed in (no cookies, no Next)
 lib/monitoring/      # health checks, the ai_requests alert, reportError
 lib/rag/             # RAG retrieval, prompt, policy, premise-guard, and validation helpers
 lib/supabase/        # client, server, middleware, admin clients
@@ -580,7 +581,7 @@ The same shape applies to anything derived rather than given:
   `commitLapEditorValue` to get a lap array at all, because text a rider typed
   but never pressed "Add" on used to be dropped silently
 - **Track names** are resolved server-side by `resolveSessionTrack` in
-  `lib/actions/sessions.ts`, using `lib/session-track.ts` to fold case, spacing
+  `lib/sessions/create.ts`, using `lib/session-track.ts` to fold case, spacing
   and accent composition. Any other comparison of two track names goes through
   `trackNameKey` too, and a typed-name lookup of `tracks` through
   `findVisibleTrackByName` (`lib/track-lookup.ts`), never a raw `===` or

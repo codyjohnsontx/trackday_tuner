@@ -1,4 +1,4 @@
-import type { createClient } from '@/lib/supabase/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   TRACK_NAME_MATCH_LIMIT,
   findSavedTrackByName,
@@ -6,12 +6,20 @@ import {
   trackNameSearchPattern,
 } from '@/lib/session-track';
 import { findTrackByName } from '@/lib/track-directory';
+import type { Database } from '@/types/supabase';
+
+/**
+ * Only `from` is read, so any client acting as the rider will do - the cookie
+ * client, a bearer-token client, or a test double - and this module stays free of
+ * `@/lib/supabase/server` and the `next/headers` behind it.
+ */
+type TrackQueryClient = Pick<SupabaseClient<Database>, 'from'>;
 
 /**
  * The tracks a rider can reach: the seeded ones plus their own, which is the list
  * the form's picker offers. Written once because the id lookup and the typed-name
  * search have to ask for the same set - an id resolving in a scope the name search
- * does not use is exactly the id/name divergence `resolveSessionTrack` in lib/actions/sessions.ts closes.
+ * does not use is exactly the id/name divergence `resolveSessionTrack` in lib/sessions/create.ts closes.
  */
 export function visibleTracksFilter(userId: string): string {
   return `is_seeded.eq.true,created_by.eq.${userId}`;
@@ -47,7 +55,7 @@ export type VisibleTrackLookup =
  * `findTrackByName` still decides on whatever came back.
  */
 export async function findVisibleTrackByName(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: TrackQueryClient,
   userId: string,
   typed: string,
 ): Promise<VisibleTrackLookup> {
@@ -111,7 +119,7 @@ export async function findVisibleTrackByName(
  * exactly the kind that is quietly wrong later.
  */
 async function findVisibleTrackByAlias(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: TrackQueryClient,
   userId: string,
   typed: string,
 ): Promise<VisibleTrackLookup> {

@@ -702,8 +702,8 @@ function collectSessionRiderText(session: Session): RiderTextField[] {
  * actionable. Tuning-advice reads the stored `session_environment` row for the
  * session being analysed: telling that rider to check what they "entered for
  * today" points them at a form they never opened, and there is no other form
- * either - `createSession` is the only writer of that table in this repository
- * (an `.insert`, `lib/actions/sessions.ts`), so the row cannot be edited once
+ * either - `createSessionForUser` is the only writer of that table in this repository
+ * (an `.insert`, `lib/sessions/create.ts`), so the row cannot be edited once
  * the session exists. Same two columns, opposite disposition, decided by which
  * route is asking.
  */
@@ -867,7 +867,7 @@ function collectRaceEngineerContextRiderText(
  * - Values held to a fixed set by the DATABASE, so that the exclusion does not
  *   rest on a form: `session.conditions` and `session_feedback.outcome`, both
  *   allowlisted at their only write path (`isSessionCondition` in
- *   `lib/actions/sessions.ts`, and both the outcome route and
+ *   `lib/sessions/create.ts`, and both the outcome route and
  *   `save_session_outcome` itself); `session_environment.source` and
  *   `ai_recommendations.status`, each held by a check constraint in
  *   `20260422000400_add_adaptive_race_engineer.sql`; and `vehicle.type`, held
