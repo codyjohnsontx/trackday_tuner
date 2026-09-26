@@ -37,7 +37,7 @@
    request that ships the matching caller. Either order leaves a window and both
    were walked in a browser: the mismatched call gets `PGRST202` from PostgREST,
    nothing is saved and nothing stored is lost. The rider no longer reads that
-   `PGRST202`: `lib/actions/sessions.ts` passes through only the function's own
+   `PGRST202`: `lib/sessions/create.ts` passes through only the function's own
    domain rejections and answers everything else with a sentence saying the save
    did not happen, sending the real error to `reportError`. So the window is
    quiet on screen, and what names it is the deployment's own `/api/health` -
