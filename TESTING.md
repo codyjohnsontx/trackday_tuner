@@ -86,6 +86,10 @@ signs them in through the form, so it needs the service-role key and a running
 app but no shared account. It plants text only after a rider has answered the
 notice, because the purge spec runs the global purge alongside it and rightly
 clears anything written before that.
+`tests/e2e/ai-replay-export.spec.ts` runs `npm run ai:export-replay` itself, so it
+needs the service-role key and no dev server; its check that the view is closed
+to the Data API also needs the anon key and skips without it. It needs
+`20260927002000` applied, so it fails rather than skips on a stack without it.
 `tests/e2e/plan-limit-gate.spec.ts` makes one too, for the opposite reason to all
 of them: what it tests is a rider the free-plan caps can reach, which the Pro
 account never is. That rider is created through the admin API and seeded to the
