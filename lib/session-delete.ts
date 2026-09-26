@@ -19,6 +19,12 @@ export const SESSION_DELETE_PHOTO_FAILED_MESSAGE =
 export const SESSION_DELETE_CHANGED_MESSAGE =
   'This session changed while it was being deleted - a new photo may have just synced from your phone - so nothing was deleted. Try again.';
 
+export const SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE =
+  'This session changed while it was being deleted - a new photo may have just synced from your phone - so the session is still here, though its earlier photo may already have been removed. Try again.';
+
+export const SESSION_DELETE_FAILED_AFTER_PHOTO_MESSAGE =
+  'This session was not deleted - something went wrong on our end. The session is still here, though its photo may already have been removed. Try again in a moment.';
+
 export const SESSION_PHOTO_BUCKET = 'session-photos';
 
 export interface SessionDeletionContents {

@@ -47,7 +47,9 @@ import {
 import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
 import { getSessionOutcome } from '@/lib/actions/outcomes';
 import {
+  SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE,
   SESSION_DELETE_CHANGED_MESSAGE,
+  SESSION_DELETE_FAILED_AFTER_PHOTO_MESSAGE,
   SESSION_DELETE_FAILED_MESSAGE,
   SESSION_DELETE_NOT_FOUND_MESSAGE,
   SESSION_DELETE_PHOTO_FAILED_MESSAGE,
@@ -2369,6 +2371,28 @@ describe('sessions actions', () => {
 
       expect(result).toEqual({ ok: false, error: SESSION_DELETE_CHANGED_MESSAGE });
       expect(deleteQuery.is).toHaveBeenCalledWith('photo_url', null);
+      expect(revalidatePath).not.toHaveBeenCalled();
+    });
+
+    it('does not tell the rider nothing was deleted once the photo is gone and the session changed', async () => {
+      const { events } = sessionDeleteClient({ row: { id: 'sess-1', photo_url: OWN_PHOTO }, deleted: [] });
+
+      const result = await deleteSession('sess-1');
+
+      expect(result).toEqual({ ok: false, error: SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE });
+      expect(events).toEqual(['remove photo', 'delete row']);
+      expect(revalidatePath).not.toHaveBeenCalled();
+    });
+
+    it('does not tell the rider nothing was removed once the photo is gone and the delete fails', async () => {
+      sessionDeleteClient({
+        row: { id: 'sess-1', photo_url: OWN_PHOTO },
+        deleteError: { message: 'permission denied for table sessions', code: '42501' },
+      });
+
+      const result = await deleteSession('sess-1');
+
+      expect(result).toEqual({ ok: false, error: SESSION_DELETE_FAILED_AFTER_PHOTO_MESSAGE });
       expect(revalidatePath).not.toHaveBeenCalled();
     });
 

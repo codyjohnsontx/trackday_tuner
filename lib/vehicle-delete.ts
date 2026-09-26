@@ -26,6 +26,12 @@ export const VEHICLE_DELETE_COUNT_FAILED_MESSAGE =
 export const VEHICLE_DELETE_SESSION_PHOTOS_FAILED_MESSAGE =
   'This vehicle was not deleted - we could not remove all of its session photos, and deleting the bike first would leave them online. The bike and its sessions are still here, though some session photos may already be gone. Try again in a moment.';
 
+export const VEHICLE_DELETE_COUNT_CHANGED_AFTER_PHOTOS_MESSAGE =
+  'The sessions on this vehicle changed while it was being deleted, so the bike and its sessions are still here - but their session photos may already have been removed. Reload the page to see what would be removed now.';
+
+export const VEHICLE_DELETE_FAILED_AFTER_PHOTOS_MESSAGE =
+  'This vehicle was not deleted - something went wrong on our end. The bike and its sessions are still here, though their session photos may already have been removed. Try again in a moment.';
+
 export const VEHICLE_PHOTO_BUCKET = 'vehicle-photos';
 
 export interface VehicleDeletionCounts {

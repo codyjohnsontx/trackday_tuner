@@ -22,7 +22,9 @@ import {
 } from '@/lib/session-compare';
 import { fetchPreviousSession } from '@/lib/session-previous';
 import {
+  SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE,
   SESSION_DELETE_CHANGED_MESSAGE,
+  SESSION_DELETE_FAILED_AFTER_PHOTO_MESSAGE,
   SESSION_DELETE_FAILED_MESSAGE,
   SESSION_DELETE_NOT_FOUND_MESSAGE,
   SESSION_DELETE_PHOTO_FAILED_MESSAGE,
@@ -562,9 +564,11 @@ export async function deleteSession(id: string): Promise<ActionResult> {
 
   if (error) {
     reportDeleteError(error);
-    return { ok: false, error: SESSION_DELETE_FAILED_MESSAGE };
+    return { ok: false, error: photoUrl === null ? SESSION_DELETE_FAILED_MESSAGE : SESSION_DELETE_FAILED_AFTER_PHOTO_MESSAGE };
   }
-  if ((data ?? []).length === 0) return { ok: false, error: SESSION_DELETE_CHANGED_MESSAGE };
+  if ((data ?? []).length === 0) {
+    return { ok: false, error: photoUrl === null ? SESSION_DELETE_CHANGED_MESSAGE : SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE };
+  }
 
   revalidatePath('/sessions');
   revalidatePath('/dashboard');

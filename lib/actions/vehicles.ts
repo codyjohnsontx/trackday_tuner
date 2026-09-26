@@ -9,8 +9,10 @@ import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
 import { reportError } from '@/lib/monitoring/report-error';
 import {
+  VEHICLE_DELETE_COUNT_CHANGED_AFTER_PHOTOS_MESSAGE,
   VEHICLE_DELETE_COUNT_CHANGED_MESSAGE,
   VEHICLE_DELETE_COUNT_FAILED_MESSAGE,
+  VEHICLE_DELETE_FAILED_AFTER_PHOTOS_MESSAGE,
   VEHICLE_DELETE_FAILED_MESSAGE,
   VEHICLE_DELETE_NOT_FOUND_MESSAGE,
   VEHICLE_DELETE_SESSION_PHOTOS_FAILED_MESSAGE,
@@ -324,6 +326,7 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
     context: { vehicleId: id },
   });
   if (!photosRemoved) return { ok: false, error: VEHICLE_DELETE_SESSION_PHOTOS_FAILED_MESSAGE };
+  const hadSessionPhotos = recount.sessions.some((session) => session.photo_url !== null);
 
   // RLS and the user_id check inside the function turn another rider's id, or a
   // vehicle already gone, into null rather than an error.
@@ -332,7 +335,12 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
     p_expected_sessions: recount.sessions,
   });
 
-  if (error?.code === SESSIONS_CHANGED_CODE) return { ok: false, error: VEHICLE_DELETE_COUNT_CHANGED_MESSAGE };
+  if (error?.code === SESSIONS_CHANGED_CODE) {
+    return {
+      ok: false,
+      error: hadSessionPhotos ? VEHICLE_DELETE_COUNT_CHANGED_AFTER_PHOTOS_MESSAGE : VEHICLE_DELETE_COUNT_CHANGED_MESSAGE,
+    };
+  }
   if (error) {
     reportError('vehicle-delete', new Error(error.message), {
       reason: error.code,
@@ -342,7 +350,7 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
       userId: user.id,
       vehicleId: id,
     });
-    return { ok: false, error: VEHICLE_DELETE_FAILED_MESSAGE };
+    return { ok: false, error: hadSessionPhotos ? VEHICLE_DELETE_FAILED_AFTER_PHOTOS_MESSAGE : VEHICLE_DELETE_FAILED_MESSAGE };
   }
   const deleted = data as { id: string; photo_url: string | null } | null;
   if (!deleted) return { ok: false, error: VEHICLE_DELETE_NOT_FOUND_MESSAGE };

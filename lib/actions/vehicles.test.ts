@@ -22,8 +22,10 @@ import { createClient } from '@/lib/supabase/server';
 import { reportError } from '@/lib/monitoring/report-error';
 import { createVehicle, deleteVehicle, getVehicleDeletionCounts, updateVehicle } from '@/lib/actions/vehicles';
 import {
+  VEHICLE_DELETE_COUNT_CHANGED_AFTER_PHOTOS_MESSAGE,
   VEHICLE_DELETE_COUNT_CHANGED_MESSAGE,
   VEHICLE_DELETE_COUNT_FAILED_MESSAGE,
+  VEHICLE_DELETE_FAILED_AFTER_PHOTOS_MESSAGE,
   VEHICLE_DELETE_FAILED_MESSAGE,
   VEHICLE_DELETE_NOT_FOUND_MESSAGE,
   VEHICLE_DELETE_SESSION_PHOTOS_FAILED_MESSAGE,
@@ -447,7 +449,7 @@ describe('vehicles actions', () => {
 
     const result = await deleteVehicle('veh-1', 1);
 
-    expect(result).toEqual({ ok: false, error: VEHICLE_DELETE_COUNT_CHANGED_MESSAGE });
+    expect(result).toEqual({ ok: false, error: VEHICLE_DELETE_COUNT_CHANGED_AFTER_PHOTOS_MESSAGE });
     expect(lastEvents).toEqual(['storage session-photos', 'remove 1', 'delete vehicle']);
     expect(reportError).not.toHaveBeenCalled();
     expect(revalidatePath).not.toHaveBeenCalled();
@@ -547,6 +549,26 @@ describe('vehicles actions', () => {
     const result = await deleteVehicle('someone-elses-vehicle', 0);
 
     expect(result).toEqual({ ok: false, error: VEHICLE_DELETE_NOT_FOUND_MESSAGE });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('does not tell the rider nothing was removed once session photos are gone and the delete fails', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    clientFor(
+      {
+        sessions: [photoSessionPage(1)],
+        session_laps: lapCounts(1),
+        vehicle_baselines: [baselineCount(0)],
+        ...aiRecords(),
+      },
+      undefined,
+      { data: null, error: { message: 'Delete failed', code: '42501' } },
+    );
+
+    const result = await deleteVehicle('veh-1', 1);
+
+    expect(result).toEqual({ ok: false, error: VEHICLE_DELETE_FAILED_AFTER_PHOTOS_MESSAGE });
+    expect(lastEvents).toEqual(['storage session-photos', 'remove 1', 'delete vehicle']);
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
