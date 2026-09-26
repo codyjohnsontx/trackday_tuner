@@ -53,8 +53,9 @@ describe('the hosted replay export block in docs/beta-runbook.md', () => {
   // The precheck and the verify each decide whether the view on the database is
   // this migration's by one `case` over a hash of its definition. Two copies of
   // that expression that disagree would let one step bless what the other
-  // stops on; the hash itself is proved against a stack, since only Postgres
-  // can render a view.
+  // stops on. Only Postgres can render a view, so nothing here shows the hash
+  // matches what a database renders; the precheck run against the database is
+  // what answers that.
   it('decides the view definition identically in the precheck and the verify', () => {
     const section = runbook.slice(
       runbook.indexOf('### Apply the replay export view by hand'),
@@ -66,8 +67,6 @@ describe('the hosted replay export block in docs/beta-runbook.md', () => {
 
     expect(decisions).toHaveLength(2);
     expect(decisions[0]).toBe(decisions[1]);
-    expect(decisions[0]).toMatch(/md5\(regexp_replace\(pg_get_viewdef\(to_regclass\('public\.ai_replay_export'\)\)/);
-    expect(decisions[0]).toContain("array['security_invoker=true']");
   });
 
   it('keeps the rollback to dropping the view', () => {

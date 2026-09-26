@@ -78,9 +78,10 @@ Never from CI and never from Redline's cloud project.
    outside the repository: nothing ignores a `.jsonl` there, so a copy in the
    working tree could be staged by mistake. The file is created readable by
    its owner only. The file is built under a temporary name beside the target
-   and linked into place only when it is whole, so a run that fails or is
-   interrupted - an error, Ctrl-C, a closed laptop - leaves nothing at the path
-   you gave. A temporary `.<name>.<random>.partial` file can survive only if the
+   and linked into place only when it is whole, so a run that fails, or is
+   interrupted while the view is being read - Ctrl-C, a closed laptop - leaves
+   nothing at the path you gave. Once writing starts, Ctrl-C is
+   ignored and the run finishes, putting the whole file there. A temporary `.<name>.<random>.partial` file can survive only if the
    machine loses power while the file is being written; delete it if you see
    one.
    The view is read in pages, and a question can stop being exportable while

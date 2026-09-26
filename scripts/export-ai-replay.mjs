@@ -226,7 +226,10 @@ export async function collectSnapshot(supabase, pageSize = PAGE_SIZE) {
 /**
  * Writes `lines` to a temporary file beside `out` and links it into place, so
  * `out` exists only once it is whole. The link refuses an `out` that already
- * exists, and a signal or error part way removes the temporary file.
+ * exists, and an error part way removes the temporary file. Everything here is
+ * synchronous, so no signal handler can run before it returns: the listeners
+ * only hold off the default kill, which would leave the temporary file behind,
+ * and a Ctrl-C arriving meanwhile is dropped and the file is published whole.
  */
 function publish(out, lines) {
   const dir = path.dirname(path.resolve(out));
@@ -238,12 +241,9 @@ function publish(out, lines) {
       // Already gone.
     }
   };
-  const onSignal = (signal) => {
-    removeTemp();
-    process.exit(signal === 'SIGINT' ? 130 : 143);
-  };
-  process.once('SIGINT', onSignal);
-  process.once('SIGTERM', onSignal);
+  const holdSignal = () => {};
+  process.on('SIGINT', holdSignal);
+  process.on('SIGTERM', holdSignal);
 
   try {
     const fd = openSync(temp, 'wx', 0o600);
@@ -256,8 +256,8 @@ function publish(out, lines) {
     linkSync(temp, out);
   } finally {
     removeTemp();
-    process.removeListener('SIGINT', onSignal);
-    process.removeListener('SIGTERM', onSignal);
+    process.removeListener('SIGINT', holdSignal);
+    process.removeListener('SIGTERM', holdSignal);
   }
 }
 
