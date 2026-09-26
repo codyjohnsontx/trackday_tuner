@@ -54,8 +54,9 @@ describe('the hosted replay export block in docs/beta-runbook.md', () => {
   // this migration's by one `case` over a hash of its definition. Two copies of
   // that expression that disagree would let one step bless what the other
   // stops on. Only Postgres can render a view, so nothing here shows the hash
-  // matches what a database renders; the precheck run against the database is
-  // what answers that.
+  // matches what a database renders; the verify run against the database after
+  // the block is what answers that, since on a first apply the precheck stops
+  // at 'absent' before it hashes anything.
   it('decides the view definition identically in the precheck and the verify', () => {
     const section = runbook.slice(
       runbook.indexOf('### Apply the replay export view by hand'),
