@@ -14,18 +14,28 @@
  *
  * Every run is a whole snapshot of what the view holds, never a window: Redline
  * replaces its copy with the newest file, so a question a rider deleted or
- * stopped keeping leaves Redline at the next export.
+ * stopped keeping leaves Redline at the next export. The view is read in pages,
+ * and a row can leave it while later pages are read, so `collectSnapshot`
+ * checks every collected request against the view once more at the end and
+ * drops any that left: the file is what the view allows when that check ran.
+ * Nothing is written until then. The file is built beside the target under a
+ * temporary name and linked into place only when it is whole, so an
+ * interrupted run never leaves a file at the path it was given.
  *
  * WHAT NEVER LEAVES: user_id, session_id and vehicle_id. The view carries none
  * of them, and `toReplayRecord` builds each line from named fields rather than
  * copying a row, so a wider select could not leak one either. The rider is
  * `rider_key` re-keyed with an HMAC under a secret made for this run and never
- * written anywhere, so one export groups a rider's requests. A line is tied to
- * an account only through Track Tuner's database, by its request_id, which the
- * owner holds so a verdict can be looked up again.
+ * written anywhere, so one export groups a rider's requests.
+ *
+ * What still ties a line to an account is its `request_id`, kept on purpose so
+ * the owner can look a verdict up again. It is Track Tuner's own id for the
+ * request: the database maps it to the account, the rider's own app shows it
+ * in the Race Engineer answer, and the operational logs record it. It is the
+ * same in every export, so it also joins two files; only one is ever kept.
  */
 import { createHmac, randomBytes } from 'node:crypto';
-import { closeSync, fsyncSync, openSync, unlinkSync, writeSync } from 'node:fs';
+import { closeSync, existsSync, fsyncSync, linkSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
@@ -40,6 +50,9 @@ const TAG = '[ai:export-replay]';
 export const REPLAY_FORMAT_VERSION = 1;
 
 const PAGE_SIZE = 500;
+
+/** Request ids per final-check query, kept short enough for a URL. */
+const RECHECK_CHUNK = 100;
 
 /**
  * The `submitted` keys each route stores (`buildSubmittedText` in
@@ -174,9 +187,87 @@ export async function* viewRows(supabase, pageSize = PAGE_SIZE) {
   }
 }
 
+/**
+ * Of `requestIds`, the ones the view still holds now. A row leaves the view
+ * when it passes retain_until, is purged, or its rider deletes it, turns
+ * keeping off or deletes their account.
+ */
+async function stillInView(supabase, requestIds) {
+  const kept = new Set();
+  for (let i = 0; i < requestIds.length; i += RECHECK_CHUNK) {
+    const chunk = requestIds.slice(i, i + RECHECK_CHUNK);
+    const { data, error } = await supabase
+      .from('ai_replay_export')
+      .select('request_id')
+      .in('request_id', chunk);
+    if (error) throw new Error(`re-checking ai_replay_export failed: ${error.message}`);
+    for (const row of data) kept.add(row.request_id);
+  }
+  return kept;
+}
+
+/**
+ * Every row the view holds, as of a final check made after the last page was
+ * read. Paging alone is not a snapshot: each page is its own request, so a row
+ * read on page 1 can have left the view by the time page 2 arrives, and
+ * without this pass it would be exported anyway.
+ */
+export async function collectSnapshot(supabase, pageSize = PAGE_SIZE) {
+  const rows = [];
+  for await (const row of viewRows(supabase, pageSize)) rows.push(row);
+  const kept = await stillInView(
+    supabase,
+    rows.map((row) => row.request_id),
+  );
+  const snapshot = rows.filter((row) => kept.has(row.request_id));
+  return { rows: snapshot, dropped: rows.length - snapshot.length };
+}
+
+/**
+ * Writes `lines` to a temporary file beside `out` and links it into place, so
+ * `out` exists only once it is whole. The link refuses an `out` that already
+ * exists, and a signal or error part way removes the temporary file.
+ */
+function publish(out, lines) {
+  const dir = path.dirname(path.resolve(out));
+  const temp = path.join(dir, `.${path.basename(out)}.${randomBytes(6).toString('hex')}.partial`);
+  const removeTemp = () => {
+    try {
+      unlinkSync(temp);
+    } catch {
+      // Already gone.
+    }
+  };
+  const onSignal = (signal) => {
+    removeTemp();
+    process.exit(signal === 'SIGINT' ? 130 : 143);
+  };
+  process.once('SIGINT', onSignal);
+  process.once('SIGTERM', onSignal);
+
+  try {
+    const fd = openSync(temp, 'wx', 0o600);
+    try {
+      for (const line of lines) writeSync(fd, `${line}\n`);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    linkSync(temp, out);
+  } finally {
+    removeTemp();
+    process.removeListener('SIGINT', onSignal);
+    process.removeListener('SIGTERM', onSignal);
+  }
+}
+
 async function main() {
   loadEnvFiles(repoRoot);
   const options = parseArgs(process.argv.slice(2));
+  // Checked again by the link at the end; this only saves reading the view
+  // for a run that could never publish.
+  if (existsSync(options.out)) fail(`cannot create ${options.out}: it already exists`);
+
   const supabase = createClient(
     requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
     requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
@@ -184,41 +275,33 @@ async function main() {
   );
 
   const key = newPseudonymKey();
-  const counts = { tuning_advice: 0, day_plan: 0 };
-  let earliestRetainUntil = null;
+  const { rows, dropped } = await collectSnapshot(supabase);
+  const records = rows.map((row) => toReplayRecord(row, key));
 
-  // `wx` refuses to replace an existing file, and 0600 keeps the copy to the
-  // owner while it sits on disk.
-  let fd;
   try {
-    fd = openSync(options.out, 'wx', 0o600);
+    publish(
+      options.out,
+      records.map((record) => JSON.stringify(record)),
+    );
   } catch (error) {
     fail(`cannot create ${options.out}: ${error.message}`);
   }
 
-  // A failure part way deletes what was written, so a partial file is never
-  // mistaken for a whole export.
-  try {
-    for await (const row of viewRows(supabase)) {
-      const record = toReplayRecord(row, key);
-      writeSync(fd, `${JSON.stringify(record)}\n`);
-      counts[record.route] += 1;
-      if (!earliestRetainUntil || record.retain_until < earliestRetainUntil) {
-        earliestRetainUntil = record.retain_until;
-      }
+  const counts = { tuning_advice: 0, day_plan: 0 };
+  let earliestRetainUntil = null;
+  for (const record of records) {
+    counts[record.route] += 1;
+    if (!earliestRetainUntil || record.retain_until < earliestRetainUntil) {
+      earliestRetainUntil = record.retain_until;
     }
-    fsyncSync(fd);
-    closeSync(fd);
-  } catch (error) {
-    closeSync(fd);
-    unlinkSync(options.out);
-    throw error;
   }
 
-  const total = counts.tuning_advice + counts.day_plan;
   console.error(
-    `${TAG} Wrote ${total} requests to ${options.out} (tuning_advice=${counts.tuning_advice}, day_plan=${counts.day_plan}).`,
+    `${TAG} Wrote ${records.length} requests to ${options.out} (tuning_advice=${counts.tuning_advice}, day_plan=${counts.day_plan}).`,
   );
+  if (dropped > 0) {
+    console.error(`${TAG} Left out ${dropped} that stopped being exportable while the export ran.`);
+  }
   console.error(`${TAG} Redline replaces its whole copy with this file and deletes the previous one.`);
   if (earliestRetainUntil) {
     console.error(`${TAG} The earliest row must be deleted from every copy by ${earliestRetainUntil}.`);

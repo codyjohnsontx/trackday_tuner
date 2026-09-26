@@ -7,9 +7,9 @@ verdict each request got, into a JSONL file that Redline's replay runner reads
 to run the same requests through a newer version of the guards.
 
 Every export is a whole snapshot of every question that may leave the database
-at that moment, never a date window. Redline keeps only the newest file, so
-what a rider deleted, stopped keeping or lost with their account leaves Redline
-at the next export.
+when the export finishes, never a date window. Redline keeps only the newest
+file, so what a rider deleted, stopped keeping or lost with their account
+leaves Redline at the next export.
 
 This file is the contract between the two sides. Track Tuner's unit suite holds
 the script to it (`tests/unit/export-ai-replay.test.ts` parses the example
@@ -37,16 +37,23 @@ under a secret the script makes for that run and never writes down. Within one
 file, one rider's requests share a `rider` value, so probing by one rider can be
 grouped.
 
-What the pseudonym does not do is hide a line from Track Tuner's database.
-Every line carries its `request_id`, so anyone with access to that database -
-which the owner has - can look the request up and find its account. That is
-deliberate: `request_id` is how the owner finds a verdict again. Without that
-access a line cannot be tied to an account.
+The pseudonym does not make a line anonymous. Every line carries its
+`request_id`, Track Tuner's own id for the request, kept on purpose so the owner
+can look a verdict up again. It is not secret:
 
-Two files would link a rider's two pseudonyms through the `request_id` they
-share, so two files never coexist: Redline deletes the previous file when it
-takes the newest one (below). That rule, not the pseudonym, is what keeps
-pseudonyms from different exports apart.
+- Track Tuner's database maps it to the rider's account, and the owner has that
+  database;
+- the rider's own app shows it, under a Race Engineer answer ("Request id");
+- Track Tuner's operational logs record it, and some error reports record it
+  beside the rider's user id and vehicle id.
+
+So anyone holding a line and any one of those - database access, the rider's
+screen, or the logs - can tie that line to an account.
+
+`request_id` is also the same in every export, so a request that is in two
+files joins them, and with them the rider's two pseudonyms. Nothing in the
+file prevents that. What keeps it from happening is that only one file is ever
+kept: Redline deletes the previous file when it takes the newest one (below).
 
 What riders typed was masked before it was stored (emails, phone numbers, web
 links, ids and long digit runs; `redaction_version` says which rules). Names and
@@ -70,7 +77,18 @@ Never from CI and never from Redline's cloud project.
    `--out` is required, so rider text is never printed to a terminal, and the script refuses to overwrite an existing file. Point it
    outside the repository: nothing ignores a `.jsonl` there, so a copy in the
    working tree could be staged by mistake. The file is created readable by
-   its owner only. A failed run deletes what it had written.
+   its owner only. The file is built under a temporary name beside the target
+   and linked into place only when it is whole, so a run that fails or is
+   interrupted - an error, Ctrl-C, a closed laptop - leaves nothing at the path
+   you gave. A temporary `.<name>.<random>.partial` file can survive only if the
+   machine loses power while the file is being written; delete it if you see
+   one.
+   The view is read in pages, and a question can stop being exportable while
+   they are read - its rider deletes it or turns keeping off, or it passes
+   `retain_until`. Before anything is written the script asks the view about
+   every collected request once more and leaves out any that left, and says
+   how many it left out. The file is what the view allowed at that final
+   check.
 3. The script prints how many requests it wrote and the earliest `retain_until`
    in the file. That date is the latest the first line can stay, if no newer
    export replaces it first.
@@ -115,7 +133,7 @@ never absent.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `format_version` | integer | This contract's version. `1` today. A reader refuses a version it does not know. |
-| `request_id` | string | The request's id in Track Tuner. Lets the owner find the verdict row again, and with Track Tuner database access, its account. |
+| `request_id` | string | Track Tuner's id for the request, the same in every export. Lets the owner find the verdict row again. It ties the line to an account for anyone with Track Tuner database access, the rider's own screen, or the operational logs (above). |
 | `route` | `"tuning_advice"` or `"day_plan"` | Which AI route took the request, and so which `submitted` shape follows. |
 | `created_at` | ISO 8601 timestamp | When the text was stored. |
 | `retain_until` | ISO 8601 timestamp | **When every copy of this line must be deleted.** At most 90 days after `created_at`. |
@@ -155,7 +173,8 @@ true of the database and false of the copy is not kept. So Redline:
 - **replaces its whole copy with each new file** and deletes the previous file,
   from every place it stored it. It never merges two files and never keeps an
   older one beside the newest. That is how a rider's deletion reaches Redline,
-  and why two pseudonyms of one rider are never held at once;
+  and the only thing that stops a rider's pseudonyms from two exports being
+  joined through a shared `request_id`;
 - **deletes each line no later than its `retain_until`** even when no newer
   export arrives, and keeps only what is derived from it - labels, counts and
   aggregate scores - after that (owner decision D8).

@@ -28,11 +28,14 @@
 -- the user id, which lets the script group one rider's rows. It is NOT the
 -- pseudonym the export writes: the script re-keys it with an HMAC under a
 -- secret generated per run and discarded, so a rider's pseudonym differs
--- between exports. rider_key itself never leaves the script. request_id does
--- leave, so the owner can look a verdict up again, and with this database it
--- leads back to an account; without it a line does not. Each export is a whole
--- snapshot that replaces the one before it (docs/ai-replay-export.md), so two
--- files, and two pseudonyms of one rider, are never held together.
+-- between exports. rider_key itself never leaves the script.
+--
+-- request_id DOES leave, so the owner can look a verdict up again, and it is
+-- not a secret: this database maps it to the account, the rider's app shows it
+-- under a Race Engineer answer, and the operational logs record it. It is also
+-- the same in every export, so two files would join a rider's two pseudonyms.
+-- Only one file is ever kept (docs/ai-replay-export.md); nothing here makes a
+-- line anonymous.
 --
 -- The verdict comes from ai_requests, joined on (request_id, user_id) - the
 -- same pair ai_request_text's foreign key names - so a text row can only ever

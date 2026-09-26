@@ -5,8 +5,14 @@ import { describe, expect, it, vi } from 'vitest';
 // The export is plain JS so it runs under node with no build step, like the
 // migration-audit generator. There are no types and `allowJs` is off, so the
 // import carries a directive on the module-specifier line.
-// @ts-expect-error - see above.
-import { newPseudonymKey, parseArgs, toReplayRecord, viewRows } from '@/scripts/export-ai-replay.mjs';
+import {
+  collectSnapshot,
+  newPseudonymKey,
+  parseArgs,
+  toReplayRecord,
+  viewRows,
+  // @ts-expect-error - see above.
+} from '@/scripts/export-ai-replay.mjs';
 
 /**
  * `npm run ai:export-replay` copies riders' kept question text out of the
@@ -235,6 +241,7 @@ function shrinkingView(total: number) {
     created_at: `2026-10-0${1 + Math.floor(i / 2)}T12:00:00.123456+00:00`,
   }));
   let served = 0;
+  let removed: string | null = null;
 
   const fetch = async (input: RequestInfo | URL) => {
     const url = new URL(typeof input === 'string' ? input : input.toString());
@@ -251,12 +258,22 @@ function shrinkingView(total: number) {
           (Date.parse(row.created_at) === Date.parse(at) && row.request_id > id),
       );
     }
+    const inList = params.get('request_id');
+    if (inList) {
+      const match = /^in\.\((.*)\)$/.exec(inList);
+      if (!match) throw new Error(`the stand-in does not read request_id=${inList}`);
+      const ids = new Set(match[1].split(',').map((id) => id.replace(/^"|"$/g, '')));
+      visible = visible.filter((row) => ids.has(row.request_id));
+    }
     const offset = Number(params.get('offset') ?? 0);
     const limit = Number(params.get('limit') ?? visible.length);
     const page = visible.slice(offset, offset + limit);
 
     served += 1;
-    if (served === 1) rows = rows.filter((row) => row.request_id !== page[1].request_id);
+    if (served === 1) {
+      removed = page[1].request_id;
+      rows = rows.filter((row) => row.request_id !== removed);
+    }
     return new Response(JSON.stringify(page), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -269,6 +286,7 @@ function shrinkingView(total: number) {
       global: { fetch },
     }),
     remaining: () => rows.map((row) => row.request_id),
+    removed: () => removed,
   };
 }
 
@@ -281,5 +299,22 @@ describe('viewRows', () => {
     }
     expect(read).toEqual(expect.arrayContaining(view.remaining()));
     expect(new Set(read).size).toBe(read.length);
+  });
+});
+
+// Paging alone is not a snapshot: the row page 1 held is still in what the
+// pages returned after it left the view. A rider who deleted a question, or
+// turned keeping off, while the export ran would otherwise still be in the
+// finished file.
+describe('collectSnapshot', () => {
+  it('leaves out a row that left the view while later pages were read', async () => {
+    const view = shrinkingView(7);
+    const { rows, dropped } = await collectSnapshot(view.client, 3);
+    const ids = rows.map((row: { request_id: string }) => row.request_id);
+
+    expect(view.removed()).not.toBeNull();
+    expect(ids).not.toContain(view.removed());
+    expect(ids).toEqual(view.remaining());
+    expect(dropped).toBe(1);
   });
 });
