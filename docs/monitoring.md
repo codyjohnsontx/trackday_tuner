@@ -133,7 +133,7 @@ decides what to do**:
    - **Variables** tab → New repository variable
      - Name: `MONITORING_APP_URL`
      - Value: the production URL, no trailing path - e.g.
-       `https://trackdaytuner.vercel.app`
+       `https://trackday-tuner.vercel.app`
    - **Secrets** tab → New repository secret
      - Name: `MONITORING_CRON_SECRET`
      - Value: **the same string you put in Vercel in item 2 above.** They have
