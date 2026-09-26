@@ -21,6 +21,12 @@ const eslintConfig = [
       // supabase/.gitignore but not by eslint, so linting after starting the
       // stack reported 154 errors in vendored minified code and none in ours.
       'supabase/.temp/**',
+      // The Expo app has its own package.json, tsconfig and lint, and the Next
+      // rules here would misread React Native. The fixture apps import through
+      // an `@/lib` that only resolves against their own fixture root. See
+      // tests/unit/mobile-shared-imports.test.ts.
+      'mobile/**',
+      'tests/fixtures/mobile-shared-imports/*/mobile/**',
       'next-env.d.ts',
       'eslint.config.mjs',
     ],
