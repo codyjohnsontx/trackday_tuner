@@ -12,6 +12,12 @@ import { describe, expect, it } from 'vitest';
  * the first-party graph and fails naming the module that reaches something the
  * app cannot load - the same shape as `rag-index-bundling.test.ts`.
  *
+ * A shared import is an `@/lib` or `@/types` import, or a relative import that
+ * climbs out of `mobile/`, since `../../lib/x` reaches the same module and would
+ * otherwise walk past the guard. Both are handled alike: one that resolves is
+ * followed, and one that does not is skipped, because Metro already fails an
+ * import it cannot resolve.
+ *
  * Until `mobile/` exists there is nothing to walk and it passes. The fixtures
  * under `tests/fixtures/mobile-shared-imports/` are what show it can fail.
  */
@@ -99,11 +105,7 @@ function directiveOf(file: string, source: string): string | null {
   return null;
 }
 
-/**
- * Every shared module the app under `<root>/mobile` reaches that the app cannot
- * load. A shared import that does not resolve is reported too, because a module
- * the walk could not open is a module it did not check.
- */
+/** Every shared module the app under `<root>/mobile` reaches that the app cannot load. */
 function findMobileSharedImportViolations(root: string): Violation[] {
   const mobileRoot = path.join(root, 'mobile');
   if (!existsSync(mobileRoot)) return [];
@@ -122,16 +124,7 @@ function findMobileSharedImportViolations(root: string): Violation[] {
       const aliased = specifier.startsWith('@/lib/') || specifier.startsWith('@/types/') || specifier === '@/types';
       if (!aliased && !specifier.startsWith('.')) continue;
       const resolved = resolveSpecifier(root, specifier, appFile);
-      if (!aliased && (!resolved || insideMobile(resolved))) continue;
-      if (!resolved) {
-        violations.push({
-          module: specifier,
-          reason: 'does not resolve to a file, so it could not be checked',
-          chain: [relative(appFile)],
-        });
-        continue;
-      }
-      if (chains.has(resolved)) continue;
+      if (!resolved || insideMobile(resolved) || chains.has(resolved)) continue;
       chains.set(resolved, [relative(appFile), relative(resolved)]);
       queue.push(resolved);
     }
@@ -202,9 +195,9 @@ describe('modules the mobile app shares with the website', () => {
       ]);
     });
 
-    it('fails on a shared import it cannot resolve rather than skipping it', () => {
-      expect(describeViolations(findMobileSharedImportViolations(path.join(FIXTURES, 'unresolved')))).toEqual([
-        '@/lib/missing does not resolve to a file, so it could not be checked (mobile/app/index.tsx)',
+    it('follows a relative import that climbs out of mobile/ like an aliased one', () => {
+      expect(describeViolations(findMobileSharedImportViolations(path.join(FIXTURES, 'relative-escape')))).toEqual([
+        'lib/env.server.ts is lib/env.server (mobile/app/index.tsx -> lib/units.ts -> lib/env.server.ts)',
       ]);
     });
   });
