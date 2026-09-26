@@ -58,19 +58,27 @@ export function ownedPublicObjectPath(
 export const STORAGE_REMOVE_BATCH_LIMIT = 1000;
 
 /**
- * Remove the photos of rows that are already deleted.
+ * Remove the photos a delete is about to orphan, and say whether Storage
+ * confirmed it.
  *
  * The buckets are public, so a photo left behind keeps serving a bike or a
- * session a rider was told is gone. The rows cannot come back, so a storage
- * failure is reported rather than failing a delete that happened. `remove`
- * deletes what RLS admits and reports what it deleted, so an object the policy
- * refuses or one already gone comes back missing from the result and not as an
- * error - the photo still serving is exactly the case this removes.
+ * session a rider was told is gone. Session photos are removed BEFORE their rows
+ * (owner's decision, 2026-09-26): the answer is `true` only when every batch came
+ * back without an error, and a caller keeps the row on `false` so the rider can
+ * try again with nothing orphaned. The bike's own photo is still removed after
+ * its row, and that caller ignores the answer.
+ *
+ * `remove` deletes what RLS admits and reports what it deleted, so an object
+ * already gone comes back missing from the result rather than as an error. That
+ * still counts as confirmed - there is nothing left to serve - and is reported
+ * so a policy quietly refusing the rider's own folder would still be seen. A URL
+ * that is not an object in the rider's own folder is reported and skipped: there
+ * is nothing of theirs to remove, and refusing on it would let one odd value
+ * make a row undeletable.
  *
  * Objects go to Storage in batches of at most `STORAGE_REMOVE_BATCH_LIMIT`, and
  * each batch stands alone: a batch that errors or throws is reported object by
- * object and the batches after it still run, so one failure never leaves the
- * rest of a bike's photos behind.
+ * object and the batches after it still run.
  */
 export async function removeOwnedPhotos(
   supabase: Pick<SupabaseClient, 'storage'>,
@@ -87,9 +95,9 @@ export async function removeOwnedPhotos(
     event: string;
     context: Record<string, unknown>;
   },
-): Promise<void> {
+): Promise<boolean> {
   const stored = photoUrls.filter((photoUrl): photoUrl is string => Boolean(photoUrl));
-  if (stored.length === 0) return;
+  if (stored.length === 0) return true;
 
   const supabaseUrl = getSupabaseUrl();
   const objects = new Set<string>();
@@ -107,6 +115,7 @@ export async function removeOwnedPhotos(
     }
   }
 
+  let confirmed = true;
   const all = [...objects];
   for (let start = 0; start < all.length; start += STORAGE_REMOVE_BATCH_LIMIT) {
     const batch = all.slice(start, start + STORAGE_REMOVE_BATCH_LIMIT);
@@ -119,6 +128,7 @@ export async function removeOwnedPhotos(
     } catch (thrown) {
       failure = thrown instanceof Error ? thrown.message : String(thrown);
     }
+    if (failure !== null) confirmed = false;
     for (const object of batch) {
       if (failure === null && removed.has(object)) continue;
       reportError(event, new Error(failure ?? 'storage removed no object'), {
@@ -129,4 +139,6 @@ export async function removeOwnedPhotos(
       });
     }
   }
+
+  return confirmed;
 }

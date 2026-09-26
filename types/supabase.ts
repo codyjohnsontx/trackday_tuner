@@ -1042,6 +1042,21 @@ export type Database = {
       };
     };
     Functions: {
+      delete_vehicle_if_sessions_unchanged: {
+        Args: {
+          p_vehicle_id: string;
+          /**
+           * Every session on the bike as the caller read it, `{ id, photo_url }`,
+           * after removing those photos from storage. The function locks the bike
+           * and its sessions and raises `TT409` unless the stored sessions are
+           * exactly these, so a session synced mid-delete is never cascaded with
+           * a photo nobody removed (20260926002100).
+           */
+          p_expected_sessions: Json;
+        };
+        /** The deleted vehicle's `{ id, photo_url }`, or null when no vehicle of the caller's has that id. */
+        Returns: Json;
+      };
       create_beta_invite: {
         Args: {
           p_waitlist_id: string | null;

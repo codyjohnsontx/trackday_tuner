@@ -55,6 +55,10 @@
    a bike on the website reads `sessions.photo_url`, so without the column
    every session delete fails, the bike delete confirmation cannot load, and
    no bike can be deleted - see "Apply session photos by hand" below.
+   `20260926002100` (`delete_vehicle_if_sessions_unchanged`) follows it by hand
+   in the same window: deleting a bike calls that function, so without it every
+   bike delete fails with `PGRST202` and `/api/health`'s `schema_contract`
+   check names it - see "Guard bike deletes by hand" below.
 2. Set `BETA_INVITE_ONLY=true`, a long random `BETA_INVITE_SECRET`, and a distinct
    `BETA_FORM_RATE_LIMIT_SECRET` in the deployment environment.
 3. Deploy and verify the public home page, waitlist, invitation signup, session
@@ -861,11 +865,13 @@ pressures (D2) need nothing here: they are optional keys inside the existing
 
 Apply and verify it before merging the pull request that adds the migration,
 because the website reads the column from that deploy on. `deleteSession`
-selects `photo_url` back from the delete and `deleteVehicle` reads it off every
-session on the bike, both to remove the photo from the public bucket, so on a
-database without the column PostgREST rejects those statements with `42703`:
-every session delete fails, the bike delete confirmation cannot load, and no
-bike can be deleted. The mobile app writes the column too.
+reads a session's `photo_url` and `deleteVehicle` reads it off every session on
+the bike, to remove each photo from the public bucket before the rows go - a
+row whose photo Storage did not confirm removing is kept, and the rider is told
+to try again. On a database without the column PostgREST rejects those reads
+with `42703`: every session delete fails, the bike delete confirmation cannot
+load, and no bike can be deleted. The mobile app writes the column too. The
+bike delete also needs the function in the next section.
 
 **1. Precheck (read-only).**
 
@@ -1012,6 +1018,124 @@ drop policy if exists "session-photos: insert own" on storage.objects;
 drop policy if exists "session-photos: update own" on storage.objects;
 drop policy if exists "session-photos: delete own" on storage.objects;
 alter table public.sessions drop column if exists photo_url;
+commit;
+```
+
+### Guard bike deletes by hand
+
+`20260926002100` adds `public.delete_vehicle_if_sessions_unchanged(uuid, jsonb)`,
+which `deleteVehicle` calls instead of a plain delete. The website removes the
+photos of every session on the bike first, then calls it with the sessions it
+read; the function locks the bike and those sessions, and deletes only if they
+are still exactly those - a session or a photo synced from a phone in between
+raises `TT409`, the bike stays, and the rider is asked to reload. It is
+`security invoker`, so RLS applies as for any rider query. Apply it right after
+"Apply session photos by hand", and before merging the pull request that adds
+it: without it every bike delete fails.
+
+**1. Precheck (read-only).**
+
+```sql
+select to_regprocedure('public.delete_vehicle_if_sessions_unchanged(uuid,jsonb)') is not null
+  as function_exists;
+```
+
+Expect `false`. `true` means it is already there: compare it with the migration
+rather than applying over it (the block is `create or replace`, so re-running it
+is harmless, but a different definition is a finding).
+
+**2. Apply.**
+
+```sql
+-- hosted-delete-vehicle-guard: mirror of supabase/migrations/20260926002100_delete_vehicle_if_sessions_unchanged.sql
+begin;
+create or replace function public.delete_vehicle_if_sessions_unchanged(
+  p_vehicle_id uuid,
+  p_expected_sessions jsonb
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_photo_url text;
+begin
+  if jsonb_typeof(p_expected_sessions) is distinct from 'array' then
+    raise exception 'p_expected_sessions must be an array' using errcode = '22023';
+  end if;
+
+  select v.photo_url
+    into v_photo_url
+    from public.vehicles v
+   where v.id = p_vehicle_id
+     and v.user_id = auth.uid()
+     for update;
+
+  if not found then
+    return null;
+  end if;
+
+  perform 1
+     from public.sessions s
+    where s.vehicle_id = p_vehicle_id
+      for update;
+
+  if exists (
+    (select s.id::text, s.photo_url
+       from public.sessions s
+      where s.vehicle_id = p_vehicle_id
+     except
+     select e ->> 'id', e ->> 'photo_url'
+       from jsonb_array_elements(p_expected_sessions) e)
+    union all
+    (select e ->> 'id', e ->> 'photo_url'
+       from jsonb_array_elements(p_expected_sessions) e
+     except
+     select s.id::text, s.photo_url
+       from public.sessions s
+      where s.vehicle_id = p_vehicle_id)
+  ) then
+    raise exception 'the sessions on this vehicle changed since they were read'
+      using errcode = 'TT409';
+  end if;
+
+  delete from public.vehicles
+   where id = p_vehicle_id
+     and user_id = auth.uid();
+
+  return jsonb_build_object('id', p_vehicle_id, 'photo_url', v_photo_url);
+end;
+$$;
+
+revoke all on function public.delete_vehicle_if_sessions_unchanged(uuid, jsonb) from public, anon;
+grant execute on function public.delete_vehicle_if_sessions_unchanged(uuid, jsonb) to authenticated;
+commit;
+```
+
+**3. Verify.**
+
+```sql
+select
+  p.prosecdef as security_definer,
+  p.proconfig as settings,
+  has_function_privilege('authenticated', p.oid, 'execute') as rider_can_execute,
+  has_function_privilege('anon', p.oid, 'execute') as anon_can_execute
+from pg_proc p
+where p.oid = to_regprocedure('public.delete_vehicle_if_sessions_unchanged(uuid,jsonb)');
+```
+
+Expect one row: `false`, `{"search_path=\"\""}` (an empty `search_path`, as Postgres quotes it), `true`, `false`. Row 23 of
+`scripts/sql/audit-migrations-against-database.sql` then reads `present`, and
+`/api/health`'s `schema_contract` check stops naming the function.
+
+**4. Rollback.** Only together with a rollback of the release that calls it,
+since every bike delete fails without it.
+
+```sql
+-- hosted-delete-vehicle-guard-rollback
+begin;
+drop function if exists public.delete_vehicle_if_sessions_unchanged(uuid, jsonb);
 commit;
 ```
 

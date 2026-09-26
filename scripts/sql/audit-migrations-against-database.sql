@@ -170,7 +170,10 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
              and p.qual is not distinct from case when e.has_using
                then '((bucket_id = ''session-photos''::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))' end
              and p.with_check is not distinct from case when e.has_check
-               then '((bucket_id = ''session-photos''::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))' end) = 4)
+               then '((bucket_id = ''session-photos''::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))' end) = 4),
+  (23, '20260926002100_delete_vehicle_if_sessions_unchanged', 'function',
+      'public.delete_vehicle_if_sessions_unchanged(uuid,jsonb)',
+      to_regprocedure('public.delete_vehicle_if_sessions_unchanged(uuid,jsonb)') is not null)
 )
 select ordinality as "#",
        migration,

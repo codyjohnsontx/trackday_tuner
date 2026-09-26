@@ -13,6 +13,12 @@ export const SESSION_DELETE_FAILED_MESSAGE =
 export const SESSION_DELETE_NOT_FOUND_MESSAGE =
   'This session could not be found. It may already have been deleted - check your sessions list.';
 
+export const SESSION_DELETE_PHOTO_FAILED_MESSAGE =
+  'This session was not deleted - we could not remove its photo, and deleting the session first would leave the photo online. The session is still here. Try again in a moment.';
+
+export const SESSION_DELETE_CHANGED_MESSAGE =
+  'This session changed while it was being deleted - a new photo may have just synced from your phone - so nothing was deleted. Try again.';
+
 export const SESSION_PHOTO_BUCKET = 'session-photos';
 
 export interface SessionDeletionContents {

@@ -13,6 +13,7 @@ import {
   VEHICLE_DELETE_COUNT_FAILED_MESSAGE,
   VEHICLE_DELETE_FAILED_MESSAGE,
   VEHICLE_DELETE_NOT_FOUND_MESSAGE,
+  VEHICLE_DELETE_SESSION_PHOTOS_FAILED_MESSAGE,
   VEHICLE_PHOTO_BUCKET,
   type VehicleDeletionCounts,
 } from '@/lib/vehicle-delete';
@@ -162,6 +163,11 @@ const LAP_COUNT_BATCH_SIZE = 100;
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 type CountError = { message: string; code?: string; details?: string | null; hint?: string | null };
+/** A session the bike's delete would cascade, as read: what its photo removal and the delete's re-check both use. */
+type CascadedSession = { id: string; photo_url: string | null };
+
+/** `delete_vehicle_if_sessions_unchanged` found the bike's sessions changed since they were read. */
+const SESSIONS_CHANGED_CODE = 'TT409';
 
 /**
  * Every session, lap and Race Engineer record the cascade would take with this
@@ -177,10 +183,9 @@ async function countVehicleCascade(
   userId: string,
   vehicleId: string,
 ): Promise<
-  { ok: true; counts: VehicleDeletionCounts; sessionPhotoUrls: string[] } | { ok: false; error: CountError }
+  { ok: true; counts: VehicleDeletionCounts; sessions: CascadedSession[] } | { ok: false; error: CountError }
 > {
-  const sessionIds: string[] = [];
-  const sessionPhotoUrls: string[] = [];
+  const sessions: CascadedSession[] = [];
   for (let from = 0; ; from += SESSION_ID_PAGE_SIZE) {
     const { data, error } = await supabase
       .from('sessions')
@@ -190,11 +195,11 @@ async function countVehicleCascade(
       .order('id')
       .range(from, from + SESSION_ID_PAGE_SIZE - 1);
     if (error) return { ok: false, error };
-    const page = (data ?? []) as { id: string; photo_url: string | null }[];
-    sessionIds.push(...page.map((row) => row.id));
-    for (const row of page) if (row.photo_url) sessionPhotoUrls.push(row.photo_url);
+    const page = (data ?? []) as CascadedSession[];
+    sessions.push(...page.map((row) => ({ id: row.id, photo_url: row.photo_url ?? null })));
     if (page.length < SESSION_ID_PAGE_SIZE) break;
   }
+  const sessionIds = sessions.map((session) => session.id);
 
   let lapCount = 0;
   for (let start = 0; start < sessionIds.length; start += LAP_COUNT_BATCH_SIZE) {
@@ -241,7 +246,7 @@ async function countVehicleCascade(
       recommendationCount,
       hasRaceEngineerMemory: (memoryCount ?? 0) > 0,
     },
-    sessionPhotoUrls,
+    sessions,
   };
 }
 
@@ -284,8 +289,15 @@ export async function getVehicleDeletionCounts(vehicleId: string): Promise<Actio
  *
  * `expectedSessionCount` is the count the rider was shown. It is checked again
  * here so a session logged from another tab after the page loaded cannot be
- * deleted under a confirmation that never mentioned it. The check and the delete
- * are two statements, so this narrows that window rather than closing it.
+ * deleted under a confirmation that never mentioned it.
+ *
+ * Session photos go first (owner's decision, 2026-09-26): every cascaded
+ * session's photo is removed from the public bucket, and the bike is deleted
+ * only once Storage has confirmed all of them. The delete itself is
+ * `delete_vehicle_if_sessions_unchanged` (20260926002100), which locks the bike
+ * and its sessions and refuses unless they are exactly the ones read here - so a
+ * session, or a photo, synced after that read is never cascaded with a photo
+ * nobody removed. That closes the window the count check alone only narrowed.
  */
 export async function deleteVehicle(id: string, expectedSessionCount: number): Promise<ActionResult> {
   const demoError = await assertNotDemoMode();
@@ -304,15 +316,23 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
     return { ok: false, error: VEHICLE_DELETE_COUNT_CHANGED_MESSAGE };
   }
 
-  // The deleted rows are selected back because RLS and the user_id filter turn
-  // another rider's id, or a vehicle already gone, into zero rows, not an error.
-  const { data, error } = await supabase
-    .from('vehicles')
-    .delete()
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .select('id, photo_url');
+  const photosRemoved = await removeOwnedPhotos(supabase, {
+    bucket: SESSION_PHOTO_BUCKET,
+    photoUrls: recount.sessions.map((session) => session.photo_url),
+    ownerId: user.id,
+    event: 'session-photo-delete',
+    context: { vehicleId: id },
+  });
+  if (!photosRemoved) return { ok: false, error: VEHICLE_DELETE_SESSION_PHOTOS_FAILED_MESSAGE };
 
+  // RLS and the user_id check inside the function turn another rider's id, or a
+  // vehicle already gone, into null rather than an error.
+  const { data, error } = await supabase.rpc('delete_vehicle_if_sessions_unchanged', {
+    p_vehicle_id: id,
+    p_expected_sessions: recount.sessions,
+  });
+
+  if (error?.code === SESSIONS_CHANGED_CODE) return { ok: false, error: VEHICLE_DELETE_COUNT_CHANGED_MESSAGE };
   if (error) {
     reportError('vehicle-delete', new Error(error.message), {
       reason: error.code,
@@ -324,21 +344,16 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
     });
     return { ok: false, error: VEHICLE_DELETE_FAILED_MESSAGE };
   }
-  const deleted = (data ?? []) as { id: string; photo_url: string | null }[];
-  if (deleted.length === 0) return { ok: false, error: VEHICLE_DELETE_NOT_FOUND_MESSAGE };
+  const deleted = data as { id: string; photo_url: string | null } | null;
+  if (!deleted) return { ok: false, error: VEHICLE_DELETE_NOT_FOUND_MESSAGE };
 
+  // The bike's own photo is still removed after its row, and a failure there is
+  // reported rather than undoing a delete that happened.
   await removeOwnedPhotos(supabase, {
     bucket: VEHICLE_PHOTO_BUCKET,
-    photoUrls: [deleted[0].photo_url],
+    photoUrls: [deleted.photo_url],
     ownerId: user.id,
     event: 'vehicle-photo-delete',
-    context: { vehicleId: id },
-  });
-  await removeOwnedPhotos(supabase, {
-    bucket: SESSION_PHOTO_BUCKET,
-    photoUrls: recount.sessionPhotoUrls,
-    ownerId: user.id,
-    event: 'session-photo-delete',
     context: { vehicleId: id },
   });
 

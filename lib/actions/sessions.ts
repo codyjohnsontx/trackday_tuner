@@ -22,8 +22,10 @@ import {
 } from '@/lib/session-compare';
 import { fetchPreviousSession } from '@/lib/session-previous';
 import {
+  SESSION_DELETE_CHANGED_MESSAGE,
   SESSION_DELETE_FAILED_MESSAGE,
   SESSION_DELETE_NOT_FOUND_MESSAGE,
+  SESSION_DELETE_PHOTO_FAILED_MESSAGE,
   SESSION_PHOTO_BUCKET,
 } from '@/lib/session-delete';
 import { removeOwnedPhotos } from '@/lib/storage-photo-removal';
@@ -511,17 +513,7 @@ export async function deleteSession(id: string): Promise<ActionResult> {
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const supabase = await createClient();
-  // The deleted rows are selected back because RLS and the user_id filter turn
-  // another rider's id, or one already gone, into zero rows rather than an error.
-  // Without the count that is a success the page would navigate away on.
-  const { data, error } = await supabase
-    .from('sessions')
-    .delete()
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .select('id, photo_url');
-
-  if (error) {
+  const reportDeleteError = (error: { message: string; code?: string; details?: string; hint?: string }) =>
     reportError('session-delete', new Error(error.message), {
       reason: error.code,
       table: 'sessions',
@@ -530,18 +522,49 @@ export async function deleteSession(id: string): Promise<ActionResult> {
       userId: user.id,
       sessionId: id,
     });
+
+  // The photo goes first (owner's decision, 2026-09-26). The bucket is public,
+  // so deleting the row and then failing to remove the photo would leave it
+  // online with nothing pointing at it and no way for the rider to retry. Read
+  // the row, remove its photo, and delete only once Storage has confirmed.
+  const { data: row, error: readError } = await supabase
+    .from('sessions')
+    .select('id, photo_url')
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (readError) {
+    reportDeleteError(readError);
     return { ok: false, error: SESSION_DELETE_FAILED_MESSAGE };
   }
-  const deleted = (data ?? []) as { id: string; photo_url: string | null }[];
-  if (deleted.length === 0) return { ok: false, error: SESSION_DELETE_NOT_FOUND_MESSAGE };
+  if (!row) return { ok: false, error: SESSION_DELETE_NOT_FOUND_MESSAGE };
+  const photoUrl = (row as { id: string; photo_url: string | null }).photo_url;
 
-  await removeOwnedPhotos(supabase, {
+  const photoRemoved = await removeOwnedPhotos(supabase, {
     bucket: SESSION_PHOTO_BUCKET,
-    photoUrls: [deleted[0].photo_url],
+    photoUrls: [photoUrl],
     ownerId: user.id,
     event: 'session-photo-delete',
     context: { sessionId: id },
   });
+  if (!photoRemoved) return { ok: false, error: SESSION_DELETE_PHOTO_FAILED_MESSAGE };
+
+  // Deleted only while the photo is still the one just removed: a phone syncing
+  // a new photo onto this session in between would otherwise have it deleted
+  // with the row and left online. The rows are selected back because RLS and the
+  // user_id filter turn a row already gone, or one whose photo moved, into zero
+  // rows rather than an error.
+  const deleteQuery = supabase.from('sessions').delete().eq('id', id).eq('user_id', user.id);
+  const { data, error } = await (photoUrl === null
+    ? deleteQuery.is('photo_url', null)
+    : deleteQuery.eq('photo_url', photoUrl)
+  ).select('id');
+
+  if (error) {
+    reportDeleteError(error);
+    return { ok: false, error: SESSION_DELETE_FAILED_MESSAGE };
+  }
+  if ((data ?? []).length === 0) return { ok: false, error: SESSION_DELETE_CHANGED_MESSAGE };
 
   revalidatePath('/sessions');
   revalidatePath('/dashboard');
