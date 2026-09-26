@@ -74,15 +74,18 @@ Never from CI and never from Redline's cloud project.
    ```
 
    There is no date range: the file holds everything the view allows now.
-   `--out` is required, so rider text is never printed to a terminal, and the script refuses to overwrite an existing file. Point it
-   outside the repository: nothing ignores a `.jsonl` there, so a copy in the
-   working tree could be staged by mistake. The file is created readable by
-   its owner only. The file is built under a temporary name beside the target
-   and linked into place only when it is whole, so a run that fails, or is
-   interrupted while the view is being read - Ctrl-C, a closed laptop - leaves
-   nothing at the path you gave. Once writing starts, Ctrl-C is
-   ignored and the run finishes, putting the whole file there. A temporary `.<name>.<random>.partial` file can survive only if the
-   machine loses power while the file is being written; delete it if you see
+   `--out` is required, so rider text is never printed to a terminal, and the
+   script refuses to overwrite an existing file. Point it outside the
+   repository: nothing ignores a `.jsonl` there, so a copy in the working tree
+   could be staged by mistake. The file is created readable by its owner only.
+   The file is built under a temporary name beside the target and linked into
+   place only when it is whole, so a run that fails, or is interrupted while
+   the view is being read - Ctrl-C, a closed laptop - leaves nothing at the
+   path you gave. Once writing starts, Ctrl-C is ignored and the run finishes,
+   putting the whole file there. The path you gave is never left half
+   written, but a temporary `.<name>.<random>.partial` file holding rider text
+   survives beside it if the process is killed outright (`kill -9`) or the
+   machine loses power while the file is being written. Delete it if you see
    one.
    The view is read in pages, and a question can stop being exportable while
    they are read - its rider deletes it or turns keeping off, or it passes
