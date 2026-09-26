@@ -50,6 +50,14 @@ export function ownedPublicObjectPath(
 }
 
 /**
+ * The most objects one `remove` call may name. Supabase documents this cap for
+ * the hosted Storage API (https://supabase.com/docs/guides/storage/management/delete-objects);
+ * the local stack does not enforce it, so nothing short of a rider with more
+ * sessions than this on one bike would show a single oversized call failing.
+ */
+export const STORAGE_REMOVE_BATCH_LIMIT = 1000;
+
+/**
  * Remove the photos of rows that are already deleted.
  *
  * The buckets are public, so a photo left behind keeps serving a bike or a
@@ -58,6 +66,11 @@ export function ownedPublicObjectPath(
  * deletes what RLS admits and reports what it deleted, so an object the policy
  * refuses or one already gone comes back missing from the result and not as an
  * error - the photo still serving is exactly the case this removes.
+ *
+ * Objects go to Storage in batches of at most `STORAGE_REMOVE_BATCH_LIMIT`, and
+ * each batch stands alone: a batch that errors or throws is reported object by
+ * object and the batches after it still run, so one failure never leaves the
+ * rest of a bike's photos behind.
  */
 export async function removeOwnedPhotos(
   supabase: Pick<SupabaseClient, 'storage'>,
@@ -93,17 +106,27 @@ export async function removeOwnedPhotos(
       });
     }
   }
-  if (objects.size === 0) return;
 
-  const { data, error } = await supabase.storage.from(bucket).remove([...objects]);
-  const removed = new Set((data ?? []).map((entry) => entry.name));
-  for (const object of objects) {
-    if (!error && removed.has(object)) continue;
-    reportError(event, new Error(error?.message ?? 'storage removed no object'), {
-      bucket,
-      object,
-      userId: ownerId,
-      ...context,
-    });
+  const all = [...objects];
+  for (let start = 0; start < all.length; start += STORAGE_REMOVE_BATCH_LIMIT) {
+    const batch = all.slice(start, start + STORAGE_REMOVE_BATCH_LIMIT);
+    let removed = new Set<string>();
+    let failure: string | null = null;
+    try {
+      const { data, error } = await supabase.storage.from(bucket).remove(batch);
+      if (error) failure = error.message;
+      removed = new Set((data ?? []).map((entry) => entry.name));
+    } catch (thrown) {
+      failure = thrown instanceof Error ? thrown.message : String(thrown);
+    }
+    for (const object of batch) {
+      if (failure === null && removed.has(object)) continue;
+      reportError(event, new Error(failure ?? 'storage removed no object'), {
+        bucket,
+        object,
+        userId: ownerId,
+        ...context,
+      });
+    }
   }
 }
