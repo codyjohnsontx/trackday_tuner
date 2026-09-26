@@ -23,12 +23,12 @@
    has no migration history at all, `20260719001100` is applied in the SQL editor
    by hand - see "Apply the Data API grants by hand" below, and do that first:
    until it is done any rider can set their own tier to `pro`.
-   Migrations build the schema and the storage policies, not the storage bucket:
+   Migrations build the schema and the storage policies, not the storage buckets:
    the CLI provisions buckets from `[storage.buckets.*]` in `supabase/config.toml`,
    so on a deployment standing up its own project, `npx supabase seed buckets
-   --linked` once after `supabase link` is what creates `vehicle-photos`. Without
-   it, adding a vehicle with a photo fails with "Photo upload failed: Bucket not
-   found". See "Local Run" in README.md.
+   --linked` after `supabase link` is what creates `vehicle-photos` and
+   `session-photos`. Without it, adding a vehicle with a photo fails with "Photo
+   upload failed: Bucket not found". See "Local Run" in README.md.
    `20260901001400` and `20260903001500` are the migrations in that list carrying
    a **deploy-ordering requirement**: each changes the signature of
    `replace_session_laps`, so apply them *before* the release that calls it goes
