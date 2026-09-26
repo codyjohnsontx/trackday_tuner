@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -18,7 +19,6 @@ import { describe, expect, it } from 'vitest';
 const ROOT = path.resolve(__dirname, '../..');
 const FIXTURES = path.join(ROOT, 'tests/fixtures/mobile-shared-imports');
 
-const IMPORT_PATTERN = /(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g;
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'web-build', 'android', 'ios']);
 
@@ -38,9 +38,6 @@ const FORBIDDEN_MODULES: { label: string; matches: (relative: string) => boolean
   { label: 'lib/actions/*', matches: (relative) => relative.startsWith('lib/actions/') },
   { label: 'lib/monitoring/*', matches: (relative) => relative.startsWith('lib/monitoring/') },
 ];
-
-/** A `"use server"` or `"use client"` directive, after any leading comments. */
-const DIRECTIVE_PATTERN = /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*(['"])use (server|client)\1/;
 
 interface Violation {
   /** The shared module at fault, relative to the root. */
@@ -87,8 +84,19 @@ function findSourceFiles(dir: string): string[] {
   return found;
 }
 
-function specifiersOf(file: string): string[] {
-  return [...readFileSync(file, 'utf8').matchAll(IMPORT_PATTERN)].map((match) => match[1]);
+function specifiersOf(source: string): string[] {
+  return ts.preProcessFile(source, true, true).importedFiles.map((imported) => imported.fileName);
+}
+
+/** The `"use server"` or `"use client"` directive in the file's prologue, if any. */
+function directiveOf(file: string, source: string): string | null {
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest);
+  for (const statement of sourceFile.statements) {
+    if (!ts.isExpressionStatement(statement) || !ts.isStringLiteral(statement.expression)) break;
+    const text = statement.expression.text;
+    if (text === 'use server' || text === 'use client') return text;
+  }
+  return null;
 }
 
 /**
@@ -107,7 +115,7 @@ function findMobileSharedImportViolations(root: string): Violation[] {
   const queue: string[] = [];
 
   for (const appFile of findSourceFiles(mobileRoot)) {
-    for (const specifier of specifiersOf(appFile)) {
+    for (const specifier of specifiersOf(readFileSync(appFile, 'utf8'))) {
       // `@/lib` and `@/types` are the two aliases Metro maps to the repository
       // root. Any other `@/` is the app's own business, and a relative import only
       // counts once it climbs out of mobile/.
@@ -141,12 +149,12 @@ function findMobileSharedImportViolations(root: string): Violation[] {
     }
 
     const source = readFileSync(file, 'utf8');
-    const directive = source.match(DIRECTIVE_PATTERN);
+    const directive = directiveOf(file, source);
     if (directive) {
-      violations.push({ module: moduleName, reason: `has a "use ${directive[2]}" directive`, chain });
+      violations.push({ module: moduleName, reason: `has a "${directive}" directive`, chain });
     }
 
-    for (const specifier of specifiersOf(file)) {
+    for (const specifier of specifiersOf(source)) {
       if (isForbiddenPackage(specifier)) {
         violations.push({ module: moduleName, reason: `imports ${specifier}`, chain });
         continue;
