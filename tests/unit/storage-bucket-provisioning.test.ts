@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { bucketsDeclaredIn, type DeclaredBucket } from './helpers/storage-buckets';
 
 // Guards the invariant that a database built from this repository has every
 // storage bucket the application uploads to, and that riders can only write
@@ -94,34 +95,6 @@ export function bucketsUsedBy(files: { file: string; source: string }[]): Bucket
   }
 
   return [...uses.values()].sort((a, b) => a.name.localeCompare(b.name));
-}
-
-interface DeclaredBucket {
-  name: string;
-  public: boolean;
-}
-
-// One `[storage.buckets.<name>]` header per bucket, read only at the start of a
-// line so a header the CLI's template leaves commented out (`# [storage.buckets.images]`)
-// is not read as a declaration - that commented-out template is exactly what the
-// repository shipped with. A block runs to the next header. TOML lets a key
-// appear once per table, so the first `public =` in the block is the value.
-const BUCKET_HEADER = /^\[storage\.buckets\.([A-Za-z0-9_-]+)\]\s*$/gm;
-const NEXT_HEADER = /^\[/m;
-
-export function bucketsDeclaredIn(configToml: string): DeclaredBucket[] {
-  const declared: DeclaredBucket[] = [];
-
-  for (const match of configToml.matchAll(BUCKET_HEADER)) {
-    const bodyStart = match.index + match[0].length;
-    const rest = configToml.slice(bodyStart);
-    const next = NEXT_HEADER.exec(rest);
-    const body = next === null ? rest : rest.slice(0, next.index);
-    const isPublic = /^public\s*=\s*true\s*(?:#.*)?$/m.test(body);
-    declared.push({ name: match[1], public: isPublic });
-  }
-
-  return declared;
 }
 
 function stripComments(sql: string): string {
@@ -259,7 +232,7 @@ describe('every storage bucket the application uploads to is provisioned by the 
   it('declares the session photo bucket the mobile app uploads to, public like the bike photo', () => {
     // No website code uploads here, so the scan above cannot see it; the check
     // above still holds it to owner-scoped policies because it is declared.
-    expect(declared).toContainEqual({ name: 'session-photos', public: true });
+    expect(declared).toContainEqual({ name: 'session-photos', public: true, allowedMimeTypes: ['image/*'] });
   });
 });
 
@@ -371,8 +344,8 @@ file_size_limit = "10MiB"
 public = true
 `);
     expect(neighbour).toEqual([
-      { name: 'vehicle-photos', public: false },
-      { name: 'avatars', public: true },
+      { name: 'vehicle-photos', public: false, allowedMimeTypes: null },
+      { name: 'avatars', public: true, allowedMimeTypes: null },
     ]);
   });
 

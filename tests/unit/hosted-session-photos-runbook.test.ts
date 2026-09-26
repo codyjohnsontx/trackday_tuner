@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { bucketsDeclaredIn } from './helpers/storage-buckets';
 
 // docs/beta-runbook.md carries a copy of 20260926002000 for the hosted project,
 // which has no migration history and is patched in the SQL editor by hand - the
@@ -56,12 +57,12 @@ describe('the hosted session photos block in docs/beta-runbook.md', () => {
   });
 
   it('creates the bucket with the settings supabase/config.toml declares', () => {
-    const declared = /^\[storage\.buckets\.session-photos\]\n((?:(?!\[)[^\n]*\n)*)/m.exec(config)?.[1];
-    expect(declared).toContain('public = true');
-    expect(declared).toContain('allowed_mime_types = ["image/*"]');
+    const declared = bucketsDeclaredIn(config).find((bucket) => bucket.name === 'session-photos');
+    expect(declared).toEqual({ name: 'session-photos', public: true, allowedMimeTypes: ['image/*'] });
 
+    const mimeTypes = declared!.allowedMimeTypes!.map((type) => `'${type}'`).join(', ');
     expect(block[block.length - 2]).toBe(
-      "insert into storage.buckets (id, name, public, allowed_mime_types) values ('session-photos', 'session-photos', true, array['image/*']) on conflict (id) do update set public = excluded.public, allowed_mime_types = excluded.allowed_mime_types",
+      `insert into storage.buckets (id, name, public, allowed_mime_types) values ('${declared!.name}', '${declared!.name}', ${declared!.public}, array[${mimeTypes}]) on conflict (id) do update set public = excluded.public, allowed_mime_types = excluded.allowed_mime_types`,
     );
   });
 
