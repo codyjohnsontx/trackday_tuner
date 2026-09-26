@@ -50,8 +50,11 @@
    in by hand on a project with no migration history, and also before the
    release that ships it - see "Apply the AI question-text table by hand" below.
    `20260926002000` (the session photo column, the `session-photos` bucket and
-   its policies) goes in by hand the same way, bucket included - see "Apply
-   session photos by hand" below.
+   its policies) goes in by hand the same way, bucket included, and is applied
+   and verified before the release that ships it deploys: deleting a session or
+   a bike on the website reads `sessions.photo_url`, so without the column
+   every session delete fails, the bike delete confirmation cannot load, and
+   no bike can be deleted - see "Apply session photos by hand" below.
 2. Set `BETA_INVITE_ONLY=true`, a long random `BETA_INVITE_SECRET`, and a distinct
    `BETA_FORM_RATE_LIMIT_SECRET` in the deployment environment.
 3. Deploy and verify the public home page, waitlist, invitation signup, session
@@ -856,9 +859,13 @@ on a linked project `npx supabase seed buckets --linked` does the same. Hot tire
 pressures (D2) need nothing here: they are optional keys inside the existing
 `sessions.tires` JSON.
 
-Apply it before merging the pull request that adds the migration: the website's
-`sessions` type declares `photo_url` from that merge on, and the mobile app writes
-it.
+Apply and verify it before merging the pull request that adds the migration,
+because the website reads the column from that deploy on. `deleteSession`
+selects `photo_url` back from the delete and `deleteVehicle` reads it off every
+session on the bike, both to remove the photo from the public bucket, so on a
+database without the column PostgREST rejects those statements with `42703`:
+every session delete fails, the bike delete confirmation cannot load, and no
+bike can be deleted. The mobile app writes the column too.
 
 **1. Precheck (read-only).**
 
@@ -951,7 +958,8 @@ Expect `true`, `DELETE,INSERT,SELECT,UPDATE`, `true`, `{image/*}`. Row 22 of
 `scripts/sql/audit-migrations-against-database.sql` then reads `present`.
 
 **4. Rollback.** Dropping the column discards every `photo_url`, so this is for
-before any photo is stored. Storage refuses a delete from `storage.buckets` in
+before any photo is stored, and before the release that reads it deploys - once
+it has, dropping the column breaks session and bike deletes as above. Storage refuses a delete from `storage.buckets` in
 SQL ("Direct deletion from storage tables is not allowed"), so after this block
 delete the `session-photos` bucket from the dashboard's Storage page, emptying it
 first if it holds anything.
