@@ -876,17 +876,29 @@ select
              and column_name = 'photo_url') as photo_url_column,
   (select count(*) from pg_policies
     where schemaname = 'storage' and tablename = 'objects'
-      and policyname like 'session-photos: % own') as session_photo_policies,
+      and (policyname like 'session-photos:%'
+           or coalesce(qual, '') || coalesce(with_check, '') like '%session-photos%'))
+    as session_photo_policies,
   (select count(*) from storage.buckets where id = 'session-photos') as bucket_rows,
+  (select public from storage.buckets where id = 'session-photos') as bucket_public,
+  (select allowed_mime_types from storage.buckets where id = 'session-photos') as bucket_mime_types,
   has_table_privilege('authenticated', 'public.sessions', 'update') as rider_can_update_sessions;
 ```
 
-Expect `false`, `0`, `0`, `true` on a project that has none of it. Anything else
-means part of it is already there: stop and compare against the migration
-rather than applying over it, because `create policy` is not idempotent and the
-transaction below would roll back on the first duplicate. The last column must be
-`true` - it is the grant that lets a rider set `photo_url` on their own session
-(`20260719001100`); if it is `false`, that section of this runbook comes first.
+Expect `false`, `0`, then either `0` with two nulls (no bucket yet) or `1` with
+the bucket's current settings (`npx supabase seed buckets --linked` already ran,
+which the launch checklist and README both allow), then `true`.
+
+- `photo_url_column` `true`, or `session_photo_policies` above `0`, means part of
+  the migration is already there: stop and compare against the migration rather
+  than applying over it, because `create policy` is not idempotent and the
+  transaction below would roll back on the first duplicate.
+- An existing bucket is fine whatever its settings. Step 2 upserts it, so a
+  bucket reading anything but `true` and `{image/*}` is brought into line there,
+  and step 3 checks that it was.
+- `rider_can_update_sessions` must be `true` - it is the grant that lets a rider
+  set `photo_url` on their own session (`20260719001100`); if it is `false`, that
+  section of this runbook comes first.
 
 **2. Apply.**
 
@@ -943,19 +955,47 @@ commit;
 **3. Verify.**
 
 ```sql
+with expected(policyname, cmd, has_using, has_check) as (
+  values ('session-photos: select own', 'SELECT', true, false),
+         ('session-photos: insert own', 'INSERT', false, true),
+         ('session-photos: update own', 'UPDATE', true, true),
+         ('session-photos: delete own', 'DELETE', true, false)
+)
 select
   exists (select 1 from information_schema.columns
            where table_schema = 'public' and table_name = 'sessions'
              and column_name = 'photo_url') as photo_url_column,
-  (select string_agg(cmd, ',' order by cmd) from pg_policies
+  (select count(*) from pg_policies p join expected e using (policyname)
+    where p.schemaname = 'storage' and p.tablename = 'objects'
+      and p.cmd = e.cmd
+      and p.permissive = 'PERMISSIVE'
+      and p.roles = array['authenticated']::name[]
+      and p.qual is not distinct from
+            case when e.has_using then '((bucket_id = ''session-photos''::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))' end
+      and p.with_check is not distinct from
+            case when e.has_check then '((bucket_id = ''session-photos''::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))' end)
+    as owner_scoped_policies,
+  (select count(*) from pg_policies
     where schemaname = 'storage' and tablename = 'objects'
-      and policyname like 'session-photos: % own') as session_photo_policies,
+      and policyname not in (select policyname from expected)
+      and (policyname like 'session-photos:%'
+           or coalesce(qual, '') || coalesce(with_check, '') like '%session-photos%'))
+    as other_session_photo_policies,
   (select public from storage.buckets where id = 'session-photos') as bucket_public,
   (select allowed_mime_types from storage.buckets where id = 'session-photos') as bucket_mime_types;
 ```
 
-Expect `true`, `DELETE,INSERT,SELECT,UPDATE`, `true`, `{image/*}`. Row 22 of
-`scripts/sql/audit-migrations-against-database.sql` then reads `present`.
+Expect `true`, `4`, `0`, `true`, `{image/*}`.
+
+`owner_scoped_policies` counts a policy only when its command, role
+(`authenticated` alone), and its `using` and `with check` expressions are exactly
+the migration's - the bucket and the rider's own first folder, as Postgres
+prints them back. A policy with the right name but a weaker predicate, a wider
+role or a missing clause reads below `4`. `other_session_photo_policies` catches
+an extra policy naming the bucket, which could widen access beside the four; a
+policy on `storage.objects` that names no bucket at all is outside what it can
+see. Row 22 of `scripts/sql/audit-migrations-against-database.sql` applies the
+same exact comparison and then reads `present`.
 
 **4. Rollback.** Dropping the column discards every `photo_url`, so this is for
 before any photo is stored, and before the release that reads it deploys - once
