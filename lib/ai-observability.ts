@@ -24,12 +24,19 @@ export const REDACTION_VERSION = 1;
 // which the notice says never happens. The top-level label must be all lower
 // or all upper case: that is how a pasted link is written, and it is what keeps
 // a missing space after a full stop ("rebound.Then") from reading as a link.
+// The common endings below are the exception and match in any case, so a
+// title-cased name (RevZilla.Com, example.Co.Uk) is masked too.
 // A lower-case typo ("rebound.then") IS masked - when a string is ambiguous,
 // privacy wins - while "e.g.", "i.e." and decimals (32.5) never match, since
 // their last label is one letter or a number.
+const ANY_CASE_TOP_LEVEL = ['com', 'net', 'org', 'io', 'co', 'uk', 'ca', 'au', 'de', 'app', 'dev', 'info', 'ly', 'gg', 'tv', 'xyz']
+  .map((label) => label.replace(/[a-z]/g, (letter) => `[${letter}${letter.toUpperCase()}]`))
+  .join('|');
 const WWW_LINK = /\bwww\.\S+/gi;
-const HOST_LINK =
-  /\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+(?:[a-z]{2,}|[A-Z]{2,})\b(?:\/\S*)?/g;
+const HOST_LINK = new RegExp(
+  String.raw`\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+(?:[a-z]{2,}|[A-Z]{2,}|${ANY_CASE_TOP_LEVEL})\b(?:\/\S*)?`,
+  'g',
+);
 
 // Phone numbers, in the shapes that cannot be setup data. None may touch a
 // digit, letter, colon or decimal point on either side, so a lap time
