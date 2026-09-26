@@ -850,6 +850,104 @@ access and:
 the SQL editor returns the deployed commit. Turn keeping off and ask again: the
 new row's preview prints `-` and nothing is listed.
 
+### Apply the replay export view by hand
+
+`20260927002000` creates `ai_replay_export`, the one view
+`npm run ai:export-replay` reads (docs/ai-replay-export.md). It is where the rule
+for what may leave the database is written: text a rider is keeping now,
+written after their latest opt-in and not yet past its `retain_until`, with no
+`user_id`, `session_id` or `vehicle_id`. It reads `ai_request_text`, `ai_requests` and the
+`profiles` retention columns and changes none of them, so applying it touches no
+rider's data. Apply it after the three blocks above, and **before the first
+export**: without it the script fails with `PGRST205` and writes nothing.
+
+**1. Confirm the project can take it.** Read-only.
+
+```sql
+select
+  to_regclass('public.ai_request_text') is not null as has_text_table,
+  exists (select 1 from information_schema.columns
+          where table_schema = 'public' and table_name = 'ai_requests'
+            and column_name = 'app_commit') as has_app_commit,
+  (select count(*) from information_schema.columns
+    where table_schema = 'public' and table_name = 'profiles'
+      and column_name in ('ai_question_retention_notice_seen_at',
+                          'ai_question_retention_opted_out_at',
+                          'ai_question_retention_opted_in_at')) as retention_columns,
+  to_regclass('public.ai_replay_export') is not null as view_already_there;
+```
+
+Expect `true`, `true`, `3`, `false`. Anything else means an earlier block is
+missing; apply it first. `view_already_there` `true` means this block already
+ran - re-running it is harmless.
+
+**2. Apply.**
+
+```sql
+-- hosted-ai-replay-export: mirror of supabase/migrations/20260927002000_add_ai_replay_export_view.sql
+begin;
+create or replace view public.ai_replay_export
+  with (security_invoker = true)
+as
+select t.request_id,
+       t.route,
+       t.created_at,
+       t.retain_until,
+       t.submitted,
+       t.redaction_version,
+       encode(sha256(convert_to(t.user_id::text, 'UTF8')), 'hex') as rider_key,
+       r.app_commit,
+       r.status,
+       r.refusal_reason,
+       r.policy_result,
+       r.policy_violations,
+       r.classifier_stage,
+       r.model
+  from public.ai_request_text t
+  join public.ai_requests r
+    on r.request_id = t.request_id
+   and r.user_id = t.user_id
+  join public.profiles p
+    on p.id = t.user_id
+ where t.retain_until > now()
+   and p.ai_question_retention_notice_seen_at is not null
+   and p.ai_question_retention_opted_out_at is null
+   and p.ai_question_retention_opted_in_at is not null
+   and t.created_at >= greatest(p.ai_question_retention_notice_seen_at,
+                                p.ai_question_retention_opted_in_at);
+
+revoke all on public.ai_replay_export from public, anon, authenticated;
+grant select on public.ai_replay_export to service_role;
+commit;
+```
+
+**3. Verify.**
+
+```sql
+select
+  (select reloptions from pg_class
+    where oid = 'public.ai_replay_export'::regclass) as options,
+  has_table_privilege('anon', 'public.ai_replay_export', 'select') as anon_reads,
+  has_table_privilege('authenticated', 'public.ai_replay_export', 'select') as rider_reads,
+  has_table_privilege('service_role', 'public.ai_replay_export', 'select') as service_reads,
+  (select count(*) from information_schema.columns
+    where table_schema = 'public' and table_name = 'ai_replay_export'
+      and column_name in ('user_id', 'session_id', 'vehicle_id')) as identifying_columns,
+  (select count(*) from public.ai_replay_export) as exportable_rows;
+```
+
+Expect `{security_invoker=true}`, `false`, `false`, `true`, `0`, and
+`exportable_rows` no more than
+`select count(*) from public.ai_request_text` - zero until a rider has turned
+question history on and asked something.
+
+**4. Rollback.** Nothing depends on the view but the export script.
+
+```sql
+-- hosted-ai-replay-export-rollback
+drop view if exists public.ai_replay_export;
+```
+
 ### Apply session photos by hand
 
 `20260926002000` carries the owner's decisions D2 and D3 of 2026-09-26 for the
