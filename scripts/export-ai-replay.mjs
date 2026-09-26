@@ -12,12 +12,17 @@
  * only text riders chose to keep, written after their latest opt-in, and not
  * yet past its retain_until.
  *
+ * Every run is a whole snapshot of what the view holds, never a window: Redline
+ * replaces its copy with the newest file, so a question a rider deleted or
+ * stopped keeping leaves Redline at the next export.
+ *
  * WHAT NEVER LEAVES: user_id, session_id and vehicle_id. The view carries none
  * of them, and `toReplayRecord` builds each line from named fields rather than
  * copying a row, so a wider select could not leak one either. The rider is
  * `rider_key` re-keyed with an HMAC under a secret made for this run and never
- * written anywhere, so one export groups a rider's requests while two exports
- * cannot be joined to each other or to an account.
+ * written anywhere, so one export groups a rider's requests. A line is tied to
+ * an account only through Track Tuner's database, by its request_id, which the
+ * owner holds so a verdict can be looked up again.
  */
 import { createHmac, randomBytes } from 'node:crypto';
 import { closeSync, fsyncSync, openSync, unlinkSync, writeSync } from 'node:fs';
@@ -119,36 +124,16 @@ function fail(message) {
   process.exit(1);
 }
 
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-function parseDate(flag, raw) {
-  if (!raw || !DATE_PATTERN.test(raw)) fail(`${flag} takes a date as YYYY-MM-DD.`);
-  const date = new Date(`${raw}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== raw) {
-    fail(`${flag} is not a real date: ${raw}`);
-  }
-  return date;
-}
-
 /**
- * `--since` and `--until` are UTC calendar days and both inclusive, so
- * `--since 2026-10-01 --until 2026-12-31` is the whole quarter. `--out` is
- * required: rider text is not printed to a terminal, where scrollback and
- * shell logs would keep it past its 90 days.
+ * `--out` is required: rider text is not printed to a terminal, where
+ * scrollback and shell logs would keep it past its 90 days.
  */
 export function parseArgs(argv) {
-  const options = { since: null, until: null, out: null };
+  const options = { out: null };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const value = argv[i + 1];
-    if (arg === '--since') {
-      options.since = parseDate('--since', value).toISOString();
-      i += 1;
-    } else if (arg === '--until') {
-      const day = parseDate('--until', value);
-      options.until = new Date(day.getTime() + 24 * 60 * 60 * 1000).toISOString();
-      i += 1;
-    } else if (arg === '--out') {
+    if (arg === '--out') {
       if (!value || value.startsWith('-')) fail('--out requires a file path.');
       options.out = value;
       i += 1;
@@ -157,9 +142,6 @@ export function parseArgs(argv) {
     }
   }
   if (!options.out) fail('--out <file.jsonl> is required.');
-  if (options.since && options.until && options.since >= options.until) {
-    fail('--since must be on or before --until.');
-  }
   return options;
 }
 
@@ -169,7 +151,7 @@ function requireEnv(name) {
   return value;
 }
 
-export async function* viewRows(supabase, options, pageSize = PAGE_SIZE) {
+export async function* viewRows(supabase, pageSize = PAGE_SIZE) {
   let last = null;
   for (;;) {
     let query = supabase
@@ -178,8 +160,6 @@ export async function* viewRows(supabase, options, pageSize = PAGE_SIZE) {
       .order('created_at', { ascending: true })
       .order('request_id', { ascending: true })
       .limit(pageSize);
-    if (options.since) query = query.gte('created_at', options.since);
-    if (options.until) query = query.lt('created_at', options.until);
     if (last) {
       query = query.or(
         `created_at.gt."${last.created_at}",and(created_at.eq."${last.created_at}",request_id.gt.${last.request_id})`,
@@ -219,7 +199,7 @@ async function main() {
   // A failure part way deletes what was written, so a partial file is never
   // mistaken for a whole export.
   try {
-    for await (const row of viewRows(supabase, options)) {
+    for await (const row of viewRows(supabase)) {
       const record = toReplayRecord(row, key);
       writeSync(fd, `${JSON.stringify(record)}\n`);
       counts[record.route] += 1;
@@ -239,6 +219,7 @@ async function main() {
   console.error(
     `${TAG} Wrote ${total} requests to ${options.out} (tuning_advice=${counts.tuning_advice}, day_plan=${counts.day_plan}).`,
   );
+  console.error(`${TAG} Redline replaces its whole copy with this file and deletes the previous one.`);
   if (earliestRetainUntil) {
     console.error(`${TAG} The earliest row must be deleted from every copy by ${earliestRetainUntil}.`);
   }

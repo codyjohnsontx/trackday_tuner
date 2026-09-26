@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 // The export is plain JS so it runs under node with no build step, like the
 // migration-audit generator. There are no types and `allowJs` is off, so the
 // import carries a directive on the module-specifier line.
@@ -200,21 +200,32 @@ describe('the contract in docs/ai-replay-export.md', () => {
 });
 
 describe('parseArgs', () => {
-  it('reads --since and --until as inclusive UTC days', () => {
-    expect(
-      parseArgs(['--since', '2026-10-01', '--until', '2026-12-31', '--out', 'replay.jsonl']),
-    ).toEqual({
-      since: '2026-10-01T00:00:00.000Z',
-      until: '2027-01-01T00:00:00.000Z',
-      out: 'replay.jsonl',
+  it('takes only the file to write', () => {
+    expect(parseArgs(['--out', 'replay.jsonl'])).toEqual({ out: 'replay.jsonl' });
+  });
+
+  // Each export is a whole snapshot that replaces Redline's copy, which is how
+  // a rider's delete reaches Redline, so a date window is refused.
+  it('refuses a date window', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exit = vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new Error(`exit ${code}`);
     });
+    try {
+      for (const flag of ['--since', '--until']) {
+        expect(() => parseArgs([flag, '2026-10-01', '--out', 'replay.jsonl'])).toThrow('exit 1');
+      }
+      expect(exit).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });
 
 /**
  * A stand-in for PostgREST serving `ai_replay_export`, behind the real
  * supabase-js client so the query the script builds is the one read. It
- * answers the filters, order, limit and offset the script can send, and after
+ * answers the cursor, order, limit and offset the script can send, and after
  * the first page it drops a row that page held - what retain_until passing, the
  * purge or a rider opting out does to the view mid-export.
  */
@@ -229,14 +240,6 @@ function shrinkingView(total: number) {
     const url = new URL(typeof input === 'string' ? input : input.toString());
     const params = url.searchParams;
     let visible = rows;
-    for (const filter of params.getAll('created_at')) {
-      const dot = filter.indexOf('.');
-      const op = filter.slice(0, dot);
-      const bound = Date.parse(filter.slice(dot + 1));
-      visible = visible.filter((row) =>
-        op === 'gte' ? Date.parse(row.created_at) >= bound : Date.parse(row.created_at) < bound,
-      );
-    }
     const or = params.get('or');
     if (or) {
       const match = /^\(created_at\.gt\."([^"]+)",and\(created_at\.eq\."([^"]+)",request_id\.gt\.([^)]+)\)\)$/.exec(or);
@@ -273,7 +276,7 @@ describe('viewRows', () => {
   it('reads every row still in the view when an earlier one leaves it between pages', async () => {
     const view = shrinkingView(7);
     const read: string[] = [];
-    for await (const row of viewRows(view.client, { since: null, until: null }, 3)) {
+    for await (const row of viewRows(view.client, 3)) {
       read.push(row.request_id);
     }
     expect(read).toEqual(expect.arrayContaining(view.remaining()));

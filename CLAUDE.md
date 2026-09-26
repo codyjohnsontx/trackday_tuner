@@ -328,6 +328,9 @@ What may leave the database for Redline is decided by one view, `ai_replay_expor
 (20260927002000) - kept now, written after the latest opt-in, not past
 `retain_until`, no user, session or vehicle id - and `npm run ai:export-replay` reads
 nothing else; `docs/ai-replay-export.md` is the JSONL contract both sides test against.
+Each export is a whole snapshot, never a date window, and Redline replaces its copy
+with the newest file: that is how a rider's delete reaches Redline, so a window must
+not come back.
 
 Functions are deliberately *not* granted schema-wide. RLS contains a table; it does
 not contain a `security definer` function, which runs as its owner and bypasses

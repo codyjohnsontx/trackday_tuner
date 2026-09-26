@@ -201,13 +201,10 @@ test.describe('npm run ai:export-replay', () => {
     if (offError) throw new Error(`opting the rider out failed: ${offError.message}`);
 
     const out = path.join(dir, 'replay.jsonl');
-    const today = new Date(now).toISOString().slice(0, 10);
-    const since = new Date(now - 30 * DAY_MS).toISOString().slice(0, 10);
-    await execFileAsync(
-      process.execPath,
-      ['scripts/export-ai-replay.mjs', '--since', since, '--until', today, '--out', out],
-      { cwd: ROOT, env: process.env },
-    );
+    await execFileAsync(process.execPath, ['scripts/export-ai-replay.mjs', '--out', out], {
+      cwd: ROOT,
+      env: process.env,
+    });
 
     expect(statSync(out).mode & 0o777, 'the file is readable by its owner only').toBe(0o600);
 
@@ -248,18 +245,22 @@ test.describe('npm run ai:export-replay', () => {
     expect(asked.app_commit).toBe('e2e-commit');
     expect(byId.get(dayPlan).rider, 'one rider groups within a file').toBe(asked.rider);
 
-    // A second export of the same rows names the same rider differently.
+    // The rider deletes a question after the first export. The next export is a
+    // whole snapshot that replaces Redline's copy, so it no longer carries it,
+    // and it names the same rider differently.
+    const { error: deleteError } = await admin.from('ai_request_text').delete().eq('request_id', dayPlan);
+    if (deleteError) throw new Error(`deleting the question failed: ${deleteError.message}`);
     const second = path.join(dir, 'replay-2.jsonl');
-    await execFileAsync(
-      process.execPath,
-      ['scripts/export-ai-replay.mjs', '--since', since, '--until', today, '--out', second],
-      { cwd: ROOT, env: process.env },
-    );
-    const again = readFileSync(second, 'utf8')
+    await execFileAsync(process.execPath, ['scripts/export-ai-replay.mjs', '--out', second], {
+      cwd: ROOT,
+      env: process.env,
+    });
+    const secondLines = readFileSync(second, 'utf8')
       .split('\n')
       .filter(Boolean)
-      .map((line) => JSON.parse(line))
-      .find((line) => line.request_id === question);
+      .map((line) => JSON.parse(line));
+    expect(secondLines.some((line) => line.request_id === dayPlan)).toBe(false);
+    const again = secondLines.find((line) => line.request_id === question);
     expect(again.rider).not.toBe(asked.rider);
 
     // It will not overwrite an export already on disk.

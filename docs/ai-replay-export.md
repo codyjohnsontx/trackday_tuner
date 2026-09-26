@@ -6,6 +6,11 @@ Engineer questions and Morning Plan requests kept for 90 days
 verdict each request got, into a JSONL file that Redline's replay runner reads
 to run the same requests through a newer version of the guards.
 
+Every export is a whole snapshot of every question that may leave the database
+at that moment, never a date window. Redline keeps only the newest file, so
+what a rider deleted, stopped keeping or lost with their account leaves Redline
+at the next export.
+
 This file is the contract between the two sides. Track Tuner's unit suite holds
 the script to it (`tests/unit/export-ai-replay.test.ts` parses the example
 below), and Redline's reader tests against the same text. A change to a field is
@@ -30,8 +35,18 @@ turned it on has nothing to export.
 none of them. The rider is a pseudonym: an HMAC-SHA256 of a hash of the user id,
 under a secret the script makes for that run and never writes down. Within one
 file, one rider's requests share a `rider` value, so probing by one rider can be
-grouped. Across two files the same rider gets different values, and no file can
-be joined back to an account.
+grouped.
+
+What the pseudonym does not do is hide a line from Track Tuner's database.
+Every line carries its `request_id`, so anyone with access to that database -
+which the owner has - can look the request up and find its account. That is
+deliberate: `request_id` is how the owner finds a verdict again. Without that
+access a line cannot be tied to an account.
+
+Two files would link a rider's two pseudonyms through the `request_id` they
+share, so two files never coexist: Redline deletes the previous file when it
+takes the newest one (below). That rule, not the pseudonym, is what keeps
+pseudonyms from different exports apart.
 
 What riders typed was masked before it was stored (emails, phone numbers, web
 links, ids and long digit runs; `redaction_version` says which rules). Names and
@@ -48,18 +63,19 @@ Never from CI and never from Redline's cloud project.
 2. Run:
 
    ```bash
-   npm run ai:export-replay -- --since 2026-10-01 --until 2026-12-31 --out ~/replay-2026-q4.jsonl
+   npm run ai:export-replay -- --out ~/replay-2026-10-01.jsonl
    ```
 
-   `--since` and `--until` are UTC days and both inclusive; leave either off
-   for no bound. `--out` is required, so rider text is never printed to a
-   terminal, and the script refuses to overwrite an existing file. Point it
+   There is no date range: the file holds everything the view allows now.
+   `--out` is required, so rider text is never printed to a terminal, and the script refuses to overwrite an existing file. Point it
    outside the repository: nothing ignores a `.jsonl` there, so a copy in the
    working tree could be staged by mistake. The file is created readable by
    its owner only. A failed run deletes what it had written.
 3. The script prints how many requests it wrote and the earliest `retain_until`
-   in the file. That date is the first deletion Redline owes.
-4. Move the file to Redline and delete the local copy.
+   in the file. That date is the latest the first line can stay, if no newer
+   export replaces it first.
+4. Move the file to Redline, which replaces its whole copy with it and deletes
+   the previous file, and delete the local copy.
 
 ## The JSONL contract
 
@@ -99,7 +115,7 @@ never absent.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `format_version` | integer | This contract's version. `1` today. A reader refuses a version it does not know. |
-| `request_id` | string | The request's id in Track Tuner. Lets the owner find the verdict row again; it names no rider. |
+| `request_id` | string | The request's id in Track Tuner. Lets the owner find the verdict row again, and with Track Tuner database access, its account. |
 | `route` | `"tuning_advice"` or `"day_plan"` | Which AI route took the request, and so which `submitted` shape follows. |
 | `created_at` | ISO 8601 timestamp | When the text was stored. |
 | `retain_until` | ISO 8601 timestamp | **When every copy of this line must be deleted.** At most 90 days after `created_at`. |
@@ -129,13 +145,20 @@ or the post-model policy: those read session notes, vehicle names and model
 output the export does not carry (owner decision D7). A `stored_rider_text`
 verdict can be counted, not replayed.
 
-## Redline's obligation: delete at `retain_until`
+## Redline's obligation: keep only the newest file, and delete at `retain_until`
 
-Riders were told their text is kept for 90 days. The export is a copy, and a
-promise that is true of the database and false of the copy is not kept. So
-Redline deletes each line, from every place it has stored it, no later than
-that line's `retain_until`, and keeps only what is derived from it - labels,
-counts and aggregate scores - after that (owner decision D8).
+Riders were told their text is kept for 90 days, that deleting a question,
+turning history off or deleting their account deletes it, and that a copy used
+in Redline goes at the next export. The export is a copy, and a promise that is
+true of the database and false of the copy is not kept. So Redline:
+
+- **replaces its whole copy with each new file** and deletes the previous file,
+  from every place it stored it. It never merges two files and never keeps an
+  older one beside the newest. That is how a rider's deletion reaches Redline,
+  and why two pseudonyms of one rider are never held at once;
+- **deletes each line no later than its `retain_until`** even when no newer
+  export arrives, and keeps only what is derived from it - labels, counts and
+  aggregate scores - after that (owner decision D8).
 
 Track Tuner cannot check this from its side. It is the condition on which the
 export is made.

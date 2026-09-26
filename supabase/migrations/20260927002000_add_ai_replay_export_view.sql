@@ -27,8 +27,12 @@
 -- NO user_id, session_id OR vehicle_id. The rider is `rider_key`, a SHA-256 of
 -- the user id, which lets the script group one rider's rows. It is NOT the
 -- pseudonym the export writes: the script re-keys it with an HMAC under a
--- secret generated per run and discarded, so riders are unlinkable across
--- exports and to an account. rider_key itself never leaves the script.
+-- secret generated per run and discarded, so a rider's pseudonym differs
+-- between exports. rider_key itself never leaves the script. request_id does
+-- leave, so the owner can look a verdict up again, and with this database it
+-- leads back to an account; without it a line does not. Each export is a whole
+-- snapshot that replaces the one before it (docs/ai-replay-export.md), so two
+-- files, and two pseudonyms of one rider, are never held together.
 --
 -- The verdict comes from ai_requests, joined on (request_id, user_id) - the
 -- same pair ai_request_text's foreign key names - so a text row can only ever
