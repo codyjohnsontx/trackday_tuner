@@ -11,8 +11,6 @@
  * The delete stays off until they type the bike's nickname.
  */
 
-import { PUBLIC_OBJECT_ENDPOINT } from '@/lib/supabase-storage-remote-patterns';
-
 export const VEHICLE_DELETE_FAILED_MESSAGE =
   'This vehicle was not deleted - something went wrong on our end. Nothing was removed, so the bike and its sessions are all still here. Try again in a moment.';
 
@@ -26,52 +24,6 @@ export const VEHICLE_DELETE_COUNT_FAILED_MESSAGE =
   'We could not count the sessions on this vehicle, so deleting it stays off until we can say exactly what would be removed. Reload the page to try again.';
 
 export const VEHICLE_PHOTO_BUCKET = 'vehicle-photos';
-
-/**
- * The object a vehicle's `photo_url` points at, for the delete to remove.
- *
- * `photo_url` is a column `authenticated` writes directly, so the value is the
- * rider's and not the app's, and what this returns is fed to a destructive
- * storage call. It is therefore anchored rather than scanned: the URL has to be
- * this project's own public object endpoint for this bucket, built the way
- * supabase-js builds it, and the object has to sit in the owner's folder. A URL
- * naming another project, another bucket or another rider's folder is `null`,
- * which deletes nothing and still deletes the bike. supabase-js runs the whole
- * URL through `encodeURI`, so each segment is decoded back to the name the
- * object was uploaded under.
- */
-export function vehiclePhotoObjectPath(
-  photoUrl: string | null | undefined,
-  { supabaseUrl, ownerId }: { supabaseUrl: string; ownerId: string },
-): string | null {
-  if (!photoUrl || !ownerId) return null;
-
-  let prefix: URL;
-  let parsed: URL;
-  try {
-    const base = new URL(supabaseUrl.endsWith('/') ? supabaseUrl : `${supabaseUrl}/`);
-    prefix = new URL(`${PUBLIC_OBJECT_ENDPOINT}${VEHICLE_PHOTO_BUCKET}/`, base);
-    parsed = new URL(photoUrl);
-  } catch {
-    return null;
-  }
-
-  if (parsed.origin !== prefix.origin) return null;
-  if (!parsed.pathname.startsWith(prefix.pathname)) return null;
-
-  const segments = parsed.pathname.slice(prefix.pathname.length).split('/').filter((segment) => segment !== '');
-  if (segments.length < 2) return null;
-
-  let object: string[];
-  try {
-    object = segments.map(decodeURIComponent);
-  } catch {
-    return null;
-  }
-  if (object[0] !== ownerId) return null;
-
-  return object.join('/');
-}
 
 export interface VehicleDeletionCounts {
   sessionCount: number;

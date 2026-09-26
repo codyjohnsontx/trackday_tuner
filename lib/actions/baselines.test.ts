@@ -98,6 +98,7 @@ const session: Session = {
     },
   },
   notes: 'Known-good setup',
+  photo_url: null,
   created_at: '2026-06-24T10:30:00.000Z',
   updated_at: '2026-06-24T10:30:00.000Z',
 };

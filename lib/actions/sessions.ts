@@ -21,7 +21,12 @@ import {
   courseMatchRank,
 } from '@/lib/session-compare';
 import { fetchPreviousSession } from '@/lib/session-previous';
-import { SESSION_DELETE_FAILED_MESSAGE, SESSION_DELETE_NOT_FOUND_MESSAGE } from '@/lib/session-delete';
+import {
+  SESSION_DELETE_FAILED_MESSAGE,
+  SESSION_DELETE_NOT_FOUND_MESSAGE,
+  SESSION_PHOTO_BUCKET,
+} from '@/lib/session-delete';
+import { removeOwnedPhotos } from '@/lib/storage-photo-removal';
 import { reportError } from '@/lib/monitoring/report-error';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
@@ -514,7 +519,7 @@ export async function deleteSession(id: string): Promise<ActionResult> {
     .delete()
     .eq('id', id)
     .eq('user_id', user.id)
-    .select('id');
+    .select('id, photo_url');
 
   if (error) {
     reportError('session-delete', new Error(error.message), {
@@ -527,7 +532,16 @@ export async function deleteSession(id: string): Promise<ActionResult> {
     });
     return { ok: false, error: SESSION_DELETE_FAILED_MESSAGE };
   }
-  if ((data ?? []).length === 0) return { ok: false, error: SESSION_DELETE_NOT_FOUND_MESSAGE };
+  const deleted = (data ?? []) as { id: string; photo_url: string | null }[];
+  if (deleted.length === 0) return { ok: false, error: SESSION_DELETE_NOT_FOUND_MESSAGE };
+
+  await removeOwnedPhotos(supabase, {
+    bucket: SESSION_PHOTO_BUCKET,
+    photoUrls: [deleted[0].photo_url],
+    ownerId: user.id,
+    event: 'session-photo-delete',
+    context: { sessionId: id },
+  });
 
   revalidatePath('/sessions');
   revalidatePath('/dashboard');

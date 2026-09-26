@@ -5,7 +5,6 @@ import { getRealUser } from '@/lib/auth';
 import { getDemoProfile, getDemoVehicles } from '@/lib/demo/data';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
-import { getSupabaseUrl } from '@/lib/env.public';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
 import { reportError } from '@/lib/monitoring/report-error';
@@ -15,9 +14,10 @@ import {
   VEHICLE_DELETE_FAILED_MESSAGE,
   VEHICLE_DELETE_NOT_FOUND_MESSAGE,
   VEHICLE_PHOTO_BUCKET,
-  vehiclePhotoObjectPath,
   type VehicleDeletionCounts,
 } from '@/lib/vehicle-delete';
+import { SESSION_PHOTO_BUCKET } from '@/lib/session-delete';
+import { removeOwnedPhotos } from '@/lib/storage-photo-removal';
 import type { TableInsert } from '@/types/supabase';
 import type { ActionResult, CreateVehicleInput, UpdateVehicleInput, Profile, Vehicle } from '@/types';
 
@@ -176,19 +176,23 @@ async function countVehicleCascade(
   supabase: SupabaseServerClient,
   userId: string,
   vehicleId: string,
-): Promise<{ ok: true; counts: VehicleDeletionCounts } | { ok: false; error: CountError }> {
+): Promise<
+  { ok: true; counts: VehicleDeletionCounts; sessionPhotoUrls: string[] } | { ok: false; error: CountError }
+> {
   const sessionIds: string[] = [];
+  const sessionPhotoUrls: string[] = [];
   for (let from = 0; ; from += SESSION_ID_PAGE_SIZE) {
     const { data, error } = await supabase
       .from('sessions')
-      .select('id')
+      .select('id, photo_url')
       .eq('user_id', userId)
       .eq('vehicle_id', vehicleId)
       .order('id')
       .range(from, from + SESSION_ID_PAGE_SIZE - 1);
     if (error) return { ok: false, error };
-    const page = (data ?? []) as { id: string }[];
+    const page = (data ?? []) as { id: string; photo_url: string | null }[];
     sessionIds.push(...page.map((row) => row.id));
+    for (const row of page) if (row.photo_url) sessionPhotoUrls.push(row.photo_url);
     if (page.length < SESSION_ID_PAGE_SIZE) break;
   }
 
@@ -237,6 +241,7 @@ async function countVehicleCascade(
       recommendationCount,
       hasRaceEngineerMemory: (memoryCount ?? 0) > 0,
     },
+    sessionPhotoUrls,
   };
 }
 
@@ -322,37 +327,20 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
   const deleted = (data ?? []) as { id: string; photo_url: string | null }[];
   if (deleted.length === 0) return { ok: false, error: VEHICLE_DELETE_NOT_FOUND_MESSAGE };
 
-  // The bucket is public, so a photo left behind keeps serving the bike a rider
-  // was told is gone. The row is already deleted and cannot come back, so a
-  // storage failure is reported rather than failing a delete that happened.
-  const photoUrl = deleted[0].photo_url;
-  const photoPath = vehiclePhotoObjectPath(photoUrl, {
-    supabaseUrl: getSupabaseUrl(),
+  await removeOwnedPhotos(supabase, {
+    bucket: VEHICLE_PHOTO_BUCKET,
+    photoUrls: [deleted[0].photo_url],
     ownerId: user.id,
+    event: 'vehicle-photo-delete',
+    context: { vehicleId: id },
   });
-  if (photoUrl && !photoPath) {
-    reportError('vehicle-photo-delete', new Error('photo_url is not an object in this rider\'s folder'), {
-      bucket: VEHICLE_PHOTO_BUCKET,
-      photoUrl,
-      userId: user.id,
-      vehicleId: id,
-    });
-  } else if (photoPath) {
-    // `remove` deletes what RLS admits and reports what it deleted, so an object
-    // the policy refuses or one already gone comes back as no rows and no error
-    // - the photo still serving is exactly the case this removes.
-    const { data: removed, error: photoError } = await supabase.storage
-      .from(VEHICLE_PHOTO_BUCKET)
-      .remove([photoPath]);
-    if (photoError || (removed ?? []).length === 0) {
-      reportError('vehicle-photo-delete', new Error(photoError?.message ?? 'storage removed no object'), {
-        bucket: VEHICLE_PHOTO_BUCKET,
-        object: photoPath,
-        userId: user.id,
-        vehicleId: id,
-      });
-    }
-  }
+  await removeOwnedPhotos(supabase, {
+    bucket: SESSION_PHOTO_BUCKET,
+    photoUrls: recount.sessionPhotoUrls,
+    ownerId: user.id,
+    event: 'session-photo-delete',
+    context: { vehicleId: id },
+  });
 
   // The cascade reaches every screen that lists sessions or picks a vehicle.
   revalidatePath('/garage');

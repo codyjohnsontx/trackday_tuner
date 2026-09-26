@@ -150,7 +150,27 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
       'ai_request_text_enforce_keep_rule + ai_requests_enforce_keep_rule',
       (select count(*) from pg_trigger
         where tgname in ('ai_request_text_enforce_keep_rule', 'ai_requests_enforce_keep_rule')
-          and not tgisinternal) = 2)
+          and not tgisinternal) = 2),
+  -- The bucket itself: select public from storage.buckets where id = 'session-photos' (true).
+  (22, '20260926002000_add_session_photos', 'column + policies',
+      'public.sessions.photo_url + 4 owner-scoped session-photos policies (storage.objects)',
+      exists (select 1 from information_schema.columns
+              where table_schema='public' and table_name='sessions'
+                and column_name='photo_url')
+      and (select count(*) from pg_policies p
+           join (values
+             ('session-photos: select own', 'SELECT', true, false),
+             ('session-photos: insert own', 'INSERT', false, true),
+             ('session-photos: update own', 'UPDATE', true, true),
+             ('session-photos: delete own', 'DELETE', true, false)
+           ) as e(policyname, cmd, has_using, has_check) using (policyname)
+           where p.schemaname='storage' and p.tablename='objects'
+             and p.cmd = e.cmd and p.permissive = 'PERMISSIVE'
+             and p.roles = array['authenticated']::name[]
+             and p.qual is not distinct from case when e.has_using
+               then '((bucket_id = ''session-photos''::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))' end
+             and p.with_check is not distinct from case when e.has_check
+               then '((bucket_id = ''session-photos''::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))' end) = 4)
 )
 select ordinality as "#",
        migration,

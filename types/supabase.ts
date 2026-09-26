@@ -35,7 +35,15 @@ export type SuspensionEnd = {
 export type TireEnd = {
   brand: string;
   compound: string;
+  /** Cold pressure, set before the session. */
   pressure: string;
+  /**
+   * Pressure measured off track after the session, logged by the mobile app.
+   * Absent on every session logged before it and on every website session, and
+   * absent means not recorded. It is a reading of that session, so it is never
+   * copied into the next one (`copyLastSessionSetup`).
+   */
+  hot_pressure?: string;
 };
 export type Tires = {
   front: TireEnd;
@@ -328,6 +336,7 @@ export type Database = {
           enabled_modules: SessionEnabledModules | null;
           extra_modules: ExtraModules | null;
           notes: string | null;
+          photo_url: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -349,6 +358,7 @@ export type Database = {
           enabled_modules?: SessionEnabledModules | null;
           extra_modules?: ExtraModules | null;
           notes?: string | null;
+          photo_url?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -370,6 +380,7 @@ export type Database = {
           enabled_modules?: SessionEnabledModules | null;
           extra_modules?: ExtraModules | null;
           notes?: string | null;
+          photo_url?: string | null;
           created_at?: string;
           updated_at?: string;
         };
