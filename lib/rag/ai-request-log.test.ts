@@ -251,6 +251,28 @@ describe('buildSubmittedText', () => {
     ]);
   });
 
+  it.each(['trackdaytuner.ai/setup', 'setups.example.io', 'my-notes.dev/bike', 'laps.app'])(
+    'masks a scheme-less %s link in every stored field',
+    (link) => {
+      const tuning = buildSubmittedText({
+        route: 'tuning_advice',
+        question: `Front pushes, see ${link}`,
+        symptoms: [`see ${link}`],
+        changeIntent: `see ${link}`,
+      });
+      const plan = buildSubmittedText({
+        route: 'day_plan',
+        trackName: `Barber ${link}`,
+        weatherCondition: `dry ${link}`,
+        surfaceCondition: `green ${link}`,
+        targetDate: '2026-10-03',
+      });
+      expect(JSON.stringify([tuning, plan])).not.toContain(link);
+      expect(tuning.submitted.question).toBe('Front pushes, see [url]');
+      expect(plan.submitted.track_name).toBe('Barber [url]');
+    },
+  );
+
   it('is what the Settings list reads back', () => {
     const tuning = buildSubmittedText(TUNING);
     const plan = buildSubmittedText(DAY_PLAN);

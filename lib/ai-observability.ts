@@ -17,12 +17,19 @@ function normalizeForFingerprint(value: string): string {
  */
 export const REDACTION_VERSION = 1;
 
-// A link with no scheme: `www.` anything, or a host name ending in one of the
-// top-level domains a rider is likely to paste. A list rather than any
-// two-letter ending, because a missing space after a full stop
-// ("rebound.Then") is ordinary prose and must not read as a link.
-const SCHEMELESS_LINK =
-  /\bwww\.\S+|\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:com|net|org|io|co|uk|ca|au|de|app|dev|info|ly|gg|tv|xyz)\b(?:\/\S*)?/gi;
+// A link with no scheme: `www.` anything, or a host name - dot-separated labels
+// ending in an alphabetic top-level label of two or more letters, with an
+// optional path. Any top-level domain counts (example.ai, example.dev), because
+// a list goes stale and a link on an unlisted one would be stored in clear,
+// which the notice says never happens. The top-level label must be all lower
+// or all upper case: that is how a pasted link is written, and it is what keeps
+// a missing space after a full stop ("rebound.Then") from reading as a link.
+// A lower-case typo ("rebound.then") IS masked - when a string is ambiguous,
+// privacy wins - while "e.g.", "i.e." and decimals (32.5) never match, since
+// their last label is one letter or a number.
+const WWW_LINK = /\bwww\.\S+/gi;
+const HOST_LINK =
+  /\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+(?:[a-z]{2,}|[A-Z]{2,})\b(?:\/\S*)?/g;
 
 // Phone numbers, in the shapes that cannot be setup data. None may touch a
 // digit, letter, colon or decimal point on either side, so a lap time
@@ -87,7 +94,8 @@ export function redactForStorage(value: string): string {
   return value
     .replace(/\bhttps?:\/\/\S+/gi, '[url]')
     .replace(/\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/g, '[email]')
-    .replace(SCHEMELESS_LINK, '[url]')
+    .replace(WWW_LINK, '[url]')
+    .replace(HOST_LINK, '[url]')
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, '[id]')
     .replace(INTERNATIONAL_PHONE, (match) => {
       const digits = countDigits(match);

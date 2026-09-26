@@ -131,6 +131,12 @@ describe('redactForStorage', () => {
     ['a www link', 'see www.example.com/setup now', 'see [url] now'],
     ['a bare host name', 'see trackdaytuner.com for it', 'see [url] for it'],
     ['a bare host name with a path', 'see forum.example.org/t/123 now', 'see [url] now'],
+    ['a .ai link', 'see trackdaytuner.ai/setup now', 'see [url] now'],
+    ['a .io link', 'see setups.example.io now', 'see [url] now'],
+    ['a .dev link', 'see my-notes.dev/bike now', 'see [url] now'],
+    ['a .app link', 'see laps.app now', 'see [url] now'],
+    ['an upper-case link', 'see EXAMPLE.AI now', 'see [url] now'],
+    ['a lower-case missing space, privacy first', 'softened rebound.then pushed', 'softened [url] pushed'],
     ['a UUID', 'id 123e4567-e89b-12d3-a456-426614174000 now', 'id [id] now'],
     ['a North American number', 'call 555 123 4567 now', 'call [phone] now'],
     ['a dashed number', 'call 555-123-4567 now', 'call [phone] now'],
@@ -172,6 +178,8 @@ describe('redactForStorage', () => {
     ['a short signed delta', '+1 psi, +10 20 clicks'],
     ['sag figures', 'sag 35mm/30mm, 25 30 35'],
     ['abbreviations and missing spaces', 'e.g. i.e. vs. rebound.Then psi.The'],
+    ['more abbreviations', 'etc. a.m. p.m. No.1 approx. St.Louis'],
+    ['decimals and sizes', '1.5 turns, 32.5 psi, 2.5in, v1.2'],
   ])('leaves %s alone', (_label, input) => {
     expect(redactForStorage(input)).toBe(input);
   });
@@ -179,5 +187,13 @@ describe('redactForStorage', () => {
   it('does not collapse whitespace or truncate', () => {
     const long = `  ${'word '.repeat(60)}  `;
     expect(redactForStorage(long)).toBe(long);
+  });
+});
+
+describe('a scheme-less link on any top-level domain reaches neither stored copy', () => {
+  it.each(['trackdaytuner.ai/setup', 'setups.example.io', 'my-notes.dev/bike', 'laps.app'])('%s', (link) => {
+    const question = `Front pushes on entry, notes at ${link} if useful`;
+    expect(redactForStorage(question)).toBe('Front pushes on entry, notes at [url] if useful');
+    expect(buildPromptRedactedPreview(question)).toBe('Front pushes on entry, notes at [url] if useful');
   });
 });
