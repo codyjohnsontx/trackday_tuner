@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { createClient } from '@supabase/supabase-js';
 import { describe, expect, it } from 'vitest';
 // The export is plain JS so it runs under node with no build step, like the
 // migration-audit generator. There are no types and `allowJs` is off, so the
 // import carries a directive on the module-specifier line.
 // @ts-expect-error - see above.
-import { newPseudonymKey, parseArgs, toReplayRecord } from '@/scripts/export-ai-replay.mjs';
+import { newPseudonymKey, parseArgs, toReplayRecord, viewRows } from '@/scripts/export-ai-replay.mjs';
 
 /**
  * `npm run ai:export-replay` copies riders' kept question text out of the
@@ -207,5 +208,75 @@ describe('parseArgs', () => {
       until: '2027-01-01T00:00:00.000Z',
       out: 'replay.jsonl',
     });
+  });
+});
+
+/**
+ * A stand-in for PostgREST serving `ai_replay_export`, behind the real
+ * supabase-js client so the query the script builds is the one read. It
+ * answers the filters, order, limit and offset the script can send, and after
+ * the first page it drops a row that page held - what retain_until passing, the
+ * purge or a rider opting out does to the view mid-export.
+ */
+function shrinkingView(total: number) {
+  let rows = Array.from({ length: total }, (_, i) => ({
+    request_id: `00000000-0000-4000-8000-00000000000${i}`,
+    created_at: `2026-10-0${1 + Math.floor(i / 2)}T12:00:00.123456+00:00`,
+  }));
+  let served = 0;
+
+  const fetch = async (input: RequestInfo | URL) => {
+    const url = new URL(typeof input === 'string' ? input : input.toString());
+    const params = url.searchParams;
+    let visible = rows;
+    for (const filter of params.getAll('created_at')) {
+      const dot = filter.indexOf('.');
+      const op = filter.slice(0, dot);
+      const bound = Date.parse(filter.slice(dot + 1));
+      visible = visible.filter((row) =>
+        op === 'gte' ? Date.parse(row.created_at) >= bound : Date.parse(row.created_at) < bound,
+      );
+    }
+    const or = params.get('or');
+    if (or) {
+      const match = /^\(created_at\.gt\."([^"]+)",and\(created_at\.eq\."([^"]+)",request_id\.gt\.([^)]+)\)\)$/.exec(or);
+      if (!match) throw new Error(`the stand-in does not read or=${or}`);
+      const [, after, at, id] = match;
+      visible = visible.filter(
+        (row) =>
+          Date.parse(row.created_at) > Date.parse(after) ||
+          (Date.parse(row.created_at) === Date.parse(at) && row.request_id > id),
+      );
+    }
+    const offset = Number(params.get('offset') ?? 0);
+    const limit = Number(params.get('limit') ?? visible.length);
+    const page = visible.slice(offset, offset + limit);
+
+    served += 1;
+    if (served === 1) rows = rows.filter((row) => row.request_id !== page[1].request_id);
+    return new Response(JSON.stringify(page), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  return {
+    client: createClient('http://view.test', 'service-key', {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch },
+    }),
+    remaining: () => rows.map((row) => row.request_id),
+  };
+}
+
+describe('viewRows', () => {
+  it('reads every row still in the view when an earlier one leaves it between pages', async () => {
+    const view = shrinkingView(7);
+    const read: string[] = [];
+    for await (const row of viewRows(view.client, { since: null, until: null }, 3)) {
+      read.push(row.request_id);
+    }
+    expect(read).toEqual(expect.arrayContaining(view.remaining()));
+    expect(new Set(read).size).toBe(read.length);
   });
 });

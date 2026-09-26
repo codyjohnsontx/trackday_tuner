@@ -169,21 +169,28 @@ function requireEnv(name) {
   return value;
 }
 
-async function* viewRows(supabase, options) {
-  for (let from = 0; ; from += PAGE_SIZE) {
+export async function* viewRows(supabase, options, pageSize = PAGE_SIZE) {
+  let last = null;
+  for (;;) {
     let query = supabase
       .from('ai_replay_export')
       .select(VIEW_COLUMNS)
       .order('created_at', { ascending: true })
       .order('request_id', { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
+      .limit(pageSize);
     if (options.since) query = query.gte('created_at', options.since);
     if (options.until) query = query.lt('created_at', options.until);
+    if (last) {
+      query = query.or(
+        `created_at.gt."${last.created_at}",and(created_at.eq."${last.created_at}",request_id.gt.${last.request_id})`,
+      );
+    }
 
     const { data, error } = await query;
     if (error) throw new Error(`reading ai_replay_export failed: ${error.message}`);
     yield* data;
-    if (data.length < PAGE_SIZE) return;
+    if (data.length < pageSize) return;
+    last = data[data.length - 1];
   }
 }
 

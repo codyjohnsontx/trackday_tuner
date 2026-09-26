@@ -48,14 +48,15 @@ Never from CI and never from Redline's cloud project.
 2. Run:
 
    ```bash
-   npm run ai:export-replay -- --since 2026-10-01 --until 2026-12-31 --out replay.jsonl
+   npm run ai:export-replay -- --since 2026-10-01 --until 2026-12-31 --out ~/replay-2026-q4.jsonl
    ```
 
    `--since` and `--until` are UTC days and both inclusive; leave either off
    for no bound. `--out` is required, so rider text is never printed to a
-   terminal, and the script refuses to overwrite an existing file. The file is
-   created readable by its owner only. A failed run deletes what it had
-   written.
+   terminal, and the script refuses to overwrite an existing file. Point it
+   outside the repository: nothing ignores a `.jsonl` there, so a copy in the
+   working tree could be staged by mistake. The file is created readable by
+   its owner only. A failed run deletes what it had written.
 3. The script prints how many requests it wrote and the earliest `retain_until`
    in the file. That date is the first deletion Redline owes.
 4. Move the file to Redline and delete the local copy.
