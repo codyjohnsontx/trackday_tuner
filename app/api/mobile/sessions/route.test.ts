@@ -38,25 +38,22 @@ type Db = Record<string, Row[]>;
 interface FakeOptions {
   /** How GoTrue answers `getUser`. Defaults to accepting TOKEN only. */
   getUser?: (token: string) => Promise<unknown>;
-  /** Runs just before a `sessions` insert lands - used to stage a race. */
+  /** Runs as `create_session_with_laps` starts, with the row it was sent - used to stage a race. */
   beforeSessionInsert?: (row: Row) => void;
   /** Make every `profiles` read fail. */
   profileReadFails?: boolean;
-  /** Runs, and is awaited, before each `replace_session_laps` - used to stage a replay mid-create. */
-  beforeLapWrite?: () => Promise<void>;
-  /** Answer `replace_session_laps` with a transport failure while this returns true. */
-  lapWriteFails?: () => boolean;
-  /** Answer a `sessions` delete with a transport failure while this returns true. */
-  sessionDeleteFails?: () => boolean;
-  /** Answer a `session_environment` write with a transport failure while this returns true. */
-  environmentWriteFails?: () => boolean;
+  /**
+   * How a transport failure meets `create_session_with_laps`: `before` it ran,
+   * so nothing was stored, or `after` it committed, so everything was and only
+   * the answer was lost. Called once per call, so a retry can succeed.
+   */
+  createTransportFailure?: () => 'before' | 'after' | null;
 }
 
 const TRANSPORT_ERROR = { code: '', message: 'fetch failed' };
 
 class Query {
-  private op: 'select' | 'insert' | 'upsert' | 'delete' = 'select';
-  private conflictColumn = '';
+  private op: 'select' | 'insert' | 'delete' = 'select';
   private filters: Array<[string, unknown]> = [];
   private likes: Array<[string, RegExp]> = [];
   private rows: Row[] = [];
@@ -77,12 +74,6 @@ class Query {
   insert(rows: Row | Row[]) {
     this.op = 'insert';
     this.rows = Array.isArray(rows) ? rows : [rows];
-    return this;
-  }
-  upsert(rows: Row | Row[], options: { onConflict: string }) {
-    this.op = 'upsert';
-    this.rows = Array.isArray(rows) ? rows : [rows];
-    this.conflictColumn = options.onConflict;
     return this;
   }
   delete() {
@@ -124,54 +115,15 @@ class Query {
 
   private run(): { data: unknown; error: unknown; count?: number } {
     if (this.table === 'profiles' && this.options.profileReadFails) {
-      return { data: null, error: { code: '', message: 'fetch failed' } };
-    }
-    const table = (this.db[this.table] ??= []);
-    if (this.table === 'session_environment' && this.op !== 'select' && this.options.environmentWriteFails?.()) {
       return { data: null, error: TRANSPORT_ERROR };
     }
-    if (this.op === 'upsert') {
-      for (const input of this.rows) {
-        const index = table.findIndex((existing) => existing[this.conflictColumn] === input[this.conflictColumn]);
-        if (index === -1) table.push({ id: randomUUID(), ...input });
-        else table[index] = { ...table[index], ...input };
-      }
-      return { data: null, error: null };
-    }
+    const table = (this.db[this.table] ??= []);
     if (this.op === 'insert') {
-      const written: Row[] = [];
-      for (const input of this.rows) {
-        if (this.table === 'sessions') this.options.beforeSessionInsert?.(input);
-        // `sessions.enabled_modules` is NOT NULL DEFAULT '{}' (20260228000200):
-        // an omitted key takes the default and an explicit null is refused.
-        if (this.table === 'sessions' && input.enabled_modules === null) {
-          return {
-            data: null,
-            error: { code: '23502', message: 'null value in column "enabled_modules" of relation "sessions" violates not-null constraint' },
-          };
-        }
-        // `sessions.vehicle_id` references `vehicles` (baseline schema).
-        if (this.table === 'sessions' && !(this.db.vehicles ?? []).some((vehicle) => vehicle.id === input.vehicle_id)) {
-          return {
-            data: null,
-            error: { code: '23503', message: 'insert or update on table "sessions" violates foreign key constraint "sessions_vehicle_id_fkey"' },
-          };
-        }
-        const defaults = this.table === 'sessions' ? { enabled_modules: {} } : {};
-        const row = { id: randomUUID(), created_at: '2026-09-27T12:00:00Z', updated_at: '2026-09-27T12:00:00Z', ...defaults, ...input };
-        if (table.some((existing) => existing.id === row.id)) {
-          return {
-            data: null,
-            error: { code: '23505', message: `duplicate key value violates unique constraint "${this.table}_pkey"` },
-          };
-        }
-        table.push(row);
-        written.push(row);
-      }
+      const written = this.rows.map((input) => ({ id: randomUUID(), ...input }));
+      table.push(...written);
       return { data: this.returning ? written : null, error: null };
     }
     if (this.op === 'delete') {
-      if (this.table === 'sessions' && this.options.sessionDeleteFails?.()) return { data: null, error: TRANSPORT_ERROR };
       const gone = this.matching();
       this.db[this.table] = table.filter((row) => !gone.includes(row));
       return { data: gone, error: null };
@@ -201,6 +153,55 @@ class Query {
   }
 }
 
+/**
+ * `create_session_with_laps` (20260927002200) as the database runs it: one
+ * transaction, so it answers with everything written or nothing written.
+ */
+function createSessionWithLaps(db: Db, options: FakeOptions, args: Record<string, unknown>) {
+  const failure = options.createTransportFailure?.() ?? null;
+  if (failure === 'before') return { data: null, error: TRANSPORT_ERROR };
+
+  const id = args.p_session_id as string;
+  const fields = args.p_session as Row;
+  options.beforeSessionInsert?.({ ...fields, id });
+
+  const own = db.sessions.find((row) => row.id === id && row.user_id === USER_ID);
+  if (own) return { data: { replayed: true, session: own }, error: null };
+  if (db.sessions.some((row) => row.id === id)) {
+    return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "sessions_pkey"' } };
+  }
+  // `sessions.vehicle_id` references `vehicles` (baseline schema).
+  if (!(db.vehicles ?? []).some((vehicle) => vehicle.id === fields.vehicle_id)) {
+    return {
+      data: null,
+      error: { code: '23503', message: 'insert or update on table "sessions" violates foreign key constraint "sessions_vehicle_id_fkey"' },
+    };
+  }
+
+  const session = {
+    created_at: '2026-09-27T12:00:00Z',
+    updated_at: '2026-09-27T12:00:00Z',
+    ...fields,
+    id,
+    user_id: USER_ID,
+    enabled_modules: fields.enabled_modules ?? {},
+  };
+  db.sessions.push(session);
+  db.session_laps = [
+    ...(db.session_laps ?? []),
+    ...(args.p_laps as Row[]).map((lap) => ({ ...lap, session_id: id, user_id: USER_ID, source: 'manual' })),
+  ];
+  if (args.p_environment) {
+    db.session_environment = [
+      ...(db.session_environment ?? []),
+      { id: randomUUID(), ...(args.p_environment as Row), session_id: id, user_id: USER_ID },
+    ];
+  }
+
+  if (failure === 'after') return { data: null, error: TRANSPORT_ERROR };
+  return { data: { replayed: false, session }, error: null };
+}
+
 function fakeSupabase(db: Db, options: FakeOptions = {}) {
   const getUser =
     options.getUser ??
@@ -208,24 +209,11 @@ function fakeSupabase(db: Db, options: FakeOptions = {}) {
       token === TOKEN
         ? { data: { user: { id: USER_ID } }, error: null }
         : { data: { user: null }, error: new AuthApiError('invalid JWT', 401, 'bad_jwt') });
-  const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
-    if (name !== 'replace_session_laps') return { data: null, error: { code: 'PGRST202', message: name } };
-    await options.beforeLapWrite?.();
-    if (options.lapWriteFails?.()) return { data: null, error: TRANSPORT_ERROR };
-    // `session_laps_identity` (20260903001500): the stored set has to BE the set the caller read.
-    const identity = (laps: Row[]) =>
-      JSON.stringify(laps.map((lap) => [lap.lap_number, lap.lap_time_ms, lap.included]).sort());
-    const stored = (db.session_laps ?? []).filter((lap) => lap.session_id === args.p_session_id);
-    if (identity(stored) !== identity(args.p_expected_laps as Row[])) {
-      return { data: null, error: { code: 'TT409', message: 'replace_session_laps stale read' } };
-    }
-    const laps = args.p_laps as Row[];
-    db.session_laps = [
-      ...(db.session_laps ?? []).filter((lap) => lap.session_id !== args.p_session_id),
-      ...laps.map((lap) => ({ ...lap, session_id: args.p_session_id, user_id: args.p_user_id })),
-    ];
-    return { data: null, error: null };
-  });
+  const rpc = vi.fn(async (name: string, args: Record<string, unknown>) =>
+    name === 'create_session_with_laps'
+      ? createSessionWithLaps(db, options, args)
+      : { data: null, error: { code: 'PGRST202', message: name } },
+  );
   const client = {
     auth: { getUser: vi.fn(getUser) },
     from: (table: string) => new Query(db, table, options),
@@ -393,41 +381,54 @@ describe('POST /api/mobile/sessions', () => {
     expect(client.auth.getUser).toHaveBeenCalledWith(TOKEN);
   });
 
-  it('answers a replay of the same id with the same row and stores nothing twice', async () => {
+  it('answers a replay of the same id with the same row and writes nothing', async () => {
     const db = seed();
-    fakeSupabase(db);
-    const body = sessionBody({ environment: { ambient_temperature_c: 21, humidity_percent: 40 } });
+    const client = fakeSupabase(db);
 
-    const first = await (await post(body)).json();
-    const lapsBefore = structuredClone(db.session_laps);
-    const environmentBefore = structuredClone(db.session_environment);
-    const replay = await post(body);
+    const first = await (await post(sessionBody())).json();
+    const replay = await post(sessionBody());
     const second = await replay.json();
 
     expect(replay.status).toBe(200);
     expect(second).toEqual({ ok: true, session: first.session, replayed: true });
     expect(db.sessions).toHaveLength(1);
-    expect(db.session_laps).toEqual(lapsBefore);
-    expect(db.session_environment).toEqual(environmentBefore);
+    expect(client.rpc).toHaveBeenCalledTimes(1);
   });
 
-  it('heals a session a failed rollback left without its laps, and only then answers the replay as synced', async () => {
+  it('leaves laps edited on the website alone when a late replay arrives', async () => {
     const db = seed();
-    let outage = true;
-    fakeSupabase(db, { lapWriteFails: () => outage, sessionDeleteFails: () => outage });
-    const body = sessionBody({ environment: { ambient_temperature_c: 21, humidity_percent: 40 } });
+    fakeSupabase(db);
+    const body = sessionBody({ laps: [], environment: { ambient_temperature_c: 21 } });
+    expect((await post(body)).status).toBe(200);
+    const edited = [{ session_id: SESSION_ID, user_id: USER_ID, lap_number: 1, lap_time_ms: 101_000, included: true, source: 'manual' }];
+    db.session_laps = structuredClone(edited);
+    const environmentBefore = structuredClone(db.session_environment);
 
-    const first = await post(body);
-    expect(first.status).toBe(503);
-    expect(db.sessions).toHaveLength(1);
-    expect(db.session_laps ?? []).toHaveLength(0);
-    expect(db.session_environment ?? []).toHaveLength(0);
-
-    outage = false;
     const replay = await post(body);
 
     expect(replay.status).toBe(200);
     expect((await replay.json()).replayed).toBe(true);
+    expect(db.session_laps).toEqual(edited);
+    expect(db.session_environment).toEqual(environmentBefore);
+  });
+
+  it('stores nothing when the create fails in transit, and the retry stores all of it', async () => {
+    const db = seed();
+    const failures: Array<'before' | null> = ['before'];
+    fakeSupabase(db, { createTransportFailure: () => failures.shift() ?? null });
+    const body = sessionBody({ environment: { ambient_temperature_c: 21, humidity_percent: 40 } });
+
+    const first = await post(body);
+
+    expect(first.status).toBe(503);
+    expect(db.sessions).toHaveLength(0);
+    expect(db.session_laps ?? []).toHaveLength(0);
+    expect(db.session_environment ?? []).toHaveLength(0);
+
+    const retry = await post(body);
+
+    expect(retry.status).toBe(200);
+    expect((await retry.json()).replayed).toBe(false);
     expect(db.sessions).toHaveLength(1);
     expect(db.session_laps.map((lap) => lap.lap_time_ms)).toEqual([142_300, 139_800]);
     expect(db.session_environment).toEqual([
@@ -435,42 +436,24 @@ describe('POST /api/mobile/sessions', () => {
     ]);
   });
 
-  it('keeps the session when a replay lands between the first call’s insert and its lap write', async () => {
+  it('answers the retry of a create whose answer was lost as the complete stored session', async () => {
     const db = seed();
-    const body = sessionBody({ environment: { ambient_temperature_c: 21 } });
-    let staged = false;
-    let replay: Response | undefined;
-    fakeSupabase(db, {
-      beforeLapWrite: async () => {
-        if (staged) return;
-        staged = true;
-        replay = await post(body);
-      },
-    });
+    const failures: Array<'after' | null> = ['after'];
+    fakeSupabase(db, { createTransportFailure: () => failures.shift() ?? null });
+    const body = sessionBody({ track_id: null, track_name: 'Blackhawk Farms' });
 
-    const first = await post(body);
+    expect((await post(body)).status).toBe(503);
+    const created = db.tracks.find((track) => track.name === 'Blackhawk Farms');
+    expect(created).toBeDefined();
 
-    expect(replay?.status).toBe(200);
-    expect(first.status).toBe(200);
-    expect(db.sessions).toHaveLength(1);
+    const retry = await post(body);
+    const answer = await retry.json();
+
+    expect(retry.status).toBe(200);
+    expect(answer.replayed).toBe(true);
+    expect(answer.session.track_id).toBe(created?.id);
+    expect(db.tracks).toContain(created);
     expect(db.session_laps).toHaveLength(2);
-    expect(db.session_environment).toHaveLength(1);
-  });
-
-  it.each([
-    ['its laps cannot be written', { lapWriteFails: () => true }],
-    ['its environment cannot be written', { environmentWriteFails: () => true }],
-  ])('answers a replay 503 rather than synced when %s', async (_label, failure) => {
-    const db = seed();
-    const body = sessionBody({ environment: { ambient_temperature_c: 21 } });
-    fakeSupabase(db);
-    expect((await post(body)).status).toBe(200);
-
-    fakeSupabase(db, failure);
-    const replay = await post(body);
-
-    expect(replay.status).toBe(503);
-    expect(db.sessions).toHaveLength(1);
   });
 
   it('answers the replay of a free rider’s tenth session as the row, not as the cap', async () => {

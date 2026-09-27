@@ -1152,6 +1152,133 @@ drop function if exists public.delete_vehicle_if_sessions_unchanged(uuid, jsonb)
 commit;
 ```
 
+### Apply the session create function by hand
+
+`20260927002200` adds `public.create_session_with_laps(uuid, jsonb, jsonb, jsonb)`,
+which `POST /api/mobile/sessions` writes every session through. It inserts the
+session row, its laps (through `replace_session_laps`) and its environment in
+one transaction, so a failure leaves none of them, and it is idempotent on the
+session id the phone minted: a session of the rider's with that id is answered
+as a replay and nothing is written. It is `security invoker`, so RLS applies as
+for any rider query. Apply it before merging the pull request that adds it:
+without it every session the phone sends is answered 503 and retried.
+
+**1. Precheck (read-only).**
+
+```sql
+select to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)') is not null
+  as function_exists;
+```
+
+Expect `false`. `true` means it is already there: compare it with the migration
+rather than applying over it (the block is `create or replace`, so re-running it
+is harmless, but a different definition is a finding).
+
+**2. Apply.**
+
+```sql
+-- hosted-session-create: mirror of supabase/migrations/20260927002200_add_create_session_with_laps.sql
+begin;
+create or replace function public.create_session_with_laps(
+  p_session_id uuid,
+  p_session jsonb,
+  p_laps jsonb,
+  p_environment jsonb
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_session public.sessions;
+begin
+  if auth.uid() is null then
+    raise exception 'create_session_with_laps needs a signed-in rider' using errcode = '42501';
+  end if;
+
+  select s.* into v_session
+    from public.sessions s
+   where s.id = p_session_id
+     and s.user_id = auth.uid();
+
+  if found then
+    return jsonb_build_object('replayed', true, 'session', to_jsonb(v_session));
+  end if;
+
+  begin
+    insert into public.sessions (
+      id, user_id, vehicle_id, track_id, track_name, layout_id, layout_name,
+      date, start_time, session_number, conditions, tires, suspension,
+      alignment, enabled_modules, extra_modules, notes
+    )
+    select
+      p_session_id, auth.uid(), r.vehicle_id, r.track_id, r.track_name, r.layout_id, r.layout_name,
+      r.date, r.start_time, r.session_number, r.conditions, r.tires, r.suspension,
+      r.alignment, coalesce(r.enabled_modules, '{}'::jsonb), r.extra_modules, r.notes
+    from jsonb_populate_record(null::public.sessions, p_session) r
+    returning * into v_session;
+  exception when unique_violation then
+    select s.* into v_session
+      from public.sessions s
+     where s.id = p_session_id
+       and s.user_id = auth.uid();
+
+    if found then
+      return jsonb_build_object('replayed', true, 'session', to_jsonb(v_session));
+    end if;
+
+    raise;
+  end;
+
+  perform public.replace_session_laps(auth.uid(), p_session_id, p_laps, '[]'::jsonb);
+
+  if p_environment is not null then
+    insert into public.session_environment (
+      user_id, session_id, ambient_temperature_c, track_temperature_c,
+      humidity_percent, weather_condition, surface_condition, source
+    )
+    select
+      auth.uid(), p_session_id, r.ambient_temperature_c, r.track_temperature_c,
+      r.humidity_percent, r.weather_condition, r.surface_condition, coalesce(r.source, 'manual')
+    from jsonb_populate_record(null::public.session_environment, p_environment) r;
+  end if;
+
+  return jsonb_build_object('replayed', false, 'session', to_jsonb(v_session));
+end;
+$$;
+
+revoke all on function public.create_session_with_laps(uuid, jsonb, jsonb, jsonb) from public, anon, authenticated;
+grant execute on function public.create_session_with_laps(uuid, jsonb, jsonb, jsonb) to authenticated;
+commit;
+```
+
+**3. Verify.**
+
+```sql
+select
+  p.prosecdef as security_definer,
+  p.proconfig as settings,
+  has_function_privilege('authenticated', p.oid, 'execute') as rider_can_execute,
+  has_function_privilege('anon', p.oid, 'execute') as anon_can_execute
+from pg_proc p
+where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)');
+```
+
+Expect one row: `false`, `{"search_path=\"\""}` (an empty `search_path`, as Postgres quotes it), `true`, `false`. Row 24 of
+`scripts/sql/audit-migrations-against-database.sql` then reads `present`, and
+`/api/health`'s `schema_contract` check stops naming the function.
+
+**4. Rollback.** Only together with a rollback of the release that calls it,
+since every session the phone sends fails without it.
+
+```sql
+-- hosted-session-create-rollback
+begin;
+drop function if exists public.create_session_with_laps(uuid, jsonb, jsonb, jsonb);
+commit;
+```
+
 ## Invite a Rider
 
 ```bash

@@ -1049,6 +1049,24 @@ export type Database = {
       };
     };
     Functions: {
+      create_session_with_laps: {
+        Args: {
+          /** The id the phone minted; a session of the caller's with this id is a replay and nothing is written. */
+          p_session_id: string;
+          /** The `sessions` columns to write. `id` and `user_id` are ignored: the function sets both. */
+          p_session: Json;
+          p_laps: Json;
+          /** The `session_environment` columns to write, or null to write none. */
+          p_environment: Json | null;
+        };
+        /**
+         * `{ replayed, session }`: the stored row, and whether an earlier call on
+         * this id had already written it (20260927002200). The row, laps and
+         * environment are written in one transaction, so a failure leaves none of
+         * them.
+         */
+        Returns: Json;
+      };
       delete_vehicle_if_sessions_unchanged: {
         Args: {
           p_vehicle_id: string;

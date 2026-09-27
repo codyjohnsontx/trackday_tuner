@@ -57,8 +57,7 @@ export interface CreateSessionContext {
  * which is what tells a caller the tracks list changed.
  *
  * `replayed` is true when the caller supplied an id that already names one of
- * this rider's sessions, so no second session was written and `session` is the
- * stored row.
+ * this rider's sessions, so nothing was written and `session` is the stored row.
  */
 export interface CreatedSession {
   session: Session;
@@ -481,107 +480,6 @@ async function resolveSessionTrack(
   return withLayout({ trackId: created.id, trackName: created.name, createdTrack: true });
 }
 
-/**
- * The environment a create carries, keyed on the session so a replay writing it
- * again leaves one row. Answers false only when a write was needed and failed.
- */
-async function writeSessionEnvironment(
-  supabase: SessionWriteClient,
-  report: ReportError,
-  userId: string,
-  sessionId: string,
-  environment: CreateSessionEnvironmentInput | null | undefined,
-): Promise<boolean> {
-  if (!hasEnvironmentValues(environment)) return true;
-
-  const environmentPayload: TableInsert<'session_environment'> = {
-    user_id: userId,
-    session_id: sessionId,
-    ambient_temperature_c: environment?.ambient_temperature_c ?? null,
-    track_temperature_c: environment?.track_temperature_c ?? null,
-    humidity_percent: environment?.humidity_percent ?? null,
-    weather_condition: environment?.weather_condition?.trim() || null,
-    surface_condition: environment?.surface_condition?.trim() || null,
-    source: environment?.source ?? 'manual',
-  };
-
-  const { error } = await supabase
-    .from('session_environment')
-    .upsert(environmentPayload, { onConflict: 'session_id' });
-  if (!error) return true;
-
-  // A plain write, so there is no `P0001` class to let through the way the RPC
-  // paths do: nothing PostgREST answers here is a rider's to fix, and
-  // `session_environment` arrives with 20260422000400, so a database behind that
-  // migration used to print `PGRST205 Could not find the table ...` under the
-  // form while this rider's whole session was rolled back.
-  report('session-create', new Error(error.message), {
-    reason: error.code,
-    table: 'session_environment',
-    details: error.details,
-    hint: error.hint,
-    userId,
-    sessionId,
-  });
-  return false;
-}
-
-/**
- * Answer a replay of a session this rider already has.
- *
- * The row existing does not mean the create finished: laps and environment are
- * written after it, and a rollback that failed alongside them leaves the row
- * behind. So the replay writes both again from its own payload - the laps
- * guarded by the set actually stored, the environment upserted - and reports
- * the session synced only once they are. Anything short of that is a `fault`,
- * which the phone retries, so a half-written session heals on the next attempt.
- * The free-plan cap and change records belong to the first create and are not
- * run again.
- */
-async function completeReplay(
-  supabase: SessionWriteClient,
-  report: ReportError,
-  userId: string,
-  session: Session,
-  input: CreateSessionInput,
-): Promise<CreateSessionResult> {
-  const failed: CreateSessionResult = { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
-
-  const { data: storedLaps, error } = await supabase
-    .from('session_laps')
-    .select('lap_number, lap_time_ms, included')
-    .eq('session_id', session.id)
-    .eq('user_id', userId);
-  if (error) {
-    report('session-create', new Error(error.message), {
-      reason: error.code,
-      table: 'session_laps',
-      query: 'replay lap read',
-      userId,
-      sessionId: session.id,
-    });
-    return failed;
-  }
-
-  const lapError = await persistSessionLaps({
-    supabase,
-    report,
-    userId,
-    session,
-    laps: input.laps ?? [],
-    expectedLaps: (storedLaps ?? []) as CreateSessionLapInput[],
-    saveFailedMessage: SESSION_CREATE_SAVE_FAILED_MESSAGE,
-  });
-  // A stale read here is a create still writing under this id, so it is retried
-  // rather than parked.
-  if (lapError === SESSION_CREATE_SAVE_FAILED_MESSAGE || lapError === SESSION_LAPS_STALE_READ_MESSAGE) return failed;
-  if (lapError) return { ok: false, error: lapError, kind: 'invalid' };
-
-  if (!(await writeSessionEnvironment(supabase, report, userId, session.id, input.environment))) return failed;
-
-  return { ok: true, data: { session, createdTrack: false, replayed: true } };
-}
-
 const UNIQUE_VIOLATION_CODE = '23505';
 const FOREIGN_KEY_VIOLATION_CODE = '23503';
 
@@ -619,6 +517,195 @@ async function readOwnSession(
 }
 
 /**
+ * The environment's own columns, or null when the rider gave none - the one
+ * rule for which environment a create writes, whichever way it writes it.
+ */
+function environmentValues(
+  environment: CreateSessionEnvironmentInput | null | undefined,
+): Omit<TableInsert<'session_environment'>, 'user_id' | 'session_id'> | null {
+  if (!hasEnvironmentValues(environment)) return null;
+  return {
+    ambient_temperature_c: environment?.ambient_temperature_c ?? null,
+    track_temperature_c: environment?.track_temperature_c ?? null,
+    humidity_percent: environment?.humidity_percent ?? null,
+    weather_condition: environment?.weather_condition?.trim() || null,
+    surface_condition: environment?.surface_condition?.trim() || null,
+    source: environment?.source ?? 'manual',
+  };
+}
+
+type SessionWrite =
+  | { status: 'created'; session: Session }
+  | { status: 'answered'; result: CreateSessionResult };
+
+interface SessionWriteParams {
+  supabase: SessionWriteClient;
+  report: ReportError;
+  userId: string;
+  payload: TableInsert<'sessions'>;
+  input: CreateSessionInput;
+  track: ResolvedSessionTrack;
+}
+
+/**
+ * The website's write: the row, then its laps, then its environment, deleting
+ * the row again when a later step fails. The form stays open on a failure, so
+ * a rollback that failed too is something the rider is told to check for.
+ */
+async function insertSessionInSteps({
+  supabase,
+  report,
+  userId,
+  payload,
+  input,
+  track,
+}: SessionWriteParams): Promise<SessionWrite> {
+  const { data, error } = await supabase
+    .from('sessions')
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    // A plain insert, so as with the environment path below there is no `P0001`
+    // class to let through: nothing PostgREST answers here is a rider's to fix.
+    // `enabled_modules` and `extra_modules` arrive with 20260228000200, so a
+    // database behind that migration answered `PGRST204 Could not find the
+    // 'enabled_modules' column of 'sessions' in the schema cache` straight into
+    // the form's sticky bar, with nothing reaching Sentry.
+    report('session-create', new Error(error.message), {
+      reason: error.code,
+      table: 'sessions',
+      details: error.details,
+      hint: error.hint,
+      userId,
+    });
+    await rollbackAutoCreatedTrack(supabase, userId, track);
+    return { status: 'answered', result: { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' } };
+  }
+
+  const createdSession = data as Session;
+
+  const lapError = await persistSessionLaps({
+    supabase,
+    report,
+    userId,
+    session: createdSession,
+    laps: input.laps ?? [],
+    // The session row was inserted two statements ago, so nothing can be holding
+    // laps against it yet.
+    expectedLaps: [],
+    saveFailedMessage: SESSION_CREATE_SAVE_FAILED_MESSAGE,
+  });
+  if (lapError) {
+    await rollbackCreatedSession({
+      supabase,
+      userId,
+      sessionId: createdSession.id,
+      track,
+      failureLog: '[sessions] session rollback after lap failure failed',
+    });
+    // `persistSessionLaps` answers with the caller's own save-failed sentence
+    // for a fault and with the database's for a rejection of these laps, so
+    // which one came back is the classification.
+    return {
+      status: 'answered',
+      result: { ok: false, error: lapError, kind: lapError === SESSION_CREATE_SAVE_FAILED_MESSAGE ? 'fault' : 'invalid' },
+    };
+  }
+
+  const environment = environmentValues(input.environment);
+  if (environment) {
+    const { error: environmentError } = await supabase
+      .from('session_environment')
+      .insert({ user_id: userId, session_id: createdSession.id, ...environment });
+
+    if (environmentError) {
+      // A plain insert, so there is no `P0001` class to let through the way the
+      // RPC paths do: nothing PostgREST answers here is a rider's to fix, and
+      // `session_environment` arrives with 20260422000400, so a database behind
+      // that migration used to print `PGRST205 Could not find the table ...`
+      // under the form while this rider's whole session was rolled back.
+      report('session-create', new Error(environmentError.message), {
+        reason: environmentError.code,
+        table: 'session_environment',
+        details: environmentError.details,
+        hint: environmentError.hint,
+        userId,
+        sessionId: createdSession.id,
+      });
+      await rollbackCreatedSession({
+        supabase,
+        userId,
+        sessionId: createdSession.id,
+        track,
+        failureLog: '[sessions] session rollback failed',
+      });
+      return { status: 'answered', result: { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' } };
+    }
+  }
+
+  return { status: 'created', session: createdSession };
+}
+
+/**
+ * The phone's write: the row, its laps and its environment in one call to
+ * `create_session_with_laps` (20260927002200), so a failure leaves nothing
+ * behind and a retry on the same id either writes all of it or finds all of it.
+ * A stored session is therefore always complete, and a replay writes nothing -
+ * least of all over laps the rider has since edited on the website.
+ */
+async function insertSessionAtomically({
+  supabase,
+  report,
+  userId,
+  sessionId,
+  payload,
+  input,
+  track,
+}: SessionWriteParams & { sessionId: string }): Promise<SessionWrite> {
+  const { data, error } = await supabase.rpc('create_session_with_laps', {
+    p_session_id: sessionId,
+    p_session: payload as unknown as Json,
+    p_laps: (input.laps ?? []) as unknown as Json,
+    p_environment: environmentValues(input.environment) as Json | null,
+  });
+
+  if (error) {
+    // A database that answered with a code rolled the whole call back, so the
+    // track it was resolved for is unused. A transport failure carries no code
+    // and may have committed, and a track taken out from under a stored session
+    // strips its circuit - see `rollbackCreatedSession` - so that one stays.
+    if (error.code) await rollbackAutoCreatedTrack(supabase, userId, track);
+    // The id is held by a row this rider cannot see: another rider's.
+    if (error.code === UNIQUE_VIOLATION_CODE) {
+      return { status: 'answered', result: { ok: false, error: SESSION_ID_TAKEN_MESSAGE, kind: 'id_taken' } };
+    }
+    if (error.code === FOREIGN_KEY_VIOLATION_CODE) {
+      return { status: 'answered', result: { ok: false, error: SESSION_REFERENCE_GONE_MESSAGE, kind: 'invalid' } };
+    }
+    report('session-create', new Error(error.message), {
+      reason: error.code,
+      query: 'create_session_with_laps',
+      details: error.details,
+      hint: error.hint,
+      userId,
+      sessionId,
+    });
+    return { status: 'answered', result: { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' } };
+  }
+
+  const { replayed, session } = data as unknown as { replayed: boolean; session: Session };
+  if (!replayed) return { status: 'created', session };
+
+  // A call on the same id committed while this one was resolving, and its row
+  // is the answer. It may have found this call's auto-created track by name, so
+  // the track goes only when that row does not point at it.
+  if (session.track_id !== track.trackId) await rollbackAutoCreatedTrack(supabase, userId, track);
+  return { status: 'answered', result: { ok: true, data: { session, createdTrack: false, replayed: true } } };
+}
+
+/**
  * Create a session for `userId` through `supabase`, which must already be acting
  * as that rider - every write here relies on RLS agreeing with `userId`.
  *
@@ -636,7 +723,9 @@ export async function createSessionForUser(
   if (suppliedId) {
     const existing = await readOwnSession(supabase, report, userId, suppliedId);
     if (existing.status === 'failed') return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
-    if (existing.status === 'found') return completeReplay(supabase, report, userId, existing.session, input);
+    if (existing.status === 'found') {
+      return { ok: true, data: { session: existing.session, createdTrack: false, replayed: true } };
+    }
   }
 
   const lapValidationError = validateLaps(input.laps ?? []);
@@ -699,7 +788,6 @@ export async function createSessionForUser(
   }
 
   const payload: TableInsert<'sessions'> = {
-    ...(suppliedId ? { id: suppliedId } : {}),
     user_id: userId,
     vehicle_id: input.vehicle_id,
     track_id: track.trackId,
@@ -724,90 +812,11 @@ export async function createSessionForUser(
     notes: input.notes ?? null,
   };
 
-  const { data, error } = await supabase
-    .from('sessions')
-    .insert(payload)
-    .select()
-    .single();
-
-  if (error?.code === UNIQUE_VIOLATION_CODE && suppliedId) {
-    // The primary key is the only unique constraint on `sessions`, so this is
-    // the supplied id arriving twice at once: a replay that passed the check at
-    // the top while the first call was still writing. Whatever was resolved for
-    // this attempt is not used, and the answer is the row that won. The winner
-    // may have found this attempt's auto-created track by name, and
-    // `sessions.track_id` is `on delete set null`, so the track goes only once
-    // the winning row is known not to point at it - see `rollbackCreatedSession`.
-    const existing = await readOwnSession(supabase, report, userId, suppliedId);
-    if (existing.status === 'failed') return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
-    if (existing.status === 'absent' || existing.session.track_id !== track.trackId) {
-      await rollbackAutoCreatedTrack(supabase, userId, track);
-    }
-    if (existing.status === 'found') return completeReplay(supabase, report, userId, existing.session, input);
-    return { ok: false, error: SESSION_ID_TAKEN_MESSAGE, kind: 'id_taken' };
-  }
-
-  if (error?.code === FOREIGN_KEY_VIOLATION_CODE) {
-    await rollbackAutoCreatedTrack(supabase, userId, track);
-    return { ok: false, error: SESSION_REFERENCE_GONE_MESSAGE, kind: 'invalid' };
-  }
-
-  if (error) {
-    // A plain insert, so as with the environment path below there is no `P0001`
-    // class to let through: past a vanished reference, nothing PostgREST answers
-    // here is a rider's to fix. `enabled_modules` and `extra_modules` arrive with 20260228000200, so a
-    // database behind that migration answered `PGRST204 Could not find the
-    // 'enabled_modules' column of 'sessions' in the schema cache` straight into
-    // the form's sticky bar, with nothing reaching Sentry.
-    report('session-create', new Error(error.message), {
-      reason: error.code,
-      table: 'sessions',
-      details: error.details,
-      hint: error.hint,
-      userId,
-    });
-    await rollbackAutoCreatedTrack(supabase, userId, track);
-    return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
-  }
-
-  const createdSession = data as Session;
-
-  const lapError = await persistSessionLaps({
-    supabase,
-    report,
-    userId,
-    session: createdSession,
-    laps: input.laps ?? [],
-    // The session row was inserted two statements ago, so only a replay of its
-    // own id can be holding laps against it - and that replay wrote this same
-    // payload, which is why its stale-read refusal is not a failure here.
-    expectedLaps: [],
-    saveFailedMessage: SESSION_CREATE_SAVE_FAILED_MESSAGE,
-  });
-  if (lapError && lapError !== SESSION_LAPS_STALE_READ_MESSAGE) {
-    await rollbackCreatedSession({
-      supabase,
-      userId,
-      sessionId: createdSession.id,
-      track,
-      failureLog: '[sessions] session rollback after lap failure failed',
-    });
-    // `persistSessionLaps` answers with the caller's own save-failed sentence
-    // for a fault and with the database's for a rejection of these laps, so
-    // which one came back is the classification.
-    return { ok: false, error: lapError, kind: lapError === SESSION_CREATE_SAVE_FAILED_MESSAGE ? 'fault' : 'invalid' };
-  }
-
-  if (!(await writeSessionEnvironment(supabase, report, userId, createdSession.id, input.environment))) {
-    await rollbackCreatedSession({
-      supabase,
-      userId,
-      sessionId: createdSession.id,
-      track,
-      failureLog: '[sessions] session rollback failed',
-    });
-    return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
-  }
+  const written = suppliedId
+    ? await insertSessionAtomically({ supabase, report, userId, sessionId: suppliedId, payload, input, track })
+    : await insertSessionInSteps({ supabase, report, userId, payload, input, track });
+  if (written.status === 'answered') return written.result;
+  const createdSession = written.session;
 
   // Persist deterministic change records against the previous session and the active
   // baseline. Best effort only — a failure here never fails session creation. The

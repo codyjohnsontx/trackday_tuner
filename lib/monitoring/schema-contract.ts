@@ -147,6 +147,12 @@ export const REQUIRED_RPCS: readonly RpcContract[] = [
     p_laps: [],
     p_expected_laps: [],
   }),
+  contract('create_session_with_laps', {
+    p_session_id: UNCOERCIBLE_PROBE_VALUE,
+    p_session: {},
+    p_laps: [],
+    p_environment: null,
+  }),
   contract('delete_vehicle_if_sessions_unchanged', {
     p_vehicle_id: UNCOERCIBLE_PROBE_VALUE,
     p_expected_sessions: [],

@@ -146,7 +146,13 @@ describe('supabase.rpc() call sites', () => {
   // less than it should. These three are the RPCs a deployment calls today.
   it('reads exactly the RPCs a deployment calls', () => {
     expect(new Set(named.map((site) => site.rpc))).toEqual(
-      new Set(['save_session_outcome', 'replace_session_laps', 'consume_beta_rate_limit', 'delete_vehicle_if_sessions_unchanged']),
+      new Set([
+        'save_session_outcome',
+        'replace_session_laps',
+        'consume_beta_rate_limit',
+        'delete_vehicle_if_sessions_unchanged',
+        'create_session_with_laps',
+      ]),
     );
   });
 

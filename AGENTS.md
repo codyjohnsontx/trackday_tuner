@@ -674,9 +674,15 @@ role. Three things are load-bearing:
 - **Idempotent on the body's `id`**, which reaches `createSessionForUser` as
   `options.id` and never inside `CreateSessionInput`, so the website's form cannot
   choose a primary key. The replay lookup runs before the free-plan count, or a
-  free rider's tenth session replayed would be refused as their eleventh. A
-  replay writes the laps and environment again before answering 200, because a
-  row left by a failed rollback exists without them.
+  free rider's tenth session replayed would be refused as their eleventh.
+- **Atomic, where the website's create is not.** With an id, the row, laps and
+  environment are one call to `create_session_with_laps` (20260927002200), so a
+  failure stores nothing and a stored session is always complete - which is what
+  lets a replay write nothing and answer 200 without looking. The website's form
+  still writes them as three statements and rolls back; its rider sees a failed
+  save, where the phone's retry would read a half-written row as synced. The
+  hosted project needs the function applied by hand ("Apply the session create
+  function by hand" in `docs/beta-runbook.md`).
 - **The body is validated leaf by leaf** (`lib/sessions/parse-create-request.ts`)
   because the setup blobs are unconstrained `jsonb` and a numeric leaf crashes the
   session screens (tt-session-screens-nonstring-fields).

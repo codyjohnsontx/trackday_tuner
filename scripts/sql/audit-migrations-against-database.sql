@@ -173,7 +173,10 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                then '((bucket_id = ''session-photos''::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))' end) = 4),
   (23, '20260926002100_delete_vehicle_if_sessions_unchanged', 'function',
       'public.delete_vehicle_if_sessions_unchanged(uuid,jsonb)',
-      to_regprocedure('public.delete_vehicle_if_sessions_unchanged(uuid,jsonb)') is not null)
+      to_regprocedure('public.delete_vehicle_if_sessions_unchanged(uuid,jsonb)') is not null),
+  (24, '20260927002200_add_create_session_with_laps', 'function',
+      'public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)',
+      to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)') is not null)
 )
 select ordinality as "#",
        migration,

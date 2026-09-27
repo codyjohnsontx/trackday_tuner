@@ -90,7 +90,6 @@ function createQuery(response: QueryResponse = {}) {
 
   query.select = vi.fn(() => query);
   query.insert = vi.fn(() => query);
-  query.upsert = vi.fn(() => query);
   query.delete = vi.fn(() => query);
   query.eq = vi.fn(() => query);
   query.in = vi.fn(() => query);
