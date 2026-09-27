@@ -66,6 +66,7 @@ function session(overrides: Partial<Session> = {}): Session {
       drivetrain: { front_sprocket: '15', rear_sprocket: '45', chain_length: '118', notes: 'baseline' },
     },
     notes: 'Good drive, watch T5.',
+    photo_url: null,
     created_at: '2026-05-01T09:00:00Z',
     updated_at: '2026-05-01T09:00:00Z',
     ...overrides,

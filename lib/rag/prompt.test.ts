@@ -67,6 +67,7 @@ function session(partial: Partial<Session> = {}): Session {
     enabled_modules: null,
     extra_modules: null,
     notes: 'Front pushed mid-corner.',
+    photo_url: null,
     created_at: '2026-04-01T00:00:00Z',
     updated_at: '2026-04-01T00:00:00Z',
     ...partial,

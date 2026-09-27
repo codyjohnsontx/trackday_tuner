@@ -414,16 +414,17 @@ reads "Link expired". Put `127.0.0.1` back in the address bar and reload - the
 session is already there, the form appears, and the new password saves. The
 recovery code is spent by then and does not need to be used again.
 
-What that builds is the database and the storage bucket, not everything the app
-touches. `supabase start` (and `db reset`) seed the `vehicle-photos` bucket from
-`[storage.buckets.vehicle-photos]` in `supabase/config.toml` and log
-`Creating Storage bucket: vehicle-photos`; the policies that let a rider write
-their own folder are a migration like any other. Before that block existed a
-fresh database applied every migration cleanly and answered the first photo with
-"Photo upload failed: Bucket not found". The North American circuits a rider
-picks from are seeded by a migration, so a fresh database has them too.
+What that builds is the database and the storage buckets, not everything the app
+touches. `supabase start` (and `db reset`) seed the `vehicle-photos` and
+`session-photos` buckets from their `[storage.buckets.*]` blocks in
+`supabase/config.toml` and log `Creating Storage bucket: <name>` for each; the
+policies that let a rider write their own folder are migrations like any other.
+Before the `vehicle-photos` block existed a fresh database applied every migration
+cleanly and answered the first photo with "Photo upload failed: Bucket not
+found". The North American circuits a rider picks from are seeded by a migration,
+so a fresh database has them too.
 
-The bucket is the one thing `db push` does not carry to the hosted project, because
+The buckets are the one thing `db push` does not carry to the hosted project, because
 the CLI provisions buckets from `config.toml` rather than from migrations. A
 deployment standing up its own project runs this once after `supabase link`, with
 the same operator credentials `db push` needs:
@@ -432,7 +433,7 @@ the same operator credentials `db push` needs:
 npx supabase seed buckets --linked
 ```
 
-It creates the bucket if it is missing and brings an existing one's settings
+It creates a bucket that is missing and brings an existing one's settings
 (public, accepted MIME types, size limit) into line with `config.toml`. Run it
 again whenever that block changes.
 

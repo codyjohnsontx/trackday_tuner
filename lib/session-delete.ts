@@ -13,6 +13,39 @@ export const SESSION_DELETE_FAILED_MESSAGE =
 export const SESSION_DELETE_NOT_FOUND_MESSAGE =
   'This session could not be found. It may already have been deleted - check your sessions list.';
 
+export const SESSION_DELETE_PHOTO_FAILED_MESSAGE =
+  'This session was not deleted - we could not remove its photo, and deleting the session first would leave the photo online. The session is still here. Try again in a moment.';
+
+export const SESSION_DELETE_CHANGED_MESSAGE =
+  'This session changed while it was being deleted - a new photo may have just synced from your phone - so nothing was deleted. Try again.';
+
+export const SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE =
+  'This session changed while it was being deleted - a new photo may have just synced from your phone - so the session is still here, though its earlier photo may already have been removed. Try again.';
+
+export const SESSION_DELETE_FAILED_AFTER_PHOTO_MESSAGE =
+  'This session was not deleted - something went wrong on our end. The session is still here, though its photo may already have been removed. Try again in a moment.';
+
+/**
+ * The public bucket session photos live in, one object per session at
+ * `sessionPhotoObjectPath`.
+ *
+ * The mobile app owns the upload and the website owns the delete, and the two
+ * meet at that one path. The website removes the object before deleting the
+ * row and once more after, so an upload that lands while the delete runs is
+ * still removed. What the website cannot see is an upload that finishes after
+ * that second removal. So the contract on the phone is: upload with upsert to
+ * `sessionPhotoObjectPath(user id, session id)`, then set `photo_url`, and when
+ * that update affects zero rows - the session was deleted meanwhile - remove
+ * the object just uploaded. `docs/beta-runbook.md` ("Apply session photos by
+ * hand") carries the same contract.
+ */
+export const SESSION_PHOTO_BUCKET = 'session-photos';
+
+/** The one object a session's photo is stored as, derived from ids rather than read off `photo_url`. */
+export function sessionPhotoObjectPath(userId: string, sessionId: string): string {
+  return `${userId}/${sessionId}.jpg`;
+}
+
 export interface SessionDeletionContents {
   lapCount: number;
   hasOutcome: boolean;

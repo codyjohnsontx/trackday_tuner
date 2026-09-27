@@ -119,6 +119,10 @@ once. They need the service-role key and a running app, no `E2E_EMAIL`,
 `E2E_PASSWORD` or `BETA_INVITE_ONLY`; the lap-visibility spec also needs
 `NEXT_PUBLIC_SUPABASE_ANON_KEY`, because it saves its laps through
 `replace_session_laps` as the rider.
+`tests/e2e/session-photo-delete.spec.ts` has the same shape and needs the same,
+plus a stack built with the `[storage.buckets.session-photos]` block and
+`20260926002000` and `20260926002100` applied - `supabase start` or `db reset`
+since they were added. It fails rather than skips without them.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a

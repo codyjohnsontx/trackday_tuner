@@ -46,7 +46,14 @@ import {
 } from '@/lib/actions/sessions';
 import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
 import { getSessionOutcome } from '@/lib/actions/outcomes';
-import { SESSION_DELETE_FAILED_MESSAGE, SESSION_DELETE_NOT_FOUND_MESSAGE } from '@/lib/session-delete';
+import {
+  SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE,
+  SESSION_DELETE_CHANGED_MESSAGE,
+  SESSION_DELETE_FAILED_AFTER_PHOTO_MESSAGE,
+  SESSION_DELETE_FAILED_MESSAGE,
+  SESSION_DELETE_NOT_FOUND_MESSAGE,
+  SESSION_DELETE_PHOTO_FAILED_MESSAGE,
+} from '@/lib/session-delete';
 import { COMPARABLE_SESSION_FETCH_LIMIT, COMPARABLE_SESSION_LIMIT } from '@/lib/session-compare';
 import { MISSING_TRACK_MESSAGE, TRACK_NAME_MATCH_LIMIT } from '@/lib/session-track';
 import { createTrackNameQuery } from '@/tests/unit/helpers/track-name-query';
@@ -187,6 +194,7 @@ const createdSession: Session = {
   enabled_modules: validInput.enabled_modules ?? null,
   extra_modules: null,
   notes: 'baseline',
+  photo_url: null,
   created_at: '2026-02-24T09:30:00Z',
   updated_at: '2026-02-24T09:30:00Z',
 };
@@ -1782,6 +1790,7 @@ describe('sessions actions', () => {
       enabled_modules: validInput.enabled_modules ?? null,
       extra_modules: null,
       notes: null,
+      photo_url: null,
       created_at: '2026-02-24T12:00:00Z',
       updated_at: '2026-02-24T12:00:00Z',
     };
@@ -1826,6 +1835,7 @@ describe('sessions actions', () => {
       enabled_modules: validInput.enabled_modules ?? null,
       extra_modules: null,
       notes: null,
+      photo_url: null,
       created_at: '2026-02-24T12:00:00Z',
       updated_at: '2026-02-24T12:00:00Z',
     };
@@ -2207,54 +2217,296 @@ describe('sessions actions', () => {
     expect(createClient).not.toHaveBeenCalled();
   });
 
-  it('deletes only the caller own session and refreshes the screens that list it', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    const deleteQuery = createQuery({ base: { data: [{ id: 'sess-1' }], error: null } });
-    const from = vi.fn(() => deleteQuery);
-    vi.mocked(createClient).mockResolvedValue({ from } as never);
+  describe('deleteSession', () => {
+    const OWN_PHOTO = 'https://project.supabase.co/storage/v1/object/public/session-photos/user-1/sess-1.jpg';
 
-    const result = await deleteSession('sess-1');
+    /**
+     * The two statements a delete makes, in order: the read of the row and its
+     * photo, then the guarded delete. `remove` is Storage's answer; `events`
+     * records what happened in which order, so "photo first" is asserted rather
+     * than assumed.
+     */
+    function sessionDeleteClient({
+      row,
+      readError = null,
+      deleted = [{ id: 'sess-1' }],
+      deleteError = null,
+      remove = vi.fn(async (paths: string[]) => ({ data: paths.map((name) => ({ name })), error: null })),
+    }: {
+      row: { id: string; photo_url: string | null } | null;
+      readError?: QueryError | null;
+      deleted?: { id: string }[];
+      deleteError?: QueryError | null;
+      remove?: ReturnType<typeof vi.fn>;
+    }) {
+      const events: string[] = [];
+      const readQuery = createQuery({ single: { data: row, error: readError } });
+      const deleteQuery = createQuery({ base: { data: deleteError ? null : deleted, error: deleteError } });
+      deleteQuery.delete = vi.fn(() => {
+        events.push('delete row');
+        return deleteQuery;
+      });
+      const queries = [readQuery, deleteQuery];
+      const from = vi.fn(() => {
+        const next = queries.shift();
+        if (!next) throw new Error('unexpected query on sessions');
+        return next;
+      });
+      const trackedRemove = vi.fn(async (paths: string[]) => {
+        events.push('remove photo');
+        return remove(paths);
+      });
+      const storageFrom = vi.fn(() => ({ remove: trackedRemove }));
+      vi.mocked(createClient).mockResolvedValue({ from, storage: { from: storageFrom } } as never);
+      return { from, readQuery, deleteQuery, remove: trackedRemove, storageFrom, events };
+    }
 
-    expect(result).toEqual({ ok: true, data: undefined });
-    expect(from).toHaveBeenCalledWith('sessions');
-    expect(deleteQuery.delete).toHaveBeenCalled();
-    expect(deleteQuery.eq).toHaveBeenCalledWith('id', 'sess-1');
-    expect(deleteQuery.eq).toHaveBeenCalledWith('user_id', 'user-1');
-    expect(revalidatePath).toHaveBeenCalledWith('/sessions');
-    expect(revalidatePath).toHaveBeenCalledWith('/dashboard');
-    expect(revalidatePath).toHaveBeenCalledWith('/sessions/sess-1');
-  });
-
-  it('reports a failure when the delete matched no session', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    // RLS plus the user_id filter make another rider's id delete zero rows rather
-    // than error, so the row count is the only signal that nothing happened.
-    const deleteQuery = createQuery({ base: { data: [], error: null } });
-    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => deleteQuery) } as never);
-
-    const result = await deleteSession('someone-elses-session');
-
-    expect(result).toEqual({ ok: false, error: SESSION_DELETE_NOT_FOUND_MESSAGE });
-    expect(revalidatePath).not.toHaveBeenCalled();
-  });
-
-  it('tells the rider nothing was removed and reports the error when the delete fails', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    const deleteQuery = createQuery({
-      base: { data: null, error: { message: 'permission denied for table sessions', code: '42501' } },
+    beforeEach(() => {
+      process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://project.supabase.co';
+      vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     });
-    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(() => deleteQuery) } as never);
 
-    const result = await deleteSession('sess-1');
+    it('deletes only the caller own session and refreshes the screens that list it', async () => {
+      const { from, readQuery, deleteQuery, remove, events } = sessionDeleteClient({
+        row: { id: 'sess-1', photo_url: null },
+      });
 
-    // The database's own words are for the log, not the rider.
-    expect(result).toEqual({ ok: false, error: SESSION_DELETE_FAILED_MESSAGE });
-    expect(reportError).toHaveBeenCalledWith(
-      'session-delete',
-      expect.any(Error),
-      expect.objectContaining({ reason: '42501', table: 'sessions' }),
-    );
-    expect(revalidatePath).not.toHaveBeenCalled();
+      const result = await deleteSession('sess-1');
+
+      expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
+      expect(from).toHaveBeenCalledWith('sessions');
+      expect(readQuery.eq).toHaveBeenCalledWith('user_id', 'user-1');
+      expect(deleteQuery.delete).toHaveBeenCalled();
+      expect(deleteQuery.eq).toHaveBeenCalledWith('id', 'sess-1');
+      expect(deleteQuery.eq).toHaveBeenCalledWith('user_id', 'user-1');
+      expect(deleteQuery.is).toHaveBeenCalledWith('photo_url', null);
+      expect(events).toEqual(['delete row', 'remove photo']);
+      expect(remove).toHaveBeenCalledWith(['user-1/sess-1.jpg']);
+      expect(revalidatePath).toHaveBeenCalledWith('/sessions');
+      expect(revalidatePath).toHaveBeenCalledWith('/dashboard');
+      expect(revalidatePath).toHaveBeenCalledWith('/sessions/sess-1');
+    });
+
+    it('removes the photo from the public bucket first, then deletes the row', async () => {
+      const { deleteQuery, remove, storageFrom, events } = sessionDeleteClient({
+        row: { id: 'sess-1', photo_url: OWN_PHOTO },
+      });
+
+      const result = await deleteSession('sess-1');
+
+      expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
+      expect(storageFrom).toHaveBeenCalledWith('session-photos');
+      expect(remove).toHaveBeenCalledWith(['user-1/sess-1.jpg']);
+      expect(events).toEqual(['remove photo', 'delete row', 'remove photo']);
+      expect(deleteQuery.eq).toHaveBeenCalledWith('photo_url', OWN_PHOTO);
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    it('keeps the session and tells the rider to try again when storage refuses to remove the photo', async () => {
+      const { deleteQuery, events } = sessionDeleteClient({
+        row: { id: 'sess-1', photo_url: OWN_PHOTO },
+        remove: vi.fn(async () => ({ data: null, error: { message: 'storage down' } })),
+      });
+
+      const result = await deleteSession('sess-1');
+
+      expect(result).toEqual({ ok: false, error: SESSION_DELETE_PHOTO_FAILED_MESSAGE });
+      expect(deleteQuery.delete).not.toHaveBeenCalled();
+      expect(events).toEqual(['remove photo']);
+      expect(reportError).toHaveBeenCalledWith(
+        'session-photo-delete',
+        expect.any(Error),
+        expect.objectContaining({ bucket: 'session-photos', object: 'user-1/sess-1.jpg', sessionId: 'sess-1' }),
+      );
+      expect(revalidatePath).not.toHaveBeenCalled();
+    });
+
+    it('keeps the session when the storage call throws', async () => {
+      const { deleteQuery } = sessionDeleteClient({
+        row: { id: 'sess-1', photo_url: OWN_PHOTO },
+        remove: vi.fn(async () => {
+          throw new Error('network gone');
+        }),
+      });
+
+      const result = await deleteSession('sess-1');
+
+      expect(result).toEqual({ ok: false, error: SESSION_DELETE_PHOTO_FAILED_MESSAGE });
+      expect(deleteQuery.delete).not.toHaveBeenCalled();
+    });
+
+    it('deletes the row when the photo is already gone from storage', async () => {
+      // `remove` reports what it deleted, so an object already absent comes back
+      // missing rather than as an error - nothing is left to serve.
+      const { deleteQuery } = sessionDeleteClient({
+        row: { id: 'sess-1', photo_url: OWN_PHOTO },
+        remove: vi.fn(async () => ({ data: [], error: null })),
+      });
+
+      const result = await deleteSession('sess-1');
+
+      expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
+      expect(deleteQuery.delete).toHaveBeenCalled();
+    });
+
+    it("leaves another rider's photo alone and still deletes the row", async () => {
+      const foreign = 'https://project.supabase.co/storage/v1/object/public/session-photos/user-2/sess-1.jpg';
+      const { deleteQuery, remove } = sessionDeleteClient({ row: { id: 'sess-1', photo_url: foreign } });
+
+      const result = await deleteSession('sess-1');
+
+      expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
+      expect(remove.mock.calls).toEqual([[['user-1/sess-1.jpg']]]);
+      expect(deleteQuery.delete).toHaveBeenCalled();
+      expect(reportError).toHaveBeenCalledWith(
+        'session-photo-delete',
+        expect.any(Error),
+        expect.objectContaining({ photoUrl: foreign, sessionId: 'sess-1' }),
+      );
+    });
+
+    describe('a phone uploading to the photo path while the session is deleted', () => {
+      // The bucket as Storage holds it: `remove` deletes what is there and
+      // reports it, and the phone's upload lands while the row delete runs.
+      function deleteWithUploadDuring(row: { id: string; photo_url: string | null }, bucket: Set<string>) {
+        const client = sessionDeleteClient({
+          row,
+          remove: vi.fn(async (paths: string[]) => ({
+            data: paths.filter((path) => bucket.delete(path)).map((name) => ({ name })),
+            error: null,
+          })),
+        });
+        client.deleteQuery.delete = vi.fn(() => {
+          client.events.push('delete row');
+          bucket.add('user-1/sess-1.jpg');
+          return client.deleteQuery;
+        });
+        return client;
+      }
+
+      it('removes a replacement uploaded under the same URL after the first removal', async () => {
+        const bucket = new Set(['user-1/sess-1.jpg']);
+        const { events } = deleteWithUploadDuring({ id: 'sess-1', photo_url: OWN_PHOTO }, bucket);
+
+        const result = await deleteSession('sess-1');
+
+        expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
+        expect(events).toEqual(['remove photo', 'delete row', 'remove photo']);
+        expect(bucket.size).toBe(0);
+        expect(reportError).not.toHaveBeenCalled();
+      });
+
+      it('removes a first photo uploaded to a session that had none when it was read', async () => {
+        const bucket = new Set<string>();
+        deleteWithUploadDuring({ id: 'sess-1', photo_url: null }, bucket);
+
+        const result = await deleteSession('sess-1');
+
+        expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
+        expect(bucket.size).toBe(0);
+        expect(reportError).not.toHaveBeenCalled();
+      });
+
+      it('keeps the delete and says so when the removal after it fails', async () => {
+        sessionDeleteClient({
+          row: { id: 'sess-1', photo_url: null },
+          remove: vi.fn(async () => ({ data: null, error: { message: 'storage down' } })),
+        });
+
+        const result = await deleteSession('sess-1');
+
+        expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: true } });
+        expect(reportError).toHaveBeenCalledWith(
+          'session-photo-delete',
+          expect.any(Error),
+          expect.objectContaining({ bucket: 'session-photos', object: 'user-1/sess-1.jpg', sessionId: 'sess-1' }),
+        );
+        expect(revalidatePath).toHaveBeenCalledWith('/sessions');
+      });
+    });
+
+    it('refuses when a new photo reached the session between the removal and the delete', async () => {
+      // The delete matches only the photo that was just removed, so a photo the
+      // phone synced in between leaves the row in place rather than orphaned.
+      const { deleteQuery } = sessionDeleteClient({ row: { id: 'sess-1', photo_url: null }, deleted: [] });
+
+      const result = await deleteSession('sess-1');
+
+      expect(result).toEqual({ ok: false, error: SESSION_DELETE_CHANGED_MESSAGE });
+      expect(deleteQuery.is).toHaveBeenCalledWith('photo_url', null);
+      expect(revalidatePath).not.toHaveBeenCalled();
+    });
+
+    it('does not tell the rider nothing was deleted once the photo is gone and the session changed', async () => {
+      const { events } = sessionDeleteClient({ row: { id: 'sess-1', photo_url: OWN_PHOTO }, deleted: [] });
+
+      const result = await deleteSession('sess-1');
+
+      expect(result).toEqual({ ok: false, error: SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE });
+      expect(events).toEqual(['remove photo', 'delete row']);
+      expect(revalidatePath).not.toHaveBeenCalled();
+    });
+
+    it('does not tell the rider nothing was removed once the photo is gone and the delete fails', async () => {
+      sessionDeleteClient({
+        row: { id: 'sess-1', photo_url: OWN_PHOTO },
+        deleteError: { message: 'permission denied for table sessions', code: '42501' },
+      });
+
+      const result = await deleteSession('sess-1');
+
+      expect(result).toEqual({ ok: false, error: SESSION_DELETE_FAILED_AFTER_PHOTO_MESSAGE });
+      expect(revalidatePath).not.toHaveBeenCalled();
+    });
+
+    it('reports a failure when no session of the caller has that id', async () => {
+      // RLS plus the user_id filter make another rider's id read as no row rather
+      // than an error.
+      const { from, storageFrom } = sessionDeleteClient({ row: null });
+
+      const result = await deleteSession('someone-elses-session');
+
+      expect(result).toEqual({ ok: false, error: SESSION_DELETE_NOT_FOUND_MESSAGE });
+      expect(from).toHaveBeenCalledTimes(1);
+      expect(storageFrom).not.toHaveBeenCalled();
+      expect(revalidatePath).not.toHaveBeenCalled();
+    });
+
+    it('tells the rider nothing was removed when the read fails', async () => {
+      const { from, storageFrom } = sessionDeleteClient({
+        row: null,
+        readError: { message: 'permission denied for table sessions', code: '42501' },
+      });
+
+      const result = await deleteSession('sess-1');
+
+      expect(result).toEqual({ ok: false, error: SESSION_DELETE_FAILED_MESSAGE });
+      expect(from).toHaveBeenCalledTimes(1);
+      expect(storageFrom).not.toHaveBeenCalled();
+      expect(reportError).toHaveBeenCalledWith(
+        'session-delete',
+        expect.any(Error),
+        expect.objectContaining({ reason: '42501', table: 'sessions' }),
+      );
+    });
+
+    it('tells the rider nothing was removed and reports the error when the delete fails', async () => {
+      sessionDeleteClient({
+        row: { id: 'sess-1', photo_url: null },
+        deleteError: { message: 'permission denied for table sessions', code: '42501' },
+      });
+
+      const result = await deleteSession('sess-1');
+
+      // The database's own words are for the log, not the rider.
+      expect(result).toEqual({ ok: false, error: SESSION_DELETE_FAILED_MESSAGE });
+      expect(reportError).toHaveBeenCalledWith(
+        'session-delete',
+        expect.any(Error),
+        expect.objectContaining({ reason: '42501', table: 'sessions' }),
+      );
+      expect(revalidatePath).not.toHaveBeenCalled();
+    });
   });
 
   it('refuses to delete a session in demo mode', async () => {

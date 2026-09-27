@@ -27,6 +27,7 @@ const baseSession: Session = {
   enabled_modules: null,
   extra_modules: null,
   notes: 'Front pushed mid-corner.',
+  photo_url: null,
   created_at: '2026-04-22T11:00:00Z',
   updated_at: '2026-04-22T11:00:00Z',
 };

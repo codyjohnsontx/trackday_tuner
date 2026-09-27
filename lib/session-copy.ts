@@ -5,6 +5,7 @@ import type {
   SessionEnabledModules,
   SuspensionDirection,
   TireCondition,
+  TireEnd,
   VehicleType,
 } from '@/types';
 
@@ -67,14 +68,21 @@ const emptyAero = {
   notes: '',
 };
 
+// Named fields rather than a spread: `hot_pressure` is a reading taken after the
+// session it is stored on, like the weather, and a spread would carry it into the
+// next session as a claim nobody measured.
+function copyTireSetup(tire: TireEnd): CopiedSessionSetup['frontTire'] {
+  return { brand: tire.brand, compound: tire.compound, pressure: tire.pressure };
+}
+
 export function copyLastSessionSetup(session: Session, vehicleType: VehicleType): CopiedSessionSetup {
   return {
     trackId: session.track_id,
     trackQuery: session.track_name ?? '',
     layoutId: session.layout_id,
     tireCondition: session.tires.condition,
-    frontTire: { ...session.tires.front },
-    rearTire: { ...session.tires.rear },
+    frontTire: copyTireSetup(session.tires.front),
+    rearTire: copyTireSetup(session.tires.rear),
     suspensionDirection: session.suspension.front.direction,
     frontSusp: {
       preload: session.suspension.front.preload,

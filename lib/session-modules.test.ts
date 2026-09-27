@@ -32,6 +32,7 @@ const baseSession: Session = {
   enabled_modules: null,
   extra_modules: null,
   notes: null,
+  photo_url: null,
   created_at: '2026-02-28T09:00:00Z',
   updated_at: '2026-02-28T09:00:00Z',
 };

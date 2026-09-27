@@ -147,6 +147,10 @@ export const REQUIRED_RPCS: readonly RpcContract[] = [
     p_laps: [],
     p_expected_laps: [],
   }),
+  contract('delete_vehicle_if_sessions_unchanged', {
+    p_vehicle_id: UNCOERCIBLE_PROBE_VALUE,
+    p_expected_sessions: [],
+  }),
   contract('consume_beta_rate_limit', {
     p_key_hash: UNCOERCIBLE_PROBE_VALUE,
     p_limit: UNCOERCIBLE_PROBE_VALUE,

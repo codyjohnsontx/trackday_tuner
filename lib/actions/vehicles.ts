@@ -5,19 +5,22 @@ import { getRealUser } from '@/lib/auth';
 import { getDemoProfile, getDemoVehicles } from '@/lib/demo/data';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
-import { getSupabaseUrl } from '@/lib/env.public';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
 import { reportError } from '@/lib/monitoring/report-error';
 import {
+  VEHICLE_DELETE_COUNT_CHANGED_AFTER_PHOTOS_MESSAGE,
   VEHICLE_DELETE_COUNT_CHANGED_MESSAGE,
   VEHICLE_DELETE_COUNT_FAILED_MESSAGE,
+  VEHICLE_DELETE_FAILED_AFTER_PHOTOS_MESSAGE,
   VEHICLE_DELETE_FAILED_MESSAGE,
   VEHICLE_DELETE_NOT_FOUND_MESSAGE,
+  VEHICLE_DELETE_SESSION_PHOTOS_FAILED_MESSAGE,
   VEHICLE_PHOTO_BUCKET,
-  vehiclePhotoObjectPath,
   type VehicleDeletionCounts,
 } from '@/lib/vehicle-delete';
+import { SESSION_PHOTO_BUCKET, sessionPhotoObjectPath } from '@/lib/session-delete';
+import { removeObjectsAfterDelete, removeOwnedPhotos } from '@/lib/storage-photo-removal';
 import type { TableInsert } from '@/types/supabase';
 import type { ActionResult, CreateVehicleInput, UpdateVehicleInput, Profile, Vehicle } from '@/types';
 
@@ -162,6 +165,11 @@ const LAP_COUNT_BATCH_SIZE = 100;
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 type CountError = { message: string; code?: string; details?: string | null; hint?: string | null };
+/** A session the bike's delete would cascade, as read: what its photo removal and the delete's re-check both use. */
+type CascadedSession = { id: string; photo_url: string | null };
+
+/** `delete_vehicle_if_sessions_unchanged` found the bike's sessions changed since they were read. */
+const SESSIONS_CHANGED_CODE = 'TT409';
 
 /**
  * Every session, lap and Race Engineer record the cascade would take with this
@@ -176,21 +184,24 @@ async function countVehicleCascade(
   supabase: SupabaseServerClient,
   userId: string,
   vehicleId: string,
-): Promise<{ ok: true; counts: VehicleDeletionCounts } | { ok: false; error: CountError }> {
-  const sessionIds: string[] = [];
+): Promise<
+  { ok: true; counts: VehicleDeletionCounts; sessions: CascadedSession[] } | { ok: false; error: CountError }
+> {
+  const sessions: CascadedSession[] = [];
   for (let from = 0; ; from += SESSION_ID_PAGE_SIZE) {
     const { data, error } = await supabase
       .from('sessions')
-      .select('id')
+      .select('id, photo_url')
       .eq('user_id', userId)
       .eq('vehicle_id', vehicleId)
       .order('id')
       .range(from, from + SESSION_ID_PAGE_SIZE - 1);
     if (error) return { ok: false, error };
-    const page = (data ?? []) as { id: string }[];
-    sessionIds.push(...page.map((row) => row.id));
+    const page = (data ?? []) as CascadedSession[];
+    sessions.push(...page.map((row) => ({ id: row.id, photo_url: row.photo_url ?? null })));
     if (page.length < SESSION_ID_PAGE_SIZE) break;
   }
+  const sessionIds = sessions.map((session) => session.id);
 
   let lapCount = 0;
   for (let start = 0; start < sessionIds.length; start += LAP_COUNT_BATCH_SIZE) {
@@ -237,6 +248,7 @@ async function countVehicleCascade(
       recommendationCount,
       hasRaceEngineerMemory: (memoryCount ?? 0) > 0,
     },
+    sessions,
   };
 }
 
@@ -279,10 +291,22 @@ export async function getVehicleDeletionCounts(vehicleId: string): Promise<Actio
  *
  * `expectedSessionCount` is the count the rider was shown. It is checked again
  * here so a session logged from another tab after the page loaded cannot be
- * deleted under a confirmation that never mentioned it. The check and the delete
- * are two statements, so this narrows that window rather than closing it.
+ * deleted under a confirmation that never mentioned it.
+ *
+ * Session photos go first (owner's decision, 2026-09-26): every cascaded
+ * session's photo is removed from the public bucket, and the bike is deleted
+ * only once Storage has confirmed all of them. The delete itself is
+ * `delete_vehicle_if_sessions_unchanged` (20260926002100), which locks the bike
+ * and its sessions and refuses unless they are exactly the ones read here, as
+ * (id, photo_url) pairs - so a new session, or a photo under a new URL, synced
+ * after that read keeps the bike. A photo uploaded to a session's fixed path
+ * without changing its URL is invisible to that check, so each cascaded
+ * session's path is removed once more after the delete, best effort.
  */
-export async function deleteVehicle(id: string, expectedSessionCount: number): Promise<ActionResult> {
+export async function deleteVehicle(
+  id: string,
+  expectedSessionCount: number,
+): Promise<ActionResult<{ sessionPhotoCleanupFailed: boolean }>> {
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
 
@@ -299,15 +323,29 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
     return { ok: false, error: VEHICLE_DELETE_COUNT_CHANGED_MESSAGE };
   }
 
-  // The deleted rows are selected back because RLS and the user_id filter turn
-  // another rider's id, or a vehicle already gone, into zero rows, not an error.
-  const { data, error } = await supabase
-    .from('vehicles')
-    .delete()
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .select('id, photo_url');
+  const photosRemoved = await removeOwnedPhotos(supabase, {
+    bucket: SESSION_PHOTO_BUCKET,
+    photoUrls: recount.sessions.map((session) => session.photo_url),
+    ownerId: user.id,
+    event: 'session-photo-delete',
+    context: { vehicleId: id },
+  });
+  if (!photosRemoved) return { ok: false, error: VEHICLE_DELETE_SESSION_PHOTOS_FAILED_MESSAGE };
+  const hadSessionPhotos = recount.sessions.some((session) => session.photo_url !== null);
 
+  // RLS and the user_id check inside the function turn another rider's id, or a
+  // vehicle already gone, into null rather than an error.
+  const { data, error } = await supabase.rpc('delete_vehicle_if_sessions_unchanged', {
+    p_vehicle_id: id,
+    p_expected_sessions: recount.sessions,
+  });
+
+  if (error?.code === SESSIONS_CHANGED_CODE) {
+    return {
+      ok: false,
+      error: hadSessionPhotos ? VEHICLE_DELETE_COUNT_CHANGED_AFTER_PHOTOS_MESSAGE : VEHICLE_DELETE_COUNT_CHANGED_MESSAGE,
+    };
+  }
   if (error) {
     reportError('vehicle-delete', new Error(error.message), {
       reason: error.code,
@@ -317,42 +355,28 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
       userId: user.id,
       vehicleId: id,
     });
-    return { ok: false, error: VEHICLE_DELETE_FAILED_MESSAGE };
+    return { ok: false, error: hadSessionPhotos ? VEHICLE_DELETE_FAILED_AFTER_PHOTOS_MESSAGE : VEHICLE_DELETE_FAILED_MESSAGE };
   }
-  const deleted = (data ?? []) as { id: string; photo_url: string | null }[];
-  if (deleted.length === 0) return { ok: false, error: VEHICLE_DELETE_NOT_FOUND_MESSAGE };
+  const deleted = data as { id: string; photo_url: string | null } | null;
+  if (!deleted) return { ok: false, error: VEHICLE_DELETE_NOT_FOUND_MESSAGE };
 
-  // The bucket is public, so a photo left behind keeps serving the bike a rider
-  // was told is gone. The row is already deleted and cannot come back, so a
-  // storage failure is reported rather than failing a delete that happened.
-  const photoUrl = deleted[0].photo_url;
-  const photoPath = vehiclePhotoObjectPath(photoUrl, {
-    supabaseUrl: getSupabaseUrl(),
+  const sessionPhotosSwept = await removeObjectsAfterDelete(supabase, {
+    bucket: SESSION_PHOTO_BUCKET,
+    objects: recount.sessions.map((session) => sessionPhotoObjectPath(user.id, session.id)),
     ownerId: user.id,
+    event: 'session-photo-delete',
+    context: { vehicleId: id },
   });
-  if (photoUrl && !photoPath) {
-    reportError('vehicle-photo-delete', new Error('photo_url is not an object in this rider\'s folder'), {
-      bucket: VEHICLE_PHOTO_BUCKET,
-      photoUrl,
-      userId: user.id,
-      vehicleId: id,
-    });
-  } else if (photoPath) {
-    // `remove` deletes what RLS admits and reports what it deleted, so an object
-    // the policy refuses or one already gone comes back as no rows and no error
-    // - the photo still serving is exactly the case this removes.
-    const { data: removed, error: photoError } = await supabase.storage
-      .from(VEHICLE_PHOTO_BUCKET)
-      .remove([photoPath]);
-    if (photoError || (removed ?? []).length === 0) {
-      reportError('vehicle-photo-delete', new Error(photoError?.message ?? 'storage removed no object'), {
-        bucket: VEHICLE_PHOTO_BUCKET,
-        object: photoPath,
-        userId: user.id,
-        vehicleId: id,
-      });
-    }
-  }
+
+  // The bike's own photo is still removed after its row, and a failure there is
+  // reported rather than undoing a delete that happened.
+  await removeOwnedPhotos(supabase, {
+    bucket: VEHICLE_PHOTO_BUCKET,
+    photoUrls: [deleted.photo_url],
+    ownerId: user.id,
+    event: 'vehicle-photo-delete',
+    context: { vehicleId: id },
+  });
 
   // The cascade reaches every screen that lists sessions or picks a vehicle.
   revalidatePath('/garage');
@@ -360,5 +384,5 @@ export async function deleteVehicle(id: string, expectedSessionCount: number): P
   revalidatePath('/sessions');
   revalidatePath('/sessions/new');
   revalidatePath('/tracks');
-  return { ok: true, data: undefined };
+  return { ok: true, data: { sessionPhotoCleanupFailed: !sessionPhotosSwept } };
 }

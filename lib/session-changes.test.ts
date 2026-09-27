@@ -49,6 +49,7 @@ const baseSession: Session = {
     drivetrain: { front_sprocket: '15T' },
   },
   notes: 'Current notes',
+  photo_url: null,
   created_at: '2026-05-18T19:45:00.000Z',
   updated_at: '2026-05-18T19:45:00.000Z',
 };

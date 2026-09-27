@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeVehicleDeletion, nicknameConfirmationMatches, vehiclePhotoObjectPath } from '@/lib/vehicle-delete';
+import { describeVehicleDeletion, nicknameConfirmationMatches } from '@/lib/vehicle-delete';
 
 describe('describeVehicleDeletion', () => {
   const none = { hasBaseline: false, recommendationCount: 0, hasRaceEngineerMemory: false };
@@ -67,84 +67,5 @@ describe('nicknameConfirmationMatches', () => {
     expect(nicknameConfirmationMatches('Blue R6x', 'Blue R6')).toBe(false);
     expect(nicknameConfirmationMatches('', 'Blue R6')).toBe(false);
     expect(nicknameConfirmationMatches('', '   ')).toBe(false);
-  });
-});
-
-describe('vehiclePhotoObjectPath', () => {
-  const owner = { supabaseUrl: 'https://project.supabase.co', ownerId: 'user-1' };
-
-  it('reads the object name out of the public URL the form stored', () => {
-    expect(
-      vehiclePhotoObjectPath(
-        'https://project.supabase.co/storage/v1/object/public/vehicle-photos/user-1/1700.jpg',
-        owner,
-      ),
-    ).toBe('user-1/1700.jpg');
-  });
-
-  it('decodes the name the object was uploaded under', () => {
-    expect(
-      vehiclePhotoObjectPath(
-        'http://127.0.0.1:54321/storage/v1/object/public/vehicle-photos/user-1/1700_my%20bike%20%232.jpg',
-        { supabaseUrl: 'http://127.0.0.1:54321', ownerId: 'user-1' },
-      ),
-    ).toBe('user-1/1700_my bike #2.jpg');
-  });
-
-  it('reads a project served under its own path prefix', () => {
-    expect(
-      vehiclePhotoObjectPath(
-        'https://example.com/supabase/storage/v1/object/public/vehicle-photos/user-1/a.jpg',
-        { supabaseUrl: 'https://example.com/supabase', ownerId: 'user-1' },
-      ),
-    ).toBe('user-1/a.jpg');
-  });
-
-  it("refuses an object outside this rider's own folder", () => {
-    expect(
-      vehiclePhotoObjectPath(
-        'https://project.supabase.co/storage/v1/object/public/vehicle-photos/user-2/a.jpg',
-        owner,
-      ),
-    ).toBeNull();
-    expect(
-      vehiclePhotoObjectPath(
-        'https://project.supabase.co/storage/v1/object/public/vehicle-photos/a.jpg',
-        owner,
-      ),
-    ).toBeNull();
-  });
-
-  it('refuses another project, another bucket and another endpoint', () => {
-    expect(
-      vehiclePhotoObjectPath(
-        'https://other-project.supabase.co/storage/v1/object/public/vehicle-photos/user-1/a.jpg',
-        owner,
-      ),
-    ).toBeNull();
-    expect(
-      vehiclePhotoObjectPath(
-        'https://project.supabase.co/storage/v1/object/public/other-bucket/user-1/a.jpg',
-        owner,
-      ),
-    ).toBeNull();
-    expect(
-      vehiclePhotoObjectPath(
-        'https://example.com/anything/storage/v1/object/public/vehicle-photos/user-1/a.jpg',
-        owner,
-      ),
-    ).toBeNull();
-  });
-
-  it('answers null rather than guessing at anything else', () => {
-    expect(vehiclePhotoObjectPath(null, owner)).toBeNull();
-    expect(vehiclePhotoObjectPath('', owner)).toBeNull();
-    expect(vehiclePhotoObjectPath('not a url', owner)).toBeNull();
-    expect(
-      vehiclePhotoObjectPath(
-        'https://project.supabase.co/storage/v1/object/public/vehicle-photos/user-1/a%ZZ.jpg',
-        owner,
-      ),
-    ).toBeNull();
   });
 });

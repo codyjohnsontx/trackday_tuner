@@ -21,7 +21,17 @@ import {
   courseMatchRank,
 } from '@/lib/session-compare';
 import { fetchPreviousSession } from '@/lib/session-previous';
-import { SESSION_DELETE_FAILED_MESSAGE, SESSION_DELETE_NOT_FOUND_MESSAGE } from '@/lib/session-delete';
+import {
+  SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE,
+  SESSION_DELETE_CHANGED_MESSAGE,
+  SESSION_DELETE_FAILED_AFTER_PHOTO_MESSAGE,
+  SESSION_DELETE_FAILED_MESSAGE,
+  SESSION_DELETE_NOT_FOUND_MESSAGE,
+  SESSION_DELETE_PHOTO_FAILED_MESSAGE,
+  SESSION_PHOTO_BUCKET,
+  sessionPhotoObjectPath,
+} from '@/lib/session-delete';
+import { removeObjectsAfterDelete, removeOwnedPhotos } from '@/lib/storage-photo-removal';
 import { reportError } from '@/lib/monitoring/report-error';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
@@ -498,7 +508,7 @@ export async function replaceSessionLaps(
   return { ok: true, data: undefined };
 }
 
-export async function deleteSession(id: string): Promise<ActionResult> {
+export async function deleteSession(id: string): Promise<ActionResult<{ sessionPhotoCleanupFailed: boolean }>> {
   const demoError = await assertNotDemoMode();
   if (demoError) return demoError;
 
@@ -506,17 +516,7 @@ export async function deleteSession(id: string): Promise<ActionResult> {
   if (!user) return { ok: false, error: 'Not authenticated.' };
 
   const supabase = await createClient();
-  // The deleted rows are selected back because RLS and the user_id filter turn
-  // another rider's id, or one already gone, into zero rows rather than an error.
-  // Without the count that is a success the page would navigate away on.
-  const { data, error } = await supabase
-    .from('sessions')
-    .delete()
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .select('id');
-
-  if (error) {
+  const reportDeleteError = (error: { message: string; code?: string; details?: string; hint?: string }) =>
     reportError('session-delete', new Error(error.message), {
       reason: error.code,
       table: 'sessions',
@@ -525,12 +525,64 @@ export async function deleteSession(id: string): Promise<ActionResult> {
       userId: user.id,
       sessionId: id,
     });
+
+  // The photo goes first (owner's decision, 2026-09-26). The bucket is public,
+  // so deleting the row and then failing to remove the photo would leave it
+  // online with nothing pointing at it and no way for the rider to retry. Read
+  // the row, remove its photo, and delete only once Storage has confirmed.
+  const { data: row, error: readError } = await supabase
+    .from('sessions')
+    .select('id, photo_url')
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (readError) {
+    reportDeleteError(readError);
     return { ok: false, error: SESSION_DELETE_FAILED_MESSAGE };
   }
-  if ((data ?? []).length === 0) return { ok: false, error: SESSION_DELETE_NOT_FOUND_MESSAGE };
+  if (!row) return { ok: false, error: SESSION_DELETE_NOT_FOUND_MESSAGE };
+  const photoUrl = (row as { id: string; photo_url: string | null }).photo_url;
+
+  const photoRemoved = await removeOwnedPhotos(supabase, {
+    bucket: SESSION_PHOTO_BUCKET,
+    photoUrls: [photoUrl],
+    ownerId: user.id,
+    event: 'session-photo-delete',
+    context: { sessionId: id },
+  });
+  if (!photoRemoved) return { ok: false, error: SESSION_DELETE_PHOTO_FAILED_MESSAGE };
+
+  // Deleted only while `photo_url` is still the one just read, so a photo synced
+  // in between under a different URL keeps the row. A phone replacing the photo
+  // at the same path, or giving a photo-less session its first one, does not
+  // change what was read; the removal after the delete is what catches those.
+  // The rows are selected back because RLS and the user_id filter turn a row
+  // already gone, or one whose photo moved, into zero rows rather than an error.
+  const deleteQuery = supabase.from('sessions').delete().eq('id', id).eq('user_id', user.id);
+  const { data, error } = await (photoUrl === null
+    ? deleteQuery.is('photo_url', null)
+    : deleteQuery.eq('photo_url', photoUrl)
+  ).select('id');
+
+  if (error) {
+    reportDeleteError(error);
+    return { ok: false, error: photoUrl === null ? SESSION_DELETE_FAILED_MESSAGE : SESSION_DELETE_FAILED_AFTER_PHOTO_MESSAGE };
+  }
+  const deleted = (data ?? []) as { id: string }[];
+  if (deleted.length === 0) {
+    return { ok: false, error: photoUrl === null ? SESSION_DELETE_CHANGED_MESSAGE : SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE };
+  }
+
+  const photoSwept = await removeObjectsAfterDelete(supabase, {
+    bucket: SESSION_PHOTO_BUCKET,
+    objects: deleted.map((session) => sessionPhotoObjectPath(user.id, session.id)),
+    ownerId: user.id,
+    event: 'session-photo-delete',
+    context: { sessionId: id },
+  });
 
   revalidatePath('/sessions');
   revalidatePath('/dashboard');
   revalidatePath(`/sessions/${id}`);
-  return { ok: true, data: undefined };
+  return { ok: true, data: { sessionPhotoCleanupFailed: !photoSwept } };
 }

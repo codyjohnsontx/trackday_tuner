@@ -88,6 +88,7 @@ function session(id: string, date: string, frontPressure: string): Session {
     enabled_modules: null,
     extra_modules: null,
     notes: null,
+    photo_url: null,
     created_at: `${date}T12:00:00.000Z`,
     updated_at: `${date}T12:00:00.000Z`,
   };

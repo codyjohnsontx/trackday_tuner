@@ -140,6 +140,15 @@ file_size_limit = "50MiB"
 public = true
 allowed_mime_types = ["image/*"]
 
+# The mobile app uploads a session's one photo here under
+# `<user id>/<session id>.jpg` and stores `getPublicUrl` of the object in
+# `sessions.photo_url`. Public and image-only for the same reasons as
+# vehicle-photos above; the owner-scoped write policies are
+# 20260926002000_add_session_photos.sql.
+[storage.buckets.session-photos]
+public = true
+allowed_mime_types = ["image/*"]
+
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]
 enabled = true
