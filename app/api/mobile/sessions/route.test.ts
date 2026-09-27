@@ -42,10 +42,21 @@ interface FakeOptions {
   beforeSessionInsert?: (row: Row) => void;
   /** Make every `profiles` read fail. */
   profileReadFails?: boolean;
+  /** Runs, and is awaited, before each `replace_session_laps` - used to stage a replay mid-create. */
+  beforeLapWrite?: () => Promise<void>;
+  /** Answer `replace_session_laps` with a transport failure while this returns true. */
+  lapWriteFails?: () => boolean;
+  /** Answer a `sessions` delete with a transport failure while this returns true. */
+  sessionDeleteFails?: () => boolean;
+  /** Answer a `session_environment` write with a transport failure while this returns true. */
+  environmentWriteFails?: () => boolean;
 }
 
+const TRANSPORT_ERROR = { code: '', message: 'fetch failed' };
+
 class Query {
-  private op: 'select' | 'insert' | 'delete' = 'select';
+  private op: 'select' | 'insert' | 'upsert' | 'delete' = 'select';
+  private conflictColumn = '';
   private filters: Array<[string, unknown]> = [];
   private likes: Array<[string, RegExp]> = [];
   private rows: Row[] = [];
@@ -66,6 +77,12 @@ class Query {
   insert(rows: Row | Row[]) {
     this.op = 'insert';
     this.rows = Array.isArray(rows) ? rows : [rows];
+    return this;
+  }
+  upsert(rows: Row | Row[], options: { onConflict: string }) {
+    this.op = 'upsert';
+    this.rows = Array.isArray(rows) ? rows : [rows];
+    this.conflictColumn = options.onConflict;
     return this;
   }
   delete() {
@@ -110,6 +127,17 @@ class Query {
       return { data: null, error: { code: '', message: 'fetch failed' } };
     }
     const table = (this.db[this.table] ??= []);
+    if (this.table === 'session_environment' && this.op !== 'select' && this.options.environmentWriteFails?.()) {
+      return { data: null, error: TRANSPORT_ERROR };
+    }
+    if (this.op === 'upsert') {
+      for (const input of this.rows) {
+        const index = table.findIndex((existing) => existing[this.conflictColumn] === input[this.conflictColumn]);
+        if (index === -1) table.push({ id: randomUUID(), ...input });
+        else table[index] = { ...table[index], ...input };
+      }
+      return { data: null, error: null };
+    }
     if (this.op === 'insert') {
       const written: Row[] = [];
       for (const input of this.rows) {
@@ -143,6 +171,7 @@ class Query {
       return { data: this.returning ? written : null, error: null };
     }
     if (this.op === 'delete') {
+      if (this.table === 'sessions' && this.options.sessionDeleteFails?.()) return { data: null, error: TRANSPORT_ERROR };
       const gone = this.matching();
       this.db[this.table] = table.filter((row) => !gone.includes(row));
       return { data: gone, error: null };
@@ -181,6 +210,15 @@ function fakeSupabase(db: Db, options: FakeOptions = {}) {
         : { data: { user: null }, error: new AuthApiError('invalid JWT', 401, 'bad_jwt') });
   const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
     if (name !== 'replace_session_laps') return { data: null, error: { code: 'PGRST202', message: name } };
+    await options.beforeLapWrite?.();
+    if (options.lapWriteFails?.()) return { data: null, error: TRANSPORT_ERROR };
+    // `session_laps_identity` (20260903001500): the stored set has to BE the set the caller read.
+    const identity = (laps: Row[]) =>
+      JSON.stringify(laps.map((lap) => [lap.lap_number, lap.lap_time_ms, lap.included]).sort());
+    const stored = (db.session_laps ?? []).filter((lap) => lap.session_id === args.p_session_id);
+    if (identity(stored) !== identity(args.p_expected_laps as Row[])) {
+      return { data: null, error: { code: 'TT409', message: 'replace_session_laps stale read' } };
+    }
     const laps = args.p_laps as Row[];
     db.session_laps = [
       ...(db.session_laps ?? []).filter((lap) => lap.session_id !== args.p_session_id),
@@ -355,18 +393,84 @@ describe('POST /api/mobile/sessions', () => {
     expect(client.auth.getUser).toHaveBeenCalledWith(TOKEN);
   });
 
-  it('answers a replay of the same id with the same row and writes nothing more', async () => {
+  it('answers a replay of the same id with the same row and stores nothing twice', async () => {
     const db = seed();
-    const client = fakeSupabase(db);
+    fakeSupabase(db);
+    const body = sessionBody({ environment: { ambient_temperature_c: 21, humidity_percent: 40 } });
 
-    const first = await (await post(sessionBody())).json();
-    const replay = await post(sessionBody());
+    const first = await (await post(body)).json();
+    const lapsBefore = structuredClone(db.session_laps);
+    const environmentBefore = structuredClone(db.session_environment);
+    const replay = await post(body);
     const second = await replay.json();
 
     expect(replay.status).toBe(200);
     expect(second).toEqual({ ok: true, session: first.session, replayed: true });
     expect(db.sessions).toHaveLength(1);
-    expect(client.rpc).toHaveBeenCalledTimes(1);
+    expect(db.session_laps).toEqual(lapsBefore);
+    expect(db.session_environment).toEqual(environmentBefore);
+  });
+
+  it('heals a session a failed rollback left without its laps, and only then answers the replay as synced', async () => {
+    const db = seed();
+    let outage = true;
+    fakeSupabase(db, { lapWriteFails: () => outage, sessionDeleteFails: () => outage });
+    const body = sessionBody({ environment: { ambient_temperature_c: 21, humidity_percent: 40 } });
+
+    const first = await post(body);
+    expect(first.status).toBe(503);
+    expect(db.sessions).toHaveLength(1);
+    expect(db.session_laps ?? []).toHaveLength(0);
+    expect(db.session_environment ?? []).toHaveLength(0);
+
+    outage = false;
+    const replay = await post(body);
+
+    expect(replay.status).toBe(200);
+    expect((await replay.json()).replayed).toBe(true);
+    expect(db.sessions).toHaveLength(1);
+    expect(db.session_laps.map((lap) => lap.lap_time_ms)).toEqual([142_300, 139_800]);
+    expect(db.session_environment).toEqual([
+      expect.objectContaining({ session_id: SESSION_ID, ambient_temperature_c: 21, humidity_percent: 40 }),
+    ]);
+  });
+
+  it('keeps the session when a replay lands between the first call’s insert and its lap write', async () => {
+    const db = seed();
+    const body = sessionBody({ environment: { ambient_temperature_c: 21 } });
+    let staged = false;
+    let replay: Response | undefined;
+    fakeSupabase(db, {
+      beforeLapWrite: async () => {
+        if (staged) return;
+        staged = true;
+        replay = await post(body);
+      },
+    });
+
+    const first = await post(body);
+
+    expect(replay?.status).toBe(200);
+    expect(first.status).toBe(200);
+    expect(db.sessions).toHaveLength(1);
+    expect(db.session_laps).toHaveLength(2);
+    expect(db.session_environment).toHaveLength(1);
+  });
+
+  it.each([
+    ['its laps cannot be written', { lapWriteFails: () => true }],
+    ['its environment cannot be written', { environmentWriteFails: () => true }],
+  ])('answers a replay 503 rather than synced when %s', async (_label, failure) => {
+    const db = seed();
+    const body = sessionBody({ environment: { ambient_temperature_c: 21 } });
+    fakeSupabase(db);
+    expect((await post(body)).status).toBe(200);
+
+    fakeSupabase(db, failure);
+    const replay = await post(body);
+
+    expect(replay.status).toBe(503);
+    expect(db.sessions).toHaveLength(1);
   });
 
   it('answers the replay of a free rider’s tenth session as the row, not as the cap', async () => {

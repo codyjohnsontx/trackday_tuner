@@ -674,7 +674,9 @@ role. Three things are load-bearing:
 - **Idempotent on the body's `id`**, which reaches `createSessionForUser` as
   `options.id` and never inside `CreateSessionInput`, so the website's form cannot
   choose a primary key. The replay lookup runs before the free-plan count, or a
-  free rider's tenth session replayed would be refused as their eleventh.
+  free rider's tenth session replayed would be refused as their eleventh. A
+  replay writes the laps and environment again before answering 200, because a
+  row left by a failed rollback exists without them.
 - **The body is validated leaf by leaf** (`lib/sessions/parse-create-request.ts`)
   because the setup blobs are unconstrained `jsonb` and a numeric leaf crashes the
   session screens (tt-session-screens-nonstring-fields).
