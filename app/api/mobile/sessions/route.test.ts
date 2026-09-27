@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { AuthApiError, AuthRetryableFetchError } from '@supabase/supabase-js';
+import { AuthApiError, AuthRetryableFetchError, AuthSessionMissingError, AuthUnknownError } from '@supabase/supabase-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getFreePlanLimitMessage } from '@/lib/plans';
 import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
@@ -298,6 +298,30 @@ describe('POST /api/mobile/sessions', () => {
 
     expect(response.status).toBe(503);
     expect(reportError).toHaveBeenCalledWith('mobile-sessions', expect.anything(), { check: 'bearer-auth' });
+    expect(db.sessions).toHaveLength(0);
+  });
+
+  it.each([
+    ['rate limits the check', () => new AuthApiError('too many requests', 429, 'over_request_rate_limit')],
+    ['answers with a body that is not JSON', () => new AuthUnknownError('Unexpected token <', new SyntaxError())],
+    ['fails with a 500 carrying JSON', () => new AuthApiError('internal error', 500, 'unexpected_failure')],
+  ])('answers 503, not 401, when GoTrue %s', async (_label, makeError) => {
+    const db = seed();
+    fakeSupabase(db, { getUser: async () => ({ data: { user: null }, error: makeError() }) });
+
+    const response = await post(sessionBody());
+
+    expect(response.status).toBe(503);
+    expect(db.sessions).toHaveLength(0);
+  });
+
+  it('refuses a token whose session GoTrue no longer has as 401', async () => {
+    const db = seed();
+    fakeSupabase(db, { getUser: async () => ({ data: { user: null }, error: new AuthSessionMissingError() }) });
+
+    const response = await post(sessionBody());
+
+    expect(response.status).toBe(401);
     expect(db.sessions).toHaveLength(0);
   });
 

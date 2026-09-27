@@ -1,4 +1,4 @@
-import { createClient, isAuthApiError, isAuthRetryableFetchError, type User } from '@supabase/supabase-js';
+import { createClient, isAuthApiError, isAuthSessionMissingError, type User } from '@supabase/supabase-js';
 import { getSupabaseAnonKey, getSupabaseUrl } from '@/lib/env.public';
 import type { SessionWriteClient } from '@/lib/sessions/create';
 import type { Database } from '@/types/supabase';
@@ -19,11 +19,15 @@ import type { Database } from '@/types/supabase';
  * GoTrue being unreachable is `unavailable`, never `unauthenticated`. The phone
  * reads a 401 as "signed out" and stops syncing until the rider signs in again,
  * so an outage answered as one would sign every rider out of their own outbox.
+ * So only GoTrue's verdict on the token itself is `unauthenticated`; a rate
+ * limit, an unreadable error body or anything else unrecognised is `unavailable`.
  */
 export type BearerAuth =
   | { status: 'authenticated'; supabase: SessionWriteClient; user: User }
   | { status: 'unauthenticated' }
   | { status: 'unavailable'; error: unknown };
+
+const TOKEN_VERDICT_STATUSES = new Set([400, 401, 403, 404]);
 
 export function readBearerToken(request: Request): string | null {
   const header = request.headers.get('authorization');
@@ -50,9 +54,9 @@ export async function authenticateBearer(request: Request): Promise<BearerAuth> 
 
   const { data, error } = result;
   if (error) {
-    if (isAuthRetryableFetchError(error)) return { status: 'unavailable', error };
-    if (isAuthApiError(error) && error.status >= 500) return { status: 'unavailable', error };
-    return { status: 'unauthenticated' };
+    if (isAuthSessionMissingError(error)) return { status: 'unauthenticated' };
+    if (isAuthApiError(error) && TOKEN_VERDICT_STATUSES.has(error.status)) return { status: 'unauthenticated' };
+    return { status: 'unavailable', error };
   }
   if (!data.user) return { status: 'unauthenticated' };
 
