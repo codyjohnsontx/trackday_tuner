@@ -98,6 +98,13 @@ export interface CreateSessionOptions {
 export const SESSION_ID_TAKEN_MESSAGE =
   'This session could not be saved because its id is already in use. Log it again as a new session.';
 
+/**
+ * The insert named a row that is gone - in practice a vehicle deleted on the
+ * website while this session waited on the phone. No retry brings it back.
+ */
+export const SESSION_REFERENCE_GONE_MESSAGE =
+  'This session could not be saved because the vehicle or track it was logged against no longer exists. Choose them again and save it.';
+
 function hasEnvironmentValues(environment: CreateSessionEnvironmentInput | null | undefined): boolean {
   if (!environment) return false;
   return [
@@ -474,6 +481,7 @@ async function resolveSessionTrack(
 }
 
 const UNIQUE_VIOLATION_CODE = '23505';
+const FOREIGN_KEY_VIOLATION_CODE = '23503';
 
 /**
  * One of this rider's sessions by id, read through their own client so RLS
@@ -626,20 +634,30 @@ export async function createSessionForUser(
     // The primary key is the only unique constraint on `sessions`, so this is
     // the supplied id arriving twice at once: a replay that passed the check at
     // the top while the first call was still writing. Whatever was resolved for
-    // this attempt is not used, and the answer is the row that won.
-    await rollbackAutoCreatedTrack(supabase, userId, track);
+    // this attempt is not used, and the answer is the row that won. The winner
+    // may have found this attempt's auto-created track by name, and
+    // `sessions.track_id` is `on delete set null`, so the track goes only once
+    // the winning row is known not to point at it - see `rollbackCreatedSession`.
     const existing = await readOwnSession(supabase, report, userId, suppliedId);
+    if (existing.status === 'failed') return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
+    if (existing.status === 'absent' || existing.session.track_id !== track.trackId) {
+      await rollbackAutoCreatedTrack(supabase, userId, track);
+    }
     if (existing.status === 'found') {
       return { ok: true, data: { session: existing.session, createdTrack: false, replayed: true } };
     }
-    if (existing.status === 'failed') return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
     return { ok: false, error: SESSION_ID_TAKEN_MESSAGE, kind: 'id_taken' };
+  }
+
+  if (error?.code === FOREIGN_KEY_VIOLATION_CODE) {
+    await rollbackAutoCreatedTrack(supabase, userId, track);
+    return { ok: false, error: SESSION_REFERENCE_GONE_MESSAGE, kind: 'invalid' };
   }
 
   if (error) {
     // A plain insert, so as with the environment path below there is no `P0001`
-    // class to let through: nothing PostgREST answers here is a rider's to fix.
-    // `enabled_modules` and `extra_modules` arrive with 20260228000200, so a
+    // class to let through: past a vanished reference, nothing PostgREST answers
+    // here is a rider's to fix. `enabled_modules` and `extra_modules` arrive with 20260228000200, so a
     // database behind that migration answered `PGRST204 Could not find the
     // 'enabled_modules' column of 'sessions' in the schema cache` straight into
     // the form's sticky bar, with nothing reaching Sentry.

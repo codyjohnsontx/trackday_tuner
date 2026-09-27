@@ -3,6 +3,7 @@ import { AuthApiError, AuthRetryableFetchError } from '@supabase/supabase-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getFreePlanLimitMessage } from '@/lib/plans';
 import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
+import { SESSION_REFERENCE_GONE_MESSAGE } from '@/lib/sessions/create';
 
 /**
  * The route with everything real except Supabase: the bearer helper, the body
@@ -46,6 +47,7 @@ interface FakeOptions {
 class Query {
   private op: 'select' | 'insert' | 'delete' = 'select';
   private filters: Array<[string, unknown]> = [];
+  private likes: Array<[string, RegExp]> = [];
   private rows: Row[] = [];
   private head = false;
   private returning = false;
@@ -74,6 +76,20 @@ class Query {
     this.filters.push([column, value]);
     return this;
   }
+  // A LIKE pattern as `findVisibleTrackByName` writes it: `\` escapes, `%` and `_` are wildcards.
+  ilike(column: string, pattern: string) {
+    const literal = (char: string) => char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let source = '';
+    for (let index = 0; index < pattern.length; index += 1) {
+      const char = pattern[index];
+      if (char === '\\') source += literal(pattern[++index] ?? '');
+      else if (char === '%') source += '.*';
+      else if (char === '_') source += '.';
+      else source += literal(char);
+    }
+    this.likes.push([column, new RegExp(`^${source}$`, 'i')]);
+    return this;
+  }
   // Filters the create path uses that this fake does not model. `or` is the
   // seeded-or-own visibility rule, which every row here already satisfies.
   or() { return this; }
@@ -82,7 +98,11 @@ class Query {
   limit() { return this; }
 
   private matching(): Row[] {
-    return (this.db[this.table] ??= []).filter((row) => this.filters.every(([c, v]) => row[c] === v));
+    return (this.db[this.table] ??= []).filter(
+      (row) =>
+        this.filters.every(([c, v]) => row[c] === v) &&
+        this.likes.every(([c, like]) => typeof row[c] === 'string' && like.test(row[c] as string)),
+    );
   }
 
   private run(): { data: unknown; error: unknown; count?: number } {
@@ -100,6 +120,13 @@ class Query {
           return {
             data: null,
             error: { code: '23502', message: 'null value in column "enabled_modules" of relation "sessions" violates not-null constraint' },
+          };
+        }
+        // `sessions.vehicle_id` references `vehicles` (baseline schema).
+        if (this.table === 'sessions' && !(this.db.vehicles ?? []).some((vehicle) => vehicle.id === input.vehicle_id)) {
+          return {
+            data: null,
+            error: { code: '23503', message: 'insert or update on table "sessions" violates foreign key constraint "sessions_vehicle_id_fkey"' },
           };
         }
         const defaults = this.table === 'sessions' ? { enabled_modules: {} } : {};
@@ -345,6 +372,75 @@ describe('POST /api/mobile/sessions', () => {
     expect(body.replayed).toBe(true);
     expect(body.session.notes).toBe('the winner');
     expect(db.sessions).toHaveLength(1);
+  });
+
+  it('keeps the track this attempt created when the replay that won the race points at it', async () => {
+    const db = seed();
+    fakeSupabase(db, {
+      beforeSessionInsert: (row) => {
+        if (!db.sessions.some((existing) => existing.id === row.id)) db.sessions.push({ ...row, notes: 'the winner' });
+      },
+    });
+
+    const response = await post(sessionBody({ track_id: null, track_name: 'Blackhawk Farms' }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.replayed).toBe(true);
+    const created = db.tracks.find((track) => track.name === 'Blackhawk Farms');
+    expect(created).toBeDefined();
+    expect(body.session.track_id).toBe(created?.id);
+  });
+
+  it('refuses a session whose vehicle was deleted as 400, so the phone parks it rather than retrying', async () => {
+    const db = seed({ vehicles: [] });
+    fakeSupabase(db);
+
+    const response = await post(sessionBody({ track_id: null, track_name: 'Blackhawk Farms' }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ ok: false, error: SESSION_REFERENCE_GONE_MESSAGE });
+    expect(db.sessions).toHaveLength(0);
+    expect(db.tracks.some((track) => track.name === 'Blackhawk Farms')).toBe(false);
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an impossible date', { date: '2026-02-30' }, 'date must be a real calendar day as YYYY-MM-DD.'],
+    ['year zero', { date: '0000-01-01' }, 'date must be a real calendar day as YYYY-MM-DD.'],
+    ['an impossible start time', { start_time: '25:99' }, 'start_time must be a 24-hour HH:MM or HH:MM:SS, or null.'],
+    [
+      'a session number past smallint',
+      { session_number: 40000 },
+      'session_number must be an integer from -32768 to 32767, or null.',
+    ],
+    [
+      'humidity past 100',
+      { environment: { humidity_percent: 101 } },
+      'environment.humidity_percent must be from 0 to 100, or null.',
+    ],
+  ])('refuses %s as 400 before anything is written', async (_label, overrides, error) => {
+    const db = seed();
+    const client = fakeSupabase(db);
+
+    const response = await post(sessionBody(overrides));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ ok: false, error });
+    expect(db.sessions).toHaveLength(0);
+    expect(client.rpc).not.toHaveBeenCalled();
+  });
+
+  it('accepts a leap day, midnight and the edges of the humidity range', async () => {
+    const db = seed();
+    fakeSupabase(db);
+
+    const response = await post(
+      sessionBody({ date: '2028-02-29', start_time: '23:59:59', session_number: 32767, environment: { humidity_percent: 100 } }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(db.session_environment).toHaveLength(1);
   });
 
   it('answers 409 when the id is already taken by a row this rider cannot see', async () => {

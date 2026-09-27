@@ -32,7 +32,16 @@ export type ParsedCreateRequest = { id: string; input: CreateSessionInput };
 export type ParseResult = { ok: true; data: ParsedCreateRequest } | { ok: false; error: string };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const TIME = /^\d{2}:\d{2}(:\d{2})?$/;
+const TIME = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
+const SMALLINT_MIN = -32768;
+const SMALLINT_MAX = 32767;
+
+/** A day the `date` column accepts: no February 30th, and no year zero. */
+function isCalendarDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !DATE.test(value) || value.startsWith('0000')) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
 
 const TOP_LEVEL_KEYS = new Set([
   'id',
@@ -209,10 +218,14 @@ function parseEnvironment(value: unknown): CreateSessionEnvironmentInput | null 
   if (source.source != null && !ENVIRONMENT_SOURCES.includes(source.source as (typeof ENVIRONMENT_SOURCES)[number])) {
     fail('environment.source must be one of manual, forecast, telemetry.');
   }
+  const humidity = nullableNumber(source.humidity_percent, 'environment.humidity_percent');
+  if (humidity !== null && (humidity < 0 || humidity > 100)) {
+    fail('environment.humidity_percent must be from 0 to 100, or null.');
+  }
   return {
     ambient_temperature_c: nullableNumber(source.ambient_temperature_c, 'environment.ambient_temperature_c'),
     track_temperature_c: nullableNumber(source.track_temperature_c, 'environment.track_temperature_c'),
-    humidity_percent: nullableNumber(source.humidity_percent, 'environment.humidity_percent'),
+    humidity_percent: humidity,
     weather_condition: nullableString(source.weather_condition, 'environment.weather_condition'),
     surface_condition: nullableString(source.surface_condition, 'environment.surface_condition'),
     ...(source.source != null ? { source: source.source as CreateSessionEnvironmentInput['source'] } : {}),
@@ -240,11 +253,18 @@ export function parseCreateSessionRequest(body: unknown): ParseResult {
 
     if (!isUuid(body.id)) fail('id must be a UUID.');
     if (!isUuid(body.vehicle_id)) fail('vehicle_id must be a UUID.');
-    if (typeof body.date !== 'string' || !DATE.test(body.date)) fail('date must be YYYY-MM-DD.');
+    if (!isCalendarDate(body.date)) fail('date must be a real calendar day as YYYY-MM-DD.');
     const startTime = nullableString(body.start_time, 'start_time');
-    if (startTime !== null && !TIME.test(startTime)) fail('start_time must be HH:MM or HH:MM:SS, or null.');
-    if (body.session_number != null && !Number.isInteger(body.session_number)) {
-      fail('session_number must be an integer or null.');
+    if (startTime !== null && !TIME.test(startTime)) fail('start_time must be a 24-hour HH:MM or HH:MM:SS, or null.');
+    if (
+      body.session_number != null &&
+      !(
+        Number.isInteger(body.session_number) &&
+        (body.session_number as number) >= SMALLINT_MIN &&
+        (body.session_number as number) <= SMALLINT_MAX
+      )
+    ) {
+      fail(`session_number must be an integer from ${SMALLINT_MIN} to ${SMALLINT_MAX}, or null.`);
     }
 
     const input: CreateSessionInput = {
