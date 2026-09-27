@@ -440,7 +440,8 @@ export async function createSession(
     },
     input,
   );
-  if (!result.ok) return result;
+  // `kind` is for callers answering with a status; this one shows the sentence.
+  if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath('/sessions');
   revalidatePath('/dashboard');

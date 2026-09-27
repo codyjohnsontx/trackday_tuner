@@ -13,7 +13,6 @@ import {
 } from '@/lib/session-changes';
 import type { Database, TableInsert } from '@/types/supabase';
 import type {
-  ActionResult,
   CreateSessionEnvironmentInput,
   CreateSessionInput,
   CreateSessionLapInput,
@@ -56,11 +55,48 @@ export interface CreateSessionContext {
 /**
  * The created row, and whether resolving its circuit wrote a new `tracks` row -
  * which is what tells a caller the tracks list changed.
+ *
+ * `replayed` is true when the caller supplied an id that already names one of
+ * this rider's sessions, so nothing was written and `session` is the stored row.
  */
 export interface CreatedSession {
   session: Session;
   createdTrack: boolean;
+  replayed: boolean;
 }
+
+/**
+ * Why a create was refused, for a caller that has to answer with a status
+ * rather than a sentence. The server action shows the sentence and ignores this;
+ * the phone's sync engine reads it to decide between parking an entry for the
+ * rider (`invalid`, `plan_limit`, `id_taken`) and retrying it later (`fault`).
+ */
+export type CreateSessionFailureKind = 'invalid' | 'plan_limit' | 'id_taken' | 'fault';
+
+export type CreateSessionResult =
+  | { ok: true; data: CreatedSession }
+  | { ok: false; error: string; kind: CreateSessionFailureKind };
+
+export interface CreateSessionOptions {
+  /**
+   * An id the caller generated for this session, which makes the create
+   * idempotent: a second call carrying the same id answers with the row the
+   * first one stored instead of writing another. The phone mints one per
+   * session so a create replayed after a lost response cannot log the outing
+   * twice. It travels here rather than inside `CreateSessionInput` so the
+   * website's server action, whose input is whatever a browser posted, cannot
+   * choose a row's primary key.
+   */
+  id?: string;
+}
+
+/**
+ * The supplied id belongs to a row this rider cannot see. With v4 ids that is
+ * practically never a collision, so it is a client that reused an id - nothing a
+ * retry can fix, and nothing to tell the rider beyond that it did not save.
+ */
+export const SESSION_ID_TAKEN_MESSAGE =
+  'This session could not be saved because its id is already in use. Log it again as a new session.';
 
 function hasEnvironmentValues(environment: CreateSessionEnvironmentInput | null | undefined): boolean {
   if (!environment) return false;
@@ -437,6 +473,41 @@ async function resolveSessionTrack(
   return withLayout({ trackId: created.id, trackName: created.name, createdTrack: true });
 }
 
+const UNIQUE_VIOLATION_CODE = '23505';
+
+/**
+ * One of this rider's sessions by id, read through their own client so RLS
+ * decides what "theirs" means. A failed read is not "no such session": treating
+ * it as one would go on to insert, and the insert would then fail on the key
+ * the read could not see.
+ */
+async function readOwnSession(
+  supabase: SessionWriteClient,
+  report: ReportError,
+  userId: string,
+  sessionId: string,
+): Promise<{ status: 'found'; session: Session } | { status: 'absent' } | { status: 'failed' }> {
+  const { data, error } = await supabase
+    .from('sessions')
+    .select()
+    .eq('id', sessionId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) {
+    report('session-create', new Error(error.message), {
+      reason: error.code,
+      table: 'sessions',
+      query: 'replay lookup',
+      userId,
+      sessionId,
+    });
+    return { status: 'failed' };
+  }
+
+  return data ? { status: 'found', session: data as Session } : { status: 'absent' };
+}
+
 /**
  * Create a session for `userId` through `supabase`, which must already be acting
  * as that rider - every write here relies on RLS agreeing with `userId`.
@@ -447,14 +518,26 @@ async function resolveSessionTrack(
 export async function createSessionForUser(
   { supabase, userId, resolveProAccess, report }: CreateSessionContext,
   input: CreateSessionInput,
-): Promise<ActionResult<CreatedSession>> {
+  { id: suppliedId }: CreateSessionOptions = {},
+): Promise<CreateSessionResult> {
+  // A replay is answered before anything else, and before the free-plan count
+  // in particular: the first call's row is in that count, so a rider's tenth
+  // session replayed would otherwise be refused as their eleventh.
+  if (suppliedId) {
+    const existing = await readOwnSession(supabase, report, userId, suppliedId);
+    if (existing.status === 'failed') return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
+    if (existing.status === 'found') {
+      return { ok: true, data: { session: existing.session, createdTrack: false, replayed: true } };
+    }
+  }
+
   const lapValidationError = validateLaps(input.laps ?? []);
-  if (lapValidationError) return { ok: false, error: lapValidationError };
+  if (lapValidationError) return { ok: false, error: lapValidationError, kind: 'invalid' };
 
   // The same rule the form checks. `sessions.conditions` is NOT NULL, so a
   // session with no weather answer has to be refused here rather than saved
   // with whatever the form happened to open with. See lib/session-answers.ts.
-  if (!isSessionCondition(input.conditions)) return { ok: false, error: MISSING_CONDITIONS_MESSAGE };
+  if (!isSessionCondition(input.conditions)) return { ok: false, error: MISSING_CONDITIONS_MESSAGE, kind: 'invalid' };
 
   // Track is checked here as well as on the form, and checked on the payload
   // rather than after resolution, so a refusal happens before anything is
@@ -463,7 +546,7 @@ export async function createSessionForUser(
   // was never saved. A payload naming neither an id nor a name cannot resolve to
   // a circuit, so nothing later can rescue it. See lib/session-track.ts.
   if (!input.track_id && !hasTrackName(input.track_name)) {
-    return { ok: false, error: MISSING_TRACK_MESSAGE };
+    return { ok: false, error: MISSING_TRACK_MESSAGE, kind: 'invalid' };
   }
 
   const hasProAccess = await resolveProAccess();
@@ -477,6 +560,7 @@ export async function createSessionForUser(
       return {
         ok: false,
         error: getFreePlanLimitMessage('sessions'),
+        kind: 'plan_limit',
       };
     }
   }
@@ -498,15 +582,16 @@ export async function createSessionForUser(
   // resolution changes.
   if (!track.trackName) {
     await rollbackAutoCreatedTrack(supabase, userId, track);
-    return { ok: false, error: MISSING_TRACK_MESSAGE };
+    return { ok: false, error: MISSING_TRACK_MESSAGE, kind: 'invalid' };
   }
 
   if (track.layoutLookupFailed) {
     await rollbackAutoCreatedTrack(supabase, userId, track);
-    return { ok: false, error: SESSION_LAYOUT_LOOKUP_FAILED_MESSAGE };
+    return { ok: false, error: SESSION_LAYOUT_LOOKUP_FAILED_MESSAGE, kind: 'fault' };
   }
 
   const payload: TableInsert<'sessions'> = {
+    ...(suppliedId ? { id: suppliedId } : {}),
     user_id: userId,
     vehicle_id: input.vehicle_id,
     track_id: track.trackId,
@@ -521,7 +606,12 @@ export async function createSessionForUser(
     tires: input.tires,
     suspension: input.suspension,
     alignment: input.alignment,
-    enabled_modules: input.enabled_modules ?? null,
+    // `enabled_modules` is NOT NULL with a `'{}'` default, and an explicit null
+    // overrides a default rather than falling back to it. The website form
+    // always sends the rider's choice; a caller that does not is given the
+    // column default, which `resolveSessionEnabledModules` reads as the
+    // vehicle type's defaults.
+    ...(input.enabled_modules ? { enabled_modules: input.enabled_modules } : {}),
     extra_modules: input.extra_modules ?? null,
     notes: input.notes ?? null,
   };
@@ -531,6 +621,20 @@ export async function createSessionForUser(
     .insert(payload)
     .select()
     .single();
+
+  if (error?.code === UNIQUE_VIOLATION_CODE && suppliedId) {
+    // The primary key is the only unique constraint on `sessions`, so this is
+    // the supplied id arriving twice at once: a replay that passed the check at
+    // the top while the first call was still writing. Whatever was resolved for
+    // this attempt is not used, and the answer is the row that won.
+    await rollbackAutoCreatedTrack(supabase, userId, track);
+    const existing = await readOwnSession(supabase, report, userId, suppliedId);
+    if (existing.status === 'found') {
+      return { ok: true, data: { session: existing.session, createdTrack: false, replayed: true } };
+    }
+    if (existing.status === 'failed') return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
+    return { ok: false, error: SESSION_ID_TAKEN_MESSAGE, kind: 'id_taken' };
+  }
 
   if (error) {
     // A plain insert, so as with the environment path below there is no `P0001`
@@ -547,7 +651,7 @@ export async function createSessionForUser(
       userId,
     });
     await rollbackAutoCreatedTrack(supabase, userId, track);
-    return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE };
+    return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
   }
 
   const createdSession = data as Session;
@@ -571,7 +675,10 @@ export async function createSessionForUser(
       track,
       failureLog: '[sessions] session rollback after lap failure failed',
     });
-    return { ok: false, error: lapError };
+    // `persistSessionLaps` answers with the caller's own save-failed sentence
+    // for a fault and with the database's for a rejection of these laps, so
+    // which one came back is the classification.
+    return { ok: false, error: lapError, kind: lapError === SESSION_CREATE_SAVE_FAILED_MESSAGE ? 'fault' : 'invalid' };
   }
 
   if (hasEnvironmentValues(input.environment)) {
@@ -611,7 +718,7 @@ export async function createSessionForUser(
         track,
         failureLog: '[sessions] session rollback failed',
       });
-      return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE };
+      return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
     }
   }
 
@@ -700,5 +807,5 @@ export async function createSessionForUser(
     });
   }
 
-  return { ok: true, data: { session: createdSession, createdTrack: track.createdTrack } };
+  return { ok: true, data: { session: createdSession, createdTrack: track.createdTrack, replayed: false } };
 }
