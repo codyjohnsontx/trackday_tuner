@@ -28,6 +28,10 @@ where the rule is written. A request is exported only when:
   agreed, or from before they agreed again, never leaves;
 - it has not passed its `retain_until`.
 
+The script leaves out one more kind of request itself: one still `pending`
+less than 15 minutes before the export started, which is most likely being
+answered at that moment. The next export takes it with its final verdict.
+
 Question history is opt-in for every rider during the beta, so a rider who never
 turned it on has nothing to export.
 
@@ -145,7 +149,7 @@ never absent.
 | `rider` | 64 hex characters | Pseudonym, stable within this file only. |
 | `submitted` | object | The rider's fields exactly as the route validated and redacted them, below. |
 | `redaction_version` | integer | Which masking rules produced `submitted`. |
-| `verdict.status` | string | `ai_requests.status`: `ok` and `ok_confidence_downgraded` for served advice, `completed_refusal_<reason>` for a refusal, `rate_limited_hour`, `rate_limited_minute` and `duplicate_recent_request`, the failures such as `error` and `upstream_timeout`, and `pending` for a request that never finished. `lib/monitoring/ai-health.ts` classifies them all. |
+| `verdict.status` | string | `ai_requests.status`: `ok` and `ok_confidence_downgraded` for served advice, `completed_refusal_<reason>` for a refusal, `rate_limited_hour`, `rate_limited_minute` and `duplicate_recent_request`, the failures such as `error` and `upstream_timeout`, and `pending` for a request that had still not finished 15 minutes after it started. A request still `pending` less than 15 minutes before the export started is left out of that export and taken by the next one, once it has finished. `lib/monitoring/ai-health.ts` classifies them all. |
 | `verdict.refusal_reason` | string or null | Why a refusal was a refusal. |
 | `verdict.policy_result` | string or null | What `evaluateAdvicePolicy` decided. |
 | `verdict.policy_violations` | array of strings | Which policy rules fired; empty when none did. |

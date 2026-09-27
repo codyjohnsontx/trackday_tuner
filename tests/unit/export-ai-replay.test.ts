@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 // import carries a directive on the module-specifier line.
 import {
   collectSnapshot,
+  IN_FLIGHT_MS,
   newPseudonymKey,
   parseArgs,
   toReplayRecord,
@@ -235,11 +236,20 @@ describe('parseArgs', () => {
  * the first page it drops a row that page held - what retain_until passing, the
  * purge or a rider opting out does to the view mid-export.
  */
+type ViewRow = { request_id: string; created_at: string; status?: string };
+
 function shrinkingView(total: number) {
-  let rows = Array.from({ length: total }, (_, i) => ({
-    request_id: `00000000-0000-4000-8000-00000000000${i}`,
-    created_at: `2026-10-0${1 + Math.floor(i / 2)}T12:00:00.123456+00:00`,
-  }));
+  return standInView(
+    Array.from({ length: total }, (_, i) => ({
+      request_id: `00000000-0000-4000-8000-00000000000${i}`,
+      created_at: `2026-10-0${1 + Math.floor(i / 2)}T12:00:00.123456+00:00`,
+    })),
+    true,
+  );
+}
+
+function standInView(initial: ViewRow[], dropAfterFirstPage: boolean) {
+  let rows = initial;
   let served = 0;
   let removed: string | null = null;
 
@@ -270,7 +280,7 @@ function shrinkingView(total: number) {
     const page = visible.slice(offset, offset + limit);
 
     served += 1;
-    if (served === 1) {
+    if (dropAfterFirstPage && served === 1) {
       removed = page[1].request_id;
       rows = rows.filter((row) => row.request_id !== removed);
     }
@@ -309,12 +319,43 @@ describe('viewRows', () => {
 describe('collectSnapshot', () => {
   it('leaves out a row that left the view while later pages were read', async () => {
     const view = shrinkingView(7);
-    const { rows, dropped } = await collectSnapshot(view.client, 3);
+    const { rows, dropped } = await collectSnapshot(view.client, Date.now(), 3);
     const ids = rows.map((row: { request_id: string }) => row.request_id);
 
     expect(view.removed()).not.toBeNull();
     expect(ids).not.toContain(view.removed());
     expect(ids).toEqual(view.remaining());
     expect(dropped).toBe(1);
+  });
+});
+
+// A request is `pending` from its reservation until its verdict is written a
+// few seconds later, so a pending row read mid-answer would reach Redline as a
+// request that never finished.
+describe('collectSnapshot and requests still being answered', () => {
+  const startedAt = Date.parse('2026-10-10T12:00:00.000Z');
+  const minutesBefore = (minutes: number) => new Date(startedAt - minutes * 60_000).toISOString();
+
+  it('leaves out a request pending under 15 minutes and keeps every other', async () => {
+    expect(IN_FLIGHT_MS).toBe(15 * 60_000);
+    const view = standInView(
+      [
+        { request_id: 'pending-16', created_at: minutesBefore(16), status: 'pending' },
+        { request_id: 'pending-15', created_at: minutesBefore(15), status: 'pending' },
+        { request_id: 'pending-14', created_at: minutesBefore(14), status: 'pending' },
+        { request_id: 'ok-1', created_at: minutesBefore(1), status: 'ok' },
+        { request_id: 'refusal-0', created_at: minutesBefore(0), status: 'completed_refusal_prompt_injection' },
+        { request_id: 'ok-old', created_at: minutesBefore(60 * 24 * 30), status: 'ok' },
+      ].sort((a, b) => a.created_at.localeCompare(b.created_at)),
+      false,
+    );
+
+    const { rows, dropped, inFlight } = await collectSnapshot(view.client, startedAt, 2);
+
+    expect(rows.map((row: ViewRow) => row.request_id).sort()).toEqual(
+      ['ok-1', 'ok-old', 'pending-15', 'pending-16', 'refusal-0'].sort(),
+    );
+    expect(inFlight).toBe(1);
+    expect(dropped).toBe(0);
   });
 });

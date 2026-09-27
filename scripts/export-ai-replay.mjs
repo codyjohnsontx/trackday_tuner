@@ -18,7 +18,10 @@
  * and a row can leave it while later pages are read, so `collectSnapshot`
  * checks every collected request against the view once more at the end and
  * drops any that left: the file is what the view allows when that check ran.
- * Nothing is written until then. The file is built beside the target under a
+ * Nothing is written until then. A request still `pending` less than
+ * `IN_FLIGHT_MS` after it started is left out of both reads, because its
+ * verdict is probably seconds from being written; the next export takes it.
+ * The file is built beside the target under a
  * temporary name and linked into place only when it is whole, so an
  * interrupted run never leaves a file at the path it was given.
  *
@@ -50,6 +53,12 @@ const TAG = '[ai:export-replay]';
 export const REPLAY_FORMAT_VERSION = 1;
 
 const PAGE_SIZE = 500;
+
+/**
+ * How long a request may stay `pending` before the export reads it as one that
+ * never finished rather than one still being answered.
+ */
+export const IN_FLIGHT_MS = 15 * 60 * 1000;
 
 /** Request ids per final-check query, kept short enough for a URL. */
 const RECHECK_CHUNK = 100;
@@ -88,6 +97,11 @@ export function newPseudonymKey() {
 
 export function pseudonymFor(riderKey, key) {
   return createHmac('sha256', key).update(riderKey).digest('hex');
+}
+
+/** False for a request still `pending` less than `IN_FLIGHT_MS` before `startedAt`. */
+export function isSettled(row, startedAt) {
+  return row.status !== 'pending' || startedAt - Date.parse(row.created_at) >= IN_FLIGHT_MS;
 }
 
 function pickSubmitted(route, submitted) {
@@ -188,39 +202,46 @@ export async function* viewRows(supabase, pageSize = PAGE_SIZE) {
 }
 
 /**
- * Of `requestIds`, the ones the view still holds now. A row leaves the view
- * when it passes retain_until, is purged, or its rider deletes it, turns
+ * Of `requestIds`, the settled ones the view still holds now. A row leaves the
+ * view when it passes retain_until, is purged, or its rider deletes it, turns
  * keeping off or deletes their account.
  */
-async function stillInView(supabase, requestIds) {
+async function stillInView(supabase, requestIds, startedAt) {
   const kept = new Set();
   for (let i = 0; i < requestIds.length; i += RECHECK_CHUNK) {
     const chunk = requestIds.slice(i, i + RECHECK_CHUNK);
     const { data, error } = await supabase
       .from('ai_replay_export')
-      .select('request_id')
+      .select('request_id,status,created_at')
       .in('request_id', chunk);
     if (error) throw new Error(`re-checking ai_replay_export failed: ${error.message}`);
-    for (const row of data) kept.add(row.request_id);
+    for (const row of data) {
+      if (isSettled(row, startedAt)) kept.add(row.request_id);
+    }
   }
   return kept;
 }
 
 /**
- * Every row the view holds, as of a final check made after the last page was
- * read. Paging alone is not a snapshot: each page is its own request, so a row
- * read on page 1 can have left the view by the time page 2 arrives, and
- * without this pass it would be exported anyway.
+ * Every settled row the view holds, as of a final check made after the last
+ * page was read. Paging alone is not a snapshot: each page is its own request,
+ * so a row read on page 1 can have left the view by the time page 2 arrives,
+ * and without this pass it would be exported anyway.
  */
-export async function collectSnapshot(supabase, pageSize = PAGE_SIZE) {
+export async function collectSnapshot(supabase, startedAt, pageSize = PAGE_SIZE) {
   const rows = [];
-  for await (const row of viewRows(supabase, pageSize)) rows.push(row);
+  let inFlight = 0;
+  for await (const row of viewRows(supabase, pageSize)) {
+    if (isSettled(row, startedAt)) rows.push(row);
+    else inFlight += 1;
+  }
   const kept = await stillInView(
     supabase,
     rows.map((row) => row.request_id),
+    startedAt,
   );
   const snapshot = rows.filter((row) => kept.has(row.request_id));
-  return { rows: snapshot, dropped: rows.length - snapshot.length };
+  return { rows: snapshot, dropped: rows.length - snapshot.length, inFlight };
 }
 
 /**
@@ -275,7 +296,7 @@ async function main() {
   );
 
   const key = newPseudonymKey();
-  const { rows, dropped } = await collectSnapshot(supabase);
+  const { rows, dropped, inFlight } = await collectSnapshot(supabase, Date.now());
   const records = rows.map((row) => toReplayRecord(row, key));
 
   try {
@@ -301,6 +322,9 @@ async function main() {
   );
   if (dropped > 0) {
     console.error(`${TAG} Left out ${dropped} that stopped being exportable while the export ran.`);
+  }
+  if (inFlight > 0) {
+    console.error(`${TAG} Left out ${inFlight} still being answered; the next export takes them.`);
   }
   console.error(`${TAG} Redline replaces its whole copy with this file and deletes the previous one.`);
   if (earliestRetainUntil) {
