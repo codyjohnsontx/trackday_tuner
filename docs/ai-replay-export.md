@@ -96,7 +96,8 @@ Never from CI and never from Redline's cloud project.
    `retain_until`. Before anything is written the script asks the view about
    every collected request once more and leaves out any that left, and says
    how many it left out. The file is what the view allowed at that final
-   check.
+   check, less the requests still being answered (above), which it also
+   counts.
 3. The script prints how many requests it wrote and the earliest `retain_until`
    in the file. That date is the latest the first line can stay, if no newer
    export replaces it first.
