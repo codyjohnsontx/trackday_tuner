@@ -127,3 +127,32 @@ export function getMonitoringCronSecret(): string {
 export function getMonitoringAlertWebhookUrl(): string | null {
   return process.env.MONITORING_ALERT_WEBHOOK_URL?.trim() || null;
 }
+
+/**
+ * The browser origins allowed to call `/api/mobile/*`, as a comma-separated
+ * list of origins such as `https://app.example.com,http://localhost:8081`.
+ *
+ * Only the phone app's web build needs one - the native app sends no `Origin`
+ * and CORS never applies to it. Unset means no browser origin is allowed, which
+ * refuses the web build and changes nothing for native. Each entry is reduced to
+ * its origin, so a trailing slash or path does not silently fail to match, and
+ * an entry that is not a URL is dropped rather than failing the route for the
+ * native riders who never needed it. There is deliberately no wildcard.
+ */
+export function getMobileAppOrigins(): string[] {
+  const raw = process.env.MOBILE_APP_ORIGINS?.trim();
+  if (!raw) return [];
+
+  const origins: string[] = [];
+  for (const entry of raw.split(',')) {
+    const value = entry.trim();
+    if (!value) continue;
+    try {
+      const { origin } = new URL(value);
+      if (origin !== 'null') origins.push(origin);
+    } catch {
+      console.error('[env] MOBILE_APP_ORIGINS entry is not a URL and was ignored', { entry: value });
+    }
+  }
+  return origins;
+}

@@ -417,6 +417,7 @@ components/sessions/ # session form
 components/garage/   # vehicle form
 lib/actions/         # server actions (sessions, tracks, vehicles, sag)
 lib/sessions/        # session create orchestration, client and rider passed in (no cookies, no Next)
+lib/mobile/          # CORS for /api/mobile/* (the phone app's web build)
 lib/monitoring/      # health checks, the ai_requests alert, reportError
 lib/rag/             # RAG retrieval, prompt, policy, premise-guard, and validation helpers
 lib/supabase/        # client, server, middleware, admin clients
@@ -663,6 +664,37 @@ The same shape applies to anything derived rather than given:
   one, and Race Engineer similar-session scoring is not layout-aware yet.
   `lib/track-directory.test.ts` checks the current lookup against the rows the
   migration ships
+
+## The Phone's Write Path
+
+`POST /api/mobile/sessions` (owner decision D1) is how a session logged in the
+phone app reaches the server. It is `createSessionForUser` behind
+`authenticateBearer` (`lib/supabase/bearer.ts`): the anon key plus the rider's
+own access token, so RLS applies exactly as with cookies, and never the service
+role. Four things are load-bearing:
+
+- **The status is the phone's retry decision.** 400, 402 and 409 are the rider's
+  to fix and the sync engine parks them; 401 means signed out; 503 is ours and is
+  retried. So an unreachable GoTrue or a failed profile read is 503, never 401 or
+  a plan refusal - either would strand a rider's outbox. `CreateSessionFailureKind`
+  in `lib/sessions/create.ts` is where a new refusal gets its class.
+- **Idempotent on the body's `id`**, which reaches `createSessionForUser` as
+  `options.id` and never inside `CreateSessionInput`, so the website's form cannot
+  choose a primary key. The replay lookup runs before the free-plan count, or a
+  free rider's tenth session replayed would be refused as their eleventh.
+- **Atomic, where the website's create is not.** With an id, the row, laps and
+  environment are one call to `create_session_with_laps` (20260927002200), so a
+  failure stores nothing and a stored session is always complete - which is what
+  lets a replay write nothing and answer 200 without looking. The website's form
+  still writes them as three statements and rolls back; its rider sees a failed
+  save, where the phone's retry would read a half-written row as synced. The
+  hosted project needs the function applied by hand ("Apply the session create
+  function by hand" in `docs/beta-runbook.md`).
+- **The body is validated leaf by leaf** (`lib/sessions/parse-create-request.ts`)
+  because the setup blobs are unconstrained `jsonb` and a numeric leaf crashes the
+  session screens (tt-session-screens-nonstring-fields).
+
+CORS allows only `MOBILE_APP_ORIGINS`; the native app sends no `Origin`.
 
 ## Units
 

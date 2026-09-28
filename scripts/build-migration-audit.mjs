@@ -19,7 +19,8 @@
  * also compares the committed file against a fresh generation, so a forgotten
  * regeneration is a red check rather than something anyone has to remember.
  */
-import { readdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -28,6 +29,26 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(HERE, '..');
 export const MIGRATIONS_DIR = path.join(ROOT, 'supabase/migrations');
 export const AUDIT_SQL_PATH = path.join(ROOT, 'scripts/sql/audit-migrations-against-database.sql');
+
+/**
+ * The md5 of a function body as Postgres stores it in `pg_proc.prosrc`: the text
+ * between the `$$` quotes, byte for byte. A probe that compares
+ * `md5(p.prosrc)` with this proves the installed definition IS the migration's,
+ * where a name lookup or a substring only proves something by that name exists.
+ * It reads `prosrc` rather than `pg_get_functiondef`, which Postgres re-renders
+ * and so differs between versions. The migration must hold exactly one
+ * `as $$ ... $$;` body.
+ */
+export function functionBodyMd5(migrationBasename, migrationsDir = MIGRATIONS_DIR) {
+  const sql = readFileSync(path.join(migrationsDir, `${migrationBasename}.sql`), 'utf8');
+  const bodies = [...sql.matchAll(/\bas \$\$([\s\S]*?)\$\$;/g)];
+  if (bodies.length !== 1) {
+    throw new Error(`${migrationBasename}.sql has ${bodies.length} dollar-quoted function bodies; expected exactly one.`);
+  }
+  return createHash('md5').update(bodies[0][1], 'utf8').digest('hex');
+}
+
+const CREATE_SESSION_WITH_LAPS = "to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)')";
 
 /**
  * Migration basename (no `.sql`) -> the object that migration is the only thing
@@ -285,6 +306,25 @@ export const MIGRATION_PROBES = {
     kind: 'view',
     object: 'public.ai_replay_export',
     present: "to_regclass('public.ai_replay_export') is not null",
+  },
+  '20260927002200_add_create_session_with_laps': {
+    note: [
+      'The function is create or replace, so an older or hand-edited copy is still',
+      'there by name. Only the body fingerprint says the installed definition is',
+      "this migration's; the other three read the security and grants it sets.",
+    ],
+    kind: 'function',
+    object: 'public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)',
+    present: [
+      `${CREATE_SESSION_WITH_LAPS} is not null`,
+      '     and (select md5(p.prosrc) = ' +
+        `'${functionBodyMd5('20260927002200_add_create_session_with_laps')}'`,
+      '            and not p.prosecdef',
+      "            and p.proconfig = array['search_path=\"\"']",
+      "            and has_function_privilege('authenticated', p.oid, 'execute')",
+      "            and not has_function_privilege('anon', p.oid, 'execute')",
+      `          from pg_proc p where p.oid = ${CREATE_SESSION_WITH_LAPS})`,
+    ],
   },
 };
 
