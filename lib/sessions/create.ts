@@ -28,9 +28,10 @@ import type {
  * The server action in lib/actions/sessions.ts reads both from cookies; a caller
  * holding a bearer token builds its own client and has no cookies at all. So the
  * orchestration takes both as arguments rather than reaching for
- * `@/lib/supabase/server` and `@/lib/auth`, and there is one copy of the free-plan
- * cap, track resolution, layout check, change records and rollbacks whichever way
- * a session arrives.
+ * `@/lib/supabase/server` and `@/lib/auth`, and there is one copy of track
+ * resolution, the layout check, change records and rollbacks whichever way a
+ * session arrives. The free-plan session cap is the exception: a create carrying
+ * its own id is counted inside `create_session_with_laps` (20260928002300).
  *
  * It is still server code - it writes as the rider through whatever client it is
  * handed and reports faults through `report` - so nothing in a browser or the
