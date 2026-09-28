@@ -1741,26 +1741,35 @@ select
             and not has_table_privilege('authenticated', 'public.deleted_sessions', 'insert, update, delete')
             and not has_table_privilege('anon', 'public.deleted_sessions', 'select, insert, update, delete')
   end as tombstones_are_read_only_to_riders,
-  (select count(*) from pg_policies p
+  exists (select 1 from pg_policies p
     where p.schemaname = 'public' and p.tablename = 'deleted_sessions'
       and p.policyname = 'deleted_sessions: select own' and p.cmd = 'SELECT'
-      and p.qual = '(auth.uid() = user_id)') as tombstone_policies,
+      and p.permissive = 'PERMISSIVE' and p.qual = '(auth.uid() = user_id)') as tombstone_policy_is_select_own,
+  (select count(*) from pg_policies p
+    where p.schemaname = 'public' and p.tablename = 'deleted_sessions') as tombstone_policies,
   (select count(*) from pg_policies p
     where p.schemaname = 'public' and p.tablename = 'sessions'
       and p.policyname in ('sessions: insert own', 'sessions: update own')
       and p.qual is not distinct from case p.cmd when 'UPDATE' then '(auth.uid() = user_id)' end
       and md5(replace(p.with_check, 'public.vehicles', 'vehicles')) = '7c9b3da91045db80e54e45052117e6e2')
-    as vehicle_checked_session_policies;
+    as vehicle_checked_session_policies,
+  (select count(*) from pg_policies p
+    where p.schemaname = 'public' and p.tablename = 'sessions') as session_policies;
 ```
 
-Expect one row: `true`, `true`, `true`, `true`, `1`, `2`. The two md5 columns
+Expect one row: `true`, `true`, `true`, `true`, `true`, `1`, `2`, `4`. The two md5 columns
 compare each installed function body with the migration's, so an older copy, a
-hand edit or a partial paste reads `false`. The last column fingerprints the
-vehicle check both session policies now carry, as `pg_policies` prints it; the
+hand edit or a partial paste reads `false`. `vehicle_checked_session_policies`
+fingerprints the vehicle check both session policies now carry, as `pg_policies` prints it; the
 `replace` takes out the one qualifier that depends on the reader's
-`search_path`, so it reads the same in the SQL editor as anywhere else. Row 26
-of `scripts/sql/audit-migrations-against-database.sql` then reads `present`,
-and row 25 still does.
+`search_path`, so it reads the same in the SQL editor as anywhere else. The
+two totals matter as much as the named rows: permissive policies are combined
+with OR, so any fifth policy on `sessions` - one added by hand in the
+dashboard, say - can let a row through that the vehicle check refuses, and a
+second policy on `deleted_sessions` can show riders each other's records. Any
+other count is a finding. Row 26 of
+`scripts/sql/audit-migrations-against-database.sql` then reads `present`, and
+row 25 still does.
 
 **4. Rollback.** Only together with a rollback of the release that expects it:
 that release no longer counts a phone save's sessions itself, so without the

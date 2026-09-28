@@ -105,16 +105,20 @@ describe('the hosted session ownership block in docs/beta-runbook.md', () => {
                     and not has_table_privilege('authenticated', 'public.deleted_sessions', 'insert, update, delete')
                     and not has_table_privilege('anon', 'public.deleted_sessions', 'select, insert, update, delete')
           end as tombstones_are_read_only_to_riders,
-          (select count(*) from pg_policies p
+          exists (select 1 from pg_policies p
             where p.schemaname = 'public' and p.tablename = 'deleted_sessions'
               and p.policyname = 'deleted_sessions: select own' and p.cmd = 'SELECT'
-              and p.qual = '(auth.uid() = user_id)') as tombstone_policies,
+              and p.permissive = 'PERMISSIVE' and p.qual = '(auth.uid() = user_id)') as tombstone_policy_is_select_own,
+          (select count(*) from pg_policies p
+            where p.schemaname = 'public' and p.tablename = 'deleted_sessions') as tombstone_policies,
           (select count(*) from pg_policies p
             where p.schemaname = 'public' and p.tablename = 'sessions'
               and p.policyname in ('sessions: insert own', 'sessions: update own')
               and p.qual is not distinct from case p.cmd when 'UPDATE' then '(auth.uid() = user_id)' end
               and md5(replace(p.with_check, 'public.vehicles', 'vehicles')) = '${SESSION_VEHICLE_OWNED_CHECK_MD5}')
-            as vehicle_checked_session_policies;
+            as vehicle_checked_session_policies,
+          (select count(*) from pg_policies p
+            where p.schemaname = 'public' and p.tablename = 'sessions') as session_policies;
       `),
     );
   });

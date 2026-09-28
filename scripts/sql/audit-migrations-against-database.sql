@@ -196,6 +196,10 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   -- locked execute, the tombstone table by its select-only rider grant, and the
   -- two session policies by the fingerprint of the vehicle check they now carry
   -- (SESSION_VEHICLE_OWNED_CHECK_MD5 in scripts/build-migration-audit.mjs).
+  -- Policies are counted per table as well: permissive policies are OR-ed, so
+  -- one extra policy without the vehicle check reopens the hole the two named
+  -- ones close, and the tombstone table needs RLS on and its one select policy,
+  -- or riders read each other's records or the function cannot see its own.
   -- The CASE keeps has_table_privilege off a table that is not there, as in
   -- the 1100 row.
   (26, '20260928002300_session_vehicle_ownership_and_deleted_sessions', 'function + trigger + table + policies',
@@ -215,14 +219,22 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                     and tgrelid = 'public.sessions'::regclass
                     and tgenabled <> 'D' and not tgisinternal)
            and case when to_regclass('public.deleted_sessions') is null then false
-                    else has_table_privilege('authenticated', 'public.deleted_sessions', 'select')
+                    else (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.deleted_sessions'))
+                         and has_table_privilege('authenticated', 'public.deleted_sessions', 'select')
                          and not has_table_privilege('authenticated', 'public.deleted_sessions', 'insert, update, delete')
                          and not has_table_privilege('anon', 'public.deleted_sessions', 'select, insert, update, delete')
                end
            and (select count(*) from pg_policies p
                   where p.schemaname = 'public' and p.tablename = 'sessions'
                     and p.policyname in ('sessions: insert own', 'sessions: update own')
-                    and md5(replace(p.with_check, 'public.vehicles', 'vehicles')) = '7c9b3da91045db80e54e45052117e6e2') = 2)
+                    and md5(replace(p.with_check, 'public.vehicles', 'vehicles')) = '7c9b3da91045db80e54e45052117e6e2') = 2
+           and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'sessions') = 4
+           and (select count(*) from pg_policies p
+                  where p.schemaname = 'public' and p.tablename = 'deleted_sessions') = 1
+           and exists (select 1 from pg_policies p
+                  where p.schemaname = 'public' and p.tablename = 'deleted_sessions'
+                    and p.policyname = 'deleted_sessions: select own' and p.cmd = 'SELECT'
+                    and p.permissive = 'PERMISSIVE' and p.qual = '(auth.uid() = user_id)'))
 )
 select ordinality as "#",
        migration,
