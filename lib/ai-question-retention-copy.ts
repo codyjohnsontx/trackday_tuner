@@ -9,8 +9,9 @@
  * The wording is the owner's to edit (decision D6 of the retention plan). What
  * it must stay true to is fixed elsewhere and is not a copy decision:
  * `supabase/migrations/20260924001700_add_ai_request_text.sql` caps a row at 90
- * days and states the keep rule, and `lib/actions/ai-question-retention.ts`
- * deletes what is held the moment a rider turns keeping off.
+ * days and states the keep rule, `lib/actions/ai-question-retention.ts`
+ * deletes what is held the moment a rider turns keeping off, and
+ * `docs/ai-replay-export.md` makes each export replace Redline's whole copy.
  */
 export const QUESTION_RETENTION_COPY = {
   privacy: {
@@ -18,7 +19,7 @@ export const QUESTION_RETENTION_COPY = {
     paragraphs: [
       'When you ask Race Engineer a question or generate a Morning Plan, the text you type is sent to our AI provider to produce the answer. That text is your question, any symptom tags and change intent you pick, and for a Morning Plan the track name and conditions you enter and the date it is for. Recommendations and their outcomes are kept so your future guidance can learn from them.',
       "If you turn on question history, we also keep a copy of that text for 90 days so we can re-test Race Engineer's safety checks against real questions when we change them. It is off until you turn it on. Before the copy is saved, email addresses, phone numbers, web links and long numbers are replaced with placeholders. It is used only to test and improve those safety checks, including in Redline, our separate safety-testing project run by the same person who runs Track Tuner. The text is never published, never used to train a model, never shown to another rider, and never sold. Aggregate results, such as how often a check refuses a question, may be published without any question text.",
-      'You can turn question history on or off, see the questions we hold, and delete any of them under Settings > Race Engineer question history. Turning it off deletes what we hold. Each question is deleted automatically after 90 days, and deleting your account deletes them straight away. Do not enter secrets or information you do not want processed.',
+      'You can turn question history on or off, see the questions we hold, and delete any of them under Settings > Race Engineer question history. Turning it off deletes what we hold. Each question is deleted automatically after 90 days, and deleting your account deletes them straight away. A copy used in the Redline test lab is removed at our next export after you delete it, turn history off or delete your account, and never later than 90 days after you asked. Do not enter secrets or information you do not want processed.',
     ],
   },
   inline: {
@@ -29,7 +30,7 @@ export const QUESTION_RETENTION_COPY = {
   settings: {
     title: 'Race Engineer question history',
     description:
-      'If you turn this on, we keep the text of your Race Engineer questions and Morning Plan details for 90 days so our safety checks can be re-tested against real questions when they change. It is off until you turn it on. Email addresses, phone numbers and links are masked before saving. Turning it off deletes the questions we hold.',
+      'If you turn this on, we keep the text of your Race Engineer questions and Morning Plan details for 90 days so our safety checks can be re-tested against real questions when they change. It is off until you turn it on. Email addresses, phone numbers and links are masked before saving. Turning it off deletes the questions we hold, and a copy used in the Redline test lab is removed at our next export, never later than 90 days.',
     label: 'Question history',
     options: { keep: 'Keep for 90 days', off: 'Do not keep' },
     undecided: 'Off until you choose. Nothing of yours is kept.',
