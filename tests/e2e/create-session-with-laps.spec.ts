@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { test, expect } from '@playwright/test';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { resolveUserAccess } from '@/lib/access';
+import { getFreePlanLimit } from '@/lib/plans';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import {
   createThrowawayRider,
   deleteThrowawayRider,
   type ThrowawayRider,
 } from '@/tests/e2e/helpers/throwaway-rider';
+import type { Profile } from '@/types';
 import type { Database, Json, TableInsert } from '@/types/supabase';
 
 /**
@@ -34,8 +37,10 @@ import type { Database, Json, TableInsert } from '@/types/supabase';
  * - a late retry of a session the rider deleted, alone or with its vehicle, is
  *   answered as handled and does not store it again, and riders cannot write
  *   the record that decides it;
- * - two concurrent creates by a free rider at nine sessions leave exactly ten,
- *   and a Pro rider is not capped.
+ * - two concurrent creates by a free rider one short of the cap in
+ *   lib/plans.ts leave exactly the cap, and a Pro rider is not capped;
+ * - a rider at the cap is refused TT402 exactly when `resolveUserAccess` gives
+ *   that profile no Pro access, for every entitlement case it distinguishes.
  *
  * Every rider here is deleted afterwards with the tombstones they left, which
  * is the account delete the tombstone trigger must not break.
@@ -52,6 +57,8 @@ const LAPS = [
   { lap_number: 2, lap_time_ms: 139_800, included: true },
   { lap_number: 3, lap_time_ms: 140_100, included: false },
 ];
+
+const SESSION_CAP = getFreePlanLimit('sessions');
 
 const ENVIRONMENT = { ambient_temperature_c: 21, humidity_percent: 40, weather_condition: 'dry' };
 
@@ -384,12 +391,12 @@ test.describe('session ownership, deleted sessions and the free-plan cap (202609
     expect(kept.data).toHaveLength(1);
   });
 
-  test('leaves a free rider at nine sessions with exactly ten when two creates arrive together', async () => {
+  test('leaves a free rider one short of the cap with exactly the cap when two creates arrive together', async () => {
     const { rider, client, vehicle } = await newRider('cap-race');
-    for (let index = 0; index < 9; index += 1) {
+    for (let index = 0; index < SESSION_CAP - 1; index += 1) {
       expect((await create(client, randomUUID(), vehicle, [], null)).error).toBeNull();
     }
-    expect(await countSessions(admin, rider.id)).toBe(9);
+    expect(await countSessions(admin, rider.id)).toBe(SESSION_CAP - 1);
 
     const results = await Promise.all([
       create(client, randomUUID(), vehicle, [], null),
@@ -397,14 +404,14 @@ test.describe('session ownership, deleted sessions and the free-plan cap (202609
     ]);
 
     expect(results.map((result) => result.error?.code ?? 'stored').sort()).toEqual(['TT402', 'stored']);
-    expect(await countSessions(admin, rider.id)).toBe(10);
+    expect(await countSessions(admin, rider.id)).toBe(SESSION_CAP);
   });
 
   test('answers a free rider’s replay at the cap as the stored row, and does not cap a Pro rider', async () => {
     const { rider, client, vehicle } = await newRider('cap-replay');
     const first = randomUUID();
     expect((await create(client, first, vehicle, [], null)).error).toBeNull();
-    for (let index = 0; index < 9; index += 1) {
+    for (let index = 0; index < SESSION_CAP - 1; index += 1) {
       expect((await create(client, randomUUID(), vehicle, [], null)).error).toBeNull();
     }
 
@@ -417,6 +424,51 @@ test.describe('session ownership, deleted sessions and the free-plan cap (202609
     expect(upgraded.data).toHaveLength(1);
     const eleventh = await create(client, randomUUID(), vehicle, [], null);
     expect(eleventh.error, eleventh.error?.message).toBeNull();
-    expect(await countSessions(admin, rider.id)).toBe(11);
+    expect(await countSessions(admin, rider.id)).toBe(SESSION_CAP + 1);
+  });
+
+  test('refuses a rider at the cap exactly when resolveUserAccess gives their profile no Pro access', async () => {
+    const { rider, client, vehicle } = await newRider('cap-entitlement');
+    for (let index = 0; index < SESSION_CAP; index += 1) {
+      expect((await create(client, randomUUID(), vehicle, [], null)).error).toBeNull();
+    }
+
+    const past = '2000-01-01T00:00:00Z';
+    const later = '2998-01-01T00:00:00Z';
+    const future = '2999-01-01T00:00:00Z';
+    const cases: [string, Pick<Profile, 'tier' | 'beta_access_started_at' | 'beta_access_expires_at'> | null][] = [
+      ['no profile row', null],
+      ['the free tier', { tier: 'free', beta_access_started_at: null, beta_access_expires_at: null }],
+      ['Pro', { tier: 'pro', beta_access_started_at: null, beta_access_expires_at: null }],
+      ['Pro with a beta window long over', { tier: 'pro', beta_access_started_at: null, beta_access_expires_at: past }],
+      ['a beta window open with no start', { tier: 'free', beta_access_started_at: null, beta_access_expires_at: future }],
+      ['a beta window that has started', { tier: 'free', beta_access_started_at: past, beta_access_expires_at: future }],
+      ['a beta window not yet started', { tier: 'free', beta_access_started_at: later, beta_access_expires_at: future }],
+      ['a beta window that has expired', { tier: 'free', beta_access_started_at: null, beta_access_expires_at: past }],
+    ];
+
+    for (const [label, fields] of cases) {
+      const written = fields
+        ? await admin.from('profiles').upsert({ id: rider.id, ...fields }).select('id')
+        : await admin.from('profiles').delete().eq('id', rider.id).select('id');
+      expect(written.error, `${label}: ${written.error?.message}`).toBeNull();
+      const profile = await admin.from('profiles').select('*').eq('id', rider.id).maybeSingle();
+      expect(profile.error, `${label}: ${profile.error?.message}`).toBeNull();
+      expect(profile.data === null, label).toBe(fields === null);
+      const capped = !resolveUserAccess(profile.data as Profile | null).hasProAccess;
+
+      const sessionId = randomUUID();
+      const attempt = await create(client, sessionId, vehicle, [], null);
+
+      if (capped) {
+        expect(attempt.error?.code, label).toBe('TT402');
+        expect((await stored(admin, sessionId)).sessions, label).toEqual([]);
+      } else {
+        expect(attempt.error, `${label}: ${attempt.error?.message}`).toBeNull();
+        const removed = await admin.from('sessions').delete().eq('id', sessionId).select('id');
+        expect(removed.data, label).toHaveLength(1);
+      }
+      expect(await countSessions(admin, rider.id), label).toBe(SESSION_CAP);
+    }
   });
 });

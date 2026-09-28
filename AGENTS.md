@@ -683,12 +683,17 @@ role. Four things are load-bearing:
   choose a primary key. "Already handled" is a row with that id OR a
   `deleted_sessions` record of one (20260928002300, written by a trigger on every
   session delete), so a retry whose first answer was lost cannot recreate a
-  session the rider deleted since; that answers 200 with `deleted: true` and
-  `session: null`. The phone's free-plan cap is counted inside
+  session the rider deleted since; that answers 200 with `replayed: true`,
+  `deleted: true` and `session: null`, which tells the phone the save was handled
+  and the rider has since deleted that session, so it clears the outbox entry and
+  removes its local copy. The phone's free-plan cap is counted inside
   `create_session_with_laps` under a per-rider advisory lock, after the replay
-  checks, and mirrors `resolveUserAccess` in SQL
-  (`tests/unit/session-create-plan-cap.test.ts` pins the two); the website form
-  still counts in TypeScript and is not covered by that lock.
+  checks, and mirrors `resolveUserAccess` in SQL. The behavioural pin is
+  `tests/e2e/create-session-with-laps.spec.ts`, which runs the function at the
+  cap for every entitlement case against `resolveUserAccess`;
+  `tests/unit/session-create-plan-cap.test.ts` is only a structural guard against
+  the two copies drifting apart. The website form still counts in TypeScript and
+  is not covered by that lock.
 - **Atomic, where the website's create is not.** With an id, the row, laps and
   environment are one call to `create_session_with_laps` (20260927002200), so a
   failure stores nothing and a stored session is always complete - which is what

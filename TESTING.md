@@ -132,7 +132,12 @@ since they were added. It fails rather than skips without them.
 and reads what was stored back through the service role. It also meets the
 `sessions` policies as the website form's insert does (a session on another
 rider's vehicle), deletes a session and retries its create, and races two
-creates by a free rider at nine sessions. The mobile route's unit suite fakes that
+creates by a free rider one short of the cap in `lib/plans.ts`. At the cap it
+sets each entitlement case through the service role - no profile row, free, Pro,
+and the beta windows - and expects `TT402` exactly when `resolveUserAccess` gives
+that profile no Pro access, which makes it the behavioural pin for the SQL copy
+of the cap; `tests/unit/session-create-plan-cap.test.ts` only guards the two
+copies' text against drifting apart. The mobile route's unit suite fakes that
 function, so this spec is the only one that exercises the real transaction,
 RLS, grants and error codes. It needs the service-role key and
 `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and no browser, dev server or `E2E_*` account,

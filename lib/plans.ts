@@ -1,8 +1,9 @@
 export type LimitedResource = 'vehicles' | 'tracks' | 'sessions';
 
 // `sessions` is also written in SQL: create_session_with_laps counts the phone's
-// creates under a lock (20260928002300). tests/unit/session-create-plan-cap.test.ts
-// fails when the two differ.
+// creates under a lock (20260928002300). tests/e2e/create-session-with-laps.spec.ts
+// runs the SQL at this cap on a real database;
+// tests/unit/session-create-plan-cap.test.ts guards the two copies drifting apart.
 const FREE_PLAN_LIMITS: Record<LimitedResource, number> = {
   vehicles: 1,
   tracks: 3,

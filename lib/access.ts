@@ -1,8 +1,9 @@
 import type { Profile, Tier, UserAccess } from '@/types';
 
 // create_session_with_laps (20260928002300) reads this same rule in SQL to lift
-// the free-plan session cap; tests/unit/session-create-plan-cap.test.ts pins the
-// two together.
+// the free-plan session cap. tests/e2e/create-session-with-laps.spec.ts checks
+// the SQL against this function on a real database;
+// tests/unit/session-create-plan-cap.test.ts guards the two copies drifting apart.
 export function resolveUserAccess(
   profile: Profile | null | undefined,
   now: Date = new Date(),

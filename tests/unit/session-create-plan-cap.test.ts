@@ -6,12 +6,15 @@ import { resolveUserAccess } from '@/lib/access';
 import { getFreePlanLimit } from '@/lib/plans';
 import type { Profile } from '@/types';
 
-// `create_session_with_laps` counts a free rider's sessions under its per-rider
-// lock (20260928002300), so the cap and the entitlement that lifts it are
-// written in SQL as well as in lib/plans.ts and lib/access.ts. The phone path is
-// held to the SQL copy and the website to the TypeScript one, so the two have
-// to say the same thing. This reads the newest definition of the function as
-// text and fails when either side moves without the other.
+// A STRUCTURAL GUARD, NOT BEHAVIOURAL PROOF. `create_session_with_laps` counts a
+// free rider's sessions under its per-rider lock (20260928002300), so the cap
+// and the entitlement that lifts it are written in SQL as well as in
+// lib/plans.ts and lib/access.ts. This reads the newest definition of the
+// function as text so a change to either copy that leaves the other behind fails
+// in the required checks, where the real-database spec does not run. It cannot
+// show the SQL behaves as written: tests/e2e/create-session-with-laps.spec.ts is
+// what runs the function at the cap for every entitlement case below and checks
+// it against resolveUserAccess.
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const migrationsDir = path.join(root, 'supabase/migrations');
@@ -28,14 +31,14 @@ function latestCreateSessionBody(): { file: string; body: string } {
 
 const { file, body } = latestCreateSessionBody();
 
-describe(`the free-plan session cap in ${file}`, () => {
-  it('is the cap lib/plans.ts gives the website', () => {
+describe(`the SQL and TypeScript copies of the free-plan session cap (${file})`, () => {
+  it('spell the same cap as lib/plans.ts', () => {
     const cap = /\(select count\(\*\) from public\.sessions s where s\.user_id = auth\.uid\(\)\) >= (\d+) then/.exec(body);
     expect(cap, 'the count clause moved; update this test with it').not.toBeNull();
     expect(Number(cap![1])).toBe(getFreePlanLimit('sessions'));
   });
 
-  it('is lifted by exactly the entitlement lib/access.ts reads', () => {
+  it('spell the same entitlement as lib/access.ts', () => {
     const squash = (text: string) => text.replace(/\s+/g, ' ').trim();
     expect(squash(body)).toContain(
       squash(`
@@ -50,9 +53,9 @@ describe(`the free-plan session cap in ${file}`, () => {
     expect(squash(body)).toContain('if not coalesce(v_unlimited, false)');
   });
 
-  // The cases the SQL above encodes, asked of the TypeScript rule. A change to
-  // resolveUserAccess that moves one of these moves the phone's cap too, so it
-  // fails here and sends the reader to the migration.
+  // The cases the entitlement text above encodes, asked of the TypeScript rule.
+  // A change to resolveUserAccess that moves one of these has left the SQL copy
+  // behind, so it fails here and sends the reader to the migration.
   it.each<[string, Partial<Profile> | null, boolean]>([
     ['no profile row', null, false],
     ['the free tier', { tier: 'free' }, false],
@@ -70,7 +73,7 @@ describe(`the free-plan session cap in ${file}`, () => {
       false,
     ],
     ['a beta window that has expired', { tier: 'free', beta_access_expires_at: '2000-01-01T00:00:00Z' }, false],
-  ])('treats %s the way the SQL does', (_label, profile, unlimited) => {
+  ])('keep %s where the SQL copy puts it', (_label, profile, unlimited) => {
     const full = profile
       ? ({ beta_access_started_at: null, beta_access_expires_at: null, ...profile } as Profile)
       : null;

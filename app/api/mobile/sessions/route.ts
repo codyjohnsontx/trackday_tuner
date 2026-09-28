@@ -20,8 +20,9 @@ import type { Profile } from '@/types';
  * a replay after a lost response answers 200 with the stored row and
  * `replayed: true` rather than logging the outing twice. When the rider has
  * deleted that session since, the replay answers 200 with `replayed: true`,
- * `deleted: true` and `session: null`: the create was handled, so the entry
- * leaves the outbox, and the session is not written again.
+ * `deleted: true` and `session: null`: the save was handled and the rider has
+ * since deleted that session, so the phone clears the outbox entry and removes
+ * its local copy of the session, and the session is not written again.
  *
  * THE STATUS IS THE PHONE'S RETRY DECISION, so it is chosen by who can fix the
  * failure rather than by what failed:
