@@ -671,7 +671,7 @@ The same shape applies to anything derived rather than given:
 phone app reaches the server. It is `createSessionForUser` behind
 `authenticateBearer` (`lib/supabase/bearer.ts`): the anon key plus the rider's
 own access token, so RLS applies exactly as with cookies, and never the service
-role. Three things are load-bearing:
+role. Four things are load-bearing:
 
 - **The status is the phone's retry decision.** 400, 402 and 409 are the rider's
   to fix and the sync engine parks them; 401 means signed out; 503 is ours and is
