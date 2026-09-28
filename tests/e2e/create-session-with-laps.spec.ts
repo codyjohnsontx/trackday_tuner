@@ -7,10 +7,11 @@ import {
   deleteThrowawayRider,
   type ThrowawayRider,
 } from '@/tests/e2e/helpers/throwaway-rider';
-import type { Database, Json } from '@/types/supabase';
+import type { Database, Json, TableInsert } from '@/types/supabase';
 
 /**
- * `create_session_with_laps` (20260927002200) against a real database.
+ * `create_session_with_laps` (20260927002200, 20260928002300) and the session
+ * policies around it, against a real database.
  *
  * The route suite (app/api/mobile/sessions/route.test.ts) replaces this function
  * with an in-memory fake so it can pin statuses and copy quickly. A fake is
@@ -26,9 +27,22 @@ import type { Database, Json } from '@/types/supabase';
  * - a late replay leaves laps edited since then alone;
  * - anon cannot execute it.
  *
+ * And, from 20260928002300:
+ *
+ * - the `sessions` policies refuse a session on - or moved onto - another
+ *   rider's vehicle, which is what the website form's insert meets;
+ * - a late retry of a session the rider deleted, alone or with its vehicle, is
+ *   answered as handled and does not store it again, and riders cannot write
+ *   the record that decides it;
+ * - two concurrent creates by a free rider at nine sessions leave exactly ten,
+ *   and a Pro rider is not capped.
+ *
+ * Every rider here is deleted afterwards with the tombstones they left, which
+ * is the account delete the tombstone trigger must not break.
+ *
  * Needs no browser and no dev server: the NEXT_PUBLIC_SUPABASE_URL,
  * NEXT_PUBLIC_SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY of a stack built
- * with 20260927002200 applied. A stack without it fails rather than skips.
+ * with 20260928002300 applied. A stack without it fails rather than skips.
  */
 
 type Client = SupabaseClient<Database>;
@@ -238,5 +252,171 @@ test.describe('create_session_with_laps as riders and as nobody', () => {
     expect(error?.code).toBe('42501');
     expect(error?.message).toMatch(/permission denied for function create_session_with_laps/);
     expect(await stored(admin, sessionId)).toEqual({ sessions: [], laps: [], environment: [], summaries: [] });
+  });
+});
+
+/** The row the website form inserts, as `createSessionForUser` builds it. */
+function sessionRow(userId: string, vehicleId: string): TableInsert<'sessions'> {
+  return { ...(sessionFields(vehicleId) as unknown as TableInsert<'sessions'>), user_id: userId };
+}
+
+async function countSessions(admin: Client, userId: string): Promise<number> {
+  const { count, error } = await admin.from('sessions').select('id', { count: 'exact', head: true }).eq('user_id', userId);
+  expect(error, error?.message).toBeNull();
+  return count!;
+}
+
+test.describe('session ownership, deleted sessions and the free-plan cap (20260928002300)', () => {
+  test.skip(!hasServiceRole(), 'NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.');
+  test.skip(
+    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY is required: the policies and the function are met as a rider.',
+  );
+
+  let admin: Client;
+  const riders: ThrowawayRider[] = [];
+
+  async function newRider(label: string): Promise<{ rider: ThrowawayRider; client: Client; vehicle: string }> {
+    const rider = await createThrowawayRider(label);
+    riders.push(rider);
+    const client = await signIn(rider);
+    return { rider, client, vehicle: await createVehicle(client, rider.id) };
+  }
+
+  test.beforeAll(() => {
+    admin = createTestAdminClient();
+  });
+
+  test.afterAll(async () => {
+    for (const rider of riders) await deleteThrowawayRider(rider);
+  });
+
+  test('refuses the website form’s insert on another rider’s vehicle, and still takes one on the rider’s own', async () => {
+    const owner = await newRider('ownership-owner');
+    const other = await newRider('ownership-other');
+
+    const foreign = await other.client.from('sessions').insert(sessionRow(other.rider.id, owner.vehicle)).select('id');
+
+    expect(foreign.error?.code).toBe('42501');
+    expect(foreign.error?.message).toMatch(/row-level security policy/);
+    expect(await countSessions(admin, other.rider.id)).toBe(0);
+
+    const own = await other.client.from('sessions').insert(sessionRow(other.rider.id, other.vehicle)).select('id');
+    expect(own.error, own.error?.message).toBeNull();
+    expect(await countSessions(admin, other.rider.id)).toBe(1);
+  });
+
+  test('refuses moving a session onto another rider’s vehicle', async () => {
+    const owner = await newRider('ownership-move-owner');
+    const other = await newRider('ownership-move-other');
+    const sessionId = randomUUID();
+    expect((await create(other.client, sessionId, other.vehicle, [], null)).error).toBeNull();
+
+    const moved = await other.client.from('sessions').update({ vehicle_id: owner.vehicle }).eq('id', sessionId).select('id');
+
+    expect(moved.error?.code).toBe('42501');
+    expect((await stored(admin, sessionId)).sessions).toEqual([
+      { id: sessionId, user_id: other.rider.id, vehicle_id: other.vehicle },
+    ]);
+  });
+
+  test('refuses the phone’s create on another rider’s vehicle as TT404', async () => {
+    const owner = await newRider('ownership-phone-owner');
+    const other = await newRider('ownership-phone-other');
+    const sessionId = randomUUID();
+
+    const { error } = await create(other.client, sessionId, owner.vehicle);
+
+    expect(error?.code).toBe('TT404');
+    expect(await stored(admin, sessionId)).toEqual({ sessions: [], laps: [], environment: [], summaries: [] });
+  });
+
+  test('answers a late retry of a session the rider deleted as handled, and does not store it again', async () => {
+    const { rider, client, vehicle } = await newRider('deleted-replay');
+    const sessionId = randomUUID();
+    expect((await create(client, sessionId, vehicle)).error).toBeNull();
+    // The phone's answer was lost, and the rider deleted the session on the website.
+    const deleted = await client.from('sessions').delete().eq('id', sessionId).select('id');
+    expect(deleted.error, deleted.error?.message).toBeNull();
+    expect(deleted.data).toHaveLength(1);
+
+    const retry = await create(client, sessionId, vehicle);
+
+    expect(retry.error, retry.error?.message).toBeNull();
+    expect(retry.data).toEqual({ replayed: true, deleted: true, session: null });
+    expect(await stored(admin, sessionId)).toEqual({ sessions: [], laps: [], environment: [], summaries: [] });
+    const tombstone = await client.from('deleted_sessions').select('user_id, session_id').eq('session_id', sessionId);
+    expect(tombstone.data).toEqual([{ user_id: rider.id, session_id: sessionId }]);
+  });
+
+  test('answers a late retry of a session deleted with its vehicle as handled, not as a missing vehicle', async () => {
+    const { client } = await newRider('deleted-with-vehicle');
+    const bike = await createVehicle(client, (await client.auth.getUser()).data.user!.id);
+    const sessionId = randomUUID();
+    expect((await create(client, sessionId, bike)).error).toBeNull();
+    const gone = await client.from('vehicles').delete().eq('id', bike).select('id');
+    expect(gone.data).toHaveLength(1);
+
+    const retry = await create(client, sessionId, bike);
+
+    expect(retry.error, retry.error?.message).toBeNull();
+    expect(retry.data).toEqual({ replayed: true, deleted: true, session: null });
+    expect((await stored(admin, sessionId)).sessions).toEqual([]);
+  });
+
+  test('lets a rider read only their own deleted-session record, and write none', async () => {
+    const owner = await newRider('tombstone-owner');
+    const other = await newRider('tombstone-other');
+    const sessionId = randomUUID();
+    expect((await create(owner.client, sessionId, owner.vehicle, [], null)).error).toBeNull();
+    expect((await owner.client.from('sessions').delete().eq('id', sessionId).select('id')).data).toHaveLength(1);
+
+    const theirs = await other.client.from('deleted_sessions').select('session_id').eq('session_id', sessionId);
+    expect(theirs.error, theirs.error?.message).toBeNull();
+    expect(theirs.data).toEqual([]);
+
+    // Planting one would turn a create into a silent no-op; removing one would let a retry recreate.
+    const planted = await other.client.from('deleted_sessions').insert({ user_id: other.rider.id, session_id: randomUUID() });
+    expect(planted.error?.code).toBe('42501');
+    const removed = await owner.client.from('deleted_sessions').delete().eq('session_id', sessionId);
+    expect(removed.error?.code).toBe('42501');
+    const kept = await admin.from('deleted_sessions').select('session_id').eq('session_id', sessionId);
+    expect(kept.data).toHaveLength(1);
+  });
+
+  test('leaves a free rider at nine sessions with exactly ten when two creates arrive together', async () => {
+    const { rider, client, vehicle } = await newRider('cap-race');
+    for (let index = 0; index < 9; index += 1) {
+      expect((await create(client, randomUUID(), vehicle, [], null)).error).toBeNull();
+    }
+    expect(await countSessions(admin, rider.id)).toBe(9);
+
+    const results = await Promise.all([
+      create(client, randomUUID(), vehicle, [], null),
+      create(client, randomUUID(), vehicle, [], null),
+    ]);
+
+    expect(results.map((result) => result.error?.code ?? 'stored').sort()).toEqual(['TT402', 'stored']);
+    expect(await countSessions(admin, rider.id)).toBe(10);
+  });
+
+  test('answers a free rider’s replay at the cap as the stored row, and does not cap a Pro rider', async () => {
+    const { rider, client, vehicle } = await newRider('cap-replay');
+    const first = randomUUID();
+    expect((await create(client, first, vehicle, [], null)).error).toBeNull();
+    for (let index = 0; index < 9; index += 1) {
+      expect((await create(client, randomUUID(), vehicle, [], null)).error).toBeNull();
+    }
+
+    const replay = await create(client, first, vehicle, [], null);
+    expect(replay.error, replay.error?.message).toBeNull();
+    expect(replay.data).toMatchObject({ replayed: true, session: { id: first } });
+    expect((await create(client, randomUUID(), vehicle, [], null)).error?.code).toBe('TT402');
+
+    const upgraded = await admin.from('profiles').update({ tier: 'pro' }).eq('id', rider.id).select('id');
+    expect(upgraded.data).toHaveLength(1);
+    const eleventh = await create(client, randomUUID(), vehicle, [], null);
+    expect(eleventh.error, eleventh.error?.message).toBeNull();
+    expect(await countSessions(admin, rider.id)).toBe(11);
   });
 });

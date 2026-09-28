@@ -18,7 +18,10 @@ import type { Profile } from '@/types';
  *
  * The body carries an `id` the phone minted, and the create is idempotent on it:
  * a replay after a lost response answers 200 with the stored row and
- * `replayed: true` rather than logging the outing twice.
+ * `replayed: true` rather than logging the outing twice. When the rider has
+ * deleted that session since, the replay answers 200 with `replayed: true`,
+ * `deleted: true` and `session: null`: the create was handled, so the entry
+ * leaves the outbox, and the session is not written again.
  *
  * THE STATUS IS THE PHONE'S RETRY DECISION, so it is chosen by who can fix the
  * failure rather than by what failed:
@@ -82,8 +85,9 @@ export async function POST(request: Request) {
         userId: user.id,
         // The website reads this through `getUserProfile`, which answers a
         // failed read as "no profile" and so as the free plan. Here that would
-        // refuse a Pro rider's eleventh session as a cap the rider cannot clear
-        // and the phone would park it, so a failed read is a 503 and retried.
+        // hold a Pro rider to the free custom-track cap on a failed read, so a
+        // failed read is a 503 and retried. The session cap is read inside
+        // `create_session_with_laps`, which reads the profile itself.
         resolveProAccess: async () => {
           const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
           if (error) throw new ProfileReadError(error.message);
@@ -99,6 +103,7 @@ export async function POST(request: Request) {
       const error = result.kind === 'fault' ? UNAVAILABLE_MESSAGE : result.error;
       return reply({ ok: false, error }, STATUS_BY_KIND[result.kind]);
     }
+    if (result.data.deleted) return reply({ ok: true, session: null, replayed: true, deleted: true }, 200);
     return reply({ ok: true, session: result.data.session, replayed: result.data.replayed }, 200);
   } catch (error) {
     reportError('mobile-sessions', error, {

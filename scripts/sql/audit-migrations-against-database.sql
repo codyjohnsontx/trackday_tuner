@@ -180,15 +180,49 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   -- The function is create or replace, so an older or hand-edited copy is still
   -- there by name. Only the body fingerprint says the installed definition is
   -- this migration's; the other three read the security and grants it sets.
+  -- 20260928002300 replaces the body, so its fingerprint is accepted here too,
+  -- as the 1400 row accepts its 1500 replacement.
   (25, '20260927002200_add_create_session_with_laps', 'function',
       'public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)',
       to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)') is not null
-           and (select md5(p.prosrc) = '8c9d41c909128fbf696780c5b0c0d5ce'
+           and (select md5(p.prosrc) in ('8c9d41c909128fbf696780c5b0c0d5ce', 'd511ff7c7be1ab357c5a1dd207c639ab')
                   and not p.prosecdef
                   and p.proconfig = array['search_path=""']
                   and has_function_privilege('authenticated', p.oid, 'execute')
                   and not has_function_privilege('anon', p.oid, 'execute')
-                from pg_proc p where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)')))
+                from pg_proc p where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)'))),
+  -- Three changes, each read by what makes it true rather than by name: the
+  -- create function by its body, the trigger function by its body and its
+  -- locked execute, the tombstone table by its select-only rider grant, and the
+  -- two session policies by the fingerprint of the vehicle check they now carry
+  -- (SESSION_VEHICLE_OWNED_CHECK_MD5 in scripts/build-migration-audit.mjs).
+  -- The CASE keeps has_table_privilege off a table that is not there, as in
+  -- the 1100 row.
+  (26, '20260928002300_session_vehicle_ownership_and_deleted_sessions', 'function + trigger + table + policies',
+      'create_session_with_laps cap and tombstones, deleted_sessions, sessions vehicle-owned policies',
+      to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)') is not null
+           and (select md5(p.prosrc) = 'd511ff7c7be1ab357c5a1dd207c639ab'
+                from pg_proc p where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)'))
+           and to_regprocedure('public.record_deleted_session()') is not null
+           and (select md5(p.prosrc) = 'f683960a5a0bd7344368cc936e3120b4'
+                  and p.prosecdef
+                  and p.proconfig = array['search_path=""']
+                  and not has_function_privilege('authenticated', p.oid, 'execute')
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                from pg_proc p where p.oid = to_regprocedure('public.record_deleted_session()'))
+           and exists (select 1 from pg_trigger
+                  where tgname = 'sessions_record_deleted'
+                    and tgrelid = 'public.sessions'::regclass
+                    and tgenabled <> 'D' and not tgisinternal)
+           and case when to_regclass('public.deleted_sessions') is null then false
+                    else has_table_privilege('authenticated', 'public.deleted_sessions', 'select')
+                         and not has_table_privilege('authenticated', 'public.deleted_sessions', 'insert, update, delete')
+                         and not has_table_privilege('anon', 'public.deleted_sessions', 'select, insert, update, delete')
+               end
+           and (select count(*) from pg_policies p
+                  where p.schemaname = 'public' and p.tablename = 'sessions'
+                    and p.policyname in ('sessions: insert own', 'sessions: update own')
+                    and md5(replace(p.with_check, 'public.vehicles', 'vehicles')) = '7c9b3da91045db80e54e45052117e6e2') = 2)
 )
 select ordinality as "#",
        migration,

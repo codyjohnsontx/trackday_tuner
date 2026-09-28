@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { AuthApiError, AuthRetryableFetchError, AuthSessionMissingError, AuthUnknownError } from '@supabase/supabase-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getFreePlanLimitMessage } from '@/lib/plans';
+import { resolveUserAccess } from '@/lib/access';
+import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
 import { SESSION_REFERENCE_GONE_MESSAGE } from '@/lib/sessions/create';
+import type { Profile } from '@/types';
 
 /**
  * The route with everything real except Supabase: the bearer helper, the body
@@ -40,12 +42,8 @@ interface FakeOptions {
   getUser?: (token: string) => Promise<unknown>;
   /** Runs as `create_session_with_laps` starts, with the row it was sent - used to stage a race. */
   beforeSessionInsert?: (row: Row) => void;
-  /** Runs just before the free-plan count of `sessions` - used to stage a commit mid-replay. */
-  beforeSessionCount?: () => void;
   /** Make every `profiles` read fail. */
   profileReadFails?: boolean;
-  /** Make the free-plan count of `sessions` fail in transit (PostgREST then answers `count: null`). */
-  sessionCountFails?: boolean;
   /** Asked on each non-count `sessions` read; true fails that read in transit. */
   sessionReadFails?: () => boolean;
   /**
@@ -134,10 +132,6 @@ class Query {
       this.db[this.table] = table.filter((row) => !gone.includes(row));
       return { data: gone, error: null };
     }
-    if (this.table === 'sessions' && this.head) {
-      this.options.beforeSessionCount?.();
-      if (this.options.sessionCountFails) return { data: null, error: TRANSPORT_ERROR, count: null as unknown as number };
-    }
     if (this.table === 'sessions' && !this.head && this.options.sessionReadFails?.()) {
       return { data: null, error: TRANSPORT_ERROR };
     }
@@ -167,8 +161,11 @@ class Query {
 }
 
 /**
- * `create_session_with_laps` (20260927002200) as the database runs it: one
- * transaction, so it answers with everything written or nothing written.
+ * `create_session_with_laps` (20260927002200, 20260928002300) as the database
+ * runs it: one transaction, so it answers with everything written or nothing
+ * written, and in the function's order - replay, deleted replay, the free-plan
+ * cap, the vehicle. The body runs without yielding, which is what the real
+ * function's per-rider lock gives two calls from one rider.
  */
 function createSessionWithLaps(db: Db, options: FakeOptions, args: Record<string, unknown>) {
   const failure = options.createTransportFailure?.() ?? null;
@@ -180,6 +177,16 @@ function createSessionWithLaps(db: Db, options: FakeOptions, args: Record<string
 
   const own = db.sessions.find((row) => row.id === id && row.user_id === USER_ID);
   if (own) return { data: { replayed: true, session: own }, error: null };
+  if ((db.deleted_sessions ?? []).some((row) => row.session_id === id && row.user_id === USER_ID)) {
+    return { data: { replayed: true, deleted: true, session: null }, error: null };
+  }
+  const profile = (db.profiles ?? []).find((row) => row.id === USER_ID) as Profile | undefined;
+  if (
+    !resolveUserAccess(profile ?? null).hasProAccess &&
+    db.sessions.filter((row) => row.user_id === USER_ID).length >= getFreePlanLimit('sessions')
+  ) {
+    return { data: null, error: { code: 'TT402', message: 'the free plan holds 10 sessions' } };
+  }
   // The vehicle has to be one of this rider's - a deleted one and another rider's alike.
   if (!(db.vehicles ?? []).some((vehicle) => vehicle.id === fields.vehicle_id && vehicle.user_id === USER_ID)) {
     return { data: null, error: { code: 'TT404', message: 'the vehicle this session names is not one of this rider\'s' } };
@@ -274,6 +281,13 @@ function post(body: unknown, headers: Record<string, string> = { Authorization: 
       body: typeof body === 'string' ? body : JSON.stringify(body),
     }),
   );
+}
+
+/** The website's delete, and the `sessions_record_deleted` trigger it fires. */
+function deleteOnWebsite(db: Db, sessionId: string) {
+  db.sessions = db.sessions.filter((row) => row.id !== sessionId);
+  db.session_laps = (db.session_laps ?? []).filter((row) => row.session_id !== sessionId);
+  db.deleted_sessions = [...(db.deleted_sessions ?? []), { user_id: USER_ID, session_id: sessionId }];
 }
 
 function freeRiderWith(sessionCount: number): Db {
@@ -478,12 +492,11 @@ describe('POST /api/mobile/sessions', () => {
     expect(db.sessions).toHaveLength(10);
   });
 
-  it('answers a free rider’s replay as the row when the first call commits between its read and the cap count', async () => {
+  it('answers a free rider’s replay as the row, not the cap, when the first call commits while this one resolves', async () => {
     const db = freeRiderWith(9);
     fakeSupabase(db, {
-      beforeSessionCount: () => {
-        if (db.sessions.some((row) => row.id === SESSION_ID)) return;
-        db.sessions.push({ id: SESSION_ID, user_id: USER_ID, vehicle_id: VEHICLE_ID, date: '2026-09-27', notes: 'the first call' });
+      beforeSessionInsert: (row) => {
+        if (!db.sessions.some((existing) => existing.id === row.id)) db.sessions.push({ ...row, notes: 'the first call' });
       },
     });
 
@@ -496,26 +509,11 @@ describe('POST /api/mobile/sessions', () => {
     expect(db.sessions).toHaveLength(10);
   });
 
-  it('answers 503, storing nothing, when a free rider’s plan count fails rather than reading it as zero', async () => {
-    const db = freeRiderWith(10);
-    const client = fakeSupabase(db, { sessionCountFails: true });
-
-    const response = await post(sessionBody());
-
-    expect(response.status).toBe(503);
-    expect(db.sessions).toHaveLength(10);
-    expect(db.sessions.some((row) => row.id === SESSION_ID)).toBe(false);
-    expect(db.session_laps ?? []).toHaveLength(0);
-    expect(client.rpc).not.toHaveBeenCalled();
-    expect(reportError).toHaveBeenCalledWith('session-create', expect.any(Error), expect.objectContaining({ query: 'free-plan count' }));
-  });
-
-  it.each<[string, FakeOptions, () => Db]>([
-    ['the atomic create fails in transit', { createTransportFailure: () => 'before' }, seed],
-    ['the replay lookup fails', { sessionReadFails: () => true }, seed],
-    ['a free rider’s plan count fails', { sessionCountFails: true }, () => freeRiderWith(10)],
-  ])('answers 503 in the phone’s own words when %s, never the website form’s', async (_label, options, makeDb) => {
-    fakeSupabase(makeDb(), options);
+  it.each<[string, FakeOptions]>([
+    ['the atomic create fails in transit', { createTransportFailure: () => 'before' }],
+    ['the replay lookup fails', { sessionReadFails: () => true }],
+  ])('answers 503 in the phone’s own words when %s, never the website form’s', async (_label, options) => {
+    fakeSupabase(seed(), options);
 
     const response = await post(sessionBody());
 
@@ -526,25 +524,52 @@ describe('POST /api/mobile/sessions', () => {
     });
   });
 
-  it('answers 503, not the cap, when the first call commits mid-count and the re-read fails, leaving that row as the only one', async () => {
+  it('answers a replay of a session deleted since as handled, and does not create it again', async () => {
+    const db = seed();
+    const client = fakeSupabase(db);
+    const body = sessionBody({ track_id: null, track_name: 'Blackhawk Farms' });
+    expect((await post(body)).status).toBe(200);
+    const track = db.tracks.find((row) => row.name === 'Blackhawk Farms');
+    // The phone's answer was lost, and the rider deleted the session on the website.
+    deleteOnWebsite(db, SESSION_ID);
+
+    const retry = await post(body);
+
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toEqual({ ok: true, session: null, replayed: true, deleted: true });
+    expect(db.sessions).toHaveLength(0);
+    expect(db.session_laps).toHaveLength(0);
+    expect(client.rpc).toHaveBeenCalledTimes(2);
+    // The track the first call created is the rider's; the retry made none of its own.
+    expect(db.tracks.filter((row) => row.name === 'Blackhawk Farms')).toEqual([track]);
+  });
+
+  it('answers a replay of a session deleted since as handled for a free rider at the cap', async () => {
     const db = freeRiderWith(9);
-    let counted = false;
-    const client = fakeSupabase(db, {
-      beforeSessionCount: () => {
-        counted = true;
-        if (db.sessions.some((row) => row.id === SESSION_ID)) return;
-        db.sessions.push({ id: SESSION_ID, user_id: USER_ID, vehicle_id: VEHICLE_ID, date: '2026-09-27', notes: 'the first call' });
-      },
-      sessionReadFails: () => counted,
-    });
+    fakeSupabase(db);
+    expect((await post(sessionBody())).status).toBe(200);
+    deleteOnWebsite(db, SESSION_ID);
+    db.sessions.push({ id: randomUUID(), user_id: USER_ID, vehicle_id: VEHICLE_ID, date: '2026-09-28' });
 
-    const replay = await post(sessionBody());
+    const retry = await post(sessionBody());
 
-    expect(replay.status).toBe(503);
-    expect((await replay.json()).error).not.toBe(getFreePlanLimitMessage('sessions'));
+    expect(retry.status).toBe(200);
+    expect((await retry.json()).deleted).toBe(true);
     expect(db.sessions).toHaveLength(10);
-    expect(db.sessions.filter((row) => row.id === SESSION_ID)).toEqual([expect.objectContaining({ notes: 'the first call' })]);
-    expect(client.rpc).not.toHaveBeenCalled();
+  });
+
+  it('answers a replay of a session deleted with its vehicle as handled, not as a vehicle that is gone', async () => {
+    const db = seed();
+    fakeSupabase(db);
+    expect((await post(sessionBody())).status).toBe(200);
+    db.vehicles = [];
+    deleteOnWebsite(db, SESSION_ID);
+
+    const retry = await post(sessionBody());
+
+    expect(retry.status).toBe(200);
+    expect((await retry.json()).deleted).toBe(true);
+    expect(db.sessions).toHaveLength(0);
   });
 
   it('answers a replay that lands while the first call is still writing with the row that won', async () => {
@@ -704,12 +729,38 @@ describe('POST /api/mobile/sessions', () => {
     const db = freeRiderWith(10);
     const client = fakeSupabase(db);
 
-    const response = await post(sessionBody());
+    const response = await post(sessionBody({ track_id: null, track_name: 'Blackhawk Farms' }));
 
     expect(response.status).toBe(402);
     expect(await response.json()).toEqual({ ok: false, error: getFreePlanLimitMessage('sessions') });
     expect(db.sessions).toHaveLength(10);
-    expect(client.rpc).not.toHaveBeenCalled();
+    // Counted inside create_session_with_laps, so the track resolved for it goes again.
+    expect(client.rpc).toHaveBeenCalledTimes(1);
+    expect(db.tracks.some((track) => track.name === 'Blackhawk Farms')).toBe(false);
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it('saves one and refuses the other when a free rider at nine sends two different sessions at once', async () => {
+    const db = freeRiderWith(9);
+    fakeSupabase(db);
+
+    const responses = await Promise.all([post(sessionBody()), post(sessionBody({ id: randomUUID() }))]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 402]);
+    expect(db.sessions).toHaveLength(10);
+  });
+
+  it('saves a beta rider’s eleventh session, since the function reads the same entitlement', async () => {
+    const db = freeRiderWith(10);
+    db.profiles = [
+      { id: USER_ID, tier: 'free', beta_access_started_at: null, beta_access_expires_at: '2999-01-01T00:00:00Z' },
+    ];
+    fakeSupabase(db);
+
+    const response = await post(sessionBody());
+
+    expect(response.status).toBe(200);
+    expect(db.sessions).toHaveLength(11);
   });
 
   it('refuses a session with no weather answer as 400 with MISSING_CONDITIONS_MESSAGE', async () => {

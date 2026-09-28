@@ -128,12 +128,15 @@ plus a stack built with the `[storage.buckets.session-photos]` block and
 `20260926002000` and `20260926002100` applied - `supabase start` or `db reset`
 since they were added. It fails rather than skips without them.
 `tests/e2e/create-session-with-laps.spec.ts` calls the phone's create function
-(`20260927002200`) directly, as two throwaway riders and as nobody, and reads what
-was stored back through the service role. The mobile route's unit suite fakes that
+(`20260927002200`, `20260928002300`) directly, as throwaway riders and as nobody,
+and reads what was stored back through the service role. It also meets the
+`sessions` policies as the website form's insert does (a session on another
+rider's vehicle), deletes a session and retries its create, and races two
+creates by a free rider at nine sessions. The mobile route's unit suite fakes that
 function, so this spec is the only one that exercises the real transaction,
 RLS, grants and error codes. It needs the service-role key and
 `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and no browser, dev server or `E2E_*` account,
-so `--project desktop-chrome` is enough. A stack without that migration fails the
+so `--project desktop-chrome` is enough. A stack without those migrations fails the
 spec rather than skipping it.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 

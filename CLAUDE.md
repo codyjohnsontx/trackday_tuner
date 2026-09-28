@@ -680,8 +680,15 @@ role. Four things are load-bearing:
   in `lib/sessions/create.ts` is where a new refusal gets its class.
 - **Idempotent on the body's `id`**, which reaches `createSessionForUser` as
   `options.id` and never inside `CreateSessionInput`, so the website's form cannot
-  choose a primary key. The replay lookup runs before the free-plan count, or a
-  free rider's tenth session replayed would be refused as their eleventh.
+  choose a primary key. "Already handled" is a row with that id OR a
+  `deleted_sessions` record of one (20260928002300, written by a trigger on every
+  session delete), so a retry whose first answer was lost cannot recreate a
+  session the rider deleted since; that answers 200 with `deleted: true` and
+  `session: null`. The phone's free-plan cap is counted inside
+  `create_session_with_laps` under a per-rider advisory lock, after the replay
+  checks, and mirrors `resolveUserAccess` in SQL
+  (`tests/unit/session-create-plan-cap.test.ts` pins the two); the website form
+  still counts in TypeScript and is not covered by that lock.
 - **Atomic, where the website's create is not.** With an id, the row, laps and
   environment are one call to `create_session_with_laps` (20260927002200), so a
   failure stores nothing and a stored session is always complete - which is what
@@ -689,7 +696,10 @@ role. Four things are load-bearing:
   still writes them as three statements and rolls back; its rider sees a failed
   save, where the phone's retry would read a half-written row as synced. The
   hosted project needs the function applied by hand ("Apply the session create
-  function by hand" in `docs/beta-runbook.md`).
+  function by hand" in `docs/beta-runbook.md`, then "Close session ownership,
+  deleted-session replays and the free-plan race by hand"). A session's vehicle
+  must be the rider's on every path: the `sessions` insert and update policies
+  check it, and the function raises `TT404` first so the phone can park it.
 - **The body is validated leaf by leaf** (`lib/sessions/parse-create-request.ts`)
   because the setup blobs are unconstrained `jsonb` and a numeric leaf crashes the
   session screens (tt-session-screens-nonstring-fields).

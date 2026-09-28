@@ -1439,7 +1439,9 @@ The last column compares the md5 of the installed function body with the body
 in the migration, so it is `true` only when what is installed is exactly the
 block above: an older copy, a hand edit or a partial paste all read `false`. If
 it reads `false`, run the apply block again rather than editing the function in
-place. Row 25 of
+place - unless "Close session ownership, deleted-session replays and the
+free-plan race by hand" below has been applied, which replaces the body on
+purpose; its own verify query is then the one to read. Row 25 of
 `scripts/sql/audit-migrations-against-database.sql` then reads `present`, and
 `/api/health`'s `schema_contract` check stops naming the function.
 
@@ -1450,6 +1452,419 @@ since every session the phone sends fails without it.
 -- hosted-session-create-rollback
 begin;
 drop function if exists public.create_session_with_laps(uuid, jsonb, jsonb, jsonb);
+commit;
+```
+
+### Close session ownership, deleted-session replays and the free-plan race by hand
+
+`20260928002300` makes three changes to how a session is written, and they are
+applied together so one paste takes all three:
+
+- **A session's vehicle has to be the rider's.** `sessions: insert own` and
+  `sessions: update own` now also require `vehicle_id` to name one of the
+  rider's own vehicles, so no path - the website form, the phone, or a request
+  crafted against the Data API - can store a session on, or move one onto,
+  someone else's vehicle. The website form answers the refusal with "not in
+  your garage"; the phone already had its own check and keeps it.
+- **A deleted session stays deleted.** A new table, `deleted_sessions`, records
+  the id of every deleted session through a trigger on `sessions`, and
+  `create_session_with_laps` answers a create on a recorded id as a replay that
+  wrote nothing, so a phone retrying a save whose answer was lost cannot bring
+  back a session the rider has since deleted. Riders can read their own rows
+  and write none.
+- **The free-plan cap holds when two saves arrive together.**
+  `create_session_with_laps` now counts a free rider's sessions itself, under a
+  per-rider lock, and refuses the eleventh as `TT402` (answered 402, which the
+  phone parks). Its signature is unchanged.
+
+Apply it before merging the pull request that adds it. Until the release
+deploys, the release before it keeps working: its phone path counts first, as
+it always did, and a save that loses the race is answered 503 and retried
+rather than stored. A replay of a deleted session in that window is also
+answered 503 and retried, and is answered as handled once the release is out.
+
+**1. Precheck (read-only).**
+
+```sql
+-- hosted-session-ownership-precheck
+select
+  to_regclass('public.deleted_sessions') is not null as tombstones_exist,
+  to_regprocedure('public.record_deleted_session()') is not null as trigger_function_exists,
+  (select md5(p.prosrc) = '8c9d41c909128fbf696780c5b0c0d5ce'
+     from pg_proc p
+    where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)'))
+    as create_function_is_20260927002200,
+  (select count(*)
+     from public.sessions s
+     join public.vehicles v on v.id = s.vehicle_id
+    where v.user_id <> s.user_id) as sessions_on_another_riders_vehicle;
+
+select policyname, cmd, qual, with_check
+  from pg_policies
+ where schemaname = 'public' and tablename = 'sessions'
+ order by policyname;
+```
+
+Expect `false`, `false`, `true`, `0` from the first query. `true` in either of
+the first two means some of this is already there: run the verify query below
+rather than applying over it. `false` in the third means the installed function
+is not the one "Apply the session create function by hand" installs - apply
+that section first. A count above `0` in the last column is a finding to decide
+before going on: those sessions sit on another rider's vehicle, their own rider
+could no longer edit them once the update policy checks the vehicle, and the
+vehicle's owner deleting it would take them.
+
+The second query should list four policies, each with the expression the
+baseline gives it: `(auth.uid() = user_id)` as `qual` on select, update and
+delete and as `with_check` on insert and update. The apply block rewrites the
+insert and update ones with `alter policy`, which fails - and so applies
+nothing - if either is missing under that name. Any other difference is a
+finding too.
+
+**2. Apply.**
+
+```sql
+-- hosted-session-ownership: mirror of supabase/migrations/20260928002300_session_vehicle_ownership_and_deleted_sessions.sql
+begin;
+create table if not exists public.deleted_sessions (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  session_id uuid not null,
+  deleted_at timestamptz not null default now(),
+  primary key (user_id, session_id)
+);
+
+alter table public.deleted_sessions enable row level security;
+
+create policy "deleted_sessions: select own"
+  on public.deleted_sessions for select
+  using (auth.uid() = user_id);
+
+-- A rider reads their own - `create_session_with_laps` is security invoker - and
+-- writes none: only the trigger does. The revoke comes first because the hosted
+-- project's legacy default privileges hand every new table to anon and
+-- authenticated with `grant all`.
+revoke all on public.deleted_sessions from public, anon, authenticated;
+grant select on public.deleted_sessions to authenticated;
+
+-- security definer because it writes a table no rider may insert into, and
+-- because an account delete runs as the auth service, which holds no grant on
+-- it. It cannot be called directly - it returns `trigger` - but the execute
+-- decision is written down here as for every security definer function.
+create or replace function public.record_deleted_session()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if exists (select 1 from auth.users u where u.id = old.user_id) then
+    insert into public.deleted_sessions (user_id, session_id)
+    values (old.user_id, old.id)
+    on conflict do nothing;
+  end if;
+  return old;
+end;
+$$;
+
+revoke all on function public.record_deleted_session() from public, anon, authenticated;
+
+drop trigger if exists sessions_record_deleted on public.sessions;
+create trigger sessions_record_deleted
+  after delete on public.sessions
+  for each row execute function public.record_deleted_session();
+
+alter policy "sessions: insert own"
+  on public.sessions
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+        from public.vehicles v
+       where v.id = sessions.vehicle_id
+         and v.user_id = auth.uid()
+    )
+  );
+
+alter policy "sessions: update own"
+  on public.sessions
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+        from public.vehicles v
+       where v.id = sessions.vehicle_id
+         and v.user_id = auth.uid()
+    )
+  );
+
+create or replace function public.create_session_with_laps(
+  p_session_id uuid,
+  p_session jsonb,
+  p_laps jsonb,
+  p_environment jsonb
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_session public.sessions;
+  v_unlimited boolean;
+begin
+  if auth.uid() is null then
+    raise exception 'create_session_with_laps needs a signed-in rider' using errcode = '42501';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended('create_session_with_laps:' || auth.uid()::text, 0));
+
+  select s.* into v_session
+    from public.sessions s
+   where s.id = p_session_id
+     and s.user_id = auth.uid();
+
+  if found then
+    return jsonb_build_object('replayed', true, 'session', to_jsonb(v_session));
+  end if;
+
+  if exists (
+    select 1
+      from public.deleted_sessions d
+     where d.user_id = auth.uid()
+       and d.session_id = p_session_id
+  ) then
+    return jsonb_build_object('replayed', true, 'deleted', true, 'session', null);
+  end if;
+
+  select p.tier = 'pro'
+         or (p.beta_access_expires_at > now()
+             and (p.beta_access_started_at is null or p.beta_access_started_at <= now()))
+    into v_unlimited
+    from public.profiles p
+   where p.id = auth.uid();
+
+  if not coalesce(v_unlimited, false)
+     and (select count(*) from public.sessions s where s.user_id = auth.uid()) >= 10 then
+    raise exception 'the free plan holds 10 sessions' using errcode = 'TT402';
+  end if;
+
+  if not exists (
+    select 1
+      from public.vehicles v
+     where v.id = (p_session ->> 'vehicle_id')::uuid
+       and v.user_id = auth.uid()
+  ) then
+    raise exception 'the vehicle this session names is not one of this rider''s'
+      using errcode = 'TT404';
+  end if;
+
+  begin
+    insert into public.sessions (
+      id, user_id, vehicle_id, track_id, track_name, layout_id, layout_name,
+      date, start_time, session_number, conditions, tires, suspension,
+      alignment, enabled_modules, extra_modules, notes
+    )
+    select
+      p_session_id, auth.uid(), r.vehicle_id, r.track_id, r.track_name, r.layout_id, r.layout_name,
+      r.date, r.start_time, r.session_number, r.conditions, r.tires, r.suspension,
+      r.alignment, coalesce(r.enabled_modules, '{}'::jsonb), r.extra_modules, r.notes
+    from jsonb_populate_record(null::public.sessions, p_session) r
+    returning * into v_session;
+  exception when unique_violation then
+    select s.* into v_session
+      from public.sessions s
+     where s.id = p_session_id
+       and s.user_id = auth.uid();
+
+    if found then
+      return jsonb_build_object('replayed', true, 'session', to_jsonb(v_session));
+    end if;
+
+    raise;
+  end;
+
+  perform public.replace_session_laps(auth.uid(), p_session_id, p_laps, '[]'::jsonb);
+
+  if p_environment is not null then
+    insert into public.session_environment (
+      user_id, session_id, ambient_temperature_c, track_temperature_c,
+      humidity_percent, weather_condition, surface_condition, source
+    )
+    select
+      auth.uid(), p_session_id, r.ambient_temperature_c, r.track_temperature_c,
+      r.humidity_percent, r.weather_condition, r.surface_condition, coalesce(r.source, 'manual')
+    from jsonb_populate_record(null::public.session_environment, p_environment) r;
+  end if;
+
+  return jsonb_build_object('replayed', false, 'session', to_jsonb(v_session));
+end;
+$$;
+
+revoke all on function public.create_session_with_laps(uuid, jsonb, jsonb, jsonb) from public, anon, authenticated;
+grant execute on function public.create_session_with_laps(uuid, jsonb, jsonb, jsonb) to authenticated;
+commit;
+```
+
+The block is one transaction, so a failure applies none of it. It is not
+re-runnable once it has succeeded - `create policy` has no `if not exists` -
+and a second paste fails on that statement and changes nothing.
+
+**3. Verify.**
+
+```sql
+-- hosted-session-ownership-verify
+select
+  (select md5(p.prosrc) = 'd511ff7c7be1ab357c5a1dd207c639ab'
+          and not p.prosecdef
+          and p.proconfig = array['search_path=""']
+          and has_function_privilege('authenticated', p.oid, 'execute')
+          and not has_function_privilege('anon', p.oid, 'execute')
+     from pg_proc p
+    where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)'))
+    as create_function_is_the_migration,
+  (select md5(p.prosrc) = 'f683960a5a0bd7344368cc936e3120b4'
+          and p.prosecdef
+          and p.proconfig = array['search_path=""']
+          and not has_function_privilege('authenticated', p.oid, 'execute')
+          and not has_function_privilege('anon', p.oid, 'execute')
+     from pg_proc p
+    where p.oid = to_regprocedure('public.record_deleted_session()'))
+    as trigger_function_is_the_migration,
+  exists (select 1 from pg_trigger
+           where tgname = 'sessions_record_deleted'
+             and tgrelid = 'public.sessions'::regclass
+             and tgenabled <> 'D' and not tgisinternal) as trigger_is_on,
+  case when to_regclass('public.deleted_sessions') is null then false
+       else (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.deleted_sessions'))
+            and has_table_privilege('authenticated', 'public.deleted_sessions', 'select')
+            and not has_table_privilege('authenticated', 'public.deleted_sessions', 'insert, update, delete')
+            and not has_table_privilege('anon', 'public.deleted_sessions', 'select, insert, update, delete')
+  end as tombstones_are_read_only_to_riders,
+  (select count(*) from pg_policies p
+    where p.schemaname = 'public' and p.tablename = 'deleted_sessions'
+      and p.policyname = 'deleted_sessions: select own' and p.cmd = 'SELECT'
+      and p.qual = '(auth.uid() = user_id)') as tombstone_policies,
+  (select count(*) from pg_policies p
+    where p.schemaname = 'public' and p.tablename = 'sessions'
+      and p.policyname in ('sessions: insert own', 'sessions: update own')
+      and p.qual is not distinct from case p.cmd when 'UPDATE' then '(auth.uid() = user_id)' end
+      and md5(replace(p.with_check, 'public.vehicles', 'vehicles')) = '7c9b3da91045db80e54e45052117e6e2')
+    as vehicle_checked_session_policies;
+```
+
+Expect one row: `true`, `true`, `true`, `true`, `1`, `2`. The two md5 columns
+compare each installed function body with the migration's, so an older copy, a
+hand edit or a partial paste reads `false`. The last column fingerprints the
+vehicle check both session policies now carry, as `pg_policies` prints it; the
+`replace` takes out the one qualifier that depends on the reader's
+`search_path`, so it reads the same in the SQL editor as anywhere else. Row 26
+of `scripts/sql/audit-migrations-against-database.sql` then reads `present`,
+and row 25 still does.
+
+**4. Rollback.** Only together with a rollback of the release that expects it:
+that release no longer counts a phone save's sessions itself, so without the
+function's cap a free rider's phone saves are not capped at all. It restores the
+20260927002200 function, the baseline's two policies, and drops the trigger and
+the table - with every id recorded in it.
+
+```sql
+-- hosted-session-ownership-rollback
+begin;
+create or replace function public.create_session_with_laps(
+  p_session_id uuid,
+  p_session jsonb,
+  p_laps jsonb,
+  p_environment jsonb
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_session public.sessions;
+begin
+  if auth.uid() is null then
+    raise exception 'create_session_with_laps needs a signed-in rider' using errcode = '42501';
+  end if;
+
+  select s.* into v_session
+    from public.sessions s
+   where s.id = p_session_id
+     and s.user_id = auth.uid();
+
+  if found then
+    return jsonb_build_object('replayed', true, 'session', to_jsonb(v_session));
+  end if;
+
+  if not exists (
+    select 1
+      from public.vehicles v
+     where v.id = (p_session ->> 'vehicle_id')::uuid
+       and v.user_id = auth.uid()
+  ) then
+    raise exception 'the vehicle this session names is not one of this rider''s'
+      using errcode = 'TT404';
+  end if;
+
+  begin
+    insert into public.sessions (
+      id, user_id, vehicle_id, track_id, track_name, layout_id, layout_name,
+      date, start_time, session_number, conditions, tires, suspension,
+      alignment, enabled_modules, extra_modules, notes
+    )
+    select
+      p_session_id, auth.uid(), r.vehicle_id, r.track_id, r.track_name, r.layout_id, r.layout_name,
+      r.date, r.start_time, r.session_number, r.conditions, r.tires, r.suspension,
+      r.alignment, coalesce(r.enabled_modules, '{}'::jsonb), r.extra_modules, r.notes
+    from jsonb_populate_record(null::public.sessions, p_session) r
+    returning * into v_session;
+  exception when unique_violation then
+    select s.* into v_session
+      from public.sessions s
+     where s.id = p_session_id
+       and s.user_id = auth.uid();
+
+    if found then
+      return jsonb_build_object('replayed', true, 'session', to_jsonb(v_session));
+    end if;
+
+    raise;
+  end;
+
+  perform public.replace_session_laps(auth.uid(), p_session_id, p_laps, '[]'::jsonb);
+
+  if p_environment is not null then
+    insert into public.session_environment (
+      user_id, session_id, ambient_temperature_c, track_temperature_c,
+      humidity_percent, weather_condition, surface_condition, source
+    )
+    select
+      auth.uid(), p_session_id, r.ambient_temperature_c, r.track_temperature_c,
+      r.humidity_percent, r.weather_condition, r.surface_condition, coalesce(r.source, 'manual')
+    from jsonb_populate_record(null::public.session_environment, p_environment) r;
+  end if;
+
+  return jsonb_build_object('replayed', false, 'session', to_jsonb(v_session));
+end;
+$$;
+
+revoke all on function public.create_session_with_laps(uuid, jsonb, jsonb, jsonb) from public, anon, authenticated;
+grant execute on function public.create_session_with_laps(uuid, jsonb, jsonb, jsonb) to authenticated;
+
+alter policy "sessions: insert own"
+  on public.sessions
+  with check (auth.uid() = user_id);
+
+alter policy "sessions: update own"
+  on public.sessions
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop trigger if exists sessions_record_deleted on public.sessions;
+drop function if exists public.record_deleted_session();
+drop table if exists public.deleted_sessions;
 commit;
 ```
 
