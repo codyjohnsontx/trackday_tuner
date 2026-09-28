@@ -3,8 +3,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // The generator is plain JS with no types (see migration-audit-generation.test.ts).
-// @ts-expect-error - see above.
-import { SESSION_VEHICLE_OWNED_CHECK_MD5, functionBodyMd5 } from '@/scripts/build-migration-audit.mjs';
+import {
+  SESSION_OWNERSHIP_POLICIES_EXACT,
+  SESSION_OWNERSHIP_POLICIES_TOTAL,
+  SESSION_TOMBSTONE_TRIGGER_EXACT,
+  SESSION_VEHICLE_OWNED_CHECK_MD5,
+  buildAuditSql,
+  functionBodyMd5,
+  // @ts-expect-error - see above.
+} from '@/scripts/build-migration-audit.mjs';
 
 // docs/beta-runbook.md carries a copy of 20260928002300 for the hosted project,
 // which has no migration history and is patched in the SQL editor by hand - the
@@ -75,7 +82,12 @@ describe('the hosted session ownership block in docs/beta-runbook.md', () => {
     expect(statements(precheck).every((statement) => statement.startsWith('select'))).toBe(true);
   });
 
-  it('verifies both bodies, security, grants, the trigger, the table and the policy fingerprint', () => {
+  // Written out in full rather than rebuilt from the exported fragments, so
+  // loosening a check - dropping the trigger's event or level, a policy's
+  // command, role or `using` - fails here whether it was loosened in the
+  // runbook or in scripts/build-migration-audit.mjs. Each clause was watched
+  // catching its drift on a real database: see the PR's negative cases.
+  it('verifies both bodies, the exact trigger, the tombstone table and every policy tuple', () => {
     expect(statements(fencedBlock(runbook, VERIFY_MARKER))).toEqual(
       statements(`
         select
@@ -95,32 +107,57 @@ describe('the hosted session ownership block in docs/beta-runbook.md', () => {
              from pg_proc p
             where p.oid = to_regprocedure('public.record_deleted_session()'))
             as trigger_function_is_the_migration,
-          exists (select 1 from pg_trigger
-                   where tgname = 'sessions_record_deleted'
-                     and tgrelid = 'public.sessions'::regclass
-                     and tgenabled <> 'D' and not tgisinternal) as trigger_is_on,
+          (exists (select 1 from pg_trigger t
+                    where t.tgrelid = to_regclass('public.sessions')
+                      and t.tgname = 'sessions_record_deleted'
+                      and t.tgfoid = to_regprocedure('public.record_deleted_session()')
+                      and t.tgtype = 9
+                      and t.tgenabled = 'O'
+                      and t.tgnargs = 0
+                      and t.tgqual is null
+                      and not t.tgisinternal)
+           and (select count(*) from pg_trigger t
+                 where t.tgfoid = to_regprocedure('public.record_deleted_session()')) = 1)
+            as trigger_is_exact,
           case when to_regclass('public.deleted_sessions') is null then false
                else (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.deleted_sessions'))
                     and has_table_privilege('authenticated', 'public.deleted_sessions', 'select')
                     and not has_table_privilege('authenticated', 'public.deleted_sessions', 'insert, update, delete')
                     and not has_table_privilege('anon', 'public.deleted_sessions', 'select, insert, update, delete')
           end as tombstones_are_read_only_to_riders,
-          exists (select 1 from pg_policies p
-            where p.schemaname = 'public' and p.tablename = 'deleted_sessions'
-              and p.policyname = 'deleted_sessions: select own' and p.cmd = 'SELECT'
-              and p.permissive = 'PERMISSIVE' and p.qual = '(auth.uid() = user_id)') as tombstone_policy_is_select_own,
           (select count(*) from pg_policies p
-            where p.schemaname = 'public' and p.tablename = 'deleted_sessions') as tombstone_policies,
+             join (values
+               ('sessions', 'sessions: select own', 'SELECT', '(auth.uid() = user_id)', null),
+               ('sessions', 'sessions: insert own', 'INSERT', null, '${SESSION_VEHICLE_OWNED_CHECK_MD5}'),
+               ('sessions', 'sessions: update own', 'UPDATE', '(auth.uid() = user_id)', '${SESSION_VEHICLE_OWNED_CHECK_MD5}'),
+               ('sessions', 'sessions: delete own', 'DELETE', '(auth.uid() = user_id)', null),
+               ('deleted_sessions', 'deleted_sessions: select own', 'SELECT', '(auth.uid() = user_id)', null)
+             ) as e(tablename, policyname, cmd, qual, with_check_md5)
+               on e.tablename = p.tablename and e.policyname = p.policyname
+            where p.schemaname = 'public'
+              and p.cmd = e.cmd
+              and p.permissive = 'PERMISSIVE'
+              and p.roles = array['public']::name[]
+              and p.qual is not distinct from e.qual
+              and md5(replace(p.with_check, 'public.vehicles', 'vehicles')) is not distinct from e.with_check_md5)
+            as exact_policies,
           (select count(*) from pg_policies p
-            where p.schemaname = 'public' and p.tablename = 'sessions'
-              and p.policyname in ('sessions: insert own', 'sessions: update own')
-              and p.qual is not distinct from case p.cmd when 'UPDATE' then '(auth.uid() = user_id)' end
-              and md5(replace(p.with_check, 'public.vehicles', 'vehicles')) = '${SESSION_VEHICLE_OWNED_CHECK_MD5}')
-            as vehicle_checked_session_policies,
-          (select count(*) from pg_policies p
-            where p.schemaname = 'public' and p.tablename = 'sessions') as session_policies;
+            where p.schemaname = 'public' and p.tablename in ('sessions', 'deleted_sessions'))
+            as all_policies;
       `),
     );
+  });
+
+  it('generates the same trigger and policy checks into audit row 26', () => {
+    const verify = statements(fencedBlock(runbook, VERIFY_MARKER)).join(' ');
+    const audit = statements(buildAuditSql()).join(' ');
+    const squash = (lines: string[]) => statements(lines.join('\n')).join(' ');
+    for (const fragment of [SESSION_TOMBSTONE_TRIGGER_EXACT, SESSION_OWNERSHIP_POLICIES_EXACT, SESSION_OWNERSHIP_POLICIES_TOTAL]) {
+      expect(verify).toContain(squash(fragment));
+      expect(audit).toContain(squash(fragment));
+    }
+    expect(audit).toContain(`${squash(SESSION_OWNERSHIP_POLICIES_EXACT)} = 5`);
+    expect(audit).toContain(`${squash(SESSION_OWNERSHIP_POLICIES_TOTAL)} = 5`);
   });
 
   it('rolls back to 20260927002200 and the baseline policies, in one transaction', () => {

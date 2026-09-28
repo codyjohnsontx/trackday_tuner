@@ -66,6 +66,67 @@ const CREATE_SESSION_WITH_LAPS = "to_regprocedure('public.create_session_with_la
 const RECORD_DELETED_SESSION = "to_regprocedure('public.record_deleted_session()')";
 
 /**
+ * The tombstone trigger, proved field by field rather than by name: on
+ * `public.sessions`, calling `record_deleted_session()`, `tgtype` 9 (ROW = 1,
+ * DELETE = 8, and neither the BEFORE nor the INSTEAD bit, so AFTER), enabled in
+ * the ordinary way, with no WHEN clause and no arguments - and the only trigger
+ * calling that function. A trigger that kept the name and fired per statement,
+ * on another event or into another function writes no tombstone, and a replay
+ * then recreates the session. `to_regclass` rather than a `::regclass` cast so a
+ * database without `sessions` reads false instead of failing the whole query.
+ * The runbook's verify query carries the same predicate;
+ * tests/unit/hosted-session-ownership-runbook.test.ts holds the two together.
+ */
+export const SESSION_TOMBSTONE_TRIGGER_EXACT = [
+  'exists (select 1 from pg_trigger t',
+  "         where t.tgrelid = to_regclass('public.sessions')",
+  "           and t.tgname = 'sessions_record_deleted'",
+  `           and t.tgfoid = ${RECORD_DELETED_SESSION}`,
+  '           and t.tgtype = 9',
+  "           and t.tgenabled = 'O'",
+  '           and t.tgnargs = 0',
+  '           and t.tgqual is null',
+  '           and not t.tgisinternal)',
+  'and (select count(*) from pg_trigger t',
+  `      where t.tgfoid = ${RECORD_DELETED_SESSION}) = 1`,
+];
+
+/**
+ * Every policy on `sessions` and `deleted_sessions`, each matched on its whole
+ * tuple - command, permissive, roles, `using` and `with check` - so a policy
+ * whose name is right and whose command is not (`alter policy` cannot change a
+ * command, so a hand-made `for all` survives the apply block) does not count.
+ * `with check` is compared by SESSION_VEHICLE_OWNED_CHECK_MD5 for the reason
+ * given there. It counts the matches; the total beside it counts every policy
+ * on the two tables, because permissive policies are OR-ed and one more of
+ * either kind reopens what the five close. Both read 5.
+ */
+export const SESSION_OWNERSHIP_POLICIES_EXACT = [
+  '(select count(*) from pg_policies p',
+  '   join (values',
+  "     ('sessions', 'sessions: select own', 'SELECT', '(auth.uid() = user_id)', null),",
+  `     ('sessions', 'sessions: insert own', 'INSERT', null, '${SESSION_VEHICLE_OWNED_CHECK_MD5}'),`,
+  `     ('sessions', 'sessions: update own', 'UPDATE', '(auth.uid() = user_id)', '${SESSION_VEHICLE_OWNED_CHECK_MD5}'),`,
+  "     ('sessions', 'sessions: delete own', 'DELETE', '(auth.uid() = user_id)', null),",
+  "     ('deleted_sessions', 'deleted_sessions: select own', 'SELECT', '(auth.uid() = user_id)', null)",
+  '   ) as e(tablename, policyname, cmd, qual, with_check_md5)',
+  '     on e.tablename = p.tablename and e.policyname = p.policyname',
+  "  where p.schemaname = 'public'",
+  '    and p.cmd = e.cmd',
+  "    and p.permissive = 'PERMISSIVE'",
+  "    and p.roles = array['public']::name[]",
+  '    and p.qual is not distinct from e.qual',
+  "    and md5(replace(p.with_check, 'public.vehicles', 'vehicles')) is not distinct from e.with_check_md5)",
+];
+
+export const SESSION_OWNERSHIP_POLICIES_TOTAL = [
+  '(select count(*) from pg_policies p',
+  "  where p.schemaname = 'public' and p.tablename in ('sessions', 'deleted_sessions'))",
+];
+
+const indent = (lines, by) => lines.map((line) => `${' '.repeat(by)}${line}`);
+
+/**
  * Migration basename (no `.sql`) -> the object that migration is the only thing
  * in this repository to create, and the read that answers whether it is there.
  *
@@ -348,13 +409,12 @@ export const MIGRATION_PROBES = {
     note: [
       'Three changes, each read by what makes it true rather than by name: the',
       'create function by its body, the trigger function by its body and its',
-      'locked execute, the tombstone table by its select-only rider grant, and the',
-      'two session policies by the fingerprint of the vehicle check they now carry',
-      '(SESSION_VEHICLE_OWNED_CHECK_MD5 in scripts/build-migration-audit.mjs).',
-      'Policies are counted per table as well: permissive policies are OR-ed, so',
-      'one extra policy without the vehicle check reopens the hole the two named',
-      'ones close, and the tombstone table needs RLS on and its one select policy,',
-      'or riders read each other\'s records or the function cannot see its own.',
+      'locked execute, the trigger by its table, timing, event, level and',
+      'function (SESSION_TOMBSTONE_TRIGGER_EXACT), the tombstone table by RLS and',
+      'its select-only rider grant, and every policy on sessions and',
+      'deleted_sessions by its whole tuple, with no other policy on either table',
+      '(SESSION_OWNERSHIP_POLICIES_EXACT; permissive policies are OR-ed, so one',
+      'more reopens what the five close). All in scripts/build-migration-audit.mjs.',
       'The CASE keeps has_table_privilege off a table that is not there, as in',
       'the 1100 row.',
     ],
@@ -373,28 +433,17 @@ export const MIGRATION_PROBES = {
       "            and not has_function_privilege('authenticated', p.oid, 'execute')",
       "            and not has_function_privilege('anon', p.oid, 'execute')",
       `          from pg_proc p where p.oid = ${RECORD_DELETED_SESSION})`,
-      '     and exists (select 1 from pg_trigger',
-      "            where tgname = 'sessions_record_deleted'",
-      "              and tgrelid = 'public.sessions'::regclass",
-      "              and tgenabled <> 'D' and not tgisinternal)",
+      ...indent(SESSION_TOMBSTONE_TRIGGER_EXACT, 5).map((line, index) => (index === 0 ? `     and ${line.trimStart()}` : line)),
       "     and case when to_regclass('public.deleted_sessions') is null then false",
       "              else (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.deleted_sessions'))",
       "                   and has_table_privilege('authenticated', 'public.deleted_sessions', 'select')",
       "                   and not has_table_privilege('authenticated', 'public.deleted_sessions', 'insert, update, delete')",
       "                   and not has_table_privilege('anon', 'public.deleted_sessions', 'select, insert, update, delete')",
       '         end',
-      '     and (select count(*) from pg_policies p',
-      "            where p.schemaname = 'public' and p.tablename = 'sessions'",
-      "              and p.policyname in ('sessions: insert own', 'sessions: update own')",
-      "              and md5(replace(p.with_check, 'public.vehicles', 'vehicles')) = " +
-        `'${SESSION_VEHICLE_OWNED_CHECK_MD5}') = 2`,
-      "     and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'sessions') = 4",
-      '     and (select count(*) from pg_policies p',
-      "            where p.schemaname = 'public' and p.tablename = 'deleted_sessions') = 1",
-      '     and exists (select 1 from pg_policies p',
-      "            where p.schemaname = 'public' and p.tablename = 'deleted_sessions'",
-      "              and p.policyname = 'deleted_sessions: select own' and p.cmd = 'SELECT'",
-      "              and p.permissive = 'PERMISSIVE' and p.qual = '(auth.uid() = user_id)')",
+      ...indent([...SESSION_OWNERSHIP_POLICIES_EXACT.slice(0, -1), `${SESSION_OWNERSHIP_POLICIES_EXACT.at(-1)} = 5`], 9)
+        .map((line, index) => (index === 0 ? `     and ${line.trimStart()}` : line)),
+      ...indent([...SESSION_OWNERSHIP_POLICIES_TOTAL.slice(0, -1), `${SESSION_OWNERSHIP_POLICIES_TOTAL.at(-1)} = 5`], 9)
+        .map((line, index) => (index === 0 ? `     and ${line.trimStart()}` : line)),
     ],
   },
 };

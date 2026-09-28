@@ -1501,10 +1501,10 @@ select
      join public.vehicles v on v.id = s.vehicle_id
     where v.user_id <> s.user_id) as sessions_on_another_riders_vehicle;
 
-select policyname, cmd, qual, with_check
+select tablename, policyname, cmd, permissive, roles, qual, with_check
   from pg_policies
- where schemaname = 'public' and tablename = 'sessions'
- order by policyname;
+ where schemaname = 'public' and tablename in ('sessions', 'deleted_sessions')
+ order by tablename, policyname;
 ```
 
 Expect `false`, `false`, `true`, `0` from the first query. `true` in either of
@@ -1516,8 +1516,9 @@ before going on: those sessions sit on another rider's vehicle, their own rider
 could no longer edit them once the update policy checks the vehicle, and the
 vehicle's owner deleting it would take them.
 
-The second query should list four policies, each with the expression the
-baseline gives it: `(auth.uid() = user_id)` as `qual` on select, update and
+The second query should list four policies, all on `sessions`, each
+`PERMISSIVE` for `{public}` with the command its name says and the expression
+the baseline gives it: `(auth.uid() = user_id)` as `qual` on select, update and
 delete and as `with_check` on insert and update. The apply block rewrites the
 insert and update ones with `alter policy`, which fails - and so applies
 nothing - if either is missing under that name. Any other difference is a
@@ -1733,45 +1734,72 @@ select
      from pg_proc p
     where p.oid = to_regprocedure('public.record_deleted_session()'))
     as trigger_function_is_the_migration,
-  exists (select 1 from pg_trigger
-           where tgname = 'sessions_record_deleted'
-             and tgrelid = 'public.sessions'::regclass
-             and tgenabled <> 'D' and not tgisinternal) as trigger_is_on,
+  (exists (select 1 from pg_trigger t
+            where t.tgrelid = to_regclass('public.sessions')
+              and t.tgname = 'sessions_record_deleted'
+              and t.tgfoid = to_regprocedure('public.record_deleted_session()')
+              and t.tgtype = 9
+              and t.tgenabled = 'O'
+              and t.tgnargs = 0
+              and t.tgqual is null
+              and not t.tgisinternal)
+   and (select count(*) from pg_trigger t
+         where t.tgfoid = to_regprocedure('public.record_deleted_session()')) = 1)
+    as trigger_is_exact,
   case when to_regclass('public.deleted_sessions') is null then false
        else (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.deleted_sessions'))
             and has_table_privilege('authenticated', 'public.deleted_sessions', 'select')
             and not has_table_privilege('authenticated', 'public.deleted_sessions', 'insert, update, delete')
             and not has_table_privilege('anon', 'public.deleted_sessions', 'select, insert, update, delete')
   end as tombstones_are_read_only_to_riders,
-  exists (select 1 from pg_policies p
-    where p.schemaname = 'public' and p.tablename = 'deleted_sessions'
-      and p.policyname = 'deleted_sessions: select own' and p.cmd = 'SELECT'
-      and p.permissive = 'PERMISSIVE' and p.qual = '(auth.uid() = user_id)') as tombstone_policy_is_select_own,
   (select count(*) from pg_policies p
-    where p.schemaname = 'public' and p.tablename = 'deleted_sessions') as tombstone_policies,
+     join (values
+       ('sessions', 'sessions: select own', 'SELECT', '(auth.uid() = user_id)', null),
+       ('sessions', 'sessions: insert own', 'INSERT', null, '7c9b3da91045db80e54e45052117e6e2'),
+       ('sessions', 'sessions: update own', 'UPDATE', '(auth.uid() = user_id)', '7c9b3da91045db80e54e45052117e6e2'),
+       ('sessions', 'sessions: delete own', 'DELETE', '(auth.uid() = user_id)', null),
+       ('deleted_sessions', 'deleted_sessions: select own', 'SELECT', '(auth.uid() = user_id)', null)
+     ) as e(tablename, policyname, cmd, qual, with_check_md5)
+       on e.tablename = p.tablename and e.policyname = p.policyname
+    where p.schemaname = 'public'
+      and p.cmd = e.cmd
+      and p.permissive = 'PERMISSIVE'
+      and p.roles = array['public']::name[]
+      and p.qual is not distinct from e.qual
+      and md5(replace(p.with_check, 'public.vehicles', 'vehicles')) is not distinct from e.with_check_md5)
+    as exact_policies,
   (select count(*) from pg_policies p
-    where p.schemaname = 'public' and p.tablename = 'sessions'
-      and p.policyname in ('sessions: insert own', 'sessions: update own')
-      and p.qual is not distinct from case p.cmd when 'UPDATE' then '(auth.uid() = user_id)' end
-      and md5(replace(p.with_check, 'public.vehicles', 'vehicles')) = '7c9b3da91045db80e54e45052117e6e2')
-    as vehicle_checked_session_policies,
-  (select count(*) from pg_policies p
-    where p.schemaname = 'public' and p.tablename = 'sessions') as session_policies;
+    where p.schemaname = 'public' and p.tablename in ('sessions', 'deleted_sessions'))
+    as all_policies;
 ```
 
-Expect one row: `true`, `true`, `true`, `true`, `true`, `1`, `2`, `4`. The two md5 columns
-compare each installed function body with the migration's, so an older copy, a
-hand edit or a partial paste reads `false`. `vehicle_checked_session_policies`
-fingerprints the vehicle check both session policies now carry, as `pg_policies` prints it; the
-`replace` takes out the one qualifier that depends on the reader's
-`search_path`, so it reads the same in the SQL editor as anywhere else. The
-two totals matter as much as the named rows: permissive policies are combined
-with OR, so any fifth policy on `sessions` - one added by hand in the
-dashboard, say - can let a row through that the vehicle check refuses, and a
-second policy on `deleted_sessions` can show riders each other's records. Any
-other count is a finding. Row 26 of
-`scripts/sql/audit-migrations-against-database.sql` then reads `present`, and
-row 25 still does.
+Expect one row: `true`, `true`, `true`, `true`, `5`, `5`. Every column proves
+an object by what it is, not by its name:
+
+- The two md5 columns compare each installed function body with the
+  migration's, so an older copy, a hand edit or a partial paste reads `false`.
+- `trigger_is_exact` is `true` only for an `AFTER DELETE ... FOR EACH ROW`
+  trigger on `sessions` that calls `record_deleted_session()`, is enabled, has
+  no `WHEN` clause and no arguments, and is the only trigger calling that
+  function. One that kept the name but fires per statement, on another event
+  or into another function writes no record, and a phone retry would then
+  bring a deleted session back.
+- `exact_policies` counts the policies on `sessions` and `deleted_sessions`
+  whose whole definition matches: name, command, `PERMISSIVE`, role `public`,
+  `using`, and `with check`. The apply block's `alter policy` cannot change a
+  policy's command, so a policy of the right name made `for all` by hand
+  survives the paste and is caught only here. The vehicle check is compared by
+  its md5 as `pg_policies` prints it; the `replace` takes out the one
+  qualifier that depends on the reader's `search_path`, so it reads the same in
+  the SQL editor as anywhere else.
+- `all_policies` counts every policy on the two tables. Permissive policies
+  are combined with OR, so a sixth one - added by hand in the dashboard, say -
+  can let through a row the vehicle check refuses, or show riders each other's
+  records, while all five named ones still match.
+
+Any other value is a finding: run the precheck's second query to see which
+policy differs. Row 26 of `scripts/sql/audit-migrations-against-database.sql`
+applies the same checks and then reads `present`, and row 25 still does.
 
 **4. Rollback.** Only together with a rollback of the release that expects it:
 that release reads `deleted_sessions` before every phone save, so without the
