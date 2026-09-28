@@ -482,6 +482,12 @@ async function resolveSessionTrack(
 
 const UNIQUE_VIOLATION_CODE = '23505';
 const FOREIGN_KEY_VIOLATION_CODE = '23503';
+/**
+ * `create_session_with_laps` refusing a vehicle that is not the rider's - one
+ * deleted since the session was logged, or another rider's. Neither is fixed by
+ * a retry, so it is the rider's to resolve like the foreign key it stands in for.
+ */
+const VEHICLE_NOT_OWNED_CODE = 'TT404';
 
 /**
  * One of this rider's sessions by id, read through their own client so RLS
@@ -681,7 +687,7 @@ async function insertSessionAtomically({
     if (error.code === UNIQUE_VIOLATION_CODE) {
       return { status: 'answered', result: { ok: false, error: SESSION_ID_TAKEN_MESSAGE, kind: 'id_taken' } };
     }
-    if (error.code === FOREIGN_KEY_VIOLATION_CODE) {
+    if (error.code === FOREIGN_KEY_VIOLATION_CODE || error.code === VEHICLE_NOT_OWNED_CODE) {
       return { status: 'answered', result: { ok: false, error: SESSION_REFERENCE_GONE_MESSAGE, kind: 'invalid' } };
     }
     report('session-create', new Error(error.message), {

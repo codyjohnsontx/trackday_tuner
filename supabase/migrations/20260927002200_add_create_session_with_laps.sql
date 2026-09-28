@@ -17,6 +17,14 @@
 -- by a row this rider cannot see - another rider's - is re-raised as the
 -- primary key's own `23505`, and the caller refuses it.
 --
+-- The vehicle has to be one of this rider's, checked before anything is
+-- written. The `sessions: insert own` policy checks only `user_id`, so without
+-- this a crafted body - or an outbox entry synced under a different account -
+-- stored a session on another rider's vehicle, which that rider's delete would
+-- then cascade away. It is raised as `TT404`, a code of its own, because the
+-- phone parks a refusal it cannot fix and retries a fault: a vehicle deleted
+-- since the session was logged lands here too, and no retry brings it back.
+--
 -- The laps go through `replace_session_laps` with an empty expected set rather
 -- than being inserted here, so `session_laps` and the manual
 -- `telemetry_summaries` row are written by the one definition of those rules.
@@ -51,6 +59,16 @@ begin
 
   if found then
     return jsonb_build_object('replayed', true, 'session', to_jsonb(v_session));
+  end if;
+
+  if not exists (
+    select 1
+      from public.vehicles v
+     where v.id = (p_session ->> 'vehicle_id')::uuid
+       and v.user_id = auth.uid()
+  ) then
+    raise exception 'the vehicle this session names is not one of this rider''s'
+      using errcode = 'TT404';
   end if;
 
   begin

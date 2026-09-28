@@ -170,15 +170,12 @@ function createSessionWithLaps(db: Db, options: FakeOptions, args: Record<string
 
   const own = db.sessions.find((row) => row.id === id && row.user_id === USER_ID);
   if (own) return { data: { replayed: true, session: own }, error: null };
+  // The vehicle has to be one of this rider's - a deleted one and another rider's alike.
+  if (!(db.vehicles ?? []).some((vehicle) => vehicle.id === fields.vehicle_id && vehicle.user_id === USER_ID)) {
+    return { data: null, error: { code: 'TT404', message: 'the vehicle this session names is not one of this rider\'s' } };
+  }
   if (db.sessions.some((row) => row.id === id)) {
     return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "sessions_pkey"' } };
-  }
-  // `sessions.vehicle_id` references `vehicles` (baseline schema).
-  if (!(db.vehicles ?? []).some((vehicle) => vehicle.id === fields.vehicle_id)) {
-    return {
-      data: null,
-      error: { code: '23503', message: 'insert or update on table "sessions" violates foreign key constraint "sessions_vehicle_id_fkey"' },
-    };
   }
 
   const session = {
@@ -535,6 +532,57 @@ describe('POST /api/mobile/sessions', () => {
     expect(db.sessions).toHaveLength(0);
     expect(db.tracks.some((track) => track.name === 'Blackhawk Farms')).toBe(false);
     expect(reportError).not.toHaveBeenCalled();
+  });
+
+  describe('a vehicle that is not the rider’s', () => {
+    const OTHER_RIDER_ID = '99999999-9999-4999-8999-999999999999';
+    const FOREIGN_VEHICLE_ID = '55555555-5555-4555-8555-555555555555';
+
+    function seedWithForeignVehicle(): Db {
+      return seed({
+        vehicles: [
+          { id: VEHICLE_ID, user_id: USER_ID, type: 'motorcycle' },
+          { id: FOREIGN_VEHICLE_ID, user_id: OTHER_RIDER_ID, type: 'motorcycle' },
+        ],
+      });
+    }
+
+    it('refuses a session on another rider’s vehicle with no laps as 400, storing nothing', async () => {
+      const db = seedWithForeignVehicle();
+      fakeSupabase(db);
+
+      const response = await post(sessionBody({ vehicle_id: FOREIGN_VEHICLE_ID, laps: [] }));
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ ok: false, error: SESSION_REFERENCE_GONE_MESSAGE });
+      expect(db.sessions).toHaveLength(0);
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    it('refuses one with laps as 400, not a 503 the phone would retry forever, storing nothing', async () => {
+      const db = seedWithForeignVehicle();
+      fakeSupabase(db);
+
+      const response = await post(sessionBody({ vehicle_id: FOREIGN_VEHICLE_ID }));
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ ok: false, error: SESSION_REFERENCE_GONE_MESSAGE });
+      expect(db.sessions).toHaveLength(0);
+      expect(db.session_laps ?? []).toHaveLength(0);
+      expect(db.session_environment ?? []).toHaveLength(0);
+    });
+
+    it('still saves a session on the rider’s own vehicle', async () => {
+      const db = seedWithForeignVehicle();
+      fakeSupabase(db);
+
+      const response = await post(sessionBody());
+
+      expect(response.status).toBe(200);
+      expect((await response.json()).session).toMatchObject({ id: SESSION_ID, vehicle_id: VEHICLE_ID });
+      expect(db.sessions).toHaveLength(1);
+      expect(db.session_laps).toHaveLength(2);
+    });
   });
 
   it.each([

@@ -287,9 +287,18 @@ export const MIGRATION_PROBES = {
     present: "to_regclass('public.ai_replay_export') is not null",
   },
   '20260927002200_add_create_session_with_laps': {
+    note: [
+      'The function is create or replace, so a copy applied before it refused',
+      "another rider's vehicle is still there by name. Its TT404 raise is what",
+      'says the current definition is.',
+    ],
     kind: 'function',
     object: 'public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)',
-    present: "to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)') is not null",
+    present: [
+      "to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)') is not null",
+      "and (select position('TT404' in p.prosrc) > 0 from pg_proc p",
+      "      where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)'))",
+    ],
   },
 };
 

@@ -1314,7 +1314,9 @@ which `POST /api/mobile/sessions` writes every session through. It inserts the
 session row, its laps (through `replace_session_laps`) and its environment in
 one transaction, so a failure leaves none of them, and it is idempotent on the
 session id the phone minted: a session of the rider's with that id is answered
-as a replay and nothing is written. It is `security invoker`, so RLS applies as
+as a replay and nothing is written. It refuses, before writing anything, a
+vehicle that is not the rider's (`TT404`, which the route answers 400 so the
+phone parks it). It is `security invoker`, so RLS applies as
 for any rider query. Apply it before merging the pull request that adds it:
 without it every session the phone sends is answered 503 and retried.
 
@@ -1359,6 +1361,16 @@ begin
 
   if found then
     return jsonb_build_object('replayed', true, 'session', to_jsonb(v_session));
+  end if;
+
+  if not exists (
+    select 1
+      from public.vehicles v
+     where v.id = (p_session ->> 'vehicle_id')::uuid
+       and v.user_id = auth.uid()
+  ) then
+    raise exception 'the vehicle this session names is not one of this rider''s'
+      using errcode = 'TT404';
   end if;
 
   begin
@@ -1415,12 +1427,13 @@ select
   p.prosecdef as security_definer,
   p.proconfig as settings,
   has_function_privilege('authenticated', p.oid, 'execute') as rider_can_execute,
-  has_function_privilege('anon', p.oid, 'execute') as anon_can_execute
+  has_function_privilege('anon', p.oid, 'execute') as anon_can_execute,
+  position('TT404' in p.prosrc) > 0 as refuses_foreign_vehicle
 from pg_proc p
 where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)');
 ```
 
-Expect one row: `false`, `{"search_path=\"\""}` (an empty `search_path`, as Postgres quotes it), `true`, `false`. Row 25 of
+Expect one row: `false`, `{"search_path=\"\""}` (an empty `search_path`, as Postgres quotes it), `true`, `false`, `true`. Row 25 of
 `scripts/sql/audit-migrations-against-database.sql` then reads `present`, and
 `/api/health`'s `schema_contract` check stops naming the function.
 

@@ -177,9 +177,14 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   (24, '20260927002000_add_ai_replay_export_view', 'view',
       'public.ai_replay_export',
       to_regclass('public.ai_replay_export') is not null),
+  -- The function is create or replace, so a copy applied before it refused
+  -- another rider's vehicle is still there by name. Its TT404 raise is what
+  -- says the current definition is.
   (25, '20260927002200_add_create_session_with_laps', 'function',
       'public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)',
-      to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)') is not null)
+      to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)') is not null
+      and (select position('TT404' in p.prosrc) > 0 from pg_proc p
+            where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)')))
 )
 select ordinality as "#",
        migration,
