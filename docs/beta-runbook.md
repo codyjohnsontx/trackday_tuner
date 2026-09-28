@@ -1420,7 +1420,7 @@ from pg_proc p
 where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)');
 ```
 
-Expect one row: `false`, `{"search_path=\"\""}` (an empty `search_path`, as Postgres quotes it), `true`, `false`. Row 24 of
+Expect one row: `false`, `{"search_path=\"\""}` (an empty `search_path`, as Postgres quotes it), `true`, `false`. Row 25 of
 `scripts/sql/audit-migrations-against-database.sql` then reads `present`, and
 `/api/health`'s `schema_contract` check stops naming the function.
 
