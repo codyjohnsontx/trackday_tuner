@@ -178,13 +178,6 @@ const SESSION_LAPS_DOMAIN_REJECTION_CODE = 'P0001';
 const SESSION_LAYOUT_LOOKUP_FAILED_MESSAGE =
   'Your session was not saved - we could not check the layout you picked, and the fault is ours, not what you entered. Everything you typed is still on this page, so try saving again in a few minutes.';
 
-/**
- * The free-plan check could not be answered on the phone's path, so nothing was
- * written and the phone sends the session again.
- */
-const SESSION_PLAN_CHECK_FAILED_MESSAGE =
-  'Your session was not saved yet - we could not check your plan just now, and the fault is ours. It is still on this phone and will be sent again.';
-
 const SESSION_CREATE_SAVE_FAILED_MESSAGE =
   'Your session did not save completely - something is wrong on our end, not with what you entered. Check your sessions list before you enter it again, in case a partial one was left behind. What you typed is still on this page, so copy anything you need before you leave.';
 
@@ -778,7 +771,7 @@ export async function createSessionForUser(
         query: 'free-plan count',
         userId,
       });
-      return { ok: false, error: SESSION_PLAN_CHECK_FAILED_MESSAGE, kind: 'fault' };
+      return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
     }
 
     if ((count ?? 0) >= getFreePlanLimit('sessions')) {
@@ -792,7 +785,7 @@ export async function createSessionForUser(
           return { ok: true, data: { session: committed.session, createdTrack: false, replayed: true } };
         }
         if (committed.status === 'failed') {
-          return { ok: false, error: SESSION_PLAN_CHECK_FAILED_MESSAGE, kind: 'fault' };
+          return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
         }
       }
       return {

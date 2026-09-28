@@ -510,6 +510,22 @@ describe('POST /api/mobile/sessions', () => {
     expect(reportError).toHaveBeenCalledWith('session-create', expect.any(Error), expect.objectContaining({ query: 'free-plan count' }));
   });
 
+  it.each<[string, FakeOptions, () => Db]>([
+    ['the atomic create fails in transit', { createTransportFailure: () => 'before' }, seed],
+    ['the replay lookup fails', { sessionReadFails: () => true }, seed],
+    ['a free rider’s plan count fails', { sessionCountFails: true }, () => freeRiderWith(10)],
+  ])('answers 503 in the phone’s own words when %s, never the website form’s', async (_label, options, makeDb) => {
+    fakeSupabase(makeDb(), options);
+
+    const response = await post(sessionBody());
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: 'Track Tuner could not be reached just now. Your session is still on this phone and will be sent again.',
+    });
+  });
+
   it('answers 503, not the cap, when the first call commits mid-count and the re-read fails, leaving that row as the only one', async () => {
     const db = freeRiderWith(9);
     let counted = false;

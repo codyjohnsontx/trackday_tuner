@@ -95,7 +95,10 @@ export async function POST(request: Request) {
       { id: parsed.data.id },
     );
 
-    if (!result.ok) return reply({ ok: false, error: result.error }, STATUS_BY_KIND[result.kind]);
+    if (!result.ok) {
+      const error = result.kind === 'fault' ? UNAVAILABLE_MESSAGE : result.error;
+      return reply({ ok: false, error }, STATUS_BY_KIND[result.kind]);
+    }
     return reply({ ok: true, session: result.data.session, replayed: result.data.replayed }, 200);
   } catch (error) {
     reportError('mobile-sessions', error, {
