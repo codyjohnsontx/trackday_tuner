@@ -1423,17 +1423,23 @@ commit;
 **3. Verify.**
 
 ```sql
+-- hosted-session-create-verify
 select
   p.prosecdef as security_definer,
   p.proconfig as settings,
   has_function_privilege('authenticated', p.oid, 'execute') as rider_can_execute,
   has_function_privilege('anon', p.oid, 'execute') as anon_can_execute,
-  position('TT404' in p.prosrc) > 0 as refuses_foreign_vehicle
+  md5(p.prosrc) = '8c9d41c909128fbf696780c5b0c0d5ce' as definition_is_the_migration
 from pg_proc p
 where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)');
 ```
 
-Expect one row: `false`, `{"search_path=\"\""}` (an empty `search_path`, as Postgres quotes it), `true`, `false`, `true`. Row 25 of
+Expect one row: `false`, `{"search_path=\"\""}` (an empty `search_path`, as Postgres quotes it), `true`, `false`, `true`.
+The last column compares the md5 of the installed function body with the body
+in the migration, so it is `true` only when what is installed is exactly the
+block above: an older copy, a hand edit or a partial paste all read `false`. If
+it reads `false`, run the apply block again rather than editing the function in
+place. Row 25 of
 `scripts/sql/audit-migrations-against-database.sql` then reads `present`, and
 `/api/health`'s `schema_contract` check stops naming the function.
 

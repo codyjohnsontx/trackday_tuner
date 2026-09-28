@@ -177,14 +177,18 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   (24, '20260927002000_add_ai_replay_export_view', 'view',
       'public.ai_replay_export',
       to_regclass('public.ai_replay_export') is not null),
-  -- The function is create or replace, so a copy applied before it refused
-  -- another rider's vehicle is still there by name. Its TT404 raise is what
-  -- says the current definition is.
+  -- The function is create or replace, so an older or hand-edited copy is still
+  -- there by name. Only the body fingerprint says the installed definition is
+  -- this migration's; the other three read the security and grants it sets.
   (25, '20260927002200_add_create_session_with_laps', 'function',
       'public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)',
       to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)') is not null
-      and (select position('TT404' in p.prosrc) > 0 from pg_proc p
-            where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)')))
+           and (select md5(p.prosrc) = '8c9d41c909128fbf696780c5b0c0d5ce'
+                  and not p.prosecdef
+                  and p.proconfig = array['search_path=""']
+                  and has_function_privilege('authenticated', p.oid, 'execute')
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                from pg_proc p where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)')))
 )
 select ordinality as "#",
        migration,
