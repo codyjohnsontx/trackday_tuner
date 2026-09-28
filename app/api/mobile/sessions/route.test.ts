@@ -746,6 +746,44 @@ describe('POST /api/mobile/sessions', () => {
     });
   });
 
+  it('refuses a chunked body past 64 KiB as 413 without reading the rest, storing nothing', async () => {
+    const db = seed();
+    const client = fakeSupabase(db);
+    const chunk = new TextEncoder().encode(`{"notes":"${'x'.repeat(16 * 1024)}`);
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        // Endless: a reader that waits for the end never returns.
+        controller.enqueue(chunk);
+      },
+    });
+    const request = new Request('http://localhost/api/mobile/sessions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+      body,
+      duplex: 'half',
+    } as RequestInit);
+    expect(request.headers.get('content-length')).toBeNull();
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({ ok: false, error: 'Request body is too large.' });
+    expect(pulled).toBeLessThan(10);
+    expect(db.sessions).toHaveLength(0);
+    expect(client.rpc).not.toHaveBeenCalled();
+  });
+
+  it('refuses a body that is not JSON as 400', async () => {
+    fakeSupabase(seed());
+
+    const response = await post('{not json');
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ ok: false, error: 'Request body must be valid JSON.' });
+  });
+
   it('answers the web build’s CORS preflight for an allowed origin', async () => {
     const response = OPTIONS(
       new Request('http://localhost/api/mobile/sessions', {

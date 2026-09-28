@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { resolveUserAccess } from '@/lib/access';
+import { readBoundedJson } from '@/lib/http/bounded-json';
 import { mobileCorsHeaders, mobilePreflightResponse } from '@/lib/mobile/cors';
 import { reportError } from '@/lib/monitoring/report-error';
 import { parseCreateSessionRequest } from '@/lib/sessions/parse-create-request';
@@ -61,18 +62,16 @@ export async function POST(request: Request) {
     return reply({ ok: false, error: 'Not authenticated.' }, 401);
   }
 
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
-    return reply({ ok: false, error: 'Request body is too large.' }, 413);
-  }
-  let body: unknown;
-  try {
-    body = JSON.parse(text);
-  } catch {
-    return reply({ ok: false, error: 'Request body must be valid JSON.' }, 400);
+  // Streamed and cut off at the limit, so an oversized body is refused without
+  // first being buffered whole.
+  const read = await readBoundedJson(request, MAX_BODY_BYTES);
+  if (!read.ok) {
+    return read.reason === 'too_large'
+      ? reply({ ok: false, error: 'Request body is too large.' }, 413)
+      : reply({ ok: false, error: 'Request body must be valid JSON.' }, 400);
   }
 
-  const parsed = parseCreateSessionRequest(body);
+  const parsed = parseCreateSessionRequest(read.value);
   if (!parsed.ok) return reply({ ok: false, error: parsed.error }, 400);
 
   const { supabase, user } = auth;
