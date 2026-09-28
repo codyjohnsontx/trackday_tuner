@@ -1047,6 +1047,25 @@ export type Database = {
         };
         Relationships: [];
       };
+      ai_replay_export: {
+        Row: {
+          request_id: string;
+          route: string;
+          created_at: string;
+          retain_until: string;
+          submitted: Json;
+          redaction_version: number;
+          rider_key: string;
+          app_commit: string | null;
+          status: string;
+          refusal_reason: string | null;
+          policy_result: string | null;
+          policy_violations: string[];
+          classifier_stage: string | null;
+          model: string | null;
+        };
+        Relationships: [];
+      };
     };
     Functions: {
       create_session_with_laps: {

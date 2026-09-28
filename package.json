@@ -21,6 +21,7 @@
     "analyze": "ANALYZE=true next build",
     "check:agent-docs": "node scripts/check-agent-docs.mjs",
     "ai:requests": "node scripts/inspect-ai-requests.mjs",
+    "ai:export-replay": "node scripts/export-ai-replay.mjs",
     "rag:index": "node scripts/build-rag-index.mjs",
     "rag:check": "node scripts/check-rag-index.mjs",
     "rag:eval": "node scripts/eval-rag.mjs",

@@ -281,6 +281,11 @@ export const MIGRATION_PROBES = {
     object: 'public.delete_vehicle_if_sessions_unchanged(uuid,jsonb)',
     present: "to_regprocedure('public.delete_vehicle_if_sessions_unchanged(uuid,jsonb)') is not null",
   },
+  '20260927002000_add_ai_replay_export_view': {
+    kind: 'view',
+    object: 'public.ai_replay_export',
+    present: "to_regclass('public.ai_replay_export') is not null",
+  },
   '20260927002200_add_create_session_with_laps': {
     kind: 'function',
     object: 'public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)',

@@ -850,6 +850,161 @@ access and:
 the SQL editor returns the deployed commit. Turn keeping off and ask again: the
 new row's preview prints `-` and nothing is listed.
 
+### Apply the replay export view by hand
+
+`20260927002000` creates `ai_replay_export`, the one view
+`npm run ai:export-replay` reads (docs/ai-replay-export.md). It is where the rule
+for what may leave the database is written: text a rider is keeping now,
+written after their latest opt-in and not yet past its `retain_until`, with no
+`user_id`, `session_id` or `vehicle_id`. It reads `ai_request_text`, `ai_requests` and the
+`profiles` retention columns and changes none of them, so applying it touches no
+rider's data. Apply it after the three blocks above, and **before the first
+export**: without it the script fails with `PGRST205` and writes nothing.
+
+**1. Confirm the project can take it.** Read-only.
+
+```sql
+select
+  to_regclass('public.ai_request_text') is not null as has_text_table,
+  exists (select 1 from information_schema.columns
+          where table_schema = 'public' and table_name = 'ai_requests'
+            and column_name = 'app_commit') as has_app_commit,
+  (select count(*) from information_schema.columns
+    where table_schema = 'public' and table_name = 'profiles'
+      and column_name in ('ai_question_retention_notice_seen_at',
+                          'ai_question_retention_opted_out_at',
+                          'ai_question_retention_opted_in_at')) as retention_columns,
+  case
+    when to_regclass('public.ai_replay_export') is null then 'absent'
+    when md5(regexp_replace(pg_get_viewdef(to_regclass('public.ai_replay_export')), '\s+', ' ', 'g'))
+           = 'cbfa456413cb4c7db8a026cbd2fdc7b0'
+     and (select reloptions from pg_class
+           where oid = to_regclass('public.ai_replay_export')) = array['security_invoker=true']
+      then 'as in 20260927002000'
+    else 'DIFFERENT - stop'
+  end as existing_view;
+```
+
+Expect `true`, `true`, `3`, `absent`. A `false` or a count under 3 means an
+earlier block is missing; apply it first. `as in 20260927002000` means this
+block already ran with exactly this definition, and re-running it is harmless.
+
+**`DIFFERENT - stop` means a view of this name is already there and is not this
+one. Stop.** Existence proves nothing about what a view exports: one with the
+same columns and grants but without the opt-in or `retain_until` conditions
+would export text no rider agreed to share. Read it with
+`select pg_get_viewdef('public.ai_replay_export'::regclass)`, find out where it
+came from, and compare it with the definition below before deciding anything.
+The apply block would replace it, so do not run it until that is understood.
+
+The check compares a hash of Postgres's own rendering of the view - the text
+below, whitespace folded - taken on Postgres 17 (`major_version` in
+`supabase/config.toml`) with `public` on the search path, as the SQL editor has
+it. A different major version can render the same view differently; that also
+reads `DIFFERENT - stop`, and comparing the text settles it. If the view in
+`20260927002000` changes, regenerate the hash on a local stack with
+`select md5(regexp_replace(pg_get_viewdef('public.ai_replay_export'::regclass), '\s+', ' ', 'g'))`
+and replace it in both queries here.
+
+```text
+ SELECT t.request_id,
+    t.route,
+    t.created_at,
+    t.retain_until,
+    t.submitted,
+    t.redaction_version,
+    encode(sha256(convert_to((t.user_id)::text, 'UTF8'::name)), 'hex'::text) AS rider_key,
+    r.app_commit,
+    r.status,
+    r.refusal_reason,
+    r.policy_result,
+    r.policy_violations,
+    r.classifier_stage,
+    r.model
+   FROM ((ai_request_text t
+     JOIN ai_requests r ON (((r.request_id = t.request_id) AND (r.user_id = t.user_id))))
+     JOIN profiles p ON ((p.id = t.user_id)))
+  WHERE ((t.retain_until > now()) AND (p.ai_question_retention_notice_seen_at IS NOT NULL) AND (p.ai_question_retention_opted_out_at IS NULL) AND (p.ai_question_retention_opted_in_at IS NOT NULL) AND (t.created_at >= GREATEST(p.ai_question_retention_notice_seen_at, p.ai_question_retention_opted_in_at)));
+```
+
+**2. Apply.**
+
+```sql
+-- hosted-ai-replay-export: mirror of supabase/migrations/20260927002000_add_ai_replay_export_view.sql
+begin;
+create or replace view public.ai_replay_export
+  with (security_invoker = true)
+as
+select t.request_id,
+       t.route,
+       t.created_at,
+       t.retain_until,
+       t.submitted,
+       t.redaction_version,
+       encode(sha256(convert_to(t.user_id::text, 'UTF8')), 'hex') as rider_key,
+       r.app_commit,
+       r.status,
+       r.refusal_reason,
+       r.policy_result,
+       r.policy_violations,
+       r.classifier_stage,
+       r.model
+  from public.ai_request_text t
+  join public.ai_requests r
+    on r.request_id = t.request_id
+   and r.user_id = t.user_id
+  join public.profiles p
+    on p.id = t.user_id
+ where t.retain_until > now()
+   and p.ai_question_retention_notice_seen_at is not null
+   and p.ai_question_retention_opted_out_at is null
+   and p.ai_question_retention_opted_in_at is not null
+   and t.created_at >= greatest(p.ai_question_retention_notice_seen_at,
+                                p.ai_question_retention_opted_in_at);
+
+revoke all on public.ai_replay_export from public, anon, authenticated;
+grant select on public.ai_replay_export to service_role;
+commit;
+```
+
+**3. Verify.**
+
+```sql
+select
+  case
+    when to_regclass('public.ai_replay_export') is null then 'absent'
+    when md5(regexp_replace(pg_get_viewdef(to_regclass('public.ai_replay_export')), '\s+', ' ', 'g'))
+           = 'cbfa456413cb4c7db8a026cbd2fdc7b0'
+     and (select reloptions from pg_class
+           where oid = to_regclass('public.ai_replay_export')) = array['security_invoker=true']
+      then 'as in 20260927002000'
+    else 'DIFFERENT - stop'
+  end as definition,
+  has_table_privilege('anon', 'public.ai_replay_export', 'select') as anon_reads,
+  has_table_privilege('authenticated', 'public.ai_replay_export', 'select') as rider_reads,
+  has_table_privilege('service_role', 'public.ai_replay_export', 'select') as service_reads,
+  (select count(*) from information_schema.columns
+    where table_schema = 'public' and table_name = 'ai_replay_export'
+      and column_name in ('user_id', 'session_id', 'vehicle_id')) as identifying_columns,
+  (select count(*) from public.ai_replay_export) as exportable_rows;
+```
+
+Expect `as in 20260927002000`, `false`, `false`, `true`, `0`, and
+`exportable_rows` no more than
+`select count(*) from public.ai_request_text` - zero until a rider has turned
+question history on and asked something. `definition` is what proves the
+opt-in, latest-opt-in and `retain_until` conditions and `security_invoker` are
+the ones in the migration; the grant and column checks alone would pass a view
+that exports every row. Anything but `as in 20260927002000` there: run the
+rollback below and stop.
+
+**4. Rollback.** Nothing depends on the view but the export script.
+
+```sql
+-- hosted-ai-replay-export-rollback
+drop view if exists public.ai_replay_export;
+```
+
 ### Apply session photos by hand
 
 `20260926002000` carries the owner's decisions D2 and D3 of 2026-09-26 for the

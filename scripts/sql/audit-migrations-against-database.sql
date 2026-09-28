@@ -174,7 +174,10 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   (23, '20260926002100_delete_vehicle_if_sessions_unchanged', 'function',
       'public.delete_vehicle_if_sessions_unchanged(uuid,jsonb)',
       to_regprocedure('public.delete_vehicle_if_sessions_unchanged(uuid,jsonb)') is not null),
-  (24, '20260927002200_add_create_session_with_laps', 'function',
+  (24, '20260927002000_add_ai_replay_export_view', 'view',
+      'public.ai_replay_export',
+      to_regclass('public.ai_replay_export') is not null),
+  (25, '20260927002200_add_create_session_with_laps', 'function',
       'public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)',
       to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)') is not null)
 )
