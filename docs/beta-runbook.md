@@ -1477,7 +1477,9 @@ applied together so one paste takes all three:
   per-rider lock, and refuses the eleventh as `TT402` (answered 402, which the
   phone parks). Its signature is unchanged.
 
-Apply it before merging the pull request that adds it. Until the release
+Apply it before merging the pull request that adds it. The release must not
+deploy first: it reads `deleted_sessions` before every phone save, so every
+phone save would be answered 503 until the table exists. Until the release
 deploys, the release before it keeps working: its phone path counts first, as
 it always did, and a save that loses the race is answered 503 and retried
 rather than stored. A replay of a deleted session in that window is also
@@ -1772,8 +1774,10 @@ other count is a finding. Row 26 of
 row 25 still does.
 
 **4. Rollback.** Only together with a rollback of the release that expects it:
-that release no longer counts a phone save's sessions itself, so without the
-function's cap a free rider's phone saves are not capped at all. It restores the
+that release reads `deleted_sessions` before every phone save, so without the
+table every phone save is answered 503 and retried, for every rider; and it no
+longer counts a phone save's sessions itself, so without the function's cap a
+free rider's phone saves would not be capped at all. It restores the
 20260927002200 function, the baseline's two policies, and drops the trigger and
 the table - with every id recorded in it.
 
