@@ -372,8 +372,8 @@ describe('POST /api/mobile/sessions', () => {
       conditions: 'sunny',
     });
     expect(body.session.tires.front.hot_pressure).toBe('35');
-    // Omitted by the phone, so the column default rather than a null the
-    // constraint refuses.
+    // Omitted by the phone, so create_session_with_laps coalesces it to `{}`
+    // rather than storing a null the constraint refuses.
     expect(body.session.enabled_modules).toEqual({});
     expect(db.sessions).toHaveLength(1);
     expect(db.session_laps).toHaveLength(2);

@@ -810,12 +810,7 @@ export async function createSessionForUser(
     tires: input.tires,
     suspension: input.suspension,
     alignment: input.alignment,
-    // `enabled_modules` is NOT NULL with a `'{}'` default, and an explicit null
-    // overrides a default rather than falling back to it. The website form
-    // always sends the rider's choice; a caller that does not is given the
-    // column default, which `resolveSessionEnabledModules` reads as the
-    // vehicle type's defaults.
-    ...(input.enabled_modules ? { enabled_modules: input.enabled_modules } : {}),
+    enabled_modules: input.enabled_modules ?? null,
     extra_modules: input.extra_modules ?? null,
     notes: input.notes ?? null,
   };
