@@ -178,6 +178,13 @@ const SESSION_LAPS_DOMAIN_REJECTION_CODE = 'P0001';
 const SESSION_LAYOUT_LOOKUP_FAILED_MESSAGE =
   'Your session was not saved - we could not check the layout you picked, and the fault is ours, not what you entered. Everything you typed is still on this page, so try saving again in a few minutes.';
 
+/**
+ * The free-plan check could not be answered on the phone's path, so nothing was
+ * written and the phone sends the session again.
+ */
+const SESSION_PLAN_CHECK_FAILED_MESSAGE =
+  'Your session was not saved yet - we could not check your plan just now, and the fault is ours. It is still on this phone and will be sent again.';
+
 const SESSION_CREATE_SAVE_FAILED_MESSAGE =
   'Your session did not save completely - something is wrong on our end, not with what you entered. Check your sessions list before you enter it again, in case a partial one was left behind. What you typed is still on this page, so copy anything you need before you leave.';
 
@@ -754,18 +761,38 @@ export async function createSessionForUser(
 
   const hasProAccess = await resolveProAccess();
   if (!hasProAccess) {
-    const { count } = await supabase
+    const { count, error: countError } = await supabase
       .from('sessions')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId);
 
+    // A failed count comes back as `count: null`, which is not zero: reading it
+    // as zero lets a free rider at the cap store an eleventh session whenever
+    // the count blips. The phone's caller refuses and retries instead. The
+    // website path keeps the fail-open read it always had - changing it is a
+    // separate decision from this route.
+    if (suppliedId && countError) {
+      report('session-create', new Error(countError.message), {
+        reason: countError.code,
+        table: 'sessions',
+        query: 'free-plan count',
+        userId,
+      });
+      return { ok: false, error: SESSION_PLAN_CHECK_FAILED_MESSAGE, kind: 'fault' };
+    }
+
     if ((count ?? 0) >= getFreePlanLimit('sessions')) {
       // A call on this id may have committed since the replay check above, and
-      // its row is then in this count: the stored session is the answer.
+      // its row is then in this count: the stored session is the answer. A read
+      // that could not answer is not "no such session" - refusing it as the cap
+      // would park a session that may already be stored - so it is retried.
       if (suppliedId) {
         const committed = await readOwnSession(supabase, report, userId, suppliedId);
         if (committed.status === 'found') {
           return { ok: true, data: { session: committed.session, createdTrack: false, replayed: true } };
+        }
+        if (committed.status === 'failed') {
+          return { ok: false, error: SESSION_PLAN_CHECK_FAILED_MESSAGE, kind: 'fault' };
         }
       }
       return {

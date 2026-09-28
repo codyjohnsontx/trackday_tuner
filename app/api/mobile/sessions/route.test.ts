@@ -44,6 +44,10 @@ interface FakeOptions {
   beforeSessionCount?: () => void;
   /** Make every `profiles` read fail. */
   profileReadFails?: boolean;
+  /** Make the free-plan count of `sessions` fail in transit (PostgREST then answers `count: null`). */
+  sessionCountFails?: boolean;
+  /** Asked on each non-count `sessions` read; true fails that read in transit. */
+  sessionReadFails?: () => boolean;
   /**
    * How a transport failure meets `create_session_with_laps`: `before` it ran,
    * so nothing was stored, or `after` it committed, so everything was and only
@@ -130,7 +134,13 @@ class Query {
       this.db[this.table] = table.filter((row) => !gone.includes(row));
       return { data: gone, error: null };
     }
-    if (this.table === 'sessions' && this.head) this.options.beforeSessionCount?.();
+    if (this.table === 'sessions' && this.head) {
+      this.options.beforeSessionCount?.();
+      if (this.options.sessionCountFails) return { data: null, error: TRANSPORT_ERROR, count: null as unknown as number };
+    }
+    if (this.table === 'sessions' && !this.head && this.options.sessionReadFails?.()) {
+      return { data: null, error: TRANSPORT_ERROR };
+    }
     const rows = this.matching();
     return this.head ? { data: null, error: null, count: rows.length } : { data: rows, error: null };
   }
@@ -484,6 +494,41 @@ describe('POST /api/mobile/sessions', () => {
     expect(body.replayed).toBe(true);
     expect(body.session.notes).toBe('the first call');
     expect(db.sessions).toHaveLength(10);
+  });
+
+  it('answers 503, storing nothing, when a free rider’s plan count fails rather than reading it as zero', async () => {
+    const db = freeRiderWith(10);
+    const client = fakeSupabase(db, { sessionCountFails: true });
+
+    const response = await post(sessionBody());
+
+    expect(response.status).toBe(503);
+    expect(db.sessions).toHaveLength(10);
+    expect(db.sessions.some((row) => row.id === SESSION_ID)).toBe(false);
+    expect(db.session_laps ?? []).toHaveLength(0);
+    expect(client.rpc).not.toHaveBeenCalled();
+    expect(reportError).toHaveBeenCalledWith('session-create', expect.any(Error), expect.objectContaining({ query: 'free-plan count' }));
+  });
+
+  it('answers 503, not the cap, when the first call commits mid-count and the re-read fails, leaving that row as the only one', async () => {
+    const db = freeRiderWith(9);
+    let counted = false;
+    const client = fakeSupabase(db, {
+      beforeSessionCount: () => {
+        counted = true;
+        if (db.sessions.some((row) => row.id === SESSION_ID)) return;
+        db.sessions.push({ id: SESSION_ID, user_id: USER_ID, vehicle_id: VEHICLE_ID, date: '2026-09-27', notes: 'the first call' });
+      },
+      sessionReadFails: () => counted,
+    });
+
+    const replay = await post(sessionBody());
+
+    expect(replay.status).toBe(503);
+    expect((await replay.json()).error).not.toBe(getFreePlanLimitMessage('sessions'));
+    expect(db.sessions).toHaveLength(10);
+    expect(db.sessions.filter((row) => row.id === SESSION_ID)).toEqual([expect.objectContaining({ notes: 'the first call' })]);
+    expect(client.rpc).not.toHaveBeenCalled();
   });
 
   it('answers a replay that lands while the first call is still writing with the row that won', async () => {
