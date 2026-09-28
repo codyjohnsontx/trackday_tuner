@@ -40,6 +40,8 @@ interface FakeOptions {
   getUser?: (token: string) => Promise<unknown>;
   /** Runs as `create_session_with_laps` starts, with the row it was sent - used to stage a race. */
   beforeSessionInsert?: (row: Row) => void;
+  /** Runs just before the free-plan count of `sessions` - used to stage a commit mid-replay. */
+  beforeSessionCount?: () => void;
   /** Make every `profiles` read fail. */
   profileReadFails?: boolean;
   /**
@@ -128,6 +130,7 @@ class Query {
       this.db[this.table] = table.filter((row) => !gone.includes(row));
       return { data: gone, error: null };
     }
+    if (this.table === 'sessions' && this.head) this.options.beforeSessionCount?.();
     const rows = this.matching();
     return this.head ? { data: null, error: null, count: rows.length } : { data: rows, error: null };
   }
@@ -465,6 +468,24 @@ describe('POST /api/mobile/sessions', () => {
 
     expect(replay.status).toBe(200);
     expect((await replay.json()).replayed).toBe(true);
+    expect(db.sessions).toHaveLength(10);
+  });
+
+  it('answers a free rider’s replay as the row when the first call commits between its read and the cap count', async () => {
+    const db = freeRiderWith(9);
+    fakeSupabase(db, {
+      beforeSessionCount: () => {
+        if (db.sessions.some((row) => row.id === SESSION_ID)) return;
+        db.sessions.push({ id: SESSION_ID, user_id: USER_ID, vehicle_id: VEHICLE_ID, date: '2026-09-27', notes: 'the first call' });
+      },
+    });
+
+    const replay = await post(sessionBody());
+    const body = await replay.json();
+
+    expect(replay.status).toBe(200);
+    expect(body.replayed).toBe(true);
+    expect(body.session.notes).toBe('the first call');
     expect(db.sessions).toHaveLength(10);
   });
 

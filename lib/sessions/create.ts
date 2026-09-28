@@ -754,6 +754,14 @@ export async function createSessionForUser(
       .eq('user_id', userId);
 
     if ((count ?? 0) >= getFreePlanLimit('sessions')) {
+      // A call on this id may have committed since the replay check above, and
+      // its row is then in this count: the stored session is the answer.
+      if (suppliedId) {
+        const committed = await readOwnSession(supabase, report, userId, suppliedId);
+        if (committed.status === 'found') {
+          return { ok: true, data: { session: committed.session, createdTrack: false, replayed: true } };
+        }
+      }
       return {
         ok: false,
         error: getFreePlanLimitMessage('sessions'),
