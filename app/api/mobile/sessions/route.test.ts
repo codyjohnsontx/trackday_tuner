@@ -539,9 +539,25 @@ describe('POST /api/mobile/sessions', () => {
     expect(await retry.json()).toEqual({ ok: true, session: null, replayed: true, deleted: true });
     expect(db.sessions).toHaveLength(0);
     expect(db.session_laps).toHaveLength(0);
-    expect(client.rpc).toHaveBeenCalledTimes(2);
+    expect(client.rpc).toHaveBeenCalledTimes(1);
     // The track the first call created is the rider's; the retry made none of its own.
     expect(db.tracks.filter((row) => row.name === 'Blackhawk Farms')).toEqual([track]);
+  });
+
+  it('answers a delete that lands while the retry is resolving as handled, and takes back the track it made', async () => {
+    const db = seed();
+    fakeSupabase(db, {
+      beforeSessionInsert: (row) => {
+        db.deleted_sessions = [...(db.deleted_sessions ?? []), { user_id: USER_ID, session_id: row.id }];
+      },
+    });
+
+    const retry = await post(sessionBody({ track_id: null, track_name: 'Blackhawk Farms' }));
+
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toEqual({ ok: true, session: null, replayed: true, deleted: true });
+    expect(db.sessions).toHaveLength(0);
+    expect(db.tracks.filter((row) => row.name === 'Blackhawk Farms')).toEqual([]);
   });
 
   it('answers a replay of a session deleted since as handled for a free rider at the cap', async () => {
@@ -556,6 +572,25 @@ describe('POST /api/mobile/sessions', () => {
     expect(retry.status).toBe(200);
     expect((await retry.json()).deleted).toBe(true);
     expect(db.sessions).toHaveLength(10);
+  });
+
+  it('answers a replay of a session deleted with its custom track as handled, not as a session with no track', async () => {
+    const customTrackId = randomUUID();
+    const db = seed({
+      tracks: [{ id: customTrackId, name: 'Home Kart Loop', is_seeded: false, created_by: USER_ID }],
+    });
+    const client = fakeSupabase(db);
+    const body = sessionBody({ track_id: customTrackId, track_name: null });
+    expect((await post(body)).status).toBe(200);
+    deleteOnWebsite(db, SESSION_ID);
+    db.tracks = [];
+
+    const retry = await post(body);
+
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toEqual({ ok: true, session: null, replayed: true, deleted: true });
+    expect(db.sessions).toHaveLength(0);
+    expect(client.rpc).toHaveBeenCalledTimes(1);
   });
 
   it('answers a replay of a session deleted with its vehicle as handled, not as a vehicle that is gone', async () => {

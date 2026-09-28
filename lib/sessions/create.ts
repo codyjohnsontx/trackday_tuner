@@ -547,17 +547,18 @@ async function readVehicleOwnership(
 }
 
 /**
- * One of this rider's sessions by id, read through their own client so RLS
- * decides what "theirs" means. A failed read is not "no such session": treating
- * it as one would go on to insert, and the insert would then fail on the key
- * the read could not see.
+ * What this rider already has under a session id: the session, or the record
+ * that they deleted it (`deleted_sessions`, 20260928002300), read through their
+ * own client so RLS decides what "theirs" means. A failed read is not "no such
+ * session": treating it as one would go on to insert, and the insert would then
+ * fail on the key the read could not see.
  */
 async function readOwnSession(
   supabase: SessionWriteClient,
   report: ReportError,
   userId: string,
   sessionId: string,
-): Promise<{ status: 'found'; session: Session } | { status: 'absent' } | { status: 'failed' }> {
+): Promise<{ status: 'found'; session: Session } | { status: 'deleted' } | { status: 'absent' } | { status: 'failed' }> {
   const { data, error } = await supabase
     .from('sessions')
     .select()
@@ -575,8 +576,27 @@ async function readOwnSession(
     });
     return { status: 'failed' };
   }
+  if (data) return { status: 'found', session: data as Session };
 
-  return data ? { status: 'found', session: data as Session } : { status: 'absent' };
+  const { data: tombstone, error: tombstoneError } = await supabase
+    .from('deleted_sessions')
+    .select('session_id')
+    .eq('session_id', sessionId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (tombstoneError) {
+    report('session-create', new Error(tombstoneError.message), {
+      reason: tombstoneError.code,
+      table: 'deleted_sessions',
+      query: 'replay lookup',
+      userId,
+      sessionId,
+    });
+    return { status: 'failed' };
+  }
+
+  return tombstone ? { status: 'deleted' } : { status: 'absent' };
 }
 
 /**
@@ -816,14 +836,17 @@ export async function createSessionForUser(
   input: CreateSessionInput,
   { id: suppliedId }: CreateSessionOptions = {},
 ): Promise<CreateSessionResult> {
-  // A replay is answered before anything else, so it costs no track resolution.
-  // `create_session_with_laps` asks again under its lock, and is also what
-  // answers an id whose session the rider has since deleted.
+  // A replay is answered before anything else, so it costs no track resolution
+  // and is not judged against what the rider has changed since the first call.
+  // `create_session_with_laps` asks both questions again under its lock.
   if (suppliedId) {
     const existing = await readOwnSession(supabase, report, userId, suppliedId);
     if (existing.status === 'failed') return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
     if (existing.status === 'found') {
       return { ok: true, data: { session: existing.session, createdTrack: false, replayed: true, deleted: false } };
+    }
+    if (existing.status === 'deleted') {
+      return { ok: true, data: { session: null, createdTrack: false, replayed: true, deleted: true } };
     }
   }
 
