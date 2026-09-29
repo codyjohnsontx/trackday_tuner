@@ -816,6 +816,7 @@ describe('supabase migrations bootstrap a database from nothing', () => {
       'create_beta_invite',
       'handle_new_auth_user',
       'purge_expired_ai_request_text',
+      'record_deleted_session',
     ]);
   });
 

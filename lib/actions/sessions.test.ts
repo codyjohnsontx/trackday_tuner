@@ -45,6 +45,7 @@ import {
   replaceSessionLaps,
 } from '@/lib/actions/sessions';
 import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
+import { SESSION_VEHICLE_NOT_OWNED_MESSAGE } from '@/lib/sessions/create';
 import { getSessionOutcome } from '@/lib/actions/outcomes';
 import {
   SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE,
@@ -1158,6 +1159,92 @@ describe('sessions actions', () => {
       expect.objectContaining({ message: expect.stringContaining('schema cache') }),
       expect.objectContaining({ reason: 'PGRST204', table: 'sessions' }),
     );
+  });
+
+  // `sessions: insert own` refuses a vehicle that is not the rider's
+  // (20260928002300), and RLS answers that as 42501 - the code a missing grant
+  // also carries. The vehicle is read only once the insert refused, to choose
+  // which of those the rider is told.
+  describe('a vehicle the insert policy refuses', () => {
+    const RLS_REFUSAL = {
+      code: '42501',
+      message: 'new row violates row-level security policy for table "sessions"',
+      details: null,
+      hint: null,
+    };
+
+    function setup(vehicleRead: QueryResponse['single']) {
+      vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+      vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+      const visibleTracks = createQuery({ base: { data: [], error: null } });
+      const trackInsert = createQuery({ single: { data: { id: 'track-new', name: 'Harris Hill Raceway' }, error: null } });
+      const sessionInsert = createQuery({ single: { data: null, error: RLS_REFUSAL } });
+      const vehicleLookup = createQuery({ single: vehicleRead });
+      const trackRollback = createQuery({ base: { data: null, error: null } });
+      const from = vi
+        .fn()
+        .mockImplementationOnce(() => visibleTracks)
+        .mockImplementationOnce(() => createWildcardLookup())
+        .mockImplementationOnce(createAliasMiss)
+        .mockImplementationOnce(createAliasMiss)
+        .mockImplementationOnce(() => trackInsert)
+        .mockImplementationOnce((table: string) => {
+          expect(table).toBe('sessions');
+          return sessionInsert;
+        })
+        .mockImplementationOnce((table: string) => {
+          expect(table).toBe('vehicles');
+          return vehicleLookup;
+        })
+        .mockImplementationOnce((table: string) => {
+          expect(table).toBe('tracks');
+          return trackRollback;
+        })
+        .mockImplementation(() => createQuery({ base: { data: [], error: null } }));
+      vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+      return { vehicleLookup, trackRollback };
+    }
+
+    const input = { ...validInput, track_id: null, track_name: 'Harris Hill Raceway' };
+
+    it('tells the rider the vehicle is not in their garage, and keeps no track for the session', async () => {
+      const { vehicleLookup, trackRollback } = setup({ data: null, error: null });
+
+      const result = await createSession(input);
+
+      expect(result).toEqual({ ok: false, error: SESSION_VEHICLE_NOT_OWNED_MESSAGE });
+      expect(vehicleLookup.eq).toHaveBeenCalledWith('id', validInput.vehicle_id);
+      expect(vehicleLookup.eq).toHaveBeenCalledWith('user_id', 'user-1');
+      expect(trackRollback.eq).toHaveBeenCalledWith('id', 'track-new');
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    it('says the save failed on our side when the vehicle is the rider’s, since that 42501 is a grant', async () => {
+      setup({ data: { id: validInput.vehicle_id }, error: null });
+
+      const result = await createSession(input);
+
+      expect(!result.ok && result.error).toMatch(/did not save completely/i);
+      expect(reportError).toHaveBeenCalledWith(
+        'session-create',
+        expect.any(Error),
+        expect.objectContaining({ reason: '42501', table: 'sessions' }),
+      );
+    });
+
+    it('says the vehicle could not be checked when that read fails, and reports it', async () => {
+      const { trackRollback } = setup({ data: null, error: { code: '', message: 'fetch failed' } });
+
+      const result = await createSession(input);
+
+      expect(!result.ok && result.error).toMatch(/could not check the vehicle/i);
+      expect(trackRollback.delete).toHaveBeenCalled();
+      expect(reportError).toHaveBeenCalledWith(
+        'session-create',
+        expect.any(Error),
+        expect.objectContaining({ table: 'vehicles', query: 'vehicle ownership' }),
+      );
+    });
   });
 
   // A gateway blip needs no drift at all: postgrest-js resolves it as an

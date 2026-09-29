@@ -28,9 +28,10 @@ import type {
  * The server action in lib/actions/sessions.ts reads both from cookies; a caller
  * holding a bearer token builds its own client and has no cookies at all. So the
  * orchestration takes both as arguments rather than reaching for
- * `@/lib/supabase/server` and `@/lib/auth`, and there is one copy of the free-plan
- * cap, track resolution, layout check, change records and rollbacks whichever way
- * a session arrives.
+ * `@/lib/supabase/server` and `@/lib/auth`, and there is one copy of track
+ * resolution, the layout check, change records and rollbacks whichever way a
+ * session arrives. The free-plan session cap is the exception: a create carrying
+ * its own id is counted inside `create_session_with_laps` (20260928002300).
  *
  * It is still server code - it writes as the rider through whatever client it is
  * handed and reports faults through `report` - so nothing in a browser or the
@@ -58,12 +59,15 @@ export interface CreateSessionContext {
  *
  * `replayed` is true when the caller supplied an id that already names one of
  * this rider's sessions, so nothing was written and `session` is the stored row.
+ *
+ * `deleted` is true when that id names a session the rider has since deleted
+ * (`deleted_sessions`, 20260928002300): the create was handled once already, so
+ * nothing is written again and there is no row to answer with. Only a caller
+ * supplying an id can see it.
  */
-export interface CreatedSession {
-  session: Session;
-  createdTrack: boolean;
-  replayed: boolean;
-}
+export type CreatedSession =
+  | { session: Session; createdTrack: boolean; replayed: boolean; deleted: false }
+  | { session: null; createdTrack: false; replayed: true; deleted: true };
 
 /**
  * Why a create was refused, for a caller that has to answer with a status
@@ -104,6 +108,19 @@ export const SESSION_ID_TAKEN_MESSAGE =
  */
 export const SESSION_REFERENCE_GONE_MESSAGE =
   'This session could not be saved because the vehicle or track it was logged against no longer exists. Choose them again and save it.';
+
+/**
+ * The website form named a vehicle that is not one of this rider's - deleted in
+ * another tab, or a request that was never the form's. `sessions: insert own`
+ * refuses it (20260928002300); this is the sentence the rider reads instead of
+ * that policy's error.
+ */
+export const SESSION_VEHICLE_NOT_OWNED_MESSAGE =
+  'This session was not saved because the vehicle it names is not in your garage. Choose one of your vehicles and save it again.';
+
+/** The vehicle check could not answer, so nothing was written. */
+const SESSION_VEHICLE_LOOKUP_FAILED_MESSAGE =
+  'Your session was not saved - we could not check the vehicle you picked, and the fault is ours, not what you entered. Everything you typed is still on this page, so try saving again in a few minutes.';
 
 function hasEnvironmentValues(environment: CreateSessionEnvironmentInput | null | undefined): boolean {
   if (!environment) return false;
@@ -488,19 +505,60 @@ const FOREIGN_KEY_VIOLATION_CODE = '23503';
  * a retry, so it is the rider's to resolve like the foreign key it stands in for.
  */
 const VEHICLE_NOT_OWNED_CODE = 'TT404';
+/**
+ * `create_session_with_laps` refusing a free rider's session past the plan's
+ * cap. It counts under a per-rider lock (20260928002300), so two saves at the
+ * last free slot cannot both pass - the reason the count moved there.
+ */
+const PLAN_LIMIT_CODE = 'TT402';
+const INVALID_TEXT_REPRESENTATION_CODE = '22P02';
+const INSUFFICIENT_PRIVILEGE_CODE = '42501';
 
 /**
- * One of this rider's sessions by id, read through their own client so RLS
- * decides what "theirs" means. A failed read is not "no such session": treating
- * it as one would go on to insert, and the insert would then fail on the key
- * the read could not see.
+ * Whether `vehicleId` is one of this rider's vehicles, read through their own
+ * client. A failed read is not "not yours": refusing on it would tell a rider
+ * their own bike is missing.
+ */
+async function readVehicleOwnership(
+  supabase: SessionWriteClient,
+  report: ReportError,
+  userId: string,
+  vehicleId: string,
+): Promise<'owned' | 'not_owned' | 'failed'> {
+  const { data, error } = await supabase
+    .from('vehicles')
+    .select('id')
+    .eq('id', vehicleId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  // A value that is not a uuid names no vehicle at all.
+  if (error?.code === INVALID_TEXT_REPRESENTATION_CODE) return 'not_owned';
+  if (error) {
+    report('session-create', new Error(error.message), {
+      reason: error.code,
+      table: 'vehicles',
+      query: 'vehicle ownership',
+      userId,
+    });
+    return 'failed';
+  }
+  return data ? 'owned' : 'not_owned';
+}
+
+/**
+ * What this rider already has under a session id: the session, or the record
+ * that they deleted it (`deleted_sessions`, 20260928002300), read through their
+ * own client so RLS decides what "theirs" means. A failed read is not "no such
+ * session": treating it as one would go on to insert, and the insert would then
+ * fail on the key the read could not see.
  */
 async function readOwnSession(
   supabase: SessionWriteClient,
   report: ReportError,
   userId: string,
   sessionId: string,
-): Promise<{ status: 'found'; session: Session } | { status: 'absent' } | { status: 'failed' }> {
+): Promise<{ status: 'found'; session: Session } | { status: 'deleted' } | { status: 'absent' } | { status: 'failed' }> {
   const { data, error } = await supabase
     .from('sessions')
     .select()
@@ -518,8 +576,27 @@ async function readOwnSession(
     });
     return { status: 'failed' };
   }
+  if (data) return { status: 'found', session: data as Session };
 
-  return data ? { status: 'found', session: data as Session } : { status: 'absent' };
+  const { data: tombstone, error: tombstoneError } = await supabase
+    .from('deleted_sessions')
+    .select('session_id')
+    .eq('session_id', sessionId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (tombstoneError) {
+    report('session-create', new Error(tombstoneError.message), {
+      reason: tombstoneError.code,
+      table: 'deleted_sessions',
+      query: 'replay lookup',
+      userId,
+      sessionId,
+    });
+    return { status: 'failed' };
+  }
+
+  return tombstone ? { status: 'deleted' } : { status: 'absent' };
 }
 
 /**
@@ -573,6 +650,25 @@ async function insertSessionInSteps({
     .single();
 
   if (error) {
+    // `sessions: insert own` refuses a vehicle that is not the rider's
+    // (20260928002300) - one deleted in another tab, or a request that was never
+    // the form's - and RLS answers that as `42501`. The policy is the rule; this
+    // only chooses the sentence, so it asks which vehicle it was after the
+    // insert refused rather than before, and a missing grant, which is also
+    // `42501`, still reads as the fault it is.
+    if (error.code === INSUFFICIENT_PRIVILEGE_CODE) {
+      const ownership = await readVehicleOwnership(supabase, report, userId, payload.vehicle_id);
+      if (ownership !== 'owned') {
+        await rollbackAutoCreatedTrack(supabase, userId, track);
+        return {
+          status: 'answered',
+          result:
+            ownership === 'not_owned'
+              ? { ok: false, error: SESSION_VEHICLE_NOT_OWNED_MESSAGE, kind: 'invalid' }
+              : { ok: false, error: SESSION_VEHICLE_LOOKUP_FAILED_MESSAGE, kind: 'fault' },
+        };
+      }
+    }
     // A plain insert, so as with the environment path below there is no `P0001`
     // class to let through: nothing PostgREST answers here is a rider's to fix.
     // `enabled_modules` and `extra_modules` arrive with 20260228000200, so a
@@ -690,6 +786,9 @@ async function insertSessionAtomically({
     if (error.code === FOREIGN_KEY_VIOLATION_CODE || error.code === VEHICLE_NOT_OWNED_CODE) {
       return { status: 'answered', result: { ok: false, error: SESSION_REFERENCE_GONE_MESSAGE, kind: 'invalid' } };
     }
+    if (error.code === PLAN_LIMIT_CODE) {
+      return { status: 'answered', result: { ok: false, error: getFreePlanLimitMessage('sessions'), kind: 'plan_limit' } };
+    }
     report('session-create', new Error(error.message), {
       reason: error.code,
       query: 'create_session_with_laps',
@@ -701,14 +800,28 @@ async function insertSessionAtomically({
     return { status: 'answered', result: { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' } };
   }
 
-  const { replayed, session } = data as unknown as { replayed: boolean; session: Session };
-  if (!replayed) return { status: 'created', session };
+  const answer = data as unknown as
+    | { replayed: false; session: Session }
+    | { replayed: true; deleted?: false; session: Session }
+    | { replayed: true; deleted: true; session: null };
+  if (!answer.replayed) return { status: 'created', session: answer.session };
+
+  // The rider deleted this session after an earlier call stored it. Nothing
+  // was written, so a track resolved for this call is unused.
+  if (answer.deleted) {
+    await rollbackAutoCreatedTrack(supabase, userId, track);
+    return {
+      status: 'answered',
+      result: { ok: true, data: { session: null, createdTrack: false, replayed: true, deleted: true } },
+    };
+  }
 
   // A call on the same id committed while this one was resolving, and its row
   // is the answer. It may have found this call's auto-created track by name, so
   // the track goes only when that row does not point at it.
+  const { session } = answer;
   if (session.track_id !== track.trackId) await rollbackAutoCreatedTrack(supabase, userId, track);
-  return { status: 'answered', result: { ok: true, data: { session, createdTrack: false, replayed: true } } };
+  return { status: 'answered', result: { ok: true, data: { session, createdTrack: false, replayed: true, deleted: false } } };
 }
 
 /**
@@ -723,14 +836,17 @@ export async function createSessionForUser(
   input: CreateSessionInput,
   { id: suppliedId }: CreateSessionOptions = {},
 ): Promise<CreateSessionResult> {
-  // A replay is answered before anything else, and before the free-plan count
-  // in particular: the first call's row is in that count, so a rider's tenth
-  // session replayed would otherwise be refused as their eleventh.
+  // A replay is answered before anything else, so it costs no track resolution
+  // and is not judged against what the rider has changed since the first call.
+  // `create_session_with_laps` asks both questions again under its lock.
   if (suppliedId) {
     const existing = await readOwnSession(supabase, report, userId, suppliedId);
     if (existing.status === 'failed') return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
     if (existing.status === 'found') {
-      return { ok: true, data: { session: existing.session, createdTrack: false, replayed: true } };
+      return { ok: true, data: { session: existing.session, createdTrack: false, replayed: true, deleted: false } };
+    }
+    if (existing.status === 'deleted') {
+      return { ok: true, data: { session: null, createdTrack: false, replayed: true, deleted: true } };
     }
   }
 
@@ -753,41 +869,17 @@ export async function createSessionForUser(
   }
 
   const hasProAccess = await resolveProAccess();
-  if (!hasProAccess) {
-    const { count, error: countError } = await supabase
+  // The phone's cap is counted inside `create_session_with_laps`, under a
+  // per-rider lock, so two saves at the last free slot cannot both pass. The
+  // website's form writes in separate statements with no transaction to hold
+  // that lock, so it keeps this count and its fail-open read of a failed one.
+  if (!hasProAccess && !suppliedId) {
+    const { count } = await supabase
       .from('sessions')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId);
 
-    // A failed count comes back as `count: null`, which is not zero: reading it
-    // as zero lets a free rider at the cap store an eleventh session whenever
-    // the count blips. The phone's caller refuses and retries instead. The
-    // website path keeps the fail-open read it always had - changing it is a
-    // separate decision from this route.
-    if (suppliedId && countError) {
-      report('session-create', new Error(countError.message), {
-        reason: countError.code,
-        table: 'sessions',
-        query: 'free-plan count',
-        userId,
-      });
-      return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
-    }
-
     if ((count ?? 0) >= getFreePlanLimit('sessions')) {
-      // A call on this id may have committed since the replay check above, and
-      // its row is then in this count: the stored session is the answer. A read
-      // that could not answer is not "no such session" - refusing it as the cap
-      // would park a session that may already be stored - so it is retried.
-      if (suppliedId) {
-        const committed = await readOwnSession(supabase, report, userId, suppliedId);
-        if (committed.status === 'found') {
-          return { ok: true, data: { session: committed.session, createdTrack: false, replayed: true } };
-        }
-        if (committed.status === 'failed') {
-          return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
-        }
-      }
       return {
         ok: false,
         error: getFreePlanLimitMessage('sessions'),
@@ -932,5 +1024,5 @@ export async function createSessionForUser(
     });
   }
 
-  return { ok: true, data: { session: createdSession, createdTrack: track.createdTrack, replayed: false } };
+  return { ok: true, data: { session: createdSession, createdTrack: track.createdTrack, replayed: false, deleted: false } };
 }

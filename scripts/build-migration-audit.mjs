@@ -36,19 +36,95 @@ export const AUDIT_SQL_PATH = path.join(ROOT, 'scripts/sql/audit-migrations-agai
  * `md5(p.prosrc)` with this proves the installed definition IS the migration's,
  * where a name lookup or a substring only proves something by that name exists.
  * It reads `prosrc` rather than `pg_get_functiondef`, which Postgres re-renders
- * and so differs between versions. The migration must hold exactly one
- * `as $$ ... $$;` body.
+ * and so differs between versions. Without `functionName` the migration must
+ * hold exactly one `as $$ ... $$;` body; with it, exactly one of its bodies
+ * must belong to `create or replace function public.<functionName>(`.
  */
-export function functionBodyMd5(migrationBasename, migrationsDir = MIGRATIONS_DIR) {
+export function functionBodyMd5(migrationBasename, functionName, migrationsDir = MIGRATIONS_DIR) {
   const sql = readFileSync(path.join(migrationsDir, `${migrationBasename}.sql`), 'utf8');
-  const bodies = [...sql.matchAll(/\bas \$\$([\s\S]*?)\$\$;/g)];
+  const bodies = [...sql.matchAll(/create or replace function public\.(\w+)\([\s\S]*?\bas \$\$([\s\S]*?)\$\$;/g)]
+    .filter((match) => functionName === undefined || match[1] === functionName)
+    .map((match) => match[2]);
   if (bodies.length !== 1) {
-    throw new Error(`${migrationBasename}.sql has ${bodies.length} dollar-quoted function bodies; expected exactly one.`);
+    const which = functionName === undefined ? 'function bodies' : `bodies for public.${functionName}`;
+    throw new Error(`${migrationBasename}.sql has ${bodies.length} dollar-quoted ${which}; expected exactly one.`);
   }
-  return createHash('md5').update(bodies[0][1], 'utf8').digest('hex');
+  return createHash('md5').update(bodies[0], 'utf8').digest('hex');
 }
 
+/**
+ * The md5 of a policy expression as `pg_policies` prints it, with the one
+ * qualifier that depends on the reader's `search_path` taken out: Postgres
+ * prints `public.vehicles` when `public` is not on the path and `vehicles` when
+ * it is, and the SQL editor and a migration run disagree. Everything else in
+ * the text is fixed by the policy. The probe and the runbook's verify query
+ * apply the same `replace`, so both read one fingerprint on any path.
+ */
+export const SESSION_VEHICLE_OWNED_CHECK_MD5 = '7c9b3da91045db80e54e45052117e6e2';
+
 const CREATE_SESSION_WITH_LAPS = "to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)')";
+const RECORD_DELETED_SESSION = "to_regprocedure('public.record_deleted_session()')";
+
+/**
+ * The tombstone trigger, proved field by field rather than by name: on
+ * `public.sessions`, calling `record_deleted_session()`, `tgtype` 9 (ROW = 1,
+ * DELETE = 8, and neither the BEFORE nor the INSTEAD bit, so AFTER), enabled in
+ * the ordinary way, with no WHEN clause and no arguments - and the only trigger
+ * calling that function. A trigger that kept the name and fired per statement,
+ * on another event or into another function writes no tombstone, and a replay
+ * then recreates the session. `to_regclass` rather than a `::regclass` cast so a
+ * database without `sessions` reads false instead of failing the whole query.
+ * The runbook's verify query carries the same predicate;
+ * tests/unit/hosted-session-ownership-runbook.test.ts holds the two together.
+ */
+export const SESSION_TOMBSTONE_TRIGGER_EXACT = [
+  'exists (select 1 from pg_trigger t',
+  "         where t.tgrelid = to_regclass('public.sessions')",
+  "           and t.tgname = 'sessions_record_deleted'",
+  `           and t.tgfoid = ${RECORD_DELETED_SESSION}`,
+  '           and t.tgtype = 9',
+  "           and t.tgenabled = 'O'",
+  '           and t.tgnargs = 0',
+  '           and t.tgqual is null',
+  '           and not t.tgisinternal)',
+  'and (select count(*) from pg_trigger t',
+  `      where t.tgfoid = ${RECORD_DELETED_SESSION}) = 1`,
+];
+
+/**
+ * Every policy on `sessions` and `deleted_sessions`, each matched on its whole
+ * tuple - command, permissive, roles, `using` and `with check` - so a policy
+ * whose name is right and whose command is not (`alter policy` cannot change a
+ * command, so a hand-made `for all` survives the apply block) does not count.
+ * `with check` is compared by SESSION_VEHICLE_OWNED_CHECK_MD5 for the reason
+ * given there. It counts the matches; the total beside it counts every policy
+ * on the two tables, because permissive policies are OR-ed and one more of
+ * either kind reopens what the five close. Both read 5.
+ */
+export const SESSION_OWNERSHIP_POLICIES_EXACT = [
+  '(select count(*) from pg_policies p',
+  '   join (values',
+  "     ('sessions', 'sessions: select own', 'SELECT', '(auth.uid() = user_id)', null),",
+  `     ('sessions', 'sessions: insert own', 'INSERT', null, '${SESSION_VEHICLE_OWNED_CHECK_MD5}'),`,
+  `     ('sessions', 'sessions: update own', 'UPDATE', '(auth.uid() = user_id)', '${SESSION_VEHICLE_OWNED_CHECK_MD5}'),`,
+  "     ('sessions', 'sessions: delete own', 'DELETE', '(auth.uid() = user_id)', null),",
+  "     ('deleted_sessions', 'deleted_sessions: select own', 'SELECT', '(auth.uid() = user_id)', null)",
+  '   ) as e(tablename, policyname, cmd, qual, with_check_md5)',
+  '     on e.tablename = p.tablename and e.policyname = p.policyname',
+  "  where p.schemaname = 'public'",
+  '    and p.cmd = e.cmd',
+  "    and p.permissive = 'PERMISSIVE'",
+  "    and p.roles = array['public']::name[]",
+  '    and p.qual is not distinct from e.qual',
+  "    and md5(replace(p.with_check, 'public.vehicles', 'vehicles')) is not distinct from e.with_check_md5)",
+];
+
+export const SESSION_OWNERSHIP_POLICIES_TOTAL = [
+  '(select count(*) from pg_policies p',
+  "  where p.schemaname = 'public' and p.tablename in ('sessions', 'deleted_sessions'))",
+];
+
+const indent = (lines, by) => lines.map((line) => `${' '.repeat(by)}${line}`);
 
 /**
  * Migration basename (no `.sql`) -> the object that migration is the only thing
@@ -312,18 +388,62 @@ export const MIGRATION_PROBES = {
       'The function is create or replace, so an older or hand-edited copy is still',
       'there by name. Only the body fingerprint says the installed definition is',
       "this migration's; the other three read the security and grants it sets.",
+      '20260928002300 replaces the body, so its fingerprint is accepted here too,',
+      'as the 1400 row accepts its 1500 replacement.',
     ],
     kind: 'function',
     object: 'public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)',
     present: [
       `${CREATE_SESSION_WITH_LAPS} is not null`,
-      '     and (select md5(p.prosrc) = ' +
-        `'${functionBodyMd5('20260927002200_add_create_session_with_laps')}'`,
+      '     and (select md5(p.prosrc) in (' +
+        `'${functionBodyMd5('20260927002200_add_create_session_with_laps')}', ` +
+        `'${functionBodyMd5('20260928002300_session_vehicle_ownership_and_deleted_sessions', 'create_session_with_laps')}')`,
       '            and not p.prosecdef',
       "            and p.proconfig = array['search_path=\"\"']",
       "            and has_function_privilege('authenticated', p.oid, 'execute')",
       "            and not has_function_privilege('anon', p.oid, 'execute')",
       `          from pg_proc p where p.oid = ${CREATE_SESSION_WITH_LAPS})`,
+    ],
+  },
+  '20260928002300_session_vehicle_ownership_and_deleted_sessions': {
+    note: [
+      'Three changes, each read by what makes it true rather than by name: the',
+      'create function by its body, the trigger function by its body and its',
+      'locked execute, the trigger by its table, timing, event, level and',
+      'function (SESSION_TOMBSTONE_TRIGGER_EXACT), the tombstone table by RLS and',
+      'its select-only rider grant, and every policy on sessions and',
+      'deleted_sessions by its whole tuple, with no other policy on either table',
+      '(SESSION_OWNERSHIP_POLICIES_EXACT; permissive policies are OR-ed, so one',
+      'more reopens what the five close). All in scripts/build-migration-audit.mjs.',
+      'The CASE keeps has_table_privilege off a table that is not there, as in',
+      'the 1100 row.',
+    ],
+    kind: 'function + trigger + table + policies',
+    object: 'create_session_with_laps cap and tombstones, deleted_sessions, sessions vehicle-owned policies',
+    present: [
+      `${CREATE_SESSION_WITH_LAPS} is not null`,
+      '     and (select md5(p.prosrc) = ' +
+        `'${functionBodyMd5('20260928002300_session_vehicle_ownership_and_deleted_sessions', 'create_session_with_laps')}'`,
+      `          from pg_proc p where p.oid = ${CREATE_SESSION_WITH_LAPS})`,
+      `     and ${RECORD_DELETED_SESSION} is not null`,
+      '     and (select md5(p.prosrc) = ' +
+        `'${functionBodyMd5('20260928002300_session_vehicle_ownership_and_deleted_sessions', 'record_deleted_session')}'`,
+      '            and p.prosecdef',
+      "            and p.proconfig = array['search_path=\"\"']",
+      "            and not has_function_privilege('authenticated', p.oid, 'execute')",
+      "            and not has_function_privilege('anon', p.oid, 'execute')",
+      `          from pg_proc p where p.oid = ${RECORD_DELETED_SESSION})`,
+      ...indent(SESSION_TOMBSTONE_TRIGGER_EXACT, 5).map((line, index) => (index === 0 ? `     and ${line.trimStart()}` : line)),
+      "     and case when to_regclass('public.deleted_sessions') is null then false",
+      "              else (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.deleted_sessions'))",
+      "                   and has_table_privilege('authenticated', 'public.deleted_sessions', 'select')",
+      "                   and not has_table_privilege('authenticated', 'public.deleted_sessions', 'insert, update, delete')",
+      "                   and not has_table_privilege('anon', 'public.deleted_sessions', 'select, insert, update, delete')",
+      '         end',
+      ...indent([...SESSION_OWNERSHIP_POLICIES_EXACT.slice(0, -1), `${SESSION_OWNERSHIP_POLICIES_EXACT.at(-1)} = 5`], 9)
+        .map((line, index) => (index === 0 ? `     and ${line.trimStart()}` : line)),
+      ...indent([...SESSION_OWNERSHIP_POLICIES_TOTAL.slice(0, -1), `${SESSION_OWNERSHIP_POLICIES_TOTAL.at(-1)} = 5`], 9)
+        .map((line, index) => (index === 0 ? `     and ${line.trimStart()}` : line)),
     ],
   },
 };

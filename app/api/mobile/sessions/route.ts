@@ -13,12 +13,18 @@ import type { Profile } from '@/types';
  *
  * It is the website's own create - `createSessionForUser`, the function the
  * session form's server action calls - behind a bearer token instead of cookies,
- * so the free-plan cap, track resolution, layout check, change records and
- * rollbacks have one copy whichever surface a session came from.
+ * so track resolution, the layout check, change records and rollbacks have one
+ * copy whichever surface a session came from. The free-plan session cap is
+ * counted inside `create_session_with_laps` for this route, under a per-rider
+ * lock, rather than by the form's count.
  *
  * The body carries an `id` the phone minted, and the create is idempotent on it:
  * a replay after a lost response answers 200 with the stored row and
- * `replayed: true` rather than logging the outing twice.
+ * `replayed: true` rather than logging the outing twice. When the rider has
+ * deleted that session since, the replay answers 200 with `replayed: true`,
+ * `deleted: true` and `session: null`: the save was handled and the rider has
+ * since deleted that session, so the phone clears the outbox entry and removes
+ * its local copy of the session, and the session is not written again.
  *
  * THE STATUS IS THE PHONE'S RETRY DECISION, so it is chosen by who can fix the
  * failure rather than by what failed:
@@ -82,8 +88,9 @@ export async function POST(request: Request) {
         userId: user.id,
         // The website reads this through `getUserProfile`, which answers a
         // failed read as "no profile" and so as the free plan. Here that would
-        // refuse a Pro rider's eleventh session as a cap the rider cannot clear
-        // and the phone would park it, so a failed read is a 503 and retried.
+        // hold a Pro rider to the free custom-track cap on a failed read, so a
+        // failed read is a 503 and retried. The session cap is read inside
+        // `create_session_with_laps`, which reads the profile itself.
         resolveProAccess: async () => {
           const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
           if (error) throw new ProfileReadError(error.message);
@@ -99,6 +106,7 @@ export async function POST(request: Request) {
       const error = result.kind === 'fault' ? UNAVAILABLE_MESSAGE : result.error;
       return reply({ ok: false, error }, STATUS_BY_KIND[result.kind]);
     }
+    if (result.data.deleted) return reply({ ok: true, session: null, replayed: true, deleted: true }, 200);
     return reply({ ok: true, session: result.data.session, replayed: result.data.replayed }, 200);
   } catch (error) {
     reportError('mobile-sessions', error, {

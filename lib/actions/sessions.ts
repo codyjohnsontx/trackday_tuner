@@ -442,6 +442,9 @@ export async function createSession(
   );
   // `kind` is for callers answering with a status; this one shows the sentence.
   if (!result.ok) return { ok: false, error: result.error };
+  // Only a create carrying its own id can land on a deleted session, and the
+  // form never supplies one.
+  if (result.data.deleted) return { ok: false, error: 'This session was already deleted.' };
 
   revalidatePath('/sessions');
   revalidatePath('/dashboard');

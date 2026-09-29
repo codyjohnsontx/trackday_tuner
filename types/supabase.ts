@@ -393,6 +393,29 @@ export type Database = {
         };
         Relationships: [];
       };
+      /**
+       * The id of every session a rider deleted, written by a trigger on
+       * `sessions` (20260928002300) so a phone retry cannot recreate one. Riders
+       * read their own; nothing but the trigger writes.
+       */
+      deleted_sessions: {
+        Row: {
+          user_id: string;
+          session_id: string;
+          deleted_at: string;
+        };
+        Insert: {
+          user_id: string;
+          session_id: string;
+          deleted_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          session_id?: string;
+          deleted_at?: string;
+        };
+        Relationships: [];
+      };
       session_environment: {
         Row: {
           id: string;
@@ -1082,7 +1105,9 @@ export type Database = {
          * `{ replayed, session }`: the stored row, and whether an earlier call on
          * this id had already written it (20260927002200). The row, laps and
          * environment are written in one transaction, so a failure leaves none of
-         * them.
+         * them. An id whose session the rider has since deleted answers
+         * `{ replayed: true, deleted: true, session: null }`, and a free rider
+         * past the cap is refused as `TT402` (20260928002300).
          */
         Returns: Json;
       };
