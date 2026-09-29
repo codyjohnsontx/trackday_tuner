@@ -405,6 +405,13 @@ rather than running it:
 that difference is the real finding and needs deciding before anything is
 recorded.
 
+One such difference is known: the hosted project names the four `sessions`
+policies "Users can select own sessions" and so on, where the baseline says
+"sessions: select own". `20260928002300` renames any it finds to the baseline's
+names before altering them, so after it the hosted names match. A migration that
+alters a hosted policy by name has to check its live name first - a name only
+the baseline spells makes `alter policy` fail on the hosted paste.
+
 ## Project Structure
 
 ```text

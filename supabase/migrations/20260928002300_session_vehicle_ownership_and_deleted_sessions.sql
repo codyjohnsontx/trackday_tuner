@@ -52,6 +52,18 @@
 --    the application and inserts directly, so a form save racing a phone save at
 --    nine can still reach eleven; that path has no transaction to hold a lock in.
 --
+-- THE HOSTED PROJECT NAMES ITS SESSION POLICIES DIFFERENTLY. The baseline
+-- (20260223000000) calls them "sessions: select own" and so on, reconstructed
+-- rather than read off the hosted project, which has the same four policies as
+-- "Users can select own sessions", "Users can insert own sessions", "Users can
+-- update own sessions" and "Users can delete own sessions" (owner's precheck,
+-- 2026-09-29). `alter policy` finds a policy by name, so the block below renames
+-- any of those it finds to the baseline's name first, in the same transaction.
+-- A database built from these migrations has none of them and renames nothing;
+-- the hosted one comes out with the names every migration and check here uses.
+-- If both names of one policy exist, the rename fails and nothing is applied:
+-- that is two policies where one belongs, and a finding to decide first.
+--
 -- The lock is taken before the replay lookup, so a second call on the same id
 -- waits for the first and then finds its row, as it did on the primary key
 -- before. `create_session_with_laps` keeps its signature, so the release before
@@ -103,6 +115,31 @@ drop trigger if exists sessions_record_deleted on public.sessions;
 create trigger sessions_record_deleted
   after delete on public.sessions
   for each row execute function public.record_deleted_session();
+
+do $$
+declare
+  v_policy record;
+begin
+  for v_policy in
+    select r.hosted_name, r.repo_name
+      from (values
+        ('Users can select own sessions', 'sessions: select own'),
+        ('Users can insert own sessions', 'sessions: insert own'),
+        ('Users can update own sessions', 'sessions: update own'),
+        ('Users can delete own sessions', 'sessions: delete own')
+      ) as r(hosted_name, repo_name)
+     where exists (
+       select 1
+         from pg_catalog.pg_policies p
+        where p.schemaname = 'public'
+          and p.tablename = 'sessions'
+          and p.policyname = r.hosted_name
+     )
+  loop
+    execute pg_catalog.format('alter policy %I on public.sessions rename to %I', v_policy.hosted_name, v_policy.repo_name);
+  end loop;
+end;
+$$;
 
 alter policy "sessions: insert own"
   on public.sessions

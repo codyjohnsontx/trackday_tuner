@@ -82,6 +82,32 @@ describe('the hosted session ownership block in docs/beta-runbook.md', () => {
     expect(statements(precheck).every((statement) => statement.startsWith('select'))).toBe(true);
   });
 
+  // The hosted project names its four session policies "Users can ... own
+  // sessions" where the baseline says "sessions: ... own" (owner's precheck,
+  // 2026-09-29), and `alter policy` finds a policy by name. The migration's
+  // rename list and the precheck's accepted names are two copies of one
+  // mapping: a name the precheck passes that the block does not rename would
+  // make the block's `alter policy` fail on the hosted project after the
+  // precheck said go.
+  it('renames exactly the hosted policy names the precheck accepts, to the names the verify expects', () => {
+    const pairs = (sql: string) =>
+      [...sql.matchAll(/\('((?:sessions|Users can)[^']*)', '((?:sessions|Users can)[^']*)'/g)].map(([, a, b]) =>
+        a.startsWith('Users can') ? [a, b] : [b, a],
+      );
+    const renamed = pairs(migration);
+    const accepted = pairs(fencedBlock(runbook, PRECHECK_MARKER));
+
+    expect(renamed).toEqual([
+      ['Users can select own sessions', 'sessions: select own'],
+      ['Users can insert own sessions', 'sessions: insert own'],
+      ['Users can update own sessions', 'sessions: update own'],
+      ['Users can delete own sessions', 'sessions: delete own'],
+    ]);
+    expect(accepted).toEqual(renamed);
+    const verify = fencedBlock(runbook, VERIFY_MARKER);
+    for (const [, repoName] of renamed) expect(verify).toContain(`'${repoName}'`);
+  });
+
   // Written out in full rather than rebuilt from the exported fragments, so
   // loosening a check - dropping the trigger's event or level, a policy's
   // command, role or `using` - fails here whether it was loosened in the

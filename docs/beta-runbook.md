@@ -1499,7 +1499,24 @@ select
   (select count(*)
      from public.sessions s
      join public.vehicles v on v.id = s.vehicle_id
-    where v.user_id <> s.user_id) as sessions_on_another_riders_vehicle;
+    where v.user_id <> s.user_id) as sessions_on_another_riders_vehicle,
+  (select count(*) from pg_policies p
+     join (values
+       ('sessions: select own', 'Users can select own sessions', 'SELECT', '(auth.uid() = user_id)', null),
+       ('sessions: insert own', 'Users can insert own sessions', 'INSERT', null, '(auth.uid() = user_id)'),
+       ('sessions: update own', 'Users can update own sessions', 'UPDATE', '(auth.uid() = user_id)', '(auth.uid() = user_id)'),
+       ('sessions: delete own', 'Users can delete own sessions', 'DELETE', '(auth.uid() = user_id)', null)
+     ) as e(repo_name, hosted_name, cmd, qual, with_check)
+       on p.policyname in (e.repo_name, e.hosted_name)
+    where p.schemaname = 'public' and p.tablename = 'sessions'
+      and p.cmd = e.cmd
+      and p.permissive = 'PERMISSIVE'
+      and p.roles = array['public']::name[]
+      and p.qual is not distinct from e.qual
+      and p.with_check is not distinct from e.with_check) = 4
+  and (select count(*) from pg_policies p
+        where p.schemaname = 'public' and p.tablename = 'sessions') = 4
+    as session_policies_are_a_known_baseline;
 
 select tablename, policyname, cmd, permissive, roles, qual, with_check
   from pg_policies
@@ -1507,7 +1524,7 @@ select tablename, policyname, cmd, permissive, roles, qual, with_check
  order by tablename, policyname;
 ```
 
-Expect `false`, `false`, `true`, `0` from the first query. `true` in either of
+Expect `false`, `false`, `true`, `0`, `true` from the first query. `true` in either of
 the first two means some of this is already there: run the verify query below
 rather than applying over it. `false` in the third means the installed function
 is not the one "Apply the session create function by hand" installs - apply
@@ -1516,13 +1533,19 @@ before going on: those sessions sit on another rider's vehicle, their own rider
 could no longer edit them once the update policy checks the vehicle, and the
 vehicle's owner deleting it would take them.
 
-The second query should list four policies, all on `sessions`, each
-`PERMISSIVE` for `{public}` with the command its name says and the expression
-the baseline gives it: `(auth.uid() = user_id)` as `qual` on select, update and
-delete and as `with_check` on insert and update. The apply block rewrites the
-insert and update ones with `alter policy`, which fails - and so applies
-nothing - if either is missing under that name. Any other difference is a
-finding too.
+The last column is `true` when `sessions` has exactly four policies and each
+is one the apply block knows: `PERMISSIVE` for `{public}`, the command its name
+says, and `(auth.uid() = user_id)` as `qual` on select, update and delete and
+as `with_check` on insert and update. **The hosted project names them
+differently from the repository**: "Users can select own sessions", "Users can
+insert own sessions", "Users can update own sessions" and "Users can delete own
+sessions", where the baseline migration says "sessions: select own" and so on,
+because the baseline was reconstructed rather than read off the project. Both
+sets pass this column. The apply block renames the hosted ones to the
+repository's names before it changes them, so after it the hosted project
+carries the names the verify query and every later migration expect. `false`
+is a finding to decide before going on: the second query lists each policy
+with its command, roles and expressions so the difference can be read off.
 
 **2. Apply.**
 
@@ -1575,6 +1598,31 @@ drop trigger if exists sessions_record_deleted on public.sessions;
 create trigger sessions_record_deleted
   after delete on public.sessions
   for each row execute function public.record_deleted_session();
+
+do $$
+declare
+  v_policy record;
+begin
+  for v_policy in
+    select r.hosted_name, r.repo_name
+      from (values
+        ('Users can select own sessions', 'sessions: select own'),
+        ('Users can insert own sessions', 'sessions: insert own'),
+        ('Users can update own sessions', 'sessions: update own'),
+        ('Users can delete own sessions', 'sessions: delete own')
+      ) as r(hosted_name, repo_name)
+     where exists (
+       select 1
+         from pg_catalog.pg_policies p
+        where p.schemaname = 'public'
+          and p.tablename = 'sessions'
+          and p.policyname = r.hosted_name
+     )
+  loop
+    execute pg_catalog.format('alter policy %I on public.sessions rename to %I', v_policy.hosted_name, v_policy.repo_name);
+  end loop;
+end;
+$$;
 
 alter policy "sessions: insert own"
   on public.sessions
@@ -1806,8 +1854,13 @@ that release reads `deleted_sessions` before every phone save, so without the
 table every phone save is answered 503 and retried, for every rider; and it no
 longer counts a phone save's sessions itself, so without the function's cap a
 free rider's phone saves would not be capped at all. It restores the
-20260927002200 function, the baseline's two policies, and drops the trigger and
-the table - with every id recorded in it.
+20260927002200 function, the baseline's two policy expressions, and drops the
+trigger and the table - with every id recorded in it. It keeps the policy names
+the apply block gave the hosted project ("sessions: insert own" and so on)
+rather than renaming them back to "Users can ... own sessions": nothing reads a
+policy by name except these blocks and the migrations, all of which use the
+repository's names, and the apply block renames only what it finds, so it can
+be pasted again after a rollback either way.
 
 ```sql
 -- hosted-session-ownership-rollback
