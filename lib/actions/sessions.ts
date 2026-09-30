@@ -481,7 +481,7 @@ export async function createSession(
     // `create_session_with_laps` as the phone - one write, and one free-plan cap
     // counted under the rider's lock - while a browser still cannot choose a
     // row's primary key.
-    { id: randomUUID() },
+    { id: randomUUID(), replayable: false },
   );
   // `kind` is for callers answering with a status; this one shows the sentence.
   if (!result.ok) return { ok: false, error: result.error };

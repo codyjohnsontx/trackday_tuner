@@ -100,7 +100,7 @@ export async function POST(request: Request) {
         report: reportError,
       },
       parsed.data.input,
-      { id: parsed.data.id },
+      { id: parsed.data.id, replayable: true },
     );
 
     if (!result.ok) {

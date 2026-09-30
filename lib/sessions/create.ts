@@ -98,6 +98,14 @@ export interface CreateSessionOptions {
    * is whatever a browser posted, cannot choose a row's primary key.
    */
   id: string;
+  /**
+   * Whether `id` may name an earlier call - the phone's retry of a create whose
+   * answer was lost. Only then is the rider's session, or the record that they
+   * deleted it, read first. An id minted for this one call names neither, so
+   * the server action passes false and its save reads nothing before the write;
+   * `create_session_with_laps` still answers a replay itself either way.
+   */
+  replayable: boolean;
 }
 
 /**
@@ -568,18 +576,20 @@ async function insertSession({
 export async function createSessionForUser(
   { supabase, userId, resolveProAccess, report }: CreateSessionContext,
   input: CreateSessionInput,
-  { id: sessionId }: CreateSessionOptions,
+  { id: sessionId, replayable }: CreateSessionOptions,
 ): Promise<CreateSessionResult> {
   // A replay is answered before anything else, so it costs no track resolution
   // and is not judged against what the rider has changed since the first call.
   // `create_session_with_laps` asks both questions again under its lock.
-  const existing = await readOwnSession(supabase, report, userId, sessionId);
-  if (existing.status === 'failed') return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
-  if (existing.status === 'found') {
-    return { ok: true, data: { session: existing.session, createdTrack: false, replayed: true, deleted: false } };
-  }
-  if (existing.status === 'deleted') {
-    return { ok: true, data: { session: null, createdTrack: false, replayed: true, deleted: true } };
+  if (replayable) {
+    const existing = await readOwnSession(supabase, report, userId, sessionId);
+    if (existing.status === 'failed') return { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' };
+    if (existing.status === 'found') {
+      return { ok: true, data: { session: existing.session, createdTrack: false, replayed: true, deleted: false } };
+    }
+    if (existing.status === 'deleted') {
+      return { ok: true, data: { session: null, createdTrack: false, replayed: true, deleted: true } };
+    }
   }
 
   const lapValidationError = validateLaps(input.laps ?? []);

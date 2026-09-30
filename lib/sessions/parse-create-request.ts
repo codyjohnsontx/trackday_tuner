@@ -132,11 +132,11 @@ function setupRecord(value: unknown, container: string, extraKeys: readonly stri
 }
 
 /**
- * `container`'s own setup fields out of `source`. A typed value has to be a
- * string, and is required when `required` - tyres, suspension and alignment
- * store every one of theirs, an advanced module only those the rider filled in.
- * A choice is one of its options, or null for not logged, which is the rule the
- * read model applies to a stored one.
+ * `container`'s own setup fields out of `source`. When `required`, every field
+ * has to be there - tyres, suspension and alignment store every one of theirs -
+ * so a typed value is a string and a choice is one of its options. Otherwise a
+ * typed value is a string when sent - an advanced module stores only those the
+ * rider filled in - and a choice is one of its options or null for not logged.
  */
 function setupLeaves(source: Record<string, unknown>, container: string, required: boolean): Record<string, string | null> {
   const out: Record<string, string | null> = {};
@@ -145,8 +145,13 @@ function setupLeaves(source: Record<string, unknown>, container: string, require
     const leaf = source[key];
     if (field.kind === 'choice') {
       const options = field.options ?? [];
-      if (leaf != null && !options.includes(leaf as string)) fail(`${path} must be one of ${options.join(', ')}, or null.`);
-      out[key] = (leaf as string | null | undefined) ?? null;
+      if (required) {
+        if (!options.includes(leaf as string)) fail(`${path} must be ${options.join(' or ')}.`);
+        out[key] = leaf as string;
+      } else {
+        if (leaf != null && !options.includes(leaf as string)) fail(`${path} must be one of ${options.join(', ')}, or null.`);
+        out[key] = (leaf as string | null | undefined) ?? null;
+      }
     } else if (required || leaf !== undefined) {
       out[key] = string(leaf, path);
     }
@@ -165,7 +170,8 @@ function parseTires(value: unknown): Tires {
     const leaves = setupLeaves(source, path, true) as unknown as TireEnd;
     return { ...leaves, ...(hot === undefined ? {} : { hot_pressure: hot }) };
   };
-  const own = setupLeaves(tires, 'tires', true) as unknown as Pick<Tires, 'condition'>;
+  // The tyre condition is the one answer a rider may leave unlogged.
+  const own = setupLeaves(tires, 'tires', false) as unknown as Pick<Tires, 'condition'>;
   return { front: end('front'), rear: end('rear'), ...own };
 }
 

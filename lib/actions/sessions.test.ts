@@ -355,24 +355,20 @@ describe('sessions actions', () => {
     expect(sessions.insert).not.toHaveBeenCalled();
   });
 
-  it('saves nothing when it cannot tell whether the id is already taken', async () => {
+  it('saves without looking for an earlier save first, since the id it mints names none', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const missing = { message: "Could not find the table 'public.deleted_sessions' in the schema cache", code: 'PGRST205' };
     const { from, rpc } = createSaveClient({
-      tables: { sessions: () => createQuery({ single: { data: null, error: { message: 'connection reset', code: '08006' } } }) },
+      tables: { deleted_sessions: () => createQuery({ single: { data: null, error: missing } }) },
     });
 
     const result = await createSession(validInput);
 
-    expect(result.ok).toBe(false);
-    expect(!result.ok && result.error).toMatch(/on our end/i);
-    expect(from).not.toHaveBeenCalledWith('tracks');
-    expect(rpc).not.toHaveBeenCalled();
-    expect(reportError).toHaveBeenCalledWith(
-      'session-create',
-      expect.any(Error),
-      expect.objectContaining({ table: 'sessions', query: 'replay lookup' }),
-    );
+    expect(result.ok, !result.ok ? result.error : '').toBe(true);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(from).not.toHaveBeenCalledWith('deleted_sessions');
+    expect(reportError).not.toHaveBeenCalled();
   });
 
   it('saves the session under the typed name when the alias lookup fails', async () => {

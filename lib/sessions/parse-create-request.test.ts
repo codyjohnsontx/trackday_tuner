@@ -75,21 +75,42 @@ describe('parseCreateSessionRequest and SETUP_FIELDS', () => {
     });
   });
 
-  it('takes a choice as one of its options or as not logged, and nothing else', () => {
-    const logged = everySetupField();
-    (logged.tires as Record<string, unknown>).condition = null;
-    (logged.suspension.rear as Record<string, unknown>).direction = null;
+  it('takes the tyre condition as one of its options or as not logged, and nothing else', () => {
+    const unlogged = everySetupField();
+    (unlogged.tires as Record<string, unknown>).condition = null;
+    const absent = everySetupField();
+    delete (absent.tires as Record<string, unknown>).condition;
     const odd = everySetupField();
-    (odd.suspension.rear as Record<string, unknown>).direction = 'sideways';
+    (odd.tires as Record<string, unknown>).condition = 'bald';
 
-    const parsed = parseCreateSessionRequest(sessionBody(logged));
+    const parsed = parseCreateSessionRequest(sessionBody(unlogged));
+    const parsedAbsent = parseCreateSessionRequest(sessionBody(absent));
 
     expect(parsed.ok && parsed.data.input.tires.condition).toBeNull();
-    expect(parsed.ok && parsed.data.input.suspension.rear.direction).toBeNull();
+    expect(parsedAbsent.ok && parsedAbsent.data.input.tires.condition).toBeNull();
     expect(parseCreateSessionRequest(sessionBody(odd))).toEqual({
       ok: false,
-      error: 'suspension.rear.direction must be one of in, out, or null.',
+      error: 'tires.condition must be one of new, scrubbed, used, worn, or null.',
     });
+  });
+
+  it('requires an adjuster direction on each end, as in or out', () => {
+    const cases: [string, unknown][] = [
+      ['null', null],
+      ['absent', undefined],
+      ['odd', 'sideways'],
+    ];
+    for (const [label, direction] of cases) {
+      const setup = everySetupField();
+      const rear = setup.suspension.rear as Record<string, unknown>;
+      if (direction === undefined) delete rear.direction;
+      else rear.direction = direction;
+
+      expect(parseCreateSessionRequest(sessionBody(setup)), label).toEqual({
+        ok: false,
+        error: 'suspension.rear.direction must be in or out.',
+      });
+    }
   });
 
   it('requires every tyre, suspension and alignment value, and only the advanced-module values sent', () => {

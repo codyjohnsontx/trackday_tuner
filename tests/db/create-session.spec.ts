@@ -7,6 +7,7 @@ import {
   SESSION_VEHICLE_NOT_OWNED_MESSAGE,
   createSessionForUser,
   type CreateSessionContext,
+  type CreateSessionOptions,
 } from '@/lib/sessions/create';
 import { createTestAdminClient } from '@/tests/e2e/helpers/supabase';
 import {
@@ -128,8 +129,13 @@ test.describe('createSessionForUser against a real database', () => {
     };
   }
 
-  function save(rider: Rider, overrides: Partial<CreateSessionInput> = {}, id = randomUUID()) {
-    return createSessionForUser(rider.context, formInput(rider.vehicle, overrides), { id });
+  /** A save as the form makes it by default: a fresh id, so nothing to replay. */
+  function save(
+    rider: Rider,
+    overrides: Partial<CreateSessionInput> = {},
+    options: CreateSessionOptions = { id: randomUUID(), replayable: false },
+  ) {
+    return createSessionForUser(rider.context, formInput(rider.vehicle, overrides), options);
   }
 
   async function seededTrack(name: string): Promise<{ id: string; name: string }> {
@@ -205,7 +211,7 @@ test.describe('createSessionForUser against a real database', () => {
       const result = await save(
         rider,
         { laps: LAPS, environment: { ambient_temperature_c: 21, humidity_percent: 40, weather_condition: 'dry' } },
-        id,
+        { id, replayable: false },
       );
 
       expect(result.ok, !result.ok ? result.error : '').toBe(true);
@@ -239,14 +245,42 @@ test.describe('createSessionForUser against a real database', () => {
     test('answers a second save on the same id with the stored row and writes nothing', async () => {
       const rider = await newRider('save-replay');
       const id = randomUUID();
-      expect((await save(rider, { laps: LAPS }, id)).ok).toBe(true);
+      expect((await save(rider, { laps: LAPS }, { id, replayable: true })).ok).toBe(true);
 
-      const replay = await save(rider, { notes: 'a different note', laps: [] }, id);
+      const replay = await save(rider, { notes: 'a different note', laps: [] }, { id, replayable: true });
 
       expect(replay.ok && replay.data).toMatchObject({ replayed: true, session: { id, notes: 'Front pushing in turn 5.' } });
       expect(await sessionsOf(rider)).toHaveLength(1);
       const laps = await admin.from('session_laps').select('lap_number').eq('session_id', id);
       expect(laps.data).toHaveLength(LAPS.length);
+    });
+
+    test('saves a form session without reading for an earlier save, so it needs no deleted_sessions', async () => {
+      const rider = await newRider('save-no-pre-read');
+      // The rider's client as it stands on a project without the deleted-session
+      // records: a read of that table answers as a table the Data API cannot find.
+      const withoutTombstones = new Proxy(rider.client, {
+        get(target, prop) {
+          if (prop === 'from') {
+            return (table: string) =>
+              target.from((table === 'deleted_sessions' ? 'deleted_sessions_not_applied' : table) as 'sessions');
+          }
+          const value = Reflect.get(target, prop, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      const context = { ...rider.context, supabase: withoutTombstones };
+      const id = randomUUID();
+
+      const result = await createSessionForUser(context, formInput(rider.vehicle, { laps: LAPS }), {
+        id,
+        replayable: false,
+      });
+
+      expect(result.ok, !result.ok ? result.error : '').toBe(true);
+      expect(result.ok && result.data).toMatchObject({ session: { id }, replayed: false });
+      expect(await sessionsOf(rider)).toEqual([expect.objectContaining({ id })]);
+      expect(rider.reports).toEqual([]);
     });
   });
 
