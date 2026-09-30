@@ -40,11 +40,12 @@ import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import { validateLaps } from '@/lib/lap-times';
 import { sessionIsAtTrack, trackNameSearchPattern } from '@/lib/session-track';
-import { createSessionForUser, persistSessionLaps } from '@/lib/sessions/create';
+import { createSessionForUser } from '@/lib/sessions/create';
 import type {
   ActionResult,
   CreateSessionInput,
   CreateSessionLapInput,
+  Json,
   Session,
   SessionEnvironment,
   SessionLap,
@@ -53,6 +54,41 @@ import type {
 
 const SESSION_LAPS_SAVE_FAILED_MESSAGE =
   'Your lap times were not saved - something is wrong on our end, not with what you entered. They are still on this page: copy them somewhere safe before you leave, then try again in a few minutes.';
+
+/**
+ * The SQLSTATE `replace_session_laps` raises when the laps the caller read are
+ * not the laps that are stored - see 20260903001500. Matched on the code rather
+ * than the message so the rider-facing sentence and the database's wording can
+ * move independently.
+ */
+const SESSION_LAPS_STALE_READ_CODE = 'TT409';
+
+const SESSION_LAPS_STALE_READ_MESSAGE =
+  'The lap times on this session changed since this page loaded, so nothing was overwritten. Reload the session and try again.';
+
+/**
+ * The codes whose own message is written for a rider, and everything else is a
+ * deployment or transport fault.
+ *
+ * `replace_session_laps` (20260903001500) rejects a request with a bare
+ * `raise exception`, which is `P0001`, and those messages are about THIS
+ * request. `TT409` is its stale-read refusal, which has a written sentence of
+ * its own above. Any OTHER code answers with `SESSION_LAPS_SAVE_FAILED_MESSAGE`
+ * and goes to `reportError`.
+ *
+ * THE DIRECTION IS THE POINT, and it is the same rule and the same reason as
+ * `app/api/sessions/[id]/outcome/route.ts`. This path returned `error.message`
+ * verbatim for everything but `TT409`, so a `replace_session_laps` the Data API
+ * cannot resolve printed raw PostgREST parameter names under a rider's unsaved
+ * lap times with nothing reaching Sentry - the Save Outcome defect exactly, on
+ * the sibling RPC. A transport failure is the same hole: `postgrest-js` resolves
+ * one as an ordinary error carrying an EMPTY `code`, and an unparseable body as
+ * one carrying NO `code`, so neither is on any list of faults anyone thought of.
+ *
+ * Lap times are rider-typed data lost the same way notes are, so assume a
+ * database error reaches the rider until you have read the code that stops it.
+ */
+const SESSION_LAPS_DOMAIN_REJECTION_CODE = 'P0001';
 
 export async function getSessions(vehicleId?: string, limit?: number): Promise<Session[]> {
   if (await isDemoMode()) {
@@ -503,16 +539,23 @@ export async function replaceSessionLaps(
     return { ok: false, error: sessionError?.message ?? 'Session not found.' };
   }
 
-  const persistError = await persistSessionLaps({
-    supabase,
-    report: reportError,
-    userId: user.id,
-    session: readStoredSession(sessionRow),
-    laps,
-    expectedLaps,
-    saveFailedMessage: SESSION_LAPS_SAVE_FAILED_MESSAGE,
+  const { error } = await supabase.rpc('replace_session_laps', {
+    p_user_id: user.id,
+    p_session_id: sessionRow.id,
+    p_laps: laps as unknown as Json,
+    p_expected_laps: expectedLaps as unknown as Json,
   });
-  if (persistError) return { ok: false, error: persistError };
+  if (error) {
+    if (error.code === SESSION_LAPS_STALE_READ_CODE) return { ok: false, error: SESSION_LAPS_STALE_READ_MESSAGE };
+    if (error.code === SESSION_LAPS_DOMAIN_REJECTION_CODE) return { ok: false, error: error.message };
+    reportError('session-laps', new Error(error.message), {
+      reason: error.code,
+      query: 'replace_session_laps',
+      details: error.details,
+      hint: error.hint,
+    });
+    return { ok: false, error: SESSION_LAPS_SAVE_FAILED_MESSAGE };
+  }
 
   revalidatePath(`/sessions/${sessionId}`);
   return { ok: true, data: undefined };

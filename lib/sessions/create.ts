@@ -16,7 +16,6 @@ import type { Database, TableInsert } from '@/types/supabase';
 import type {
   CreateSessionEnvironmentInput,
   CreateSessionInput,
-  CreateSessionLapInput,
   Session,
   Json,
   VehicleBaseline,
@@ -140,41 +139,6 @@ function hasEnvironmentValues(environment: CreateSessionEnvironmentInput | null 
 }
 
 /**
- * The SQLSTATE `replace_session_laps` raises when the laps the caller read are
- * not the laps that are stored - see 20260903001500. Matched on the code rather
- * than the message so the rider-facing sentence and the database's wording can
- * move independently.
- */
-const SESSION_LAPS_STALE_READ_CODE = 'TT409';
-
-const SESSION_LAPS_STALE_READ_MESSAGE =
-  'The lap times on this session changed since this page loaded, so nothing was overwritten. Reload the session and try again.';
-
-/**
- * The codes whose own message is written for a rider, and everything else is a
- * deployment or transport fault.
- *
- * `replace_session_laps` (20260903001500) rejects a request with a bare
- * `raise exception`, which is `P0001`, and those messages are about THIS
- * request. `TT409` is its stale-read refusal, which has a written sentence of
- * its own above. Any OTHER code answers with the CALLER's `saveFailedMessage`
- * and goes to `reportError`.
- *
- * THE DIRECTION IS THE POINT, and it is the same rule and the same reason as
- * `app/api/sessions/[id]/outcome/route.ts`. This path returned `error.message`
- * verbatim for everything but `TT409`, so a `replace_session_laps` the Data API
- * cannot resolve printed raw PostgREST parameter names under a rider's unsaved
- * lap times with nothing reaching Sentry - the Save Outcome defect exactly, on
- * the sibling RPC. A transport failure is the same hole: `postgrest-js` resolves
- * one as an ordinary error carrying an EMPTY `code`, and an unparseable body as
- * one carrying NO `code`, so neither is on any list of faults anyone thought of.
- *
- * Lap times are rider-typed data lost the same way notes are, so assume a
- * database error reaches the rider until you have read the code that stops it.
- */
-const SESSION_LAPS_DOMAIN_REJECTION_CODE = 'P0001';
-
-/**
  * The layout lookup failed, so nothing was written - the check runs before the
  * session insert, and a track row this save created is rolled back. Unlike the
  * message below, "not saved" is therefore certain here.
@@ -196,44 +160,6 @@ const SESSION_LAYOUT_LOOKUP_FAILED_MESSAGE =
  */
 const SESSION_CREATE_SAVE_FAILED_MESSAGE =
   'Your session may not have saved - something is wrong on our end, not with what you entered. Check your sessions list before you enter it again, in case it saved after all. What you typed is still on this page, so copy anything you need before you leave.';
-
-export async function persistSessionLaps(params: {
-  supabase: SessionWriteClient;
-  report: ReportError;
-  userId: string;
-  session: Session;
-  laps: CreateSessionLapInput[];
-  /**
-   * The laps the caller read before deciding on this replacement, echoed back
-   * for the RPC to check against what is stored. It refuses the delete when the
-   * two differ, so neither a caller that mistook a failed read for an empty
-   * session nor a second tab holding an equal-count snapshot can replace laps it
-   * never saw. The rows travel rather than a digest of them: folding an identity
-   * here as well as in SQL would be two records of one fact, and they drift.
-   */
-  expectedLaps: CreateSessionLapInput[];
-  /** What a rider reads when the fault is ours rather than theirs. */
-  saveFailedMessage: string;
-}): Promise<string | null> {
-  const validationError = validateLaps(params.laps);
-  if (validationError) return validationError;
-  const { error } = await params.supabase.rpc('replace_session_laps', {
-    p_user_id: params.userId,
-    p_session_id: params.session.id,
-    p_laps: params.laps as unknown as Json,
-    p_expected_laps: params.expectedLaps as unknown as Json,
-  });
-  if (!error) return null;
-  if (error.code === SESSION_LAPS_STALE_READ_CODE) return SESSION_LAPS_STALE_READ_MESSAGE;
-  if (error.code === SESSION_LAPS_DOMAIN_REJECTION_CODE) return error.message;
-  params.report('session-laps', new Error(error.message), {
-    reason: error.code,
-    query: 'replace_session_laps',
-    details: error.details,
-    hint: error.hint,
-  });
-  return params.saveFailedMessage;
-}
 
 /**
  * Undo the track row `resolveSessionTrack` wrote, when the session it was written
