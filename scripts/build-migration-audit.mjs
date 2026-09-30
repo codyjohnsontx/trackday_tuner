@@ -63,6 +63,7 @@ export function functionBodyMd5(migrationBasename, functionName, migrationsDir =
 export const SESSION_VEHICLE_OWNED_CHECK_MD5 = '7c9b3da91045db80e54e45052117e6e2';
 
 const CREATE_SESSION_WITH_LAPS = "to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)')";
+const DELETE_AUTO_CREATED_TRACK = "to_regprocedure('public.delete_auto_created_track_if_unused(uuid)')";
 const RECORD_DELETED_SESSION = "to_regprocedure('public.record_deleted_session()')";
 
 /**
@@ -444,6 +445,25 @@ export const MIGRATION_PROBES = {
         .map((line, index) => (index === 0 ? `     and ${line.trimStart()}` : line)),
       ...indent([...SESSION_OWNERSHIP_POLICIES_TOTAL.slice(0, -1), `${SESSION_OWNERSHIP_POLICIES_TOTAL.at(-1)} = 5`], 9)
         .map((line, index) => (index === 0 ? `     and ${line.trimStart()}` : line)),
+    ],
+  },
+  '20260930002400_delete_auto_created_track_if_unused': {
+    note: [
+      'Read by its body, so a hand-edited copy that deletes without the lock or',
+      'the reference check reads MISSING, and by the invoker security, pinned',
+      'search path and rider-only execute it is declared with.',
+    ],
+    kind: 'function',
+    object: 'public.delete_auto_created_track_if_unused(uuid)',
+    present: [
+      `${DELETE_AUTO_CREATED_TRACK} is not null`,
+      '     and (select md5(p.prosrc) = ' +
+        `'${functionBodyMd5('20260930002400_delete_auto_created_track_if_unused')}'`,
+      '            and not p.prosecdef',
+      "            and p.proconfig = array['search_path=\"\"']",
+      "            and has_function_privilege('authenticated', p.oid, 'execute')",
+      "            and not has_function_privilege('anon', p.oid, 'execute')",
+      `          from pg_proc p where p.oid = ${DELETE_AUTO_CREATED_TRACK})`,
     ],
   },
 };

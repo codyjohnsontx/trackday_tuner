@@ -45,6 +45,7 @@ import {
   replaceSessionLaps,
 } from '@/lib/actions/sessions';
 import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
+import { getFreePlanLimitMessage } from '@/lib/plans';
 import { getSessionOutcome } from '@/lib/actions/outcomes';
 import {
   SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE,
@@ -120,8 +121,11 @@ function createTrackIdLookup(row: { id: string; name: string } = { id: 'track-1'
   return createQuery({ single: { data: row, error: null } });
 }
 
+/** A uuid, as the database casts it: `createSession` refuses anything else. */
+const VEHICLE_ID = '22222222-2222-4222-8222-222222222222';
+
 const validInput: CreateSessionInput = {
-  vehicle_id: 'veh-1',
+  vehicle_id: VEHICLE_ID,
   // A session has to name the circuit it ran at, so the fixture the successful
   // paths below share names one: `createSession` refuses a payload that carries
   // neither an id nor a name. See lib/session-track.ts.
@@ -156,7 +160,7 @@ const validInput: CreateSessionInput = {
 const createdSession: Session = {
   id: 'sess-1',
   user_id: 'user-1',
-  vehicle_id: 'veh-1',
+  vehicle_id: VEHICLE_ID,
   track_id: 'track-1',
   track_name: 'MSR Cresson',
   layout_id: null,
@@ -191,7 +195,7 @@ const previousSession: Session = {
 const changeBaseline: VehicleBaseline = {
   id: 'baseline-1',
   user_id: 'user-1',
-  vehicle_id: 'veh-1',
+  vehicle_id: VEHICLE_ID,
   source_session_id: 'baseline-source',
   source_track_id: null,
   source_track_name: 'MSR Cresson',
@@ -220,9 +224,11 @@ const changeBaseline: VehicleBaseline = {
 function createSaveClient({
   tables = {},
   createResult,
+  trackTakeBackResult = { data: true, error: null },
 }: {
   tables?: Record<string, () => ReturnType<typeof createQuery>>;
   createResult?: { data: unknown; error: QueryError | null };
+  trackTakeBackResult?: { data: unknown; error: QueryError | null };
 } = {}) {
   const defaults: Record<string, () => ReturnType<typeof createQuery>> = {
     tracks: () => createTrackIdLookup(),
@@ -232,6 +238,7 @@ function createSaveClient({
     (table: string) => (tables[table] ?? defaults[table] ?? (() => createQuery({ base: { data: [], error: null } })))(),
   );
   const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
+    if (name === 'delete_auto_created_track_if_unused') return trackTakeBackResult;
     expect(name).toBe('create_session_with_laps');
     return (
       createResult ?? {
@@ -349,7 +356,7 @@ describe('sessions actions', () => {
     const [firstArgs, secondArgs] = rpc.mock.calls.map(([, args]) => args);
     expect(firstArgs.p_session_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(secondArgs.p_session_id).not.toBe(firstArgs.p_session_id);
-    expect(firstArgs.p_session).toMatchObject({ user_id: 'user-1', vehicle_id: 'veh-1', track_id: 'track-1' });
+    expect(firstArgs.p_session).toMatchObject({ user_id: 'user-1', vehicle_id: VEHICLE_ID, track_id: 'track-1' });
     expect(firstArgs.p_laps).toEqual(laps);
     expect(first.ok && first.data.id).toBe(firstArgs.p_session_id);
     expect(sessions.insert).not.toHaveBeenCalled();
@@ -478,7 +485,7 @@ describe('sessions actions', () => {
       vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
       vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
       const tracks = newCircuitTracks();
-      createSaveClient({
+      const { rpc } = createSaveClient({
         tables: { tracks: () => tracks },
         createResult: {
           data: null,
@@ -502,16 +509,39 @@ describe('sessions actions', () => {
         expect.objectContaining({ reason: 'PGRST202', query: 'create_session_with_laps' }),
       );
       // A database that answered with a code rolled the whole call back, so the
-      // track resolved for it is unused.
-      expect(tracks.delete).toHaveBeenCalled();
-      expect(tracks.eq).toHaveBeenCalledWith('id', 'track-new');
+      // track resolved for it is unused - and the database decides whether it
+      // still is, since another save may have stored a session against it since.
+      expect(rpc).toHaveBeenCalledWith('delete_auto_created_track_if_unused', { p_track_id: 'track-new' });
+      expect(tracks.delete).not.toHaveBeenCalled();
+    });
+
+    it('reports a take-back of its track that failed, and still tells the rider why the save was refused', async () => {
+      vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+      vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free' } as never);
+      createSaveClient({
+        tables: { tracks: () => newCircuitTracks() },
+        createResult: { data: null, error: { code: 'TT402', message: 'the free plan holds 10 sessions' } },
+        trackTakeBackResult: {
+          data: null,
+          error: { code: 'PGRST202', message: 'Could not find the function public.delete_auto_created_track_if_unused' },
+        },
+      });
+
+      const result = await createSession({ ...validInput, track_id: null, track_name: 'Harris Hill Raceway' });
+
+      expect(result).toEqual({ ok: false, error: getFreePlanLimitMessage('sessions') });
+      expect(reportError).toHaveBeenCalledWith(
+        'session-track-rollback',
+        expect.any(Error),
+        expect.objectContaining({ reason: 'PGRST202', trackId: 'track-new' }),
+      );
     });
 
     it('does not show the rider a transport failure, and keeps the track the save may have used', async () => {
       vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
       vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
       const tracks = newCircuitTracks();
-      createSaveClient({
+      const { rpc } = createSaveClient({
         tables: { tracks: () => tracks },
         createResult: { data: null, error: { code: '', message: 'TypeError: fetch failed', details: '', hint: '' } },
       });
@@ -523,7 +553,7 @@ describe('sessions actions', () => {
       // The call may have committed, so the rider is sent to look rather than promised a clean slate.
       expect(!result.ok && result.error).toMatch(/may not have saved/i);
       expect(reportError).toHaveBeenCalled();
-      expect(tracks.delete).not.toHaveBeenCalled();
+      expect(rpc).not.toHaveBeenCalledWith('delete_auto_created_track_if_unused', expect.anything());
     });
   });
 
@@ -566,7 +596,7 @@ describe('sessions actions', () => {
     expect(from).not.toHaveBeenCalledWith('session_changes');
     expect(errorSpy).toHaveBeenCalledWith(
       '[sessions] session_changes skipped: unresolved vehicle type',
-      expect.objectContaining({ userId: 'user-1', vehicleId: 'veh-1' }),
+      expect.objectContaining({ userId: 'user-1', vehicleId: VEHICLE_ID }),
     );
   });
 
@@ -576,7 +606,7 @@ describe('sessions actions', () => {
     const current: Session = {
       id: 'current',
       user_id: 'user-1',
-      vehicle_id: 'veh-1',
+      vehicle_id: VEHICLE_ID,
       track_id: null,
       track_name: null,
       layout_id: null,
@@ -621,7 +651,7 @@ describe('sessions actions', () => {
     const current: Session = {
       id: 'current',
       user_id: 'user-1',
-      vehicle_id: 'veh-1',
+      vehicle_id: VEHICLE_ID,
       track_id: 'track-1',
       track_name: 'MSR Cresson',
       layout_id: null,
@@ -713,7 +743,7 @@ describe('sessions actions', () => {
         id: 'telemetry-1',
         user_id: 'user-1',
         session_id: 'session-1',
-        vehicle_id: 'veh-1',
+        vehicle_id: VEHICLE_ID,
         source: 'test',
         summary: null,
         metrics: { best_lap_ms: 95000 },

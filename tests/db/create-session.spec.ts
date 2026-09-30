@@ -64,6 +64,34 @@ interface Rider {
   reports: unknown[][];
 }
 
+/**
+ * `client`, except that a call to `create_session_with_laps` waits at the door
+ * until `release()` - so a test can hold one save between resolving its track
+ * and writing, and run another in that gap. `reached` settles when it arrives.
+ */
+function pausedBeforeCreate(client: Client) {
+  let arrive = () => {};
+  let release = () => {};
+  const reached = new Promise<void>((resolve) => (arrive = resolve));
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const paused = new Proxy(client, {
+    get(target, property, receiver) {
+      if (property === 'rpc') {
+        return async (...args: Parameters<Client['rpc']>) => {
+          if (args[0] === 'create_session_with_laps') {
+            arrive();
+            await released;
+          }
+          return target.rpc(...args);
+        };
+      }
+      const value = Reflect.get(target, property, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  return { client: paused, reached, release: () => release() };
+}
+
 /** A session as the form posts it, at a seeded circuit by name unless the test says otherwise. */
 function formInput(vehicleId: string, overrides: Partial<CreateSessionInput> = {}): CreateSessionInput {
   return {
@@ -297,6 +325,19 @@ test.describe('createSessionForUser against a real database', () => {
       expect(other.reports).toEqual([]);
     });
 
+    // The form only offers the rider's own vehicles, but a server action takes
+    // whatever a browser posts, and the database casts the id to a uuid.
+    test('refuses a vehicle id that is not a uuid with the same sentence, as the rider’s mistake rather than ours', async () => {
+      const rider = await newRider('save-vehicle-malformed');
+
+      const result = await save(rider, { vehicle_id: 'not-a-vehicle', track_name: NEW_CIRCUIT });
+
+      expect(result).toEqual({ ok: false, error: SESSION_VEHICLE_NOT_OWNED_MESSAGE, kind: 'invalid' });
+      expect(await sessionsOf(rider)).toEqual([]);
+      expect(await ownTracks(rider)).toEqual([]);
+      expect(rider.reports).toEqual([]);
+    });
+
     test('refuses a vehicle deleted since the form loaded with the same sentence', async () => {
       const rider = await newRider('save-vehicle-deleted');
       const gone = await rider.client.from('vehicles').delete().eq('id', rider.vehicle).select('id');
@@ -340,6 +381,40 @@ test.describe('createSessionForUser against a real database', () => {
         ]);
         expect(await sessionsOf(rider), `round ${round}`).toHaveLength(SESSION_CAP);
       }
+    });
+
+    // The race one level out, across the track insert that happens before the
+    // lock. Save A creates the rider's track for a new circuit and pauses just
+    // before its write; save B finds that track, takes the last slot and stores
+    // its session against it; A is then refused at the cap. A's refusal takes
+    // back the track it made - which, when that was an application-side delete,
+    // took it out from under B's stored session (`on delete set null`) and left
+    // B with a name and no track. Scheduled rather than raced, so it fails every
+    // time the cleanup is wrong.
+    test('keeps the winning session linked to a track the refused save created', async () => {
+      const rider = await newRider('save-cap-track-race');
+      await fillSessions(rider, SESSION_CAP - 1);
+      const paused = pausedBeforeCreate(rider.context.supabase);
+      const pausedRider = { ...rider, context: { ...rider.context, supabase: paused.client } };
+
+      const first = save(pausedRider, { track_name: NEW_CIRCUIT });
+      await paused.reached;
+      const [track] = await ownTracks(rider);
+      expect(track, 'save A created the rider’s track before its write').toMatchObject({ name: NEW_CIRCUIT });
+
+      const second = await save(rider, { track_name: NEW_CIRCUIT });
+      expect(second.ok && second.data).toMatchObject({ createdTrack: false, session: { track_id: track.id } });
+      paused.release();
+      const refused = await first;
+
+      expect(refused).toEqual({ ok: false, error: getFreePlanLimitMessage('sessions'), kind: 'plan_limit' });
+      expect(await ownTracks(rider)).toEqual([track]);
+      const stored = await sessionsOf(rider);
+      expect(stored).toHaveLength(SESSION_CAP);
+      expect(stored.find((session) => session.id === (second.ok ? second.data.session?.id : null))).toMatchObject({
+        track_id: track.id,
+        track_name: NEW_CIRCUIT,
+      });
     });
 
     test('does not cap a Pro rider', async () => {

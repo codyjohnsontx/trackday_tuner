@@ -152,6 +152,7 @@ describe('supabase.rpc() call sites', () => {
         'consume_beta_rate_limit',
         'delete_vehicle_if_sessions_unchanged',
         'create_session_with_laps',
+        'delete_auto_created_track_if_unused',
       ]),
     );
   });

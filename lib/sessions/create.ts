@@ -6,6 +6,7 @@ import { validateLaps } from '@/lib/lap-times';
 import { MISSING_CONDITIONS_MESSAGE, isSessionCondition } from '@/lib/session-answers';
 import { MISSING_TRACK_MESSAGE, hasTrackName, normalizeTrackName } from '@/lib/session-track';
 import { findVisibleTrackByName, visibleTracksFilter } from '@/lib/track-lookup';
+import { isUuid } from '@/lib/rag/validation';
 import {
   baselineReferenceLabel,
   baselineToComparableSession,
@@ -178,26 +179,32 @@ const SESSION_CREATE_SAVE_FAILED_MESSAGE =
  * rider's tracks list for a session that was never saved - and burn one of a free
  * rider's three custom-track slots. Only a row this call created is removed;
  * anything matched or picked was already theirs.
+ *
+ * It is the database's delete rather than this code's
+ * (`delete_auto_created_track_if_unused`, 20260930002400), because by the time a
+ * save is refused another save may have found the same track by name and stored
+ * its session against it - and a plain delete here took the track out from under
+ * that stored session (`on delete set null`). The function locks the row and
+ * deletes it only while no session references it, so the track stays with the
+ * save that won. A failed call leaves a stray track, the lesser harm, and is
+ * reported.
  */
 async function rollbackAutoCreatedTrack(
   supabase: SessionWriteClient,
+  report: ReportError,
   userId: string,
   track: ResolvedSessionTrack,
 ): Promise<void> {
   if (!track.createdTrack || !track.trackId) return;
 
-  const { error } = await supabase
-    .from('tracks')
-    .delete()
-    .eq('id', track.trackId)
-    .eq('created_by', userId)
-    .eq('is_seeded', false);
+  const { error } = await supabase.rpc('delete_auto_created_track_if_unused', { p_track_id: track.trackId });
 
   if (error) {
-    console.error('[sessions] auto-created track rollback failed', {
+    report('session-track-rollback', new Error(error.message), {
+      reason: error.code,
+      query: 'delete_auto_created_track_if_unused',
       userId,
       trackId: track.trackId,
-      error: error.message,
     });
   }
 }
@@ -517,7 +524,7 @@ async function insertSession({
     // and may have committed, and a track taken out from under a stored session
     // strips its circuit (`sessions.track_id` is `on delete set null`), so that
     // one stays.
-    if (error.code) await rollbackAutoCreatedTrack(supabase, userId, track);
+    if (error.code) await rollbackAutoCreatedTrack(supabase, report, userId, track);
     // The id is held by a row this rider cannot see: another rider's.
     if (error.code === UNIQUE_VIOLATION_CODE) {
       return { status: 'answered', result: { ok: false, error: SESSION_ID_TAKEN_MESSAGE, kind: 'id_taken' } };
@@ -551,7 +558,7 @@ async function insertSession({
   // The rider deleted this session after an earlier call stored it. Nothing
   // was written, so a track resolved for this call is unused.
   if (answer.deleted) {
-    await rollbackAutoCreatedTrack(supabase, userId, track);
+    await rollbackAutoCreatedTrack(supabase, report, userId, track);
     return {
       status: 'answered',
       result: { ok: true, data: { session: null, createdTrack: false, replayed: true, deleted: true } },
@@ -562,7 +569,7 @@ async function insertSession({
   // is the answer. It may have found this call's auto-created track by name, so
   // the track goes only when that row does not point at it.
   const session = readStoredSession(answer.session);
-  if (session.track_id !== track.trackId) await rollbackAutoCreatedTrack(supabase, userId, track);
+  if (session.track_id !== track.trackId) await rollbackAutoCreatedTrack(supabase, report, userId, track);
   return { status: 'answered', result: { ok: true, data: { session, createdTrack: false, replayed: true, deleted: false } } };
 }
 
@@ -610,6 +617,15 @@ export async function createSessionForUser(
     return { ok: false, error: MISSING_TRACK_MESSAGE, kind: 'invalid' };
   }
 
+  // The form only offers the rider's own vehicles, but a server action takes
+  // whatever a browser posts, and `create_session_with_laps` casts the id to a
+  // uuid - so a malformed one would come back as a fault of ours. It names no
+  // vehicle of theirs, which is the sentence it gets, before anything is read or
+  // written. The phone's parser refuses one before it gets here.
+  if (!isUuid(input.vehicle_id)) {
+    return { ok: false, error: SESSION_VEHICLE_NOT_OWNED_MESSAGE, kind: 'invalid' };
+  }
+
   // Pro access lifts the custom-track cap below. The session cap is counted
   // inside `create_session_with_laps`, which reads the entitlement itself.
   const hasProAccess = await resolveProAccess();
@@ -630,12 +646,12 @@ export async function createSessionForUser(
   // its name - but it is called anyway so this guard cannot start leaking rows if
   // resolution changes.
   if (!track.trackName) {
-    await rollbackAutoCreatedTrack(supabase, userId, track);
+    await rollbackAutoCreatedTrack(supabase, report, userId, track);
     return { ok: false, error: MISSING_TRACK_MESSAGE, kind: 'invalid' };
   }
 
   if (track.layoutLookupFailed) {
-    await rollbackAutoCreatedTrack(supabase, userId, track);
+    await rollbackAutoCreatedTrack(supabase, report, userId, track);
     return { ok: false, error: SESSION_LAYOUT_LOOKUP_FAILED_MESSAGE, kind: 'fault' };
   }
 

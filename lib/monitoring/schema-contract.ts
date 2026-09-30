@@ -153,6 +153,9 @@ export const REQUIRED_RPCS: readonly RpcContract[] = [
     p_laps: [],
     p_environment: null,
   }),
+  contract('delete_auto_created_track_if_unused', {
+    p_track_id: UNCOERCIBLE_PROBE_VALUE,
+  }),
   contract('delete_vehicle_if_sessions_unchanged', {
     p_vehicle_id: UNCOERCIBLE_PROBE_VALUE,
     p_expected_sessions: [],

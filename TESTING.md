@@ -191,12 +191,16 @@ npm run test:db
 CI runs exactly this on every pull request (the `db` job in
 `.github/workflows/ci.yml`). `playwright.db.config.ts` refuses to start without
 those three variables rather than letting every spec skip, because a skipped
-suite reports green. A stack missing a migration the specs assert fails them.
+suite reports green, and refuses a `NEXT_PUBLIC_SUPABASE_URL` whose host is not
+loopback, because the specs create and delete Auth users with the service role
+and the config also loads `.env.local`. A stack missing a migration the specs
+assert fails them.
 
 - `create-session.spec.ts` saves sessions through `createSessionForUser`, the
   one writer the website form's server action and the phone's route share:
   track, alias and layout resolution, the vehicle check, the free-plan cap -
-  including two saves racing at one short of it - atomicity, and change
+  including two saves racing at one short of it, and a scheduled pair where the
+  refused save created the track the winner used - atomicity, and change
   records. The fault paths a real database cannot produce on cue stay in
   `lib/actions/sessions.test.ts`.
 - `create-session-with-laps.spec.ts` calls `create_session_with_laps`

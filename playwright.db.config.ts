@@ -1,5 +1,6 @@
 import { loadEnvConfig } from '@next/env';
 import { defineConfig } from '@playwright/test';
+import { nonLocalSupabaseUrlReason } from './tests/db/helpers/local-stack';
 
 /**
  * The real-database suite: `tests/db/`, run by `npm run test:db` and by CI on
@@ -12,7 +13,8 @@ import { defineConfig } from '@playwright/test';
  *
  * A suite that skips reports green, which is the one outcome a gate must never
  * reach by accident: without a stack to talk to, this config refuses to run
- * rather than letting every spec skip itself.
+ * rather than letting every spec skip itself. It also refuses any stack that is
+ * not on loopback, since the specs create and delete riders.
  */
 loadEnvConfig(process.cwd());
 
@@ -20,6 +22,12 @@ const REQUIRED = ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', '
 const missing = REQUIRED.filter((name) => !process.env[name]);
 if (missing.length > 0) {
   throw new Error(`test:db needs a Supabase stack: set ${missing.join(', ')} (see TESTING.md).`);
+}
+// The suite creates and deletes Auth users with the service role, so it runs
+// against a stack on this machine and never a hosted project.
+const nonLocal = nonLocalSupabaseUrlReason(process.env.NEXT_PUBLIC_SUPABASE_URL);
+if (nonLocal) {
+  throw new Error(`test:db only runs against a local Supabase stack: ${nonLocal} (see TESTING.md).`);
 }
 
 export default defineConfig({

@@ -709,8 +709,14 @@ load-bearing:
   `create_session_with_laps` (20260927002200), so a failure stores nothing and a
   stored session is always complete - which is what lets a replay write nothing
   and answer 200 without looking. Only a track row the save created sits outside
-  it, and `rollbackAutoCreatedTrack` takes it back on any refusal the database
-  answered with a code. **The website form now depends on the function too**, so
+  it, and on any refusal the database answered with a code the save takes it
+  back through `delete_auto_created_track_if_unused` (20260930002400), never a
+  plain delete: another save can find that track by name and store its session
+  against it before the refusal lands, and a delete then unlinks the winner
+  (`on delete set null`). The function locks the row and deletes only while no
+  session references it; it is hand-applied too ("Take back a refused save's
+  track safely, by hand"), and without it the take-back fails, is reported, and
+  leaves a stray track. **The website form now depends on the function too**, so
   a hosted project without it cannot save a session from either client: it is
   applied by hand ("Apply the session create function by hand" in
   `docs/beta-runbook.md`, then "Close session ownership, deleted-session replays
@@ -767,7 +773,8 @@ request. Behaviour that lives in the database - a write's atomicity, a policy, a
 cap, which row a lookup lands on - is proven there rather than with a queued fake
 of the client, which has to script every query in order and breaks on changes a
 rider cannot see. `playwright.db.config.ts` refuses to run without a stack, since
-a suite that skips reports green.
+a suite that skips reports green, and refuses any Supabase URL that is not
+loopback, since the specs create and delete riders with the service role.
 
 ## Current AI Status
 

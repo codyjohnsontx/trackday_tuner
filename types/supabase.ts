@@ -1133,6 +1133,17 @@ export type Database = {
         /** The deleted vehicle's `{ id, photo_url }`, or null when no vehicle of the caller's has that id. */
         Returns: Json;
       };
+      delete_auto_created_track_if_unused: {
+        Args: {
+          p_track_id: string;
+        };
+        /**
+         * Whether the track was deleted: only a non-seeded track the caller
+         * created, locked first and taken only while no session references it
+         * (20260930002400).
+         */
+        Returns: boolean;
+      };
       create_beta_invite: {
         Args: {
           p_waitlist_id: string | null;

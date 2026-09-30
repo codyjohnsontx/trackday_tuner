@@ -220,6 +220,19 @@ function createSessionWithLaps(db: Db, options: FakeOptions, args: Record<string
   return { data: { replayed: false, session }, error: null };
 }
 
+/**
+ * `delete_auto_created_track_if_unused` (20260930002400): the rider's own
+ * unseeded track, and only while no session references it. Its locking is the
+ * database's, and tests/db runs it there.
+ */
+function deleteAutoCreatedTrackIfUnused(db: Db, args: Record<string, unknown>) {
+  const id = args.p_track_id;
+  const track = (db.tracks ?? []).find((row) => row.id === id && row.created_by === USER_ID && !row.is_seeded);
+  if (!track || db.sessions.some((row) => row.track_id === id)) return { data: false, error: null };
+  db.tracks = db.tracks.filter((row) => row !== track);
+  return { data: true, error: null };
+}
+
 function fakeSupabase(db: Db, options: FakeOptions = {}) {
   const getUser =
     options.getUser ??
@@ -227,11 +240,11 @@ function fakeSupabase(db: Db, options: FakeOptions = {}) {
       token === TOKEN
         ? { data: { user: { id: USER_ID } }, error: null }
         : { data: { user: null }, error: new AuthApiError('invalid JWT', 401, 'bad_jwt') });
-  const rpc = vi.fn(async (name: string, args: Record<string, unknown>) =>
-    name === 'create_session_with_laps'
-      ? createSessionWithLaps(db, options, args)
-      : { data: null, error: { code: 'PGRST202', message: name } },
-  );
+  const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
+    if (name === 'create_session_with_laps') return createSessionWithLaps(db, options, args);
+    if (name === 'delete_auto_created_track_if_unused') return deleteAutoCreatedTrackIfUnused(db, args);
+    return { data: null, error: { code: 'PGRST202', message: name } };
+  });
   const client = {
     auth: { getUser: vi.fn(getUser) },
     from: (table: string) => new Query(db, table, options),
@@ -761,7 +774,8 @@ describe('POST /api/mobile/sessions', () => {
     expect(await response.json()).toEqual({ ok: false, error: getFreePlanLimitMessage('sessions') });
     expect(db.sessions).toHaveLength(0);
     // Counted inside create_session_with_laps, so the track resolved for it goes again.
-    expect(client.rpc).toHaveBeenCalledTimes(1);
+    expect(client.rpc).toHaveBeenCalledWith('create_session_with_laps', expect.anything());
+    expect(client.rpc).toHaveBeenCalledWith('delete_auto_created_track_if_unused', expect.anything());
     expect(db.tracks.some((track) => track.name === 'Blackhawk Farms')).toBe(false);
     expect(reportError).not.toHaveBeenCalled();
   });

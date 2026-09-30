@@ -246,7 +246,19 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                    and p.qual is not distinct from e.qual
                    and md5(replace(p.with_check, 'public.vehicles', 'vehicles')) is not distinct from e.with_check_md5) = 5
            and (select count(*) from pg_policies p
-                 where p.schemaname = 'public' and p.tablename in ('sessions', 'deleted_sessions')) = 5)
+                 where p.schemaname = 'public' and p.tablename in ('sessions', 'deleted_sessions')) = 5),
+  -- Read by its body, so a hand-edited copy that deletes without the lock or
+  -- the reference check reads MISSING, and by the invoker security, pinned
+  -- search path and rider-only execute it is declared with.
+  (27, '20260930002400_delete_auto_created_track_if_unused', 'function',
+      'public.delete_auto_created_track_if_unused(uuid)',
+      to_regprocedure('public.delete_auto_created_track_if_unused(uuid)') is not null
+           and (select md5(p.prosrc) = '7f101aee6dea2c710011d0684e0faa13'
+                  and not p.prosecdef
+                  and p.proconfig = array['search_path=""']
+                  and has_function_privilege('authenticated', p.oid, 'execute')
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                from pg_proc p where p.oid = to_regprocedure('public.delete_auto_created_track_if_unused(uuid)')))
 )
 select ordinality as "#",
        migration,
