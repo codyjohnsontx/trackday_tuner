@@ -5,21 +5,16 @@ import {
   getOpenAIApiKey,
 } from '@/lib/env.server';
 import { embedQuery } from '@/lib/rag/embed';
-import {
-  buildDayPlanMessages,
-  buildMessages,
-  DISCLAIMER_NOTE,
-  ONE_CHANGE_NOTE,
-} from '@/lib/rag/prompt';
-import type { RaceEngineerContext } from '@/lib/rag/race-engineer-context';
+import type { AdviceMessages, PreparedAdvicePrompt } from '@/lib/rag/prompt';
 import { retrieveRelevantChunks } from '@/lib/rag/retriever';
 import {
   adviceResponseJsonSchema,
+  DISCLAIMER_NOTE,
+  ONE_CHANGE_NOTE,
   parseAdviceResponse,
   type AdviceResponse,
 } from '@/lib/rag/schema';
 import type { RetrievedChunk } from '@/lib/rag/types';
-import type { CreateSessionEnvironmentInput, Session, Vehicle } from '@/types';
 
 // Upper bound on the OpenAI chat completion request. Unchanged at 30s across
 // the move to gpt-5.4-mini: all 28 completions of the `rag:eval` golden set
@@ -47,26 +42,6 @@ function getClient(): OpenAI {
     });
   }
   return cachedClient;
-}
-
-export interface GenerateAdviceInput {
-  session: Session;
-  previousSession: Session | null;
-  vehicle: Vehicle;
-  question: string;
-  symptoms?: string[];
-  changeIntent?: string;
-  temperatureC?: number;
-  raceEngineerContext?: RaceEngineerContext | null;
-}
-
-export interface GenerateDayPlanInput {
-  vehicle: Vehicle;
-  targetDate: string;
-  trackName?: string | null;
-  environment?: CreateSessionEnvironmentInput | null;
-  recentSessions: Session[];
-  raceEngineerContext?: RaceEngineerContext | null;
 }
 
 export interface GenerateAdviceResult {
@@ -99,7 +74,7 @@ function filterCitationsToRetrievedSources(
 }
 
 async function completeAdvice(params: {
-  messages: ReturnType<typeof buildMessages>;
+  messages: AdviceMessages;
   retrieved: RetrievedChunk[];
 }): Promise<{
   advice: AdviceResponse;
@@ -164,90 +139,26 @@ async function completeAdvice(params: {
   };
 }
 
-export async function generateTuningAdvice(
-  input: GenerateAdviceInput,
+/**
+ * Retrieve knowledge for a prepared prompt and ask the model.
+ *
+ * Both AI routes call this with what their prompt module's `prepare*` function
+ * returned (`lib/rag/prompt.ts`). It reads nothing about the route: the
+ * retrieval query and the messages both come from the prepared prompt, so the
+ * prompt the model sees is built exactly once, from the input the route
+ * screened.
+ */
+export async function generateAdvice(
+  prompt: PreparedAdvicePrompt,
 ): Promise<GenerateAdviceResult> {
-  const vehicleType = input.vehicle.type;
-  const symptomText = (input.symptoms ?? []).join(' ');
-  const temperatureLine =
-    input.temperatureC != null ? `ambient temperature ${input.temperatureC} C` : '';
-  const queryText = [
-    input.question,
-    symptomText,
-    input.changeIntent ?? '',
-    temperatureLine,
-  ]
-    .filter((part) => part && part.trim().length > 0)
-    .join('\n')
-    .trim();
-
-  const queryEmbedding = await embedQuery(queryText);
+  const queryEmbedding = await embedQuery(prompt.retrieval.query);
   const retrieved = await retrieveRelevantChunks(queryEmbedding, {
-    vehicleType,
+    vehicleType: prompt.retrieval.vehicleType,
     topK: 4,
     maxK: 8,
   });
 
-  const messages = buildMessages({
-    session: input.session,
-    previousSession: input.previousSession,
-    vehicle: input.vehicle,
-    question: input.question,
-    symptoms: input.symptoms,
-    changeIntent: input.changeIntent,
-    temperatureC: input.temperatureC,
-    retrieved,
-    raceEngineerContext: input.raceEngineerContext,
-  });
-
-  const result = await completeAdvice({ messages, retrieved });
-
-  return {
-    advice: result.advice,
-    retrieved,
-    usage: result.usage,
-    latencyMs: result.latencyMs,
-    model: result.model,
-  };
-}
-
-export async function generateDayPlan(
-  input: GenerateDayPlanInput,
-): Promise<GenerateAdviceResult> {
-  const queryText = [
-    'track day morning plan',
-    input.vehicle.type,
-    input.trackName ?? '',
-    input.environment?.weather_condition ?? '',
-    input.environment?.ambient_temperature_c != null
-      ? `ambient ${input.environment.ambient_temperature_c} C`
-      : '',
-    input.environment?.track_temperature_c != null
-      ? `track ${input.environment.track_temperature_c} C`
-      : '',
-    'warming day tire pressure hot pressure cold track',
-  ]
-    .filter((part) => part && String(part).trim().length > 0)
-    .join('\n');
-
-  const queryEmbedding = await embedQuery(queryText);
-  const retrieved = await retrieveRelevantChunks(queryEmbedding, {
-    vehicleType: input.vehicle.type,
-    topK: 4,
-    maxK: 8,
-  });
-
-  const messages = buildDayPlanMessages({
-    vehicle: input.vehicle,
-    targetDate: input.targetDate,
-    trackName: input.trackName,
-    environment: input.environment,
-    recentSessions: input.recentSessions,
-    raceEngineerContext: input.raceEngineerContext,
-    retrieved,
-  });
-
-  const result = await completeAdvice({ messages, retrieved });
+  const result = await completeAdvice({ messages: prompt.messages(retrieved), retrieved });
 
   return {
     advice: result.advice,

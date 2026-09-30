@@ -6,8 +6,9 @@ import {
   classifyRaceEngineerQuestion,
   classifyStoredRiderText,
   normalizeAdviceResponse,
+  type RiderTextField,
+  type SkippableSource,
 } from '@/lib/rag/domain-guard';
-import type { RiderTextField, SkippableSource } from '@/lib/rag/prompt';
 
 const baseAdvice: AdviceResponse = {
   summary: 'Drop front pressure 0.5 psi.',

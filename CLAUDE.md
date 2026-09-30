@@ -794,13 +794,23 @@ delimiters, not phrases.
 `classifyStoredRiderText` runs over that after the read, which is why it cannot
 replace the first pass.
 
-**Both routes run the second pass, each through its own collector**:
-`collectDayPlanRiderText` and `collectTuningAdviceRiderText`, both in
-`lib/rag/prompt.ts` beside the formatters. Two collectors rather than one shared
-list is the whole design - each takes its own prompt builder's input type, so a
-route screens exactly what its own prompt interpolates. Tuning-advice shipped for
-a full release screening none of it while day-plan screened all of it, which is
-what a guard wired to one of two twins looks like from the outside: covered.
+**Both routes run the second pass inside their prompt module.**
+`prepareTuningAdvicePrompt` and `prepareDayPlanPrompt` (`lib/rag/prompt.ts`) are
+each route's one entry point: from a single input each screens the stored text
+its prompt prints, drops what it skips, and returns either a refusal naming the
+field or the messages together with the session ids the policy may accept
+(`allowedSessionIds`) and the fallback `data_used` - everything that has to agree
+with the prompt, derived from the same object. The collectors, id collectors,
+drop and builders are private to that file, and each printed window
+(`DAY_PLAN_SESSION_LIMIT`, `RECENT_FEEDBACK_LIMIT`, `RECENT_RECOMMENDATION_LIMIT`)
+is cut once, before the screen. A route consumes what `prepare*` returns and
+hands it to `generateAdvice` (`lib/rag/advice.ts`); a new AI route gets a
+`prepare*` of its own rather than calling a collector. Two collectors rather than
+one shared list is still the design - each is derived from its own prompt's
+input, so a route screens exactly what its own prompt interpolates. Tuning-advice
+shipped for a full release screening none of it while day-plan screened all of
+it, which is what a guard wired to one of two twins looks like from the outside:
+covered.
 
 **Before changing anything on an AI path, answer: does anything reach a model
 with unscreened stored rider text?** This defect has been found four times, each
@@ -1052,16 +1062,15 @@ this before trusting either as cover.**
 `app/api/ai/tuning-advice/route.non-string-session-field.test.ts` stubs nothing
 between the request and the model: it mocks Supabase, `embedQuery`,
 `retrieveRelevantChunks` and the `openai` client and nothing else, so
-`generateTuningAdvice` and `formatValue` really run and the test reads
+`generateAdvice` and `formatValue` really run and the test reads
 `preload=5 compression=— rebound=5` back out of the prompt handed to the model.
-The day-plan describe in `app/api/ai/day-plan/route.test.ts` mocks
-`@/lib/rag/advice`, and `generateDayPlan` is what calls `embedQuery`,
-`retrieveRelevantChunks`, `buildDayPlanMessages` and `completeAdvice` - so it
-exercises `buildContext` and the real stored-text collector, covering the
-CONTEXT LOADER's leaves, and never reaches that route's prompt builder at all.
-Its assertions read `generateDayPlan.mock.calls[0]`, which is the input rather
-than a prompt. **The day-plan prompt builder is covered at helper level
-instead**, by `renders the same stored number on the day-plan prompt` in
+The day-plan describe in `app/api/ai/day-plan/route.test.ts` mocks only
+`generateAdvice`, so `buildContext` and `prepareDayPlanPrompt` run for real and
+its assertions read the prepared prompt the route handed over - the
+`screenedContext`, covering the CONTEXT LOADER's leaves. It stops at the model
+call, so embedding and retrieval never run there, and that describe does not
+read the prompt text back. **The day-plan prompt builder is covered at module
+level instead**, by `renders the same stored number on the day-plan prompt` in
 `lib/rag/prompt.test.ts`. That split is adequate cover and is recorded rather
 than fixed; what it is not is a second end-to-end walk, so do not read the
 day-plan route test as guarding `formatSessionBlock`.
@@ -1096,8 +1105,8 @@ which is the outcome, dated from the `updated_at` the same statement sets.
 `RiderTextField.onMatch` carries the decision, is required with no default, and a
 skip must also name a `SkippableSource` - `dropScreenedSources` is what removes it,
 and **skip means removed from the prompt, never merely unscreened**; left in, the
-channel is open and the value is neither screened nor withheld. That function caps
-`recentRecommendations` at the printed limit *before* filtering, because the loader
+channel is open and the value is neither screened nor withheld. It filters only the
+printed window, which `prepare*` cuts before the screen runs, because the loader
 reads five rows and the prompt prints three, so filtering the full list would slide
 an unscreened row into the window the drop just freed. **Anything derived from a
 dropped source moves with it** or the prompt contradicts itself: dropping the
@@ -1122,7 +1131,9 @@ collector call sites. The disposition is therefore a parameter of
 per-route. Getting it backwards either way is a bug - skipping on day-plan
 silently discards submitted text, refusing on tuning-advice restores the trap.
 Day-plan collects nothing skippable at all (its recommendation list is always
-empty, its environment refuses), so `dropScreenedSources` has one caller. The full
+empty, its environment refuses), so only `prepareTuningAdvicePrompt` drops, and
+`prepareDayPlanPrompt` throws - failing closed into the route's shaped 500 - if a
+skip ever reaches it. The full
 sweep of which field is which, and why, is on the exclusion list in
 `lib/rag/prompt.ts`.
 
@@ -1332,12 +1343,12 @@ So the invariant is two-way and each direction is its own defect. **Accepting an
 id the prompt never printed** is the bug above: unusable, and it bait-and-switches
 the model into fabricating. **Printing an id the policy will not accept** is the
 mirror, and `previousSession` was that one - printed and named in the instructions
-since the route was written, absent from the allowed set. `collectTuningAdviceSessionIds`
-and `collectDayPlanSessionIds` (`lib/rag/prompt.ts`) are now the single source of
-both, one per prompt builder for the same reason there are two rider-text
-collectors: each takes its own builder's input type, so a route accepts exactly
-what its own prompt printed. `tests/unit/ai-session-evidence-ids.test.ts` builds
-the prompt and the id set from one input and fails on either direction;
+since the route was written, absent from the allowed set. Each `prepare*` function
+(`lib/rag/prompt.ts`) returns the messages and `allowedSessionIds` from one call on
+one input, so a route cannot pair its prompt with an id set from anywhere else;
+the id collectors behind them are one per prompt for the same reason there are two
+rider-text collectors. `lib/rag/prompt.test.ts` reads both off that return value
+and fails on either direction;
 `app/api/ai/tuning-advice/route.session-evidence.test.ts` runs the real policy
 through the route, which is the only place that can catch the route substituting a
 set of its own. **This widened nothing:** every accepted id belongs to a row read
@@ -1466,7 +1477,7 @@ the change that motivated it.
 
 **Offline replays committed tapes; the tape key is the request.** The intercept
 is `globalThis.fetch` (`scripts/eval/openai-tape.mjs`), not a mock of
-`generateTuningAdvice` - that function builds its own client with no injection
+`generateAdvice` - `lib/rag/advice.ts` builds its own client with no injection
 seam, so anything higher would score a response production never parsed. Entries
 are keyed by a hash of method, path and canonicalized body, so **the prompt is
 the key**: change `SYSTEM_PROMPT`, the component vocabulary, a retrieved chunk or
@@ -1865,9 +1876,15 @@ webpack alias Next resolves at build time, not an installed package). Node >=
 22.18 strips the types itself; CI pins Node 24. Adding `tsx` or a bundler to run
 one script would have been the larger change.
 
-There is no `--retrieval-only` mode. It would have to rebuild the query text
-`generateTuningAdvice` composes, and a second copy of that would drift; offline
-replay is free and complete, so the cost argument for a cheaper half is moot.
+There is no `--retrieval-only` mode: offline replay is free and complete, so the
+cost argument for a cheaper half is moot.
+
+**The harness calls the production prompt module, not a copy of it.** `runCase`
+hands `prepareTuningAdvicePrompt` the same input the route does and scores with
+the `allowedSessionIds` and `fallbackDataUsed` it returns, then calls
+`generateAdvice` with the result. It once passed `validSessionIds: [session.id]`
+of its own, a guess that equalled production only because no golden case carries
+a previous session or history.
 
 ## Production Monitoring
 

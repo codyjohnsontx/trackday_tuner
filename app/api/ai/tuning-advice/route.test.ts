@@ -5,7 +5,7 @@ const {
   getUserProfile,
   createClient,
   createAdminClient,
-  generateTuningAdvice,
+  generateAdvice,
   loadRaceEngineerContext,
   evaluateAdvicePolicy,
 } = vi.hoisted(() => ({
@@ -13,7 +13,7 @@ const {
   getUserProfile: vi.fn(),
   createClient: vi.fn(),
   createAdminClient: vi.fn(),
-  generateTuningAdvice: vi.fn(),
+  generateAdvice: vi.fn(),
   loadRaceEngineerContext: vi.fn(),
   evaluateAdvicePolicy: vi.fn(),
 }));
@@ -41,7 +41,7 @@ vi.mock('@/lib/env.server', () => ({
 }));
 
 vi.mock('@/lib/rag/advice', () => ({
-  generateTuningAdvice,
+  generateAdvice,
   UpstreamTimeoutError: class UpstreamTimeoutError extends Error {},
 }));
 
@@ -339,7 +339,7 @@ describe('POST /api/ai/tuning-advice duplicate handling', () => {
     getUserProfile.mockResolvedValue({ id: USER_ID, tier: 'pro' });
     createClient.mockResolvedValue(createServerClient());
     loadRaceEngineerContext.mockResolvedValue(null);
-    generateTuningAdvice.mockResolvedValue(null);
+    generateAdvice.mockResolvedValue(null);
     evaluateAdvicePolicy.mockImplementation((input) => ({
       decision: 'pass',
       violations: [],
@@ -375,7 +375,7 @@ describe('POST /api/ai/tuning-advice duplicate handling', () => {
     expect(body.recommendation_id).toBeNull();
     expect(body.advice.refusal).toContain('An identical Race Engineer request was handled recently');
     expect(body.advice.recommended_changes).toEqual([]);
-    expect(generateTuningAdvice).not.toHaveBeenCalled();
+    expect(generateAdvice).not.toHaveBeenCalled();
   });
 
   it('does not dedupe across different sessions', async () => {
@@ -404,7 +404,7 @@ describe('POST /api/ai/tuning-advice duplicate handling', () => {
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.advice.refusal).toContain('outside track setup scope');
-    expect(generateTuningAdvice).not.toHaveBeenCalled();
+    expect(generateAdvice).not.toHaveBeenCalled();
   });
 
   it('does not dedupe outside the recent-request window', async () => {
@@ -433,7 +433,7 @@ describe('POST /api/ai/tuning-advice duplicate handling', () => {
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.advice.refusal).toContain('outside track setup scope');
-    expect(generateTuningAdvice).not.toHaveBeenCalled();
+    expect(generateAdvice).not.toHaveBeenCalled();
   });
 
   it('marks the ai_requests row with duplicate_recent_request status and related fields', async () => {
@@ -475,7 +475,7 @@ describe('POST /api/ai/tuning-advice duplicate handling', () => {
       policy_violations: ['duplicate_recent_request'],
       classifier_stage: 'dedupe',
     });
-    expect(generateTuningAdvice).not.toHaveBeenCalled();
+    expect(generateAdvice).not.toHaveBeenCalled();
   });
 
   it('fails open and proceeds to generation when the duplicate lookup throws', async () => {
@@ -537,7 +537,7 @@ describe('POST /api/ai/tuning-advice duplicate handling', () => {
       refusal: null,
     };
 
-    generateTuningAdvice.mockResolvedValue({
+    generateAdvice.mockResolvedValue({
       advice: validAdvice,
       retrieved: [],
       usage: { prompt_tokens: 10, completion_tokens: 5 },
@@ -556,7 +556,7 @@ describe('POST /api/ai/tuning-advice duplicate handling', () => {
     const body = await response.json();
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
-    expect(generateTuningAdvice).toHaveBeenCalledTimes(1);
+    expect(generateAdvice).toHaveBeenCalledTimes(1);
     expect(body.advice.summary).toBe('Drop front rebound one click.');
   });
 });
@@ -634,7 +634,7 @@ describe('POST /api/ai/tuning-advice dangerous premise', () => {
     getUserProfile.mockResolvedValue({ id: USER_ID, tier: 'pro' });
     createClient.mockResolvedValue(createServerClient());
     loadRaceEngineerContext.mockResolvedValue(CONTEXT);
-    generateTuningAdvice.mockResolvedValue({
+    generateAdvice.mockResolvedValue({
       advice: MODEL_ADVICE,
       retrieved: [],
       usage: { prompt_tokens: 10, completion_tokens: 5 },
@@ -723,7 +723,7 @@ describe('POST /api/ai/tuning-advice dangerous premise', () => {
 
     const body = await (await post(BRAKE_QUESTION)).json();
 
-    expect(generateTuningAdvice).not.toHaveBeenCalled();
+    expect(generateAdvice).not.toHaveBeenCalled();
     expect(body.advice.refusal).toContain('handled recently');
     expect(body.advice.premise_rejection).toContain(REJECTION);
   });
@@ -790,7 +790,7 @@ describe('POST /api/ai/tuning-advice question retention', () => {
       similarSessions: [], sessionEnvironment: null, recentFeedback: [], recentRecommendations: [],
       memory: null, telemetrySummary: null, dayTrend: '', dataUsed: DATA_USED,
     });
-    generateTuningAdvice.mockResolvedValue({
+    generateAdvice.mockResolvedValue({
       advice: {
         summary: 'Drop front rebound one click.',
         recommended_changes: [

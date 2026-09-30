@@ -2,7 +2,7 @@
  * Record/replay for the two OpenAI endpoints this pipeline touches.
  *
  * THE INTERCEPT IS `globalThis.fetch`, NOT A MOCK OF `lib/rag/advice.ts`. That
- * is the whole point: `generateTuningAdvice` builds its own `OpenAI` client
+ * is the whole point: `generateAdvice` builds its own `OpenAI` client
  * internally and there is no injection seam, so stubbing at any higher level
  * would mean the harness scored a response the production code never parsed.
  * Intercepting the transport leaves the SDK, `parseAdviceResponse`,

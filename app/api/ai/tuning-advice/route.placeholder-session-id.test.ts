@@ -19,7 +19,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  * real, so `parseAdviceResponse` runs on the raw JSON exactly as it does in
  * production, and `evaluateAdvicePolicy` then reads what the parser produced -
  * which is the whole point, because the fix is in the parser and a test that
- * mocks `generateTuningAdvice` would step straight over it. The transport is
+ * mocks `generateAdvice` would step straight over it. The transport is
  * stubbed at `fetch`, the same seam `scripts/eval/openai-tape.mjs` uses.
  */
 

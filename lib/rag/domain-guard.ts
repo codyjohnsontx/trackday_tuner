@@ -1,11 +1,67 @@
 import {
   DISCLAIMER_NOTE,
   ONE_CHANGE_NOTE,
-  skippableSourceKey,
-  type RiderTextField,
-  type SkippableSource,
-} from '@/lib/rag/prompt';
-import type { AdviceDataUsed, AdviceResponse } from '@/lib/rag/schema';
+  type AdviceDataUsed,
+  type AdviceResponse,
+} from '@/lib/rag/schema';
+
+/**
+ * Something `dropScreenedSources` (`lib/rag/prompt.ts`) knows how to remove
+ * from a `RaceEngineerContext`. A skippable field names one of these rather than a bare
+ * id, so the caller can act on it without guessing which collection it came
+ * from, and so adding a kind cannot compile until that function handles it.
+ */
+export type SkippableSource =
+  | { kind: 'recommendation'; id: string }
+  | { kind: 'sessionEnvironment' };
+
+/**
+ * A stored free-text value one of the AI prompts interpolates, paired with a
+ * name the rider would recognise on screen and with what to do when it matches
+ * the injection screen.
+ *
+ * The label is phrased to read after "the wording in ...", because a screen that
+ * refuses over stored text has to say which field to edit.
+ *
+ * REFUSE when the rider can go and change the thing the refusal names. SKIP
+ * when they cannot, whoever originally typed it. A refusal naming something out
+ * of reach is not a guard, it is a trap: it withholds a paid route and nothing
+ * the rider does gets them past it. Dropping that value from the prompt closes
+ * the same channel and still answers the question.
+ *
+ * Authorship is NOT the axis, and `race_engineer_memory.summary` is where the
+ * two come apart. The app wrote that row from a template, but it embeds the
+ * rider's own outcome note, and saving that outcome again overwrites the whole
+ * summary (`summary = excluded.summary` in
+ * `20260716000800_add_session_outcomes.sql`) - so it refuses, and its label
+ * names the outcome notes rather than the memory row, because that is the thing
+ * the rider can open. The worked example in the other direction is
+ * `session_environment`: the same two columns refuse on day-plan, where the
+ * rider just typed them, and skip on tuning-advice, where they are a stored row
+ * with no edit path. Provenance decides it, not the column and not the author.
+ *
+ * `onMatch` is required and has no default, because choosing between those two
+ * is the safety decision and a field added without making it is a silent hole.
+ * `source` is required on the skip branch: skipping only means anything if the
+ * caller can remove exactly that value from the prompt.
+ */
+export type RiderTextField =
+  | { onMatch: 'refuse'; label: string; value: string }
+  | { onMatch: 'skip'; label: string; value: string; source: SkippableSource };
+
+/** Identity of a source, for de-duplicating drops reported by several fields. */
+function skippableSourceKey(source: SkippableSource): string {
+  switch (source.kind) {
+    case 'recommendation':
+      return `recommendation:${source.id}`;
+    case 'sessionEnvironment':
+      return 'sessionEnvironment';
+    default: {
+      const unhandled: never = source;
+      throw new Error(`Unhandled skippable source: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
 
 export type RaceEngineerRefusalReason =
   | 'out_of_domain'
@@ -486,12 +542,14 @@ export function normalizeAdviceResponse(
  * Each value is screened on its own rather than joined, so a phrase cannot be
  * assembled across the seam between two unrelated fields.
  *
- * BOTH live routes call this, each with its own collector: `/api/ai/day-plan`
- * with `collectDayPlanRiderText` and `/api/ai/tuning-advice` with
- * `collectTuningAdviceRiderText`. The collectors are separate on purpose and a
- * call added here would not be the fix for a third route - the whole point is
- * that the field list is derived from the prompt builder's own input type, so
- * a route screens exactly what its own prompt interpolates. Tuning-advice went
+ * BOTH live routes reach this through their prompt module's `prepare*`
+ * function in `lib/rag/prompt.ts`, each with its own collector:
+ * `prepareDayPlanPrompt` with `collectDayPlanRiderText` and
+ * `prepareTuningAdvicePrompt` with `collectTuningAdviceRiderText`. The
+ * collectors are separate on purpose and a call added here would not be the fix
+ * for a third route - the whole point is that the field list is derived from
+ * the same input the prompt is built from, so a route screens exactly what its
+ * own prompt interpolates. Tuning-advice went
  * a full release screening none of it while day-plan screened all of it,
  * because a guard wired to one of two twins reads as covering both.
  */

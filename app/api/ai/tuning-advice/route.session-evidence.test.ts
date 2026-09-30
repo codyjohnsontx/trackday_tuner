@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 /**
  * THE ROUTE MUST OFFER THE POLICY THE SAME SESSION IDS ITS PROMPT PRINTED.
  *
- * `tests/unit/ai-session-evidence-ids.test.ts` holds the prompt and the id set
- * to each other. Neither can see the route deciding, on its own, to hand
- * `evaluateAdvicePolicy` a different set - which is exactly what it used to do:
+ * `prepareTuningAdvicePrompt` returns the prompt and the id set together, and
+ * `lib/rag/prompt.test.ts` holds the two to each other. Neither can see the
+ * route deciding, on its own, to hand `evaluateAdvicePolicy` a different set -
+ * which is exactly what it used to do:
  * it built the allowed ids from `{session, similarSessions, feedback,
  * recommendations}` and left out `previousSession`, the session its own prompt
  * prints and instructs the model to diagnose with.
@@ -19,14 +20,14 @@ const {
   getUserProfile,
   createClient,
   createAdminClient,
-  generateTuningAdvice,
+  generateAdvice,
   loadRaceEngineerContext,
 } = vi.hoisted(() => ({
   getRealUser: vi.fn(),
   getUserProfile: vi.fn(),
   createClient: vi.fn(),
   createAdminClient: vi.fn(),
-  generateTuningAdvice: vi.fn(),
+  generateAdvice: vi.fn(),
   loadRaceEngineerContext: vi.fn(),
 }));
 
@@ -40,7 +41,7 @@ vi.mock('@/lib/env.server', () => ({
   getAiRequestFingerprintSecret: vi.fn(() => 'test-secret'),
 }));
 vi.mock('@/lib/rag/advice', () => ({
-  generateTuningAdvice,
+  generateAdvice,
   UpstreamTimeoutError: class UpstreamTimeoutError extends Error {},
 }));
 vi.mock('@/lib/rag/race-engineer-context', async (importOriginal) => ({
@@ -272,7 +273,7 @@ describe('the race engineer answers the questions it suggests', () => {
   });
 
   it('answers when the model cites the session the request is about', async () => {
-    generateTuningAdvice.mockResolvedValue({
+    generateAdvice.mockResolvedValue({
       advice: adviceCiting(SESSION_ID),
       retrieved: [],
       usage: { prompt_tokens: 1, completion_tokens: 1 },
@@ -288,7 +289,7 @@ describe('the race engineer answers the questions it suggests', () => {
   });
 
   it('answers the example question the refusal screen tells the rider to ask', async () => {
-    generateTuningAdvice.mockResolvedValue({
+    generateAdvice.mockResolvedValue({
       advice: adviceCiting(PREVIOUS_SESSION_ID),
       retrieved: [],
       usage: { prompt_tokens: 1, completion_tokens: 1 },
@@ -317,7 +318,7 @@ describe('the race engineer answers the questions it suggests', () => {
     // `lib/rag/schema.ts` normalises it to null at the parser, because
     // declining to give a reference is not the same act as inventing one.
     //
-    // THIS SUITE MOCKS `generateTuningAdvice`, so the object below never passes
+    // THIS SUITE MOCKS `generateAdvice`, so the object below never passes
     // `parseAdviceResponse`, and that is the only reason it still refuses. What
     // is asserted here is therefore a fact about the POLICY, not about what a
     // rider now gets: the second line holds if the first is ever removed. The
@@ -333,7 +334,7 @@ describe('the race engineer answers the questions it suggests', () => {
         source_session_id: 'null',
       },
     ];
-    generateTuningAdvice.mockResolvedValue({
+    generateAdvice.mockResolvedValue({
       advice: recorded,
       retrieved: [],
       usage: { prompt_tokens: 1, completion_tokens: 1 },
@@ -349,7 +350,7 @@ describe('the race engineer answers the questions it suggests', () => {
   });
 
   it('STILL refuses a session id the rider does not own', async () => {
-    generateTuningAdvice.mockResolvedValue({
+    generateAdvice.mockResolvedValue({
       advice: adviceCiting(INVENTED_SESSION_ID),
       retrieved: [],
       usage: { prompt_tokens: 1, completion_tokens: 1 },

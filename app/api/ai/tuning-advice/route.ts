@@ -18,7 +18,7 @@ import {
   preflightAiRequest,
   readAiRequestBody,
 } from '@/lib/rag/ai-request-preflight';
-import { generateTuningAdvice, UpstreamTimeoutError } from '@/lib/rag/advice';
+import { generateAdvice, UpstreamTimeoutError } from '@/lib/rag/advice';
 import {
   createRecommendationSnapshot,
   loadRaceEngineerContext,
@@ -26,18 +26,13 @@ import {
 import {
   buildRefusalAdvice,
   classifyRaceEngineerQuestion,
-  classifyStoredRiderText,
 } from '@/lib/rag/domain-guard';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
 import {
   applyPremiseRejection,
   classifyDangerousPremise,
 } from '@/lib/rag/premise-guard';
-import {
-  collectTuningAdviceRiderText,
-  collectTuningAdviceSessionIds,
-  dropScreenedSources,
-} from '@/lib/rag/prompt';
+import { prepareTuningAdvicePrompt } from '@/lib/rag/prompt';
 import { validateTuningAdviceRequest } from '@/lib/rag/validation';
 import { fetchPreviousSession } from '@/lib/session-previous';
 import { createClient } from '@/lib/supabase/server';
@@ -447,27 +442,25 @@ export async function POST(request: Request) {
       session,
     });
 
-    // Screen two: rider text this request did not submit but the prompt still
-    // interpolates. It has to run after the reads, which is exactly why
-    // `classifyRaceEngineerQuestion` above cannot cover it. The fields come from
-    // `collectTuningAdviceRiderText`, built from the same input
-    // `generateTuningAdvice` hands the prompt builder, so the screen cannot
-    // cover less than the prompt hands over.
-    const storedAssessment = classifyStoredRiderText({
-      unableMessage: 'I could not answer that from your saved setup data.',
-      fields: collectTuningAdviceRiderText({
-        session,
-        previousSession,
-        vehicle,
-        question: validated.data.question,
-        symptoms: validated.data.symptoms,
-        changeIntent: validated.data.change_intent,
-        temperatureC: validated.data.temperature_c,
-        raceEngineerContext,
-      }, validated.data.time_zone),
+    // Screen two, the stored rider text the prompt interpolates, runs inside
+    // the prompt module: it has to run after the reads, which is exactly why
+    // `classifyRaceEngineerQuestion` above cannot cover it, and it has to see
+    // exactly what the prompt prints, which is why it lives beside the prompt
+    // builder rather than here. What comes back is either a refusal naming the
+    // field or the prompt with everything that has to agree with it.
+    const prepared = prepareTuningAdvicePrompt({
+      session,
+      previousSession,
+      vehicle,
+      question: validated.data.question,
+      symptoms: validated.data.symptoms,
+      changeIntent: validated.data.change_intent,
+      temperatureC: validated.data.temperature_c,
+      raceEngineerContext,
+      riderTimeZone: validated.data.time_zone,
     });
 
-    if (storedAssessment.decision === 'refuse') {
+    if (prepared.decision === 'refuse') {
       // Audited under its own status, which the refusal throttle does not
       // count: stored text refuses deterministically, so counting it would lock
       // the rider out of every AI route for a note they wrote weeks ago.
@@ -497,9 +490,7 @@ export async function POST(request: Request) {
           advice: applyPremiseRejection(
             buildRefusalAdvice({
               reason: 'prompt_injection',
-              message:
-                storedAssessment.message ??
-                'I could not answer that from your saved setup data. Check your saved vehicle and session notes for wording that reads as an instruction.',
+              message: prepared.message,
               dataUsed: buildFallbackDataUsed({
                 session,
                 temperatureC: validated.data.temperature_c,
@@ -513,45 +504,15 @@ export async function POST(request: Request) {
       );
     }
 
-    // The other half of that screen: a match on a field the rider cannot reach
-    // is skipped rather than refused, and skipping only means anything if the
-    // offending value leaves the prompt. Everything downstream reads the
-    // screened context - the model call, the citation ids the policy will
-    // accept, the `data_used` fallback and the snapshot stored on the
-    // recommendation - so a dropped value is gone from all of them rather than
-    // from the prompt alone.
-    const screenedContext = dropScreenedSources(
-      raceEngineerContext,
-      storedAssessment.droppedSources,
-      session,
-    );
+    const result = await generateAdvice(prepared);
 
-    // One object builds the prompt and the id set the policy will accept, so
-    // the model is offered exactly the session ids its answer may cite. Built
-    // from the SCREENED context for the same reason everything else downstream
-    // is: a dropped source is gone from the prompt, so accepting its id would
-    // let the model cite a row it was never shown.
-    const promptInput = {
-      session,
-      previousSession,
-      vehicle,
-      question: validated.data.question,
-      symptoms: validated.data.symptoms,
-      changeIntent: validated.data.change_intent,
-      temperatureC: validated.data.temperature_c,
-      raceEngineerContext: screenedContext,
-    };
-
-    const result = await generateTuningAdvice(promptInput);
-
+    // The policy is handed the id set and the fallback that came out of the
+    // same preparation as the prompt, so the model may cite exactly the
+    // sessions it was shown and nothing a screened-out source contributed.
     const policyResult = evaluateAdvicePolicy({
       advice: result.advice,
-      fallbackDataUsed: {
-        ...screenedContext.dataUsed,
-        weather:
-          validated.data.temperature_c != null || screenedContext.dataUsed.weather,
-      },
-      validSessionIds: collectTuningAdviceSessionIds(promptInput),
+      fallbackDataUsed: prepared.fallbackDataUsed,
+      validSessionIds: prepared.allowedSessionIds,
     });
     // AFTER the policy, deliberately. `buildRefusalAdvice` builds a fresh object
     // on every force_refusal path, so stamping before this would drop the
@@ -566,7 +527,7 @@ export async function POST(request: Request) {
       requestId,
       session,
       advice,
-      contextSnapshot: createRecommendationSnapshot(screenedContext),
+      contextSnapshot: createRecommendationSnapshot(prepared.screenedContext),
     });
 
     await updateRequestLog({

@@ -4,9 +4,9 @@
  * retriever, so "measured retrieval relevance" had no number behind it.
  *
  * Each golden case names the knowledge-base sources that SHOULD surface for its
- * question. The harness embeds the same query text `generateTuningAdvice`
- * builds, retrieves with the same parameters, and compares the ranked source
- * list against that label.
+ * question. The harness runs production's own retrieval - the query
+ * `prepareTuningAdvicePrompt` builds, embedded and searched by `generateAdvice`
+ * - and compares the ranked source list against that label.
  *
  * RECALL IS OVER SOURCES, NOT CHUNKS. The index holds 4-6 chunks per file, so a
  * query that pulls three chunks of `tires/pressure-basics.md` has found one
@@ -22,7 +22,7 @@
 /**
  * K IS PRODUCTION'S, AND IS OBSERVED RATHER THAN DECLARED. This file used to
  * hold `RETRIEVAL_K = 4`, a hand copy of the literal `topK: 4` that
- * `generateTuningAdvice` passes, with a comment asserting the two were the same
+ * `generateAdvice` passes, with a comment asserting the two were the same
  * and nothing checking it. The copy was inert only because `selectTopChunks`
  * already caps the list, so the slice never removed anything - and it would have
  * stopped being inert on exactly the edit this harness exists to support:

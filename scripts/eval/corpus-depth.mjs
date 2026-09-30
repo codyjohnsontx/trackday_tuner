@@ -35,7 +35,7 @@ export function countWords(text) {
 
 /**
  * What one answer was grounded in, or `null` when the retriever never ran for
- * it - a classifier refusal returns before `generateTuningAdvice`, and a zero
+ * it - a classifier refusal returns before `generateAdvice`, and a zero
  * there would say the model was handed nothing when in truth it was never
  * asked. That is the same distinction `scoreRetrieval` draws, for the same
  * reason.
