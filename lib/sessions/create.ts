@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchPreviousSession } from '@/lib/session-previous';
+import { readStoredSession } from '@/lib/stored-session';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { validateLaps } from '@/lib/lap-times';
 import { MISSING_CONDITIONS_MESSAGE, isSessionCondition } from '@/lib/session-answers';
@@ -576,7 +577,7 @@ async function readOwnSession(
     });
     return { status: 'failed' };
   }
-  if (data) return { status: 'found', session: data as Session };
+  if (data) return { status: 'found', session: readStoredSession(data) };
 
   const { data: tombstone, error: tombstoneError } = await supabase
     .from('deleted_sessions')
@@ -686,7 +687,7 @@ async function insertSessionInSteps({
     return { status: 'answered', result: { ok: false, error: SESSION_CREATE_SAVE_FAILED_MESSAGE, kind: 'fault' } };
   }
 
-  const createdSession = data as Session;
+  const createdSession = readStoredSession(data);
 
   const lapError = await persistSessionLaps({
     supabase,
@@ -801,10 +802,10 @@ async function insertSessionAtomically({
   }
 
   const answer = data as unknown as
-    | { replayed: false; session: Session }
-    | { replayed: true; deleted?: false; session: Session }
+    | { replayed: false; session: unknown }
+    | { replayed: true; deleted?: false; session: unknown }
     | { replayed: true; deleted: true; session: null };
-  if (!answer.replayed) return { status: 'created', session: answer.session };
+  if (!answer.replayed) return { status: 'created', session: readStoredSession(answer.session) };
 
   // The rider deleted this session after an earlier call stored it. Nothing
   // was written, so a track resolved for this call is unused.
@@ -819,7 +820,7 @@ async function insertSessionAtomically({
   // A call on the same id committed while this one was resolving, and its row
   // is the answer. It may have found this call's auto-created track by name, so
   // the track goes only when that row does not point at it.
-  const { session } = answer;
+  const session = readStoredSession(answer.session);
   if (session.track_id !== track.trackId) await rollbackAutoCreatedTrack(supabase, userId, track);
   return { status: 'answered', result: { ok: true, data: { session, createdTrack: false, replayed: true, deleted: false } } };
 }

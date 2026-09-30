@@ -1,3 +1,4 @@
+import { setupField, setupFieldsOf } from '@/lib/stored-session';
 import { formatTemperature, type TemperatureUnit } from '@/lib/temperature';
 import type { Session, SessionEnvironment } from '@/types';
 import { truncateAtWordBoundary } from '@/lib/utils';
@@ -42,6 +43,18 @@ export function getNotesPreview(notes: string | null | undefined): string | null
   return truncateAtWordBoundary(trimmed, NOTES_PREVIEW_LIMIT);
 }
 
+const TIRE_SUMMARY_ROWS = [
+  { label: 'Front Tire', field: setupField('tires.front.pressure') },
+  { label: 'Rear Tire', field: setupField('tires.rear.pressure') },
+];
+
+const SUSPENSION_SUMMARY_ROWS = (['front', 'rear'] as const).map((end) => ({
+  label: end === 'front' ? 'Front Susp.' : 'Rear Susp.',
+  fields: setupFieldsOf('suspension').filter(
+    (field) => field.kind === 'value' && field.id.startsWith(`suspension.${end}.`),
+  ),
+}));
+
 export interface SessionHistorySummary {
   conditionLabel: string;
   dateLabel: string;
@@ -81,25 +94,19 @@ export function buildSessionHistorySummary(
     environmentRows.push({ label: 'Surface', value: environment.surface_condition.trim() });
   }
 
-  const tireRows = [
-    { label: 'Front Tire', value: session.tires.front.pressure.trim() || 'Not logged' },
-    { label: 'Rear Tire', value: session.tires.rear.pressure.trim() || 'Not logged' },
-  ];
+  const tireRows = TIRE_SUMMARY_ROWS.map(({ label, field }) => ({
+    label,
+    value: field.read(session)?.trim() || 'Not logged',
+  }));
 
-  const suspensionRows = [
-    {
-      label: 'Front Susp.',
-      value: [session.suspension.front.preload, session.suspension.front.compression, session.suspension.front.rebound]
+  const suspensionRows = SUSPENSION_SUMMARY_ROWS.map(({ label, fields }) => ({
+    label,
+    value:
+      fields
+        .map((field) => field.read(session) ?? '')
         .filter((value) => value.trim())
         .join(' / ') || 'Not logged',
-    },
-    {
-      label: 'Rear Susp.',
-      value: [session.suspension.rear.preload, session.suspension.rear.compression, session.suspension.rear.rebound]
-        .filter((value) => value.trim())
-        .join(' / ') || 'Not logged',
-    },
-  ];
+  }));
 
   return {
     conditionLabel: getConditionLabel(session.conditions),

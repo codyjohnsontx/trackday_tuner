@@ -1723,6 +1723,70 @@ describe('sessions actions', () => {
     expect(insertedRows[1]).toMatchObject({ session_id: 'sess-1', reference_session_id: 'baseline-source' });
   });
 
+  /**
+   * The save stores the setup blobs it is handed, and `sessions.tires` and
+   * `sessions.suspension` are unconstrained `jsonb`, so the row it reads back can
+   * hold a number where text was expected or no blob at all. The change records
+   * are diffed from that row, and a diff that threw was caught and logged, so the
+   * session saved with no change records and nothing on screen said so. The
+   * number case leaves the tyre fields before it blank and the modules unset,
+   * or the "anything logged?" check stops at a sibling and never reads it.
+   */
+  it.each([
+    {
+      name: 'a pressure saved as a number',
+      tires: { ...validInput.tires, front: { brand: '', compound: '', pressure: 30 } },
+      suspension: validInput.suspension,
+      enabledModules: null,
+      frontPressure: '30',
+    },
+    {
+      name: 'no setup blobs at all',
+      tires: null,
+      suspension: null,
+      enabledModules: validInput.enabled_modules,
+      frontPressure: '',
+    },
+  ])('writes the change records for a save with $name', async ({ tires, suspension, enabledModules, frontPressure }) => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+
+    const input = { ...validInput, tires, suspension, enabled_modules: enabledModules } as unknown as CreateSessionInput;
+    const insertQuery = createQuery({
+      single: { data: { ...createdSession, tires, suspension, enabled_modules: enabledModules }, error: null },
+    });
+    const previousQuery = createQuery({ base: { data: [previousSession], error: null } });
+    const changesInsertQuery = createQuery({ base: { data: null, error: null } });
+
+    const from = vi
+      .fn()
+      .mockImplementationOnce(() => createTrackIdLookup())
+      .mockImplementationOnce(() => insertQuery)
+      .mockImplementationOnce(() => createQuery({ single: { data: { type: 'motorcycle' }, error: null } }))
+      .mockImplementationOnce(() => previousQuery)
+      .mockImplementationOnce(() => createQuery({ base: { data: [], error: null } }))
+      .mockImplementationOnce((table: string) => {
+        expect(table).toBe('session_changes');
+        return changesInsertQuery;
+      });
+    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+
+    const result = await createSession(input);
+
+    expect(result.ok).toBe(true);
+    expect(insertQuery.insert).toHaveBeenCalledWith(expect.objectContaining({ tires, suspension }));
+    expect(changesInsertQuery.insert).toHaveBeenCalledTimes(1);
+    const insertedRows = vi.mocked(changesInsertQuery.insert as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as Array<{ reference_kind: string; changes: Array<Record<string, string>> }>;
+    expect(insertedRows.map((row) => row.reference_kind)).toEqual(['previous']);
+    expect(insertedRows[0].changes).toContainEqual({
+      group: 'Tires',
+      label: 'Front pressure',
+      from: '33',
+      to: frontPressure,
+    });
+  });
+
   it('persists a single change record when only a previous session exists', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);

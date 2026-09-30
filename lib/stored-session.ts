@@ -46,8 +46,9 @@ import type {
  * It never throws, whatever the row holds.
  *
  * The save side is out of scope and unchanged: `lib/sessions/create.ts` and
- * `lib/sessions/parse-create-request.ts` keep their own shapes, and moving the
- * phone's save check onto `SETUP_FIELDS` is later work.
+ * `lib/sessions/parse-create-request.ts` write their own shapes, and moving the
+ * phone's save check onto `SETUP_FIELDS` is later work. The row a save reads
+ * back is a read, so it comes through here like any other.
  */
 
 /**
@@ -239,6 +240,13 @@ function buildSetupFields(): SetupField[] {
  * already downloaded.
  */
 export const SETUP_FIELDS: readonly SetupField[] = buildSetupFields();
+
+/** One field of `SETUP_FIELDS` by its id. An id the list does not have is a bug, so it throws. */
+export function setupField(id: string): SetupField {
+  const field = SETUP_FIELDS.find((candidate) => candidate.id === id);
+  if (!field) throw new Error(`No setup field ${id}`);
+  return field;
+}
 
 /**
  * The field's label in sentence case, `Front pressure`, as the compare screen

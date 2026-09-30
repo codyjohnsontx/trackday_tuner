@@ -1016,21 +1016,23 @@ blob renders absent instead.
 **THE SCREENS AND THE EXPORT NOW READ BY THE SAME RULE, AND NOTHING READS A
 STORED SETUP RAW.** They used to crash on both halves of this - a pressure stored
 as the number 30 took down the whole sessions list, a `null` blob the detail
-page, compare, copy and the export. Every `sessions` row the app reads now goes
-through `readStoredSession` (`lib/stored-session.ts`) rather than an `as Session`
-cast, and a baseline's setup through `readStoredSetup`, so the `Session` a screen
+page, compare, copy and the export. Every whole `sessions` row the app reads -
+including the row a save reads back in `lib/sessions/create.ts` - goes through
+`readStoredSession` (`lib/stored-session.ts`) rather than an `as Session` cast,
+and a baseline's setup through `readStoredSetup`, so the `Session` a screen
 receives honours its type. The owner's rules (2026-09-30): a value stored as a
 number shows as typed, anything else that is not text is not logged (`''`), a
 choice - tyre condition, adjuster direction - is one of its options or `null`,
 and a missing or odd-shaped blob is a normal session with every setup field not
 logged; existing rows are left as they are. `storedLeafText` there is the ONE
 leaf rule - `formatValue` and `leafText` are it plus their own trimming - and
-`SETUP_FIELDS` the one field list the setup view, both compares and the
-"anything logged?" checks are built from. **A new read of `sessions` goes through
-`readStoredSession`.** Two things still keep their own copy on purpose: the
-export's column names, which are a file format, and the save side
-(`lib/sessions/create.ts`, `lib/sessions/parse-create-request.ts`), whose move
-onto `SETUP_FIELDS` is later work. `tests/unit/stored-session-screens.test.ts`
+`SETUP_FIELDS` the one field list the setup view, both compares, the history
+summary, the export and the "anything logged?" checks are built from. **A new
+read of `sessions` goes through `readStoredSession`.** Two things still keep
+their own copy on purpose: the export's column names, which are a file format,
+and what the save side writes (`lib/sessions/create.ts`,
+`lib/sessions/parse-create-request.ts`), whose move onto `SETUP_FIELDS` is later
+work. `tests/unit/stored-session-screens.test.ts`
 walks both crashes through the real server actions.
 
 **`formatValue` IS NOT THE ONLY READER OF THOSE LEAVES, AND IT IS NOT THE FIRST
