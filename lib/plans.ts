@@ -1,9 +1,10 @@
 export type LimitedResource = 'vehicles' | 'tracks' | 'sessions';
 
-// `sessions` is also written in SQL: create_session_with_laps counts the phone's
-// creates under a lock (20260928002300). tests/e2e/create-session-with-laps.spec.ts
-// runs the SQL at this cap on a real database;
-// tests/unit/session-create-plan-cap.test.ts guards the two copies drifting apart.
+// `sessions` is enforced in SQL: create_session_with_laps counts every create,
+// the website form's and the phone's, under a per-rider lock (20260928002300),
+// and this number is what the app says the cap is. tests/db/ runs the SQL at this
+// cap on a real database on every pull request, so the two cannot drift apart
+// unnoticed.
 const FREE_PLAN_LIMITS: Record<LimitedResource, number> = {
   vehicles: 1,
   tracks: 3,

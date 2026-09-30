@@ -1320,6 +1320,13 @@ phone parks it). It is `security invoker`, so RLS applies as
 for any rider query. Apply it before merging the pull request that adds it:
 without it every session the phone sends is answered 503 and retried.
 
+The website form writes through it too since the session writers were made one:
+its server action mints an id per save and makes the same call. So on a project
+without this function - or without "Close session ownership, deleted-session
+replays and the free-plan race by hand" below, which the form now relies on for
+the free-plan cap - no session can be saved from the website either. Confirm
+both are applied (each block's own verification) before deploying that release.
+
 **1. Precheck (read-only).**
 
 ```sql

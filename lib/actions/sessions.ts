@@ -1,5 +1,6 @@
 'use server';
 
+import { randomUUID } from 'node:crypto';
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { getRealUser } from '@/lib/auth';
 import {
@@ -440,11 +441,15 @@ export async function createSession(
       report: reportError,
     },
     input,
+    // Minted here, per save, so the form writes through the same atomic
+    // `create_session_with_laps` as the phone - one write, and one free-plan cap
+    // counted under the rider's lock - while a browser still cannot choose a
+    // row's primary key.
+    { id: randomUUID() },
   );
   // `kind` is for callers answering with a status; this one shows the sentence.
   if (!result.ok) return { ok: false, error: result.error };
-  // Only a create carrying its own id can land on a deleted session, and the
-  // form never supplies one.
+  // A fresh id names no deleted session, so this is only the type's other arm.
   if (result.data.deleted) return { ok: false, error: 'This session was already deleted.' };
 
   revalidatePath('/sessions');

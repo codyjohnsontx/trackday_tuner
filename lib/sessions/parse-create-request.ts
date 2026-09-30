@@ -1,4 +1,5 @@
 import { isUuid } from '@/lib/rag/validation';
+import { SETUP_FIELDS, type SetupField } from '@/lib/stored-session';
 import type {
   Alignment,
   CreateSessionEnvironmentInput,
@@ -7,6 +8,8 @@ import type {
   ExtraModules,
   SessionEnabledModules,
   Suspension,
+  SuspensionEnd,
+  TireEnd,
   Tires,
 } from '@/types';
 
@@ -22,7 +25,8 @@ import type {
  * down (see "The same unconstrained column" in CLAUDE.md). So every leaf of those
  * blobs is required to be the type its TypeScript declares, and an unknown key is
  * refused rather than stored, so a typo in the app surfaces as a 400 instead of a
- * field nobody reads.
+ * field nobody reads. Which keys a setup blob may hold comes from `SETUP_FIELDS`,
+ * the list the screens read a stored session through.
  *
  * Rules `createSessionForUser` already applies - the weather answer, the track
  * name, lap validity - are left to it, so each has one copy and one message.
@@ -105,62 +109,95 @@ function nullableNumber(value: unknown, path: string): number | null {
   return value;
 }
 
-/** Every key present and a string, or every key absent - the only two shapes a
- * stored blob of this kind has. */
-function stringLeaves<K extends string>(value: unknown, path: string, keys: readonly K[]): Record<K, string> {
-  const source = record(value, path, keys);
-  const out = {} as Record<K, string>;
-  for (const key of keys) out[key] = string(source[key], `${path}.${key}`);
-  return out;
+/**
+ * The setup fields stored directly under `container`, by their own key -
+ * `fieldsUnder('tires.front')` is brand, compound and pressure. They are read
+ * off `SETUP_FIELDS` (lib/stored-session.ts), the one list every screen is built
+ * from, so the phone can send exactly the fields a session can show and a field
+ * added there is accepted here without a second list to remember.
+ */
+function fieldsUnder(container: string): Map<string, SetupField> {
+  const prefix = `${container}.`;
+  const fields = new Map<string, SetupField>();
+  for (const field of SETUP_FIELDS) {
+    const key = field.id.startsWith(prefix) ? field.id.slice(prefix.length) : '';
+    if (key && !key.includes('.')) fields.set(key, field);
+  }
+  return fields;
 }
 
-function optionalStringLeaves(value: unknown, path: string, keys: readonly string[]): Record<string, string> {
-  const source = record(value, path, keys);
-  const out: Record<string, string> = {};
-  for (const key of keys) {
-    const leaf = optionalString(source[key], `${path}.${key}`);
-    if (leaf !== undefined) out[key] = leaf;
+/** A setup blob that may hold its own fields, the `extraKeys` named, and nothing else. */
+function setupRecord(value: unknown, container: string, extraKeys: readonly string[] = []): Record<string, unknown> {
+  return record(value, container, [...fieldsUnder(container).keys(), ...extraKeys]);
+}
+
+/**
+ * `container`'s own setup fields out of `source`. A typed value has to be a
+ * string, and is required when `required` - tyres, suspension and alignment
+ * store every one of theirs, an advanced module only those the rider filled in.
+ * A choice is one of its options, or null for not logged, which is the rule the
+ * read model applies to a stored one.
+ */
+function setupLeaves(source: Record<string, unknown>, container: string, required: boolean): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  for (const [key, field] of fieldsUnder(container)) {
+    const path = `${container}.${key}`;
+    const leaf = source[key];
+    if (field.kind === 'choice') {
+      const options = field.options ?? [];
+      if (leaf != null && !options.includes(leaf as string)) fail(`${path} must be one of ${options.join(', ')}, or null.`);
+      out[key] = (leaf as string | null | undefined) ?? null;
+    } else if (required || leaf !== undefined) {
+      out[key] = string(leaf, path);
+    }
   }
   return out;
 }
-
-const TIRE_CONDITIONS = ['new', 'scrubbed', 'used', 'worn'] as const;
 
 function parseTires(value: unknown): Tires {
-  const tires = record(value, 'tires', ['front', 'rear', 'condition']);
-  const end = (side: 'front' | 'rear') => {
+  const tires = setupRecord(value, 'tires', ['front', 'rear']);
+  const end = (side: 'front' | 'rear'): TireEnd => {
     const path = `tires.${side}`;
-    const source = record(tires[side], path, ['brand', 'compound', 'pressure', 'hot_pressure']);
+    // The hot pressure is read after the session rather than set before it, so
+    // it is not a setup field - but it is stored when the phone sends one.
+    const source = setupRecord(tires[side], path, ['hot_pressure']);
     const hot = optionalString(source.hot_pressure, `${path}.hot_pressure`);
-    return {
-      brand: string(source.brand, `${path}.brand`),
-      compound: string(source.compound, `${path}.compound`),
-      pressure: string(source.pressure, `${path}.pressure`),
-      ...(hot === undefined ? {} : { hot_pressure: hot }),
-    };
+    const leaves = setupLeaves(source, path, true) as unknown as TireEnd;
+    return { ...leaves, ...(hot === undefined ? {} : { hot_pressure: hot }) };
   };
-  const condition = tires.condition ?? null;
-  if (condition !== null && !TIRE_CONDITIONS.includes(condition as (typeof TIRE_CONDITIONS)[number])) {
-    fail('tires.condition must be one of new, scrubbed, used, worn, or null.');
-  }
-  return { front: end('front'), rear: end('rear'), condition: condition as Tires['condition'] };
+  const own = setupLeaves(tires, 'tires', true) as unknown as Pick<Tires, 'condition'>;
+  return { front: end('front'), rear: end('rear'), ...own };
 }
 
 function parseSuspension(value: unknown): Suspension {
   const suspension = record(value, 'suspension', ['front', 'rear']);
-  const end = (side: 'front' | 'rear') => {
+  const end = (side: 'front' | 'rear'): SuspensionEnd => {
     const path = `suspension.${side}`;
-    const leaves = stringLeaves(suspension[side], path, ['preload', 'compression', 'rebound', 'direction']);
-    const { direction } = leaves;
-    if (direction !== 'in' && direction !== 'out') fail(`${path}.direction must be in or out.`);
-    return { ...leaves, direction: direction as 'in' | 'out' };
+    return setupLeaves(setupRecord(suspension[side], path), path, true) as unknown as SuspensionEnd;
   };
   return { front: end('front'), rear: end('rear') };
 }
 
 function parseAlignment(value: unknown): Alignment | null {
   if (value == null) return null;
-  return stringLeaves(value, 'alignment', ['front_camber', 'rear_camber', 'front_toe', 'rear_toe', 'caster']);
+  return setupLeaves(setupRecord(value, 'alignment'), 'alignment', true) as unknown as Alignment;
+}
+
+/** The advanced modules, off the same list: geometry, drivetrain and aero. */
+const EXTRA_MODULES = [
+  ...new Set(SETUP_FIELDS.filter((field) => field.id.startsWith('extra_modules.')).map((field) => field.module)),
+] as (keyof ExtraModules)[];
+
+function parseExtraModules(value: unknown): ExtraModules | null {
+  if (value == null) return null;
+  const source = record(value, 'extra_modules', EXTRA_MODULES);
+  const out: ExtraModules = {};
+  for (const name of EXTRA_MODULES) {
+    if (source[name] === undefined) continue;
+    const path = `extra_modules.${name}`;
+    out[name] = setupLeaves(setupRecord(source[name], path), path, false) as Record<string, string>;
+  }
+  return out;
 }
 
 const MODULE_KEYS = ['tires', 'suspension', 'alignment', 'geometry', 'drivetrain', 'aero', 'notes'] as const;
@@ -172,33 +209,6 @@ function parseEnabledModules(value: unknown): SessionEnabledModules | null {
   for (const key of MODULE_KEYS) {
     if (typeof source[key] !== 'boolean') fail(`enabled_modules.${key} must be a boolean.`);
     out[key] = source[key] as boolean;
-  }
-  return out;
-}
-
-function parseExtraModules(value: unknown): ExtraModules | null {
-  if (value == null) return null;
-  const source = record(value, 'extra_modules', ['geometry', 'drivetrain', 'aero']);
-  const out: ExtraModules = {};
-  if (source.geometry !== undefined) {
-    out.geometry = optionalStringLeaves(source.geometry, 'extra_modules.geometry', [
-      'sag_front',
-      'sag_rear',
-      'fork_height',
-      'rear_ride_height',
-      'notes',
-    ]);
-  }
-  if (source.drivetrain !== undefined) {
-    out.drivetrain = optionalStringLeaves(source.drivetrain, 'extra_modules.drivetrain', [
-      'front_sprocket',
-      'rear_sprocket',
-      'chain_length',
-      'notes',
-    ]);
-  }
-  if (source.aero !== undefined) {
-    out.aero = optionalStringLeaves(source.aero, 'extra_modules.aero', ['wing_angle', 'splitter_setting', 'rake', 'notes']);
   }
   return out;
 }

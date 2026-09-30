@@ -45,10 +45,10 @@ import type {
  *
  * It never throws, whatever the row holds.
  *
- * The save side is out of scope and unchanged: `lib/sessions/create.ts` and
- * `lib/sessions/parse-create-request.ts` write their own shapes, and moving the
- * phone's save check onto `SETUP_FIELDS` is later work. The row a save reads
- * back is a read, so it comes through here like any other.
+ * The save side reads the same list: the phone's save check
+ * (`lib/sessions/parse-create-request.ts`) accepts exactly the fields
+ * `SETUP_FIELDS` names, so a field added here is one the phone can send. The
+ * row a save reads back is a read, so it comes through here like any other.
  */
 
 /**
@@ -96,6 +96,8 @@ export interface SetupField {
   /** Title case, as the setup view prints it: `Front Pressure`. */
   label: string;
   read: (setup: SetupSnapshot) => string | null;
+  /** What a choice is picked from, and present on a choice only. */
+  options?: readonly string[];
 }
 
 // The leaf lists. Each is typed against its container so a field added to a
@@ -172,7 +174,14 @@ function keysOf<T extends object>(record: T): (keyof T & string)[] {
 
 function buildSetupFields(): SetupField[] {
   const fields: SetupField[] = [
-    { id: 'tires.condition', module: 'tires', kind: 'choice', label: 'Condition', read: (s) => s.tires.condition },
+    {
+      id: 'tires.condition',
+      module: 'tires',
+      kind: 'choice',
+      label: 'Condition',
+      read: (s) => s.tires.condition,
+      options: TIRE_CONDITIONS,
+    },
   ];
 
   for (const [end, endLabel] of ENDS) {
@@ -194,6 +203,7 @@ function buildSetupFields(): SetupField[] {
       kind: 'choice',
       label: `${endLabel} Direction`,
       read: (s) => s.suspension[end].direction,
+      options: SUSPENSION_DIRECTIONS,
     });
     for (const key of keysOf(SUSPENSION_END_VALUES)) {
       fields.push({
