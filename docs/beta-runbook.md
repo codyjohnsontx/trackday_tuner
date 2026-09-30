@@ -1322,10 +1322,11 @@ without it every session the phone sends is answered 503 and retried.
 
 The website form writes through it too since the session writers were made one:
 its server action mints an id per save and makes the same call. So on a project
-without this function - or without "Close session ownership, deleted-session
-replays and the free-plan race by hand" below, which the form now relies on for
-the free-plan cap - no session can be saved from the website either. Confirm
-both are applied (each block's own verification) before deploying that release.
+without this function no session can be saved from the website either, and on
+one without "Close session ownership, deleted-session replays and the free-plan
+race by hand" below the form saves with no free-plan cap at all, since that
+block is where the cap is counted. Confirm both are applied (each block's own
+verification) before deploying that release.
 
 **1. Precheck (read-only).**
 
