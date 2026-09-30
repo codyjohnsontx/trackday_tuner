@@ -1628,12 +1628,15 @@ seen. Both are corrected: every flag is now derived the way
 than restated, because a second copy of that rule would agree on the day it was
 written and drift afterwards.
 
-**`runCase`'s `fallbackDataUsed` deliberately still hard-codes those same two,
-and that is correct.** It mirrors the ROUTE's own `buildFallbackDataUsed`
-(`app/api/ai/tuning-advice/route.ts`), which hard-codes `manual: true` and
+**`runCase`'s refusal-path `fallbackDataUsed` deliberately still hard-codes
+those same two, and that is correct.** It mirrors the ROUTE's own
+`buildFallbackDataUsed` (`app/api/ai/tuning-advice/route.ts`), which the route
+uses only on refusals and hard-codes `manual: true` and
 `weather: temperature_c != null`. The context and the fallback are two different
 production expressions; the harness copies each from its own source, and
 "fixing" the fallback would have introduced a divergence rather than removed one.
+A model answer is scored against `prepareTuningAdvicePrompt`'s own
+`fallbackDataUsed`, which is not copied at all.
 
 Correcting the two flags moved 25 of the 26 completion tape keys, so the
 recordings were refreshed with one `npm run rag:eval -- --live`. **All 26
