@@ -9,7 +9,7 @@ import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { readStoredSession } from '@/lib/stored-session';
 import { createClient } from '@/lib/supabase/server';
 import type { TableInsert } from '@/types/supabase';
-import type { ActionResult, Session, VehicleBaseline } from '@/types';
+import type { ActionResult, VehicleBaseline } from '@/types';
 
 export async function getVehicleBaseline(vehicleId: string): Promise<VehicleBaseline | null> {
   if (await isDemoMode()) {

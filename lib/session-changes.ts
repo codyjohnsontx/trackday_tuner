@@ -6,7 +6,6 @@ import type {
   SessionChange,
   SessionChangeEntry,
   SessionChangeReferenceKind,
-  SessionEnabledModules,
   VehicleBaseline,
   VehicleType,
 } from '@/types';
