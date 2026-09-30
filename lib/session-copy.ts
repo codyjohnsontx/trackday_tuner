@@ -83,7 +83,9 @@ export function copyLastSessionSetup(session: Session, vehicleType: VehicleType)
     tireCondition: session.tires.condition,
     frontTire: copyTireSetup(session.tires.front),
     rearTire: copyTireSetup(session.tires.rear),
-    suspensionDirection: session.suspension.front.direction,
+    // The form's direction row has no unanswered state, so a session with none
+    // logged opens on the form's own default, exactly as a blank form does.
+    suspensionDirection: session.suspension.front.direction ?? 'out',
     frontSusp: {
       preload: session.suspension.front.preload,
       compression: session.suspension.front.compression,

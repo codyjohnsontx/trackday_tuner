@@ -1,6 +1,7 @@
 import { compareSessionsDesc, extractLapMetrics, extractLapTimes, formatLapTime } from '@/lib/session-compare';
 import { formatSessionDateLabel, formatSessionTimeLabel } from '@/lib/session-history';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
+import { SETUP_FIELDS, setupField } from '@/lib/stored-session';
 import { trackNameKey } from '@/lib/session-track';
 import type {
   Session,
@@ -100,9 +101,57 @@ export const sessionExportColumns = [
   'created_at',
 ] as const;
 
-function emptyIfDisabled(enabled: boolean, value: string | number | boolean | null | undefined) {
-  if (!enabled) return null;
-  return value ?? null;
+type SessionExportColumn = (typeof sessionExportColumns)[number];
+
+/**
+ * The export's column for each field of `SETUP_FIELDS`. The column names are a
+ * file format riders have already downloaded, so they are kept here rather than
+ * derived from the field ids.
+ */
+const SETUP_EXPORT_COLUMNS: Record<string, SessionExportColumn> = {
+  'tires.condition': 'tire_condition',
+  'tires.front.brand': 'front_tire_brand',
+  'tires.front.compound': 'front_tire_compound',
+  'tires.front.pressure': 'front_tire_pressure',
+  'tires.rear.brand': 'rear_tire_brand',
+  'tires.rear.compound': 'rear_tire_compound',
+  'tires.rear.pressure': 'rear_tire_pressure',
+  'suspension.front.direction': 'front_suspension_direction',
+  'suspension.front.preload': 'front_preload',
+  'suspension.front.compression': 'front_compression',
+  'suspension.front.rebound': 'front_rebound',
+  'suspension.rear.direction': 'rear_suspension_direction',
+  'suspension.rear.preload': 'rear_preload',
+  'suspension.rear.compression': 'rear_compression',
+  'suspension.rear.rebound': 'rear_rebound',
+  'alignment.front_camber': 'front_camber',
+  'alignment.rear_camber': 'rear_camber',
+  'alignment.front_toe': 'front_toe',
+  'alignment.rear_toe': 'rear_toe',
+  'alignment.caster': 'caster',
+  'extra_modules.geometry.sag_front': 'sag_front',
+  'extra_modules.geometry.sag_rear': 'sag_rear',
+  'extra_modules.geometry.fork_height': 'fork_height',
+  'extra_modules.geometry.rear_ride_height': 'rear_ride_height',
+  'extra_modules.geometry.notes': 'geometry_notes',
+  'extra_modules.drivetrain.front_sprocket': 'front_sprocket',
+  'extra_modules.drivetrain.rear_sprocket': 'rear_sprocket',
+  'extra_modules.drivetrain.chain_length': 'chain_length',
+  'extra_modules.drivetrain.notes': 'drivetrain_notes',
+  'extra_modules.aero.wing_angle': 'wing_angle',
+  'extra_modules.aero.splitter_setting': 'splitter_setting',
+  'extra_modules.aero.rake': 'rake',
+  'extra_modules.aero.notes': 'aero_notes',
+};
+
+function setupExportCells(session: Session, enabled: SessionEnabledModules): SessionExportRow {
+  const cells: SessionExportRow = {};
+  for (const field of SETUP_FIELDS) {
+    const column = SETUP_EXPORT_COLUMNS[field.id];
+    if (!column) throw new Error(`No export column for setup field ${field.id}`);
+    cells[column] = enabled[field.module] ? field.read(session) : null;
+  }
+  return cells;
 }
 
 function getEnabledModules(session: Session, vehicle: Vehicle | null): SessionEnabledModules {
@@ -136,9 +185,6 @@ export function flattenSessionForExport({
   telemetry,
 }: SessionExportInput): SessionExportRow {
   const enabled = getEnabledModules(session, vehicle);
-  const geometry = session.extra_modules?.geometry;
-  const drivetrain = session.extra_modules?.drivetrain;
-  const aero = session.extra_modules?.aero;
   const laps = extractLapMetrics(telemetry);
 
   return {
@@ -171,44 +217,12 @@ export function flattenSessionForExport({
     surface_condition: environment?.surface_condition ?? null,
     environment_source: environment?.source ?? null,
     tires_enabled: enabled.tires,
-    front_tire_brand: emptyIfDisabled(enabled.tires, session.tires.front.brand),
-    front_tire_compound: emptyIfDisabled(enabled.tires, session.tires.front.compound),
-    front_tire_pressure: emptyIfDisabled(enabled.tires, session.tires.front.pressure),
-    rear_tire_brand: emptyIfDisabled(enabled.tires, session.tires.rear.brand),
-    rear_tire_compound: emptyIfDisabled(enabled.tires, session.tires.rear.compound),
-    rear_tire_pressure: emptyIfDisabled(enabled.tires, session.tires.rear.pressure),
-    tire_condition: emptyIfDisabled(enabled.tires, session.tires.condition),
     suspension_enabled: enabled.suspension,
-    front_preload: emptyIfDisabled(enabled.suspension, session.suspension.front.preload),
-    front_compression: emptyIfDisabled(enabled.suspension, session.suspension.front.compression),
-    front_rebound: emptyIfDisabled(enabled.suspension, session.suspension.front.rebound),
-    front_suspension_direction: emptyIfDisabled(enabled.suspension, session.suspension.front.direction),
-    rear_preload: emptyIfDisabled(enabled.suspension, session.suspension.rear.preload),
-    rear_compression: emptyIfDisabled(enabled.suspension, session.suspension.rear.compression),
-    rear_rebound: emptyIfDisabled(enabled.suspension, session.suspension.rear.rebound),
-    rear_suspension_direction: emptyIfDisabled(enabled.suspension, session.suspension.rear.direction),
     alignment_enabled: enabled.alignment,
-    front_camber: emptyIfDisabled(enabled.alignment, session.alignment?.front_camber),
-    rear_camber: emptyIfDisabled(enabled.alignment, session.alignment?.rear_camber),
-    front_toe: emptyIfDisabled(enabled.alignment, session.alignment?.front_toe),
-    rear_toe: emptyIfDisabled(enabled.alignment, session.alignment?.rear_toe),
-    caster: emptyIfDisabled(enabled.alignment, session.alignment?.caster),
     geometry_enabled: enabled.geometry,
-    sag_front: emptyIfDisabled(enabled.geometry, geometry?.sag_front),
-    sag_rear: emptyIfDisabled(enabled.geometry, geometry?.sag_rear),
-    fork_height: emptyIfDisabled(enabled.geometry, geometry?.fork_height),
-    rear_ride_height: emptyIfDisabled(enabled.geometry, geometry?.rear_ride_height),
-    geometry_notes: emptyIfDisabled(enabled.geometry, geometry?.notes),
     drivetrain_enabled: enabled.drivetrain,
-    front_sprocket: emptyIfDisabled(enabled.drivetrain, drivetrain?.front_sprocket),
-    rear_sprocket: emptyIfDisabled(enabled.drivetrain, drivetrain?.rear_sprocket),
-    chain_length: emptyIfDisabled(enabled.drivetrain, drivetrain?.chain_length),
-    drivetrain_notes: emptyIfDisabled(enabled.drivetrain, drivetrain?.notes),
     aero_enabled: enabled.aero,
-    wing_angle: emptyIfDisabled(enabled.aero, aero?.wing_angle),
-    splitter_setting: emptyIfDisabled(enabled.aero, aero?.splitter_setting),
-    rake: emptyIfDisabled(enabled.aero, aero?.rake),
-    aero_notes: emptyIfDisabled(enabled.aero, aero?.notes),
+    ...setupExportCells(session, enabled),
     notes: session.notes,
     created_at: session.created_at,
   };
@@ -382,9 +396,13 @@ function average(values: number[]): number | null {
   return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10;
 }
 
-function parsePressure(value: string | null | undefined): string | null {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
+const PRESSURE_FIELDS = {
+  front: setupField('tires.front.pressure'),
+  rear: setupField('tires.rear.pressure'),
+};
+
+function loggedPressure(session: Session, end: keyof typeof PRESSURE_FIELDS): string | null {
+  return PRESSURE_FIELDS[end].read(session)?.trim() || null;
 }
 
 /** `sessions.date` is an ISO calendar date, so a string comparison is the date comparison. */
@@ -653,8 +671,8 @@ export function deriveSessionAnalytics(inputs: SessionExportInput[]): SessionAna
     const vehicleKey = `${input.session.vehicle_id}:${label}`;
     const frontKey = `${vehicleKey} front`;
     const rearKey = `${vehicleKey} rear`;
-    const front = parsePressure(input.session.tires.front.pressure);
-    const rear = parsePressure(input.session.tires.rear.pressure);
+    const front = loggedPressure(input.session, 'front');
+    const rear = loggedPressure(input.session, 'rear');
     if (front) pressureTracks.set(frontKey, [...(pressureTracks.get(frontKey) ?? []), front]);
     if (rear) pressureTracks.set(rearKey, [...(pressureTracks.get(rearKey) ?? []), rear]);
   }

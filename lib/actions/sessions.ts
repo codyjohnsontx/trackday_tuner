@@ -33,6 +33,7 @@ import {
 } from '@/lib/session-delete';
 import { removeObjectsAfterDelete, removeOwnedPhotos } from '@/lib/storage-photo-removal';
 import { reportError } from '@/lib/monitoring/report-error';
+import { readStoredSession, readStoredSessions } from '@/lib/stored-session';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
@@ -84,7 +85,7 @@ export async function getSessions(vehicleId?: string, limit?: number): Promise<S
   }
 
   const { data } = await query;
-  return (data ?? []) as Session[];
+  return readStoredSessions(data);
 }
 
 const RECENT_TRACK_SESSION_LIMIT = 10;
@@ -135,7 +136,7 @@ export async function getSessionsAtTrack(track: { id: string; name: string }): P
         .ilike('track_name', trackNameSearchPattern(track.name))
         .range(from, from + TRACK_NAME_PAGE_SIZE - 1);
       if (error) return { data: null, error };
-      const page = (data ?? []) as Session[];
+      const page = readStoredSessions(data);
       matches.push(...page.filter((session) => sessionIsAtTrack(session, track)));
       if (page.length < TRACK_NAME_PAGE_SIZE) break;
     }
@@ -159,7 +160,7 @@ export async function getSessionsAtTrack(track: { id: string; name: string }): P
     return { ok: false, error: 'Your sessions at this track could not be loaded. Try again in a moment.' };
   }
 
-  const sessions = [...((byId.data ?? []) as Session[]), ...(byName.data ?? [])]
+  const sessions = [...readStoredSessions(byId.data), ...(byName.data ?? [])]
     .filter((session) => sessionIsAtTrack(session, track))
     .sort(compareSessionsDesc)
     .slice(0, RECENT_TRACK_SESSION_LIMIT);
@@ -184,7 +185,7 @@ export async function getLatestSessionsByVehicle(): Promise<Record<string, Sessi
     .order('created_at', { ascending: false });
 
   const latest: Record<string, Session> = {};
-  for (const row of (data ?? []) as Session[]) {
+  for (const row of readStoredSessions(data)) {
     if (!latest[row.vehicle_id]) {
       latest[row.vehicle_id] = row;
     }
@@ -232,7 +233,7 @@ export async function getSession(id: string): Promise<Session | null> {
     .single();
 
   if (error) return null;
-  return data as Session;
+  return readStoredSession(data);
 }
 
 /**
@@ -317,7 +318,7 @@ export async function getComparableSessions(currentSession: Session): Promise<Se
     .order('created_at', { ascending: false })
     .limit(COMPARABLE_SESSION_FETCH_LIMIT);
 
-  return ((data ?? []) as Session[]).sort((a, b) => {
+  return readStoredSessions(data).sort((a, b) => {
     const rank = courseMatchRank(a, currentSession) - courseMatchRank(b, currentSession);
     if (rank !== 0) return rank;
     return compareSessionsDesc(a, b);
@@ -501,7 +502,7 @@ export async function replaceSessionLaps(
     supabase,
     report: reportError,
     userId: user.id,
-    session: sessionRow as Session,
+    session: readStoredSession(sessionRow),
     laps,
     expectedLaps,
     saveFailedMessage: SESSION_LAPS_SAVE_FAILED_MESSAGE,

@@ -13,6 +13,7 @@ import {
   type RaceEngineerContext,
 } from '@/lib/rag/race-engineer-context';
 import type { CreateSessionEnvironmentInput, Session, SessionEnvironment, Vehicle } from '@/types';
+import { storedLeafText } from '@/lib/stored-session';
 import { truncateAtWordBoundary } from '@/lib/utils';
 import { riderDateOfTimestamp } from '@/lib/local-date';
 
@@ -125,6 +126,11 @@ function sanitizeFreeText(value: string): string {
  * model no setting that reads `true`, and printing it is the only branch that
  * would state a value where the row holds none.
  *
+ * That rule is `storedLeafText` (`lib/stored-session.ts`), the one the session
+ * screens read a stored setup by as well, so this is it plus the prompt's own
+ * blank and tag handling. A number's text passes through `sanitizeFreeText`
+ * unchanged, since digits carry no tag delimiter.
+ *
  * A composite is absent rather than serialized because the requirement is only
  * that a non-string must not throw, and serializing one opens a channel no
  * screen inspects: `pushRiderText` collects strings, so `classifyStoredRiderText`
@@ -134,17 +140,9 @@ function sanitizeFreeText(value: string): string {
  * serializer or a second collector for it.
  */
 function formatValue(value: unknown): string {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (trimmed === '') return '—';
-    return sanitizeFreeText(trimmed);
-  }
-
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? String(value) : '—';
-  }
-
-  return '—';
+  const trimmed = storedLeafText(value).trim();
+  if (trimmed === '') return '—';
+  return sanitizeFreeText(trimmed);
 }
 
 /**
@@ -859,7 +857,10 @@ function collectRaceEngineerContextRiderText(
  * which is how `tires.condition` and the suspension adjuster directions were
  * once missed: they look like closed choices in the form, but the whole tyre and
  * suspension blob is inserted verbatim by `createSession`, so the constraint
- * lives in the UI and not on the write path.
+ * lives in the UI and not on the write path. A session read through
+ * `readStoredSession` now carries each of them as one of its options or null,
+ * so neither can bring text in from the database any more; they stay collected
+ * because these builders take any `Session`, not only one read through it.
  *
  * Deliberately not collected:
  * - Numbers, dates and ids. A date, session number, temperature, confidence,

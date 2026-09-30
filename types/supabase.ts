@@ -30,7 +30,12 @@ export type SuspensionEnd = {
   preload: string;
   compression: string;
   rebound: string;
-  direction: SuspensionDirection;
+  /**
+   * Null when the stored row holds no direction the app recognises - a setup
+   * blob saved as `null` or `{}`, say. Every writer sets one; a reader shows
+   * null as not logged rather than assuming either (`lib/stored-session.ts`).
+   */
+  direction: SuspensionDirection | null;
 };
 export type TireEnd = {
   brand: string;

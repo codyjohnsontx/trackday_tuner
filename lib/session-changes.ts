@@ -1,11 +1,11 @@
 import { baselineSourceLabel } from '@/lib/baseline-format';
 import { buildSetupCompareRows } from '@/lib/session-compare';
+import { readStoredSetup } from '@/lib/stored-session';
 import type {
   Session,
   SessionChange,
   SessionChangeEntry,
   SessionChangeReferenceKind,
-  SessionEnabledModules,
   VehicleBaseline,
   VehicleType,
 } from '@/types';
@@ -50,14 +50,15 @@ export function computeSetupChanges(
 
 /**
  * Adapt a stored baseline snapshot into a Session shape so it can flow through the
- * same diff engine. Legacy `{}` enabled_modules snapshots pass through as null so
+ * same diff engine. Its setup columns are the same unconstrained `jsonb` a
+ * session's are, so they are read by the same rule (`readStoredSetup`). Legacy
+ * `{}` enabled_modules snapshots pass through as null so
  * `resolveSessionEnabledModules` can infer modules from the stored values.
  */
 export function baselineToComparableSession(baseline: VehicleBaseline): Session {
+  const setup = readStoredSetup(baseline);
   const enabledModules =
-    baseline.enabled_modules && Object.keys(baseline.enabled_modules).length > 0
-      ? (baseline.enabled_modules as SessionEnabledModules)
-      : null;
+    setup.enabled_modules && Object.keys(setup.enabled_modules).length > 0 ? setup.enabled_modules : null;
 
   return {
     id: baseline.source_session_id ?? baseline.id,
@@ -73,11 +74,11 @@ export function baselineToComparableSession(baseline: VehicleBaseline): Session 
     start_time: baseline.source_start_time,
     session_number: baseline.source_session_number,
     conditions: baseline.source_conditions,
-    tires: baseline.tires,
-    suspension: baseline.suspension,
-    alignment: baseline.alignment,
+    tires: setup.tires,
+    suspension: setup.suspension,
+    alignment: setup.alignment,
     enabled_modules: enabledModules,
-    extra_modules: baseline.extra_modules,
+    extra_modules: setup.extra_modules,
     notes: baseline.notes,
     photo_url: null,
     created_at: baseline.created_at,

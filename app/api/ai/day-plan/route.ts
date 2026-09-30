@@ -5,6 +5,7 @@ import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import { resolveQuestionRetention } from '@/lib/ai-question-retention';
 import { assertNotDemoRoute } from '@/lib/demo/mode';
+import { readStoredSessions } from '@/lib/stored-session';
 import { createClient } from '@/lib/supabase/server';
 import { reportError } from '@/lib/monitoring/report-error';
 import { generateDayPlan, UpstreamTimeoutError } from '@/lib/rag/advice';
@@ -605,7 +606,7 @@ export async function POST(request: Request) {
     });
   }
 
-  const recentSessions = (sessionsResult.data ?? []) as Session[];
+  const recentSessions = readStoredSessions(sessionsResult.data);
   const recentSessionIds = recentSessions.map((session) => session.id);
   const [environmentsResult, memory] = await Promise.all([
     recentSessionIds.length > 0

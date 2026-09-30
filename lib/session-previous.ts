@@ -1,4 +1,5 @@
 import { compareSessionsDesc, isSessionBefore } from '@/lib/session-compare';
+import { readStoredSession, readStoredSessions } from '@/lib/stored-session';
 import type { Database } from '@/types/supabase';
 import type { Session } from '@/types';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -66,7 +67,7 @@ export async function fetchPreviousSession(
     return null;
   }
 
-  const rows = (data ?? []) as Session[];
+  const rows = readStoredSessions(data);
   const previous = rows
     .filter((candidate) => isSessionBefore(candidate, currentSession))
     .sort(compareSessionsDesc)[0];
@@ -92,5 +93,6 @@ export async function fetchPreviousSession(
     return null;
   }
 
-  return ((earlierData ?? [])[0] ?? null) as Session | null;
+  const earlier = (earlierData ?? [])[0];
+  return earlier ? readStoredSession(earlier) : null;
 }
