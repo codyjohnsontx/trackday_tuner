@@ -37,15 +37,16 @@
    request that ships the matching caller. Either order leaves a window and both
    were walked in a browser: the mismatched call gets `PGRST202` from PostgREST,
    nothing is saved and nothing stored is lost. The rider no longer reads that
-   `PGRST202`: `lib/sessions/create.ts` passes through only the function's own
-   domain rejections and answers everything else with a sentence saying the save
-   did not happen, sending the real error to `reportError`. So the window is
-   quiet on screen, and what names it is the deployment's own `/api/health` -
-   its `schema_contract` check resolves `replace_session_laps` by parameter name
-   and fails on exactly this drift (see `docs/monitoring.md`).
+   `PGRST202`: `replaceSessionLaps` (`lib/actions/sessions.ts`) and
+   `lib/sessions/create.ts` pass through only their functions' own domain
+   rejections and answer everything else with a sentence saying the save did not
+   happen, sending the real error to `reportError`. So the window is quiet on
+   screen, and what names it is the deployment's own `/api/health` - its
+   `schema_contract` check resolves `replace_session_laps` by parameter name and
+   fails on exactly this drift (see `docs/monitoring.md`).
    Saving laps *and* logging a session are both down for that window -
-   `createSession` calls the function even for a session with no laps - while
-   reading is unaffected. Each migration's own header carries the detail.
+   `create_session_with_laps` calls the function even for a session with no
+   laps - while reading is unaffected. Each migration's own header carries the detail.
    `20260924001700` (retained AI question text and its 90-day purge) also goes
    in by hand on a project with no migration history, and also before the
    release that ships it - see "Apply the AI question-text table by hand" below.
