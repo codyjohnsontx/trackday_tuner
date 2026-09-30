@@ -1,6 +1,5 @@
+import { hasLoggedSetupValues } from '@/lib/stored-session';
 import type {
-  Alignment,
-  ExtraModules,
   Session,
   SessionAdvancedVisibility,
   SessionEnabledModules,
@@ -121,39 +120,6 @@ export function sanitizeAdvancedVisibility(
   return defaults;
 }
 
-export function hasAlignmentValues(alignment: Alignment | null | undefined): boolean {
-  if (!alignment) return false;
-  return Object.values(alignment).some((value) => Boolean(value?.trim()));
-}
-
-function hasExtraModuleValues(extraModules: ExtraModules | null | undefined, key: keyof ExtraModules): boolean {
-  const moduleValue = extraModules?.[key];
-  if (!moduleValue) return false;
-  return Object.values(moduleValue).some((value) => Boolean(value?.trim()));
-}
-
-function hasTireValues(session: Session): boolean {
-  return [
-    session.tires.front.brand,
-    session.tires.front.compound,
-    session.tires.front.pressure,
-    session.tires.rear.brand,
-    session.tires.rear.compound,
-    session.tires.rear.pressure,
-  ].some((value) => Boolean(value?.trim()));
-}
-
-function hasSuspensionValues(session: Session): boolean {
-  return [
-    session.suspension.front.preload,
-    session.suspension.front.compression,
-    session.suspension.front.rebound,
-    session.suspension.rear.preload,
-    session.suspension.rear.compression,
-    session.suspension.rear.rebound,
-  ].some((value) => Boolean(value?.trim()));
-}
-
 export function resolveSessionEnabledModules(
   session: Session,
   vehicleType: VehicleType,
@@ -164,13 +130,12 @@ export function resolveSessionEnabledModules(
   }
 
   const defaults = getDefaultEnabledModules(vehicleType);
-  defaults.tires = hasTireValues(session) || defaults.tires;
-  defaults.suspension = hasSuspensionValues(session) || defaults.suspension;
-  defaults.alignment = vehicleType === 'car' && hasAlignmentValues(session.alignment);
-  defaults.geometry = vehicleType === 'motorcycle' && hasExtraModuleValues(session.extra_modules, 'geometry');
-  defaults.drivetrain =
-    vehicleType === 'motorcycle' && hasExtraModuleValues(session.extra_modules, 'drivetrain');
-  defaults.aero = vehicleType === 'car' && hasExtraModuleValues(session.extra_modules, 'aero');
+  defaults.tires = hasLoggedSetupValues(session, 'tires') || defaults.tires;
+  defaults.suspension = hasLoggedSetupValues(session, 'suspension') || defaults.suspension;
+  defaults.alignment = vehicleType === 'car' && hasLoggedSetupValues(session, 'alignment');
+  defaults.geometry = vehicleType === 'motorcycle' && hasLoggedSetupValues(session, 'geometry');
+  defaults.drivetrain = vehicleType === 'motorcycle' && hasLoggedSetupValues(session, 'drivetrain');
+  defaults.aero = vehicleType === 'car' && hasLoggedSetupValues(session, 'aero');
   defaults.notes = Boolean(session.notes?.trim());
 
   return defaults;

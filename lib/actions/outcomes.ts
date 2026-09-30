@@ -3,6 +3,7 @@
 import { getRealUser } from '@/lib/auth';
 import { isDemoMode } from '@/lib/demo/mode';
 import { filterRecommendationsBeforeSession } from '@/lib/recommendation-ordering';
+import { readStoredSession, readStoredSessions } from '@/lib/stored-session';
 import { createClient } from '@/lib/supabase/server';
 import type { ActionResult, AiRecommendation, Session, SessionFeedback } from '@/types';
 
@@ -87,10 +88,10 @@ export async function getOutstandingRecommendations(params: {
     .in('id', sourceSessionIds);
   if (sourceError) return [];
 
-  const targetSession = targetResult.data as Session;
+  const targetSession = readStoredSession(targetResult.data);
   return filterRecommendationsBeforeSession(
     recommendations,
-    (sourceRows ?? []) as Session[],
+    readStoredSessions(sourceRows),
     targetSession,
   );
 }

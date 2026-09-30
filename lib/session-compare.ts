@@ -1,6 +1,7 @@
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import { trackNameKey } from '@/lib/session-track';
-import type { Session, SessionEnvironment, TelemetrySummary, VehicleType } from '@/types';
+import { SETUP_MODULE_KEYS, SETUP_MODULE_TITLES, setupFieldSentenceLabel, setupFieldsOf } from '@/lib/stored-session';
+import type { Session, SessionEnabledModules, SessionEnvironment, TelemetrySummary, VehicleType } from '@/types';
 
 export const COMPARABLE_SESSION_LIMIT = 20;
 export const COMPARABLE_SESSION_FETCH_LIMIT = COMPARABLE_SESSION_LIMIT * 3;
@@ -324,59 +325,67 @@ export function buildSetupCompareRows(
   addRow(rows, 'Environment', 'Weather', value(currentEnvironment?.weather_condition), value(baselineEnvironment?.weather_condition));
   addRow(rows, 'Environment', 'Surface', value(currentEnvironment?.surface_condition), value(baselineEnvironment?.surface_condition));
 
-  if (currentEnabled.tires || baselineEnabled.tires) {
-    addRow(rows, 'Tires', 'Condition', moduleValue(currentEnabled.tires, current.tires.condition), moduleValue(baselineEnabled.tires, baseline.tires.condition));
-    addRow(rows, 'Tires', 'Front brand', moduleValue(currentEnabled.tires, current.tires.front.brand), moduleValue(baselineEnabled.tires, baseline.tires.front.brand));
-    addRow(rows, 'Tires', 'Front compound', moduleValue(currentEnabled.tires, current.tires.front.compound), moduleValue(baselineEnabled.tires, baseline.tires.front.compound));
-    addRow(rows, 'Tires', 'Front pressure', moduleValue(currentEnabled.tires, current.tires.front.pressure), moduleValue(baselineEnabled.tires, baseline.tires.front.pressure));
-    addRow(rows, 'Tires', 'Rear brand', moduleValue(currentEnabled.tires, current.tires.rear.brand), moduleValue(baselineEnabled.tires, baseline.tires.rear.brand));
-    addRow(rows, 'Tires', 'Rear compound', moduleValue(currentEnabled.tires, current.tires.rear.compound), moduleValue(baselineEnabled.tires, baseline.tires.rear.compound));
-    addRow(rows, 'Tires', 'Rear pressure', moduleValue(currentEnabled.tires, current.tires.rear.pressure), moduleValue(baselineEnabled.tires, baseline.tires.rear.pressure));
-  }
-
-  if (currentEnabled.suspension || baselineEnabled.suspension) {
-    addRow(rows, 'Suspension', 'Front direction', moduleValue(currentEnabled.suspension, current.suspension.front.direction), moduleValue(baselineEnabled.suspension, baseline.suspension.front.direction));
-    addRow(rows, 'Suspension', 'Front preload', moduleValue(currentEnabled.suspension, current.suspension.front.preload), moduleValue(baselineEnabled.suspension, baseline.suspension.front.preload));
-    addRow(rows, 'Suspension', 'Front compression', moduleValue(currentEnabled.suspension, current.suspension.front.compression), moduleValue(baselineEnabled.suspension, baseline.suspension.front.compression));
-    addRow(rows, 'Suspension', 'Front rebound', moduleValue(currentEnabled.suspension, current.suspension.front.rebound), moduleValue(baselineEnabled.suspension, baseline.suspension.front.rebound));
-    addRow(rows, 'Suspension', 'Rear direction', moduleValue(currentEnabled.suspension, current.suspension.rear.direction), moduleValue(baselineEnabled.suspension, baseline.suspension.rear.direction));
-    addRow(rows, 'Suspension', 'Rear preload', moduleValue(currentEnabled.suspension, current.suspension.rear.preload), moduleValue(baselineEnabled.suspension, baseline.suspension.rear.preload));
-    addRow(rows, 'Suspension', 'Rear compression', moduleValue(currentEnabled.suspension, current.suspension.rear.compression), moduleValue(baselineEnabled.suspension, baseline.suspension.rear.compression));
-    addRow(rows, 'Suspension', 'Rear rebound', moduleValue(currentEnabled.suspension, current.suspension.rear.rebound), moduleValue(baselineEnabled.suspension, baseline.suspension.rear.rebound));
-  }
-
-  if (currentEnabled.alignment || baselineEnabled.alignment) {
-    addRow(rows, 'Alignment', 'Front camber', moduleValue(currentEnabled.alignment, current.alignment?.front_camber), moduleValue(baselineEnabled.alignment, baseline.alignment?.front_camber));
-    addRow(rows, 'Alignment', 'Rear camber', moduleValue(currentEnabled.alignment, current.alignment?.rear_camber), moduleValue(baselineEnabled.alignment, baseline.alignment?.rear_camber));
-    addRow(rows, 'Alignment', 'Front toe', moduleValue(currentEnabled.alignment, current.alignment?.front_toe), moduleValue(baselineEnabled.alignment, baseline.alignment?.front_toe));
-    addRow(rows, 'Alignment', 'Rear toe', moduleValue(currentEnabled.alignment, current.alignment?.rear_toe), moduleValue(baselineEnabled.alignment, baseline.alignment?.rear_toe));
-    addRow(rows, 'Alignment', 'Caster', moduleValue(currentEnabled.alignment, current.alignment?.caster), moduleValue(baselineEnabled.alignment, baseline.alignment?.caster));
-  }
-
-  if (currentEnabled.geometry || baselineEnabled.geometry) {
-    addRow(rows, 'Geometry', 'Front sag', moduleValue(currentEnabled.geometry, current.extra_modules?.geometry?.sag_front), moduleValue(baselineEnabled.geometry, baseline.extra_modules?.geometry?.sag_front));
-    addRow(rows, 'Geometry', 'Rear sag', moduleValue(currentEnabled.geometry, current.extra_modules?.geometry?.sag_rear), moduleValue(baselineEnabled.geometry, baseline.extra_modules?.geometry?.sag_rear));
-    addRow(rows, 'Geometry', 'Fork height', moduleValue(currentEnabled.geometry, current.extra_modules?.geometry?.fork_height), moduleValue(baselineEnabled.geometry, baseline.extra_modules?.geometry?.fork_height));
-    addRow(rows, 'Geometry', 'Rear ride height', moduleValue(currentEnabled.geometry, current.extra_modules?.geometry?.rear_ride_height), moduleValue(baselineEnabled.geometry, baseline.extra_modules?.geometry?.rear_ride_height));
-    addRow(rows, 'Geometry', 'Notes', moduleValue(currentEnabled.geometry, current.extra_modules?.geometry?.notes), moduleValue(baselineEnabled.geometry, baseline.extra_modules?.geometry?.notes));
-  }
-
-  if (currentEnabled.drivetrain || baselineEnabled.drivetrain) {
-    addRow(rows, 'Drivetrain', 'Front sprocket', moduleValue(currentEnabled.drivetrain, current.extra_modules?.drivetrain?.front_sprocket), moduleValue(baselineEnabled.drivetrain, baseline.extra_modules?.drivetrain?.front_sprocket));
-    addRow(rows, 'Drivetrain', 'Rear sprocket', moduleValue(currentEnabled.drivetrain, current.extra_modules?.drivetrain?.rear_sprocket), moduleValue(baselineEnabled.drivetrain, baseline.extra_modules?.drivetrain?.rear_sprocket));
-    addRow(rows, 'Drivetrain', 'Chain length', moduleValue(currentEnabled.drivetrain, current.extra_modules?.drivetrain?.chain_length), moduleValue(baselineEnabled.drivetrain, baseline.extra_modules?.drivetrain?.chain_length));
-    addRow(rows, 'Drivetrain', 'Notes', moduleValue(currentEnabled.drivetrain, current.extra_modules?.drivetrain?.notes), moduleValue(baselineEnabled.drivetrain, baseline.extra_modules?.drivetrain?.notes));
-  }
-
-  if (currentEnabled.aero || baselineEnabled.aero) {
-    addRow(rows, 'Aero', 'Wing angle', moduleValue(currentEnabled.aero, current.extra_modules?.aero?.wing_angle), moduleValue(baselineEnabled.aero, baseline.extra_modules?.aero?.wing_angle));
-    addRow(rows, 'Aero', 'Splitter setting', moduleValue(currentEnabled.aero, current.extra_modules?.aero?.splitter_setting), moduleValue(baselineEnabled.aero, baseline.extra_modules?.aero?.splitter_setting));
-    addRow(rows, 'Aero', 'Rake', moduleValue(currentEnabled.aero, current.extra_modules?.aero?.rake), moduleValue(baselineEnabled.aero, baseline.extra_modules?.aero?.rake));
-    addRow(rows, 'Aero', 'Notes', moduleValue(currentEnabled.aero, current.extra_modules?.aero?.notes), moduleValue(baselineEnabled.aero, baseline.extra_modules?.aero?.notes));
+  for (const setupModule of SETUP_MODULE_KEYS) {
+    if (!currentEnabled[setupModule] && !baselineEnabled[setupModule]) continue;
+    for (const field of setupFieldsOf(setupModule)) {
+      addRow(
+        rows,
+        SETUP_MODULE_TITLES[setupModule],
+        setupFieldSentenceLabel(field),
+        moduleValue(currentEnabled[setupModule], field.read(current)),
+        moduleValue(baselineEnabled[setupModule], field.read(baseline)),
+      );
+    }
   }
 
   if (currentEnabled.notes || baselineEnabled.notes) {
     addRow(rows, 'Notes', 'Session notes', moduleValue(currentEnabled.notes, current.notes), moduleValue(baselineEnabled.notes, baseline.notes));
+  }
+
+  return rows;
+}
+
+/** A row of the session detail page's "Compare with Previous Session". */
+export interface PreviousSessionCompareRow {
+  label: string;
+  current: string;
+  previous: string;
+}
+
+/**
+ * The rows the session detail page compares against the previous session. It
+ * is a shorter, differently labelled cousin of `buildSetupCompareRows` - the
+ * fields are `SETUP_FIELDS`, printed as `Tires: Front Pressure` - and a module
+ * neither session has on compares nothing.
+ */
+export function buildPreviousSessionCompareRows(
+  current: Session,
+  previous: Session,
+  currentEnabled: SessionEnabledModules,
+  previousEnabled: SessionEnabledModules,
+): PreviousSessionCompareRow[] {
+  const rows: PreviousSessionCompareRow[] = [
+    { label: 'Conditions', current: current.conditions, previous: previous.conditions },
+    { label: 'Start Time', current: value(current.start_time), previous: value(previous.start_time) },
+  ];
+
+  for (const setupModule of SETUP_MODULE_KEYS) {
+    if (!currentEnabled[setupModule] && !previousEnabled[setupModule]) continue;
+    for (const field of setupFieldsOf(setupModule)) {
+      rows.push({
+        label: `${SETUP_MODULE_TITLES[setupModule]}: ${field.label}`,
+        current: moduleValue(currentEnabled[setupModule], field.read(current)),
+        previous: moduleValue(previousEnabled[setupModule], field.read(previous)),
+      });
+    }
+  }
+
+  if (currentEnabled.notes || previousEnabled.notes) {
+    rows.push({
+      label: 'Notes',
+      current: moduleValue(currentEnabled.notes, current.notes),
+      previous: moduleValue(previousEnabled.notes, previous.notes),
+    });
   }
 
   return rows;

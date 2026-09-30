@@ -713,8 +713,8 @@ role. Four things are load-bearing:
   must be the rider's on every path: the `sessions` insert and update policies
   check it, and the function raises `TT404` first so the phone can park it.
 - **The body is validated leaf by leaf** (`lib/sessions/parse-create-request.ts`)
-  because the setup blobs are unconstrained `jsonb` and a numeric leaf crashes the
-  session screens (tt-session-screens-nonstring-fields).
+  because the setup blobs are unconstrained `jsonb`, so the phone stores the shape
+  the form does; the screens no longer depend on it (`lib/stored-session.ts`).
 
 CORS allows only `MOBILE_APP_ORIGINS`; the native app sends no `Origin`.
 
@@ -1013,28 +1013,25 @@ lines, and in `collectSessionRiderText` and `collectTuningAdviceRiderText`,
 which screen the same leaves - reads them with optional chaining so a malformed
 blob renders absent instead.
 
-**ONLY THE AI PATH IS CLOSED. THE RENDERED SESSION SCREENS AND THE EXPORT STILL
-CRASH ON BOTH HALVES OF THIS** - an odd-shaped container AND a non-string leaf -
-and the leaf half needs no malformed blob at all: a row with
-`tires.front.pressure` saved as the JSON number 30, the exact row this work was
-written for, throws `TypeError: pressure.trim is not a function` out of
-`buildSessionHistorySummary` (`lib/session-history.ts`) on the sessions list,
-where there is no error boundary to shape it, so the rider loses the whole list
-rather than one field. `.trim()` reaches a leaf the column lets be a number in
-`lib/session-history.ts` (both tyre pressures and the six suspension values),
-`lib/session-modules.ts` (`hasAlignmentValues`, `hasExtraModuleValues`,
-`hasTireValues`, `hasSuspensionValues` - and `?.trim()` does not help, since
-optional chaining guards null and not the wrong type) and
-`lib/session-export.ts` (`parsePressure`). That is separate work, tracked as
-**tt-session-screens-nonstring-fields**, and how a screen should print a numeric
-leaf is a product call rather than a mechanical one.
-
-So the leaf rule has TWO definitions today - `formatValue` here and `leafText`
-in `lib/rag/race-engineer-context.ts` - and one decision, whether to print a
-boolean, had to be made in both. **That is an accepted outcome of this task, not
-an oversight**; collapsing them into one exported helper the screens read too
-belongs to that backlog item, because it is what would let the screens share the
-rule rather than gain a third copy of it.
+**THE SCREENS AND THE EXPORT NOW READ BY THE SAME RULE, AND NOTHING READS A
+STORED SETUP RAW.** They used to crash on both halves of this - a pressure stored
+as the number 30 took down the whole sessions list, a `null` blob the detail
+page, compare, copy and the export. Every `sessions` row the app reads now goes
+through `readStoredSession` (`lib/stored-session.ts`) rather than an `as Session`
+cast, and a baseline's setup through `readStoredSetup`, so the `Session` a screen
+receives honours its type. The owner's rules (2026-09-30): a value stored as a
+number shows as typed, anything else that is not text is not logged (`''`), a
+choice - tyre condition, adjuster direction - is one of its options or `null`,
+and a missing or odd-shaped blob is a normal session with every setup field not
+logged; existing rows are left as they are. `storedLeafText` there is the ONE
+leaf rule - `formatValue` and `leafText` are it plus their own trimming - and
+`SETUP_FIELDS` the one field list the setup view, both compares and the
+"anything logged?" checks are built from. **A new read of `sessions` goes through
+`readStoredSession`.** Two things still keep their own copy on purpose: the
+export's column names, which are a file format, and the save side
+(`lib/sessions/create.ts`, `lib/sessions/parse-create-request.ts`), whose move
+onto `SETUP_FIELDS` is later work. `tests/unit/stored-session-screens.test.ts`
+walks both crashes through the real server actions.
 
 **`formatValue` IS NOT THE ONLY READER OF THOSE LEAVES, AND IT IS NOT THE FIRST
 ONE A REQUEST REACHES.** `lib/rag/race-engineer-context.ts` reads

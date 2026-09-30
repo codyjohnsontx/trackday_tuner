@@ -6,6 +6,7 @@ import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import { getDemoVehicleBaseline, getDemoVehicleBaselines } from '@/lib/demo/data';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
+import { readStoredSession } from '@/lib/stored-session';
 import { createClient } from '@/lib/supabase/server';
 import type { TableInsert } from '@/types/supabase';
 import type { ActionResult, Session, VehicleBaseline } from '@/types';
@@ -72,7 +73,7 @@ export async function setVehicleBaselineFromSession(sessionId: string): Promise<
 
   if (sessionError || !sessionData) return { ok: false, error: 'Session not found.' };
 
-  const session = sessionData as Session;
+  const session = readStoredSession(sessionData);
   const { data: vehicleData, error: vehicleError } = await supabase
     .from('vehicles')
     .select('id')

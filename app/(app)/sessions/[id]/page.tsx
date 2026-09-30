@@ -13,7 +13,7 @@ import { isDemoMode } from '@/lib/demo/mode';
 import { Button } from '@/components/ui/button';
 import { TemperatureDisplay } from '@/components/ui/temperature-display';
 import { TimeDisplay } from '@/components/ui/time-display';
-import { SessionCompare, type CompareRow } from '@/components/sessions/session-compare';
+import { SessionCompare } from '@/components/sessions/session-compare';
 import { SetupSections } from '@/components/sessions/setup-sections';
 import { SessionBaselinePanel } from '@/components/sessions/session-baseline-panel';
 import { SessionChangesPanel } from '@/components/sessions/session-changes-panel';
@@ -30,9 +30,8 @@ import { describeSessionTrackGap, hasTrackName } from '@/lib/session-track';
 import { resolveChangeSets } from '@/lib/session-changes';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import { buildSetupView } from '@/lib/setup-view';
-import { isSessionBefore } from '@/lib/session-compare';
+import { buildPreviousSessionCompareRows, isSessionBefore } from '@/lib/session-compare';
 import { resolveSessionDeletion } from '@/lib/session-delete';
-import type { Session } from '@/types';
 import { pageTitleClass } from '@/components/ui/page-header';
 
 interface SessionDetailPageProps {
@@ -80,231 +79,6 @@ function formatDateLabel(dateString: string): string {
     day: 'numeric',
     year: 'numeric',
   });
-}
-
-function asValue(value: string | null | undefined): string {
-  return value ?? '';
-}
-
-function visibleValue(enabled: boolean, value: string | null | undefined): string {
-  return enabled ? asValue(value) : '';
-}
-
-function buildCompareRows(
-  current: Session,
-  previous: Session,
-  currentEnabledModules: ReturnType<typeof resolveSessionEnabledModules>,
-  previousEnabledModules: ReturnType<typeof resolveSessionEnabledModules>,
-): CompareRow[] {
-  const rows: CompareRow[] = [
-    { label: 'Conditions', current: current.conditions, previous: previous.conditions },
-    { label: 'Start Time', current: asValue(current.start_time), previous: asValue(previous.start_time) },
-  ];
-
-  if (currentEnabledModules.tires || previousEnabledModules.tires) {
-    rows.push(
-      {
-        label: 'Tires: Condition',
-        current: currentEnabledModules.tires ? current.tires.condition ?? '' : '',
-        previous: previousEnabledModules.tires ? previous.tires.condition ?? '' : '',
-      },
-      {
-        label: 'Tires: Front Brand',
-        current: visibleValue(currentEnabledModules.tires, current.tires.front.brand),
-        previous: visibleValue(previousEnabledModules.tires, previous.tires.front.brand),
-      },
-      {
-        label: 'Tires: Front Compound',
-        current: visibleValue(currentEnabledModules.tires, current.tires.front.compound),
-        previous: visibleValue(previousEnabledModules.tires, previous.tires.front.compound),
-      },
-      {
-        label: 'Tires: Front Pressure',
-        current: visibleValue(currentEnabledModules.tires, current.tires.front.pressure),
-        previous: visibleValue(previousEnabledModules.tires, previous.tires.front.pressure),
-      },
-      {
-        label: 'Tires: Rear Brand',
-        current: visibleValue(currentEnabledModules.tires, current.tires.rear.brand),
-        previous: visibleValue(previousEnabledModules.tires, previous.tires.rear.brand),
-      },
-      {
-        label: 'Tires: Rear Compound',
-        current: visibleValue(currentEnabledModules.tires, current.tires.rear.compound),
-        previous: visibleValue(previousEnabledModules.tires, previous.tires.rear.compound),
-      },
-      {
-        label: 'Tires: Rear Pressure',
-        current: visibleValue(currentEnabledModules.tires, current.tires.rear.pressure),
-        previous: visibleValue(previousEnabledModules.tires, previous.tires.rear.pressure),
-      },
-    );
-  }
-
-  if (currentEnabledModules.suspension || previousEnabledModules.suspension) {
-    rows.push(
-      {
-        label: 'Suspension: Front Direction',
-        current: visibleValue(currentEnabledModules.suspension, current.suspension.front.direction),
-        previous: visibleValue(previousEnabledModules.suspension, previous.suspension.front.direction),
-      },
-      {
-        label: 'Suspension: Front Preload',
-        current: visibleValue(currentEnabledModules.suspension, current.suspension.front.preload),
-        previous: visibleValue(previousEnabledModules.suspension, previous.suspension.front.preload),
-      },
-      {
-        label: 'Suspension: Front Compression',
-        current: visibleValue(currentEnabledModules.suspension, current.suspension.front.compression),
-        previous: visibleValue(previousEnabledModules.suspension, previous.suspension.front.compression),
-      },
-      {
-        label: 'Suspension: Front Rebound',
-        current: visibleValue(currentEnabledModules.suspension, current.suspension.front.rebound),
-        previous: visibleValue(previousEnabledModules.suspension, previous.suspension.front.rebound),
-      },
-      {
-        label: 'Suspension: Rear Direction',
-        current: visibleValue(currentEnabledModules.suspension, current.suspension.rear.direction),
-        previous: visibleValue(previousEnabledModules.suspension, previous.suspension.rear.direction),
-      },
-      {
-        label: 'Suspension: Rear Preload',
-        current: visibleValue(currentEnabledModules.suspension, current.suspension.rear.preload),
-        previous: visibleValue(previousEnabledModules.suspension, previous.suspension.rear.preload),
-      },
-      {
-        label: 'Suspension: Rear Compression',
-        current: visibleValue(currentEnabledModules.suspension, current.suspension.rear.compression),
-        previous: visibleValue(previousEnabledModules.suspension, previous.suspension.rear.compression),
-      },
-      {
-        label: 'Suspension: Rear Rebound',
-        current: visibleValue(currentEnabledModules.suspension, current.suspension.rear.rebound),
-        previous: visibleValue(previousEnabledModules.suspension, previous.suspension.rear.rebound),
-      },
-    );
-  }
-
-  if (currentEnabledModules.alignment || previousEnabledModules.alignment) {
-    rows.push(
-      {
-        label: 'Alignment: Front Camber',
-        current: visibleValue(currentEnabledModules.alignment, current.alignment?.front_camber),
-        previous: visibleValue(previousEnabledModules.alignment, previous.alignment?.front_camber),
-      },
-      {
-        label: 'Alignment: Rear Camber',
-        current: visibleValue(currentEnabledModules.alignment, current.alignment?.rear_camber),
-        previous: visibleValue(previousEnabledModules.alignment, previous.alignment?.rear_camber),
-      },
-      {
-        label: 'Alignment: Front Toe',
-        current: visibleValue(currentEnabledModules.alignment, current.alignment?.front_toe),
-        previous: visibleValue(previousEnabledModules.alignment, previous.alignment?.front_toe),
-      },
-      {
-        label: 'Alignment: Rear Toe',
-        current: visibleValue(currentEnabledModules.alignment, current.alignment?.rear_toe),
-        previous: visibleValue(previousEnabledModules.alignment, previous.alignment?.rear_toe),
-      },
-      {
-        label: 'Alignment: Caster',
-        current: visibleValue(currentEnabledModules.alignment, current.alignment?.caster),
-        previous: visibleValue(previousEnabledModules.alignment, previous.alignment?.caster),
-      },
-    );
-  }
-
-  if (currentEnabledModules.geometry || previousEnabledModules.geometry) {
-    rows.push(
-      {
-        label: 'Geometry: Front Sag',
-        current: visibleValue(currentEnabledModules.geometry, current.extra_modules?.geometry?.sag_front),
-        previous: visibleValue(previousEnabledModules.geometry, previous.extra_modules?.geometry?.sag_front),
-      },
-      {
-        label: 'Geometry: Rear Sag',
-        current: visibleValue(currentEnabledModules.geometry, current.extra_modules?.geometry?.sag_rear),
-        previous: visibleValue(previousEnabledModules.geometry, previous.extra_modules?.geometry?.sag_rear),
-      },
-      {
-        label: 'Geometry: Fork Height',
-        current: visibleValue(currentEnabledModules.geometry, current.extra_modules?.geometry?.fork_height),
-        previous: visibleValue(previousEnabledModules.geometry, previous.extra_modules?.geometry?.fork_height),
-      },
-      {
-        label: 'Geometry: Rear Ride Height',
-        current: visibleValue(currentEnabledModules.geometry, current.extra_modules?.geometry?.rear_ride_height),
-        previous: visibleValue(previousEnabledModules.geometry, previous.extra_modules?.geometry?.rear_ride_height),
-      },
-      {
-        label: 'Geometry: Notes',
-        current: visibleValue(currentEnabledModules.geometry, current.extra_modules?.geometry?.notes),
-        previous: visibleValue(previousEnabledModules.geometry, previous.extra_modules?.geometry?.notes),
-      },
-    );
-  }
-
-  if (currentEnabledModules.drivetrain || previousEnabledModules.drivetrain) {
-    rows.push(
-      {
-        label: 'Drivetrain: Front Sprocket',
-        current: visibleValue(currentEnabledModules.drivetrain, current.extra_modules?.drivetrain?.front_sprocket),
-        previous: visibleValue(previousEnabledModules.drivetrain, previous.extra_modules?.drivetrain?.front_sprocket),
-      },
-      {
-        label: 'Drivetrain: Rear Sprocket',
-        current: visibleValue(currentEnabledModules.drivetrain, current.extra_modules?.drivetrain?.rear_sprocket),
-        previous: visibleValue(previousEnabledModules.drivetrain, previous.extra_modules?.drivetrain?.rear_sprocket),
-      },
-      {
-        label: 'Drivetrain: Chain Length',
-        current: visibleValue(currentEnabledModules.drivetrain, current.extra_modules?.drivetrain?.chain_length),
-        previous: visibleValue(previousEnabledModules.drivetrain, previous.extra_modules?.drivetrain?.chain_length),
-      },
-      {
-        label: 'Drivetrain: Notes',
-        current: visibleValue(currentEnabledModules.drivetrain, current.extra_modules?.drivetrain?.notes),
-        previous: visibleValue(previousEnabledModules.drivetrain, previous.extra_modules?.drivetrain?.notes),
-      },
-    );
-  }
-
-  if (currentEnabledModules.aero || previousEnabledModules.aero) {
-    rows.push(
-      {
-        label: 'Aero: Wing Angle',
-        current: visibleValue(currentEnabledModules.aero, current.extra_modules?.aero?.wing_angle),
-        previous: visibleValue(previousEnabledModules.aero, previous.extra_modules?.aero?.wing_angle),
-      },
-      {
-        label: 'Aero: Splitter Setting',
-        current: visibleValue(currentEnabledModules.aero, current.extra_modules?.aero?.splitter_setting),
-        previous: visibleValue(previousEnabledModules.aero, previous.extra_modules?.aero?.splitter_setting),
-      },
-      {
-        label: 'Aero: Rake',
-        current: visibleValue(currentEnabledModules.aero, current.extra_modules?.aero?.rake),
-        previous: visibleValue(previousEnabledModules.aero, previous.extra_modules?.aero?.rake),
-      },
-      {
-        label: 'Aero: Notes',
-        current: visibleValue(currentEnabledModules.aero, current.extra_modules?.aero?.notes),
-        previous: visibleValue(previousEnabledModules.aero, previous.extra_modules?.aero?.notes),
-      },
-    );
-  }
-
-  if (currentEnabledModules.notes || previousEnabledModules.notes) {
-    rows.push({
-      label: 'Notes',
-      current: visibleValue(currentEnabledModules.notes, current.notes),
-      previous: visibleValue(previousEnabledModules.notes, previous.notes),
-    });
-  }
-
-  return rows;
 }
 
 export default async function SessionDetailPage({ params }: SessionDetailPageProps) {
@@ -377,7 +151,7 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
     : null;
   const compareRows =
     previousSession && previousEnabledModules
-      ? buildCompareRows(session, previousSession, enabledModules, previousEnabledModules)
+      ? buildPreviousSessionCompareRows(session, previousSession, enabledModules, previousEnabledModules)
       : [];
 
   const formattedDate = formatDateLabel(session.date);

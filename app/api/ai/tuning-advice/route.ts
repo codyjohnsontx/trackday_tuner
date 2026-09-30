@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getRealUser } from '@/lib/auth';
 import { assertNotDemoRoute } from '@/lib/demo/mode';
+import { readStoredSession } from '@/lib/stored-session';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { reportError } from '@/lib/monitoring/report-error';
 import { getUserProfile } from '@/lib/actions/vehicles';
@@ -329,7 +330,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const session = (sessionResult.data ?? null) as Session | null;
+  const session = sessionResult.data ? readStoredSession(sessionResult.data) : null;
   const vehicle = (vehicleResult.data ?? null) as Vehicle | null;
 
   if (!session || !vehicle) {

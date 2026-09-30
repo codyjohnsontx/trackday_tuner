@@ -75,3 +75,21 @@ is recorded, and a person reviews the common ones for promotion to aliases.
 case, surrounding and repeated whitespace, and accent composition (NFC)
 (`trackNameKey` in `lib/session-track.ts`). Nothing else is fuzzy; anything more
 goes through the alias list.
+
+## A logged setup
+
+**Setup** - What a rider logs about the machine for one session: tires,
+suspension, alignment, and the geometry, drivetrain and aero modules. Each thing
+logged is a **setup field**; `SETUP_FIELDS` in `lib/stored-session.ts` lists them
+all, in the order every screen shows them.
+
+**Not logged** - A setup field with no answer, shown blank and never filled in
+with a default. A stored value that cannot be the rider's answer - a boolean, a
+list, a tire condition that is not one of the options - is not logged, and so is
+every setup field of a session whose setup is missing; the rest of that session
+reads as usual. A number is an answer and shows as typed (a pressure stored as 30
+reads 30).
+
+**Stored session** - A session as read back from the database. Every read goes
+through `readStoredSession`, which applies the rules above to whatever the row
+holds, so no screen reads raw setup data and none can crash on it.

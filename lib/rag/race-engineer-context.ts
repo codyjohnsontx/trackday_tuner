@@ -1,5 +1,6 @@
 import type { createClient } from '@/lib/supabase/server';
 import { sessionsMatchTrack } from '@/lib/session-compare';
+import { readStoredSessions, storedLeafText } from '@/lib/stored-session';
 import type {
   AiRecommendation,
   Json,
@@ -53,17 +54,16 @@ export interface RaceEngineerContextInput {
  * inside both AI routes' error boundaries - the same crash, one module earlier
  * than `formatValue`, and reached before it on every request.
  *
- * The rule is `formatValue`'s in `lib/rag/prompt.ts`: a finite number is the
- * text it prints as, and everything else - a non-finite number, a composite, a
- * boolean - carries no setting. So a pressure stored as 30 scores the way the
+ * The rule is `storedLeafText` (`lib/stored-session.ts`), which `formatValue`
+ * in `lib/rag/prompt.ts` and the session screens read too: a finite number is
+ * the text it prints as, and everything else - a non-finite number, a
+ * composite, a boolean - carries no setting. So a pressure stored as 30 scores the way the
  * string '30' does rather than dropping out of the comparison the prompt says
  * was made, while a boolean reads as the absent value it is rather than making
  * `hasManualSessionData` report setup data the row does not hold.
  */
 function leafText(value: unknown): string {
-  if (typeof value === 'string') return value.trim();
-  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '';
-  return '';
+  return storedLeafText(value).trim();
 }
 
 function normalize(value: unknown): string {
@@ -277,7 +277,7 @@ export async function loadRaceEngineerContext(
     .order('created_at', { ascending: false })
     .limit(30);
 
-  const candidates = (candidateRows ?? []) as Session[];
+  const candidates = readStoredSessions(candidateRows);
   const sessionIds = [session.id, ...candidates.map((candidate) => candidate.id)];
 
   const trackFilter = session.track_id

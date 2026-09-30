@@ -3,6 +3,7 @@ import { getRealUser } from '@/lib/auth';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
 import { buildSessionExportCsv } from '@/lib/session-export';
+import { readStoredSessions } from '@/lib/stored-session';
 import { createClient } from '@/lib/supabase/server';
 import type { Session, SessionEnvironment, TelemetrySummary, Vehicle } from '@/types';
 
@@ -63,7 +64,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unable to load sessions for export.' }, { status: 500 });
   }
 
-  const sessions = (sessionsData ?? []) as Session[];
+  const sessions = readStoredSessions(sessionsData);
   const sessionIds = sessions.map((session) => session.id);
   const [environmentsResult, telemetryResult] = sessionIds.length > 0
     ? await Promise.all([
