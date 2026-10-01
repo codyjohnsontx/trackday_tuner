@@ -8,6 +8,7 @@ import { getTrackDirectory } from '@/lib/actions/tracks';
 import { isDemoMode } from '@/lib/demo/mode';
 import { resolveUserAccess } from '@/lib/access';
 import { isAtFreePlanLimit } from '@/lib/plans';
+import { isAtCustomTrackCap } from '@/lib/track-lookup';
 import { SessionForm } from '@/components/sessions/session-form';
 import { pageTitleClass } from '@/components/ui/page-header';
 
@@ -67,15 +68,10 @@ export default async function NewSessionPage() {
         trackAliases={trackDirectory.aliases}
         trackLayouts={trackDirectory.layouts}
         latestSessionsByVehicle={latestSessionsByVehicle}
-        // The count `resolveSessionTrack` checks before it inserts a track row -
-        // the rider's own custom tracks, which are exactly the unseeded ones in
-        // this list - taken at page load. The action counts again at Save, so
-        // this is the form's prediction, not the save's answer.
-        atTrackLimit={isAtFreePlanLimit(
-          'tracks',
-          trackDirectory.tracks.filter((track) => !track.is_seeded).length,
-          hasProAccess,
-        )}
+        // The cap `resolveSessionTrack` checks before it inserts a track row,
+        // taken at page load. The action counts again at Save, so this is the
+        // form's prediction, not the save's answer.
+        atTrackLimit={isAtCustomTrackCap(trackDirectory.tracks, hasProAccess)}
       />
     </div>
   );

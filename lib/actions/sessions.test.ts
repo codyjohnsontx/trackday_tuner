@@ -124,7 +124,7 @@ function createWildcardLookup(rows: { id: string; name: string }[] = []) {
 /**
  * A typed name that misses every track NAME is looked for among the circuits'
  * other names next - exact pattern, then wildcard, the same two steps - before
- * anything is created. See lib/track-directory.ts. The table is asserted so a
+ * anything is created. See lib/track-lookup.ts. The table is asserted so a
  * chain that has drifted fails here rather than handing an alias query the
  * insert mock that was meant for the step after it.
  */

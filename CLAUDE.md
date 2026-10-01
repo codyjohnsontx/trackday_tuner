@@ -637,12 +637,15 @@ The same shape applies to anything derived rather than given:
   `lib/sessions/create.ts`, using `lib/session-track.ts` to fold case, spacing
   and accent composition. Any other comparison of two track names goes through
   `trackNameKey` too, and a typed-name lookup of `tracks` through
-  `findVisibleTrackByName` (`lib/track-lookup.ts`), never a raw `===` or
-  `.eq('name')`. A supplied `track_id` is looked up in the same seeded-or-own
-  scope the picker offers rather than trusted, and the row's own name wins over
-  what was typed, so a session cannot store an id and a name that point at
-  different circuits. Creating a row for a name that matches none is
-  best effort: at the free-plan track cap, on an insert error, or when the name
+  `findVisibleTrackByName`, never a raw `===` or `.eq('name')`.
+  `lib/track-lookup.ts` is the one track-name resolver: the id/name/alias order,
+  own-track-first, what counts as a custom track (and its label) and the
+  custom-track cap each live there once, so a caller asks it rather than reading
+  `is_seeded` or counting tracks itself. A supplied `track_id` is looked up in
+  the same seeded-or-own scope the picker offers rather than trusted, and the
+  row's own name wins over what was typed, so a session cannot store an id and a
+  name that point at different circuits. Creating a row for a name that matches
+  none is best effort: at the free-plan track cap, on an insert error, or when the name
   lookup could not answer - it failed, or filled `TRACK_NAME_MATCH_LIMIT` and so
   proves nothing - the session still saves with the name alone, and a row this
   code did create is deleted again when the session it was written for does not

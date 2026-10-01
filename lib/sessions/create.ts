@@ -5,7 +5,7 @@ import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { validateLaps } from '@/lib/lap-times';
 import { MISSING_CONDITIONS_MESSAGE, isSessionCondition } from '@/lib/session-answers';
 import { MISSING_TRACK_MESSAGE, hasTrackName, normalizeTrackName } from '@/lib/session-track';
-import { findVisibleTrackByName, visibleTracksFilter } from '@/lib/track-lookup';
+import { findVisibleTrackByName, isAtCustomTrackCapInDatabase, visibleTracksFilter } from '@/lib/track-lookup';
 import {
   baselineReferenceLabel,
   baselineToComparableSession,
@@ -466,16 +466,8 @@ async function resolveSessionTrack(
     return withLayout({ trackId: lookup.track.id, trackName: lookup.track.name, createdTrack: false });
   }
 
-  if (!hasProAccess) {
-    const { count } = await supabase
-      .from('tracks')
-      .select('id', { count: 'exact', head: true })
-      .eq('created_by', userId)
-      .eq('is_seeded', false);
-
-    if ((count ?? 0) >= getFreePlanLimit('tracks')) {
-      return withLayout({ trackId: null, trackName: typed, createdTrack: false });
-    }
+  if (await isAtCustomTrackCapInDatabase(supabase, userId, hasProAccess)) {
+    return withLayout({ trackId: null, trackName: typed, createdTrack: false });
   }
 
   const { data: created, error } = await supabase
