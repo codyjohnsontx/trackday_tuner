@@ -1442,6 +1442,33 @@ describe('prepareTuningAdvicePrompt: what a skip drops', () => {
 
   // The mirror case: a surviving feedback row still justifies the flag, so the
   // recompute must not clear it just because a recommendation went.
+  // The loader derives the flag from every row it read - five recommendations -
+  // and the prompt prints three. An environment-only drop touches no
+  // recommendation, so it must not recompute the flag from the printed window
+  // and forget an applied row past it.
+  it('keeps the feedback flag across an environment-only drop when the applied row is past the window', () => {
+    const proposed = (id: string): AiRecommendation => ({ ...recommendationRow(id), status: 'proposed' });
+    const prepared = prepare(poisonedEnvironment({
+      recentFeedback: [],
+      recentRecommendations: [proposed('a'), proposed('b'), proposed('c'), recommendationRow('d')],
+      dataUsed: {
+        manual: true,
+        weather: true,
+        history: false,
+        // What the loader derives from the applied fourth row.
+        feedback: true,
+        lap_data: false,
+        telemetry: false,
+      },
+    }));
+
+    expect(prepared.screenedContext.sessionEnvironment).toBeNull();
+    expect(prepared.screenedContext.recentRecommendations.map((row) => row.id)).toEqual(['a', 'b', 'c']);
+    expect(prepared.fallbackDataUsed.feedback).toBe(true);
+    expect(userPrompt(prepared)).toContain('feedback=true');
+    expect(userPrompt(prepared)).not.toContain(PAYLOAD);
+  });
+
   it('keeps the feedback flag when a feedback row survives the drop', () => {
     const prepared = prepare(context({
       sessionEnvironment: null,

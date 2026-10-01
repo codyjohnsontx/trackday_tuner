@@ -1125,14 +1125,24 @@ function dropScreenedSources(
   // in `race-engineer-context`), so dropping the only applied recommendation can
   // leave the prompt claiming feedback it just withheld - the same defect the
   // `weather` recompute below exists to prevent, one field over. Recomputed from
-  // the surviving lists rather than left alone, and recomputed on BOTH exits
-  // because a recommendation drop does not require an environment drop.
-  const dataUsedAfterDrops: RaceEngineerContext['dataUsed'] = {
-    ...context.dataUsed,
-    feedback:
-      context.recentFeedback.length > 0 ||
-      recentRecommendations.some((recommendation) => recommendation.status !== 'proposed'),
-  };
+  // the surviving lists rather than left alone, on BOTH exits because a
+  // recommendation drop does not require an environment drop.
+  //
+  // ONLY WHEN A RECOMMENDATION WAS ACTUALLY REMOVED. The loader derived the flag
+  // from every row it read, and the lists here are already cut to the printed
+  // window, so recomputing after an environment-only drop would forget an
+  // `applied` row past the window and flip `feedback` to false over a drop that
+  // never touched a recommendation. Left alone, the flag is exactly what it was
+  // before the drop.
+  const dataUsedAfterDrops: RaceEngineerContext['dataUsed'] =
+    droppedRecommendationIds.size === 0
+      ? context.dataUsed
+      : {
+          ...context.dataUsed,
+          feedback:
+            context.recentFeedback.length > 0 ||
+            recentRecommendations.some((recommendation) => recommendation.status !== 'proposed'),
+        };
 
   if (!dropSessionEnvironment) {
     return { ...context, recentRecommendations, dataUsed: dataUsedAfterDrops };
