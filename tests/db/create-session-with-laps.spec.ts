@@ -1,27 +1,30 @@
 import { randomUUID } from 'node:crypto';
 import { test, expect } from '@playwright/test';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { resolveUserAccess } from '@/lib/access';
 import { getFreePlanLimit } from '@/lib/plans';
-import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
+import { createTestAdminClient } from '@/tests/e2e/helpers/supabase';
 import {
   createThrowawayRider,
   deleteThrowawayRider,
   type ThrowawayRider,
 } from '@/tests/e2e/helpers/throwaway-rider';
+import { anonClient, createVehicle, signIn, type Client } from '@/tests/db/helpers/rider';
 import type { Profile } from '@/types';
-import type { Database, Json, TableInsert } from '@/types/supabase';
+import type { Json, TableInsert } from '@/types/supabase';
 
 /**
  * `create_session_with_laps` (20260927002200, 20260928002300) and the session
  * policies around it, against a real database.
  *
- * The route suite (app/api/mobile/sessions/route.test.ts) replaces this function
- * with an in-memory fake so it can pin statuses and copy quickly. A fake is
- * atomic and callable by construction, so it cannot notice the real function
- * losing either property. This spec calls the real function as two signed-in
- * riders and as nobody, and reads what was stored back through the service
- * role. It checks five things:
+ * It is the one write both clients make: the phone through its bearer route and
+ * the website form through its server action, each via `createSessionForUser`
+ * (tests/db/create-session.spec.ts walks that). The route suite
+ * (app/api/mobile/sessions/route.test.ts) replaces this function with an
+ * in-memory fake so it can pin statuses and copy quickly. A fake is atomic and
+ * callable by construction, so it cannot notice the real function losing either
+ * property. This spec calls the real function as two signed-in riders and as
+ * nobody, and reads what was stored back through the service role. It checks
+ * five things:
  *
  * - a failure after the session row (here the environment's CHECK) leaves no
  *   session, no laps and no lap summary;
@@ -33,7 +36,7 @@ import type { Database, Json, TableInsert } from '@/types/supabase';
  * And, from 20260928002300:
  *
  * - the `sessions` policies refuse a session on - or moved onto - another
- *   rider's vehicle, which is what the website form's insert meets;
+ *   rider's vehicle, which is what a direct write as the rider meets;
  * - a late retry of a session the rider deleted, alone or with its vehicle, is
  *   answered as handled and does not store it again, and riders cannot write
  *   the record that decides it;
@@ -45,12 +48,9 @@ import type { Database, Json, TableInsert } from '@/types/supabase';
  * Every rider here is deleted afterwards with the tombstones they left, which
  * is the account delete the tombstone trigger must not break.
  *
- * Needs no browser and no dev server: the NEXT_PUBLIC_SUPABASE_URL,
- * NEXT_PUBLIC_SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY of a stack built
- * with 20260928002300 applied. A stack without it fails rather than skips.
+ * Part of `npm run test:db`, which CI runs on every pull request against a
+ * local stack built from supabase/migrations - see playwright.db.config.ts.
  */
-
-type Client = SupabaseClient<Database>;
 
 const LAPS = [
   { lap_number: 1, lap_time_ms: 142_300, included: true },
@@ -61,35 +61,6 @@ const LAPS = [
 const SESSION_CAP = getFreePlanLimit('sessions');
 
 const ENVIRONMENT = { ambient_temperature_c: 21, humidity_percent: 40, weather_condition: 'dry' };
-
-function url(): string {
-  return process.env.NEXT_PUBLIC_SUPABASE_URL!;
-}
-
-function anonKey(): string {
-  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-}
-
-function anonClient(): Client {
-  return createClient<Database>(url(), anonKey(), { auth: { persistSession: false, autoRefreshToken: false } });
-}
-
-async function signIn(rider: ThrowawayRider): Promise<Client> {
-  const client = anonClient();
-  const { error } = await client.auth.signInWithPassword({ email: rider.email, password: rider.password });
-  expect(error, error?.message).toBeNull();
-  return client;
-}
-
-async function createVehicle(client: Client, userId: string): Promise<string> {
-  const { data, error } = await client
-    .from('vehicles')
-    .insert({ user_id: userId, nickname: 'Test bike', make: 'Yamaha', model: 'R6', year: 2020, type: 'motorcycle' })
-    .select('id')
-    .single();
-  expect(error, error?.message).toBeNull();
-  return data!.id;
-}
 
 function sessionFields(vehicleId: string): Json {
   const end = { brand: 'Pirelli', compound: 'SC1', pressure: '31' };
@@ -133,12 +104,6 @@ async function stored(admin: Client, sessionId: string) {
 }
 
 test.describe('create_session_with_laps as riders and as nobody', () => {
-  test.skip(!hasServiceRole(), 'NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.');
-  test.skip(
-    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    'NEXT_PUBLIC_SUPABASE_ANON_KEY is required: the function is security invoker and has to be called as a rider.',
-  );
-
   let admin: Client;
   let alice: ThrowawayRider | null = null;
   let bob: ThrowawayRider | null = null;
@@ -262,7 +227,7 @@ test.describe('create_session_with_laps as riders and as nobody', () => {
   });
 });
 
-/** The row the website form inserts, as `createSessionForUser` builds it. */
+/** A session row as a rider writing the table directly would send it. */
 function sessionRow(userId: string, vehicleId: string): TableInsert<'sessions'> {
   return { ...(sessionFields(vehicleId) as unknown as TableInsert<'sessions'>), user_id: userId };
 }
@@ -274,12 +239,6 @@ async function countSessions(admin: Client, userId: string): Promise<number> {
 }
 
 test.describe('session ownership, deleted sessions and the free-plan cap (20260928002300)', () => {
-  test.skip(!hasServiceRole(), 'NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.');
-  test.skip(
-    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    'NEXT_PUBLIC_SUPABASE_ANON_KEY is required: the policies and the function are met as a rider.',
-  );
-
   let admin: Client;
   const riders: ThrowawayRider[] = [];
 
@@ -298,7 +257,7 @@ test.describe('session ownership, deleted sessions and the free-plan cap (202609
     for (const rider of riders) await deleteThrowawayRider(rider);
   });
 
-  test('refuses the website form’s insert on another rider’s vehicle, and still takes one on the rider’s own', async () => {
+  test('refuses a direct insert on another rider’s vehicle, and still takes one on the rider’s own', async () => {
     const owner = await newRider('ownership-owner');
     const other = await newRider('ownership-other');
 

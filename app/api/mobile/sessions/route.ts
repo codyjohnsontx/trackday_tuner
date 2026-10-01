@@ -14,9 +14,10 @@ import type { Profile } from '@/types';
  * It is the website's own create - `createSessionForUser`, the function the
  * session form's server action calls - behind a bearer token instead of cookies,
  * so track resolution, the layout check, change records and rollbacks have one
- * copy whichever surface a session came from. The free-plan session cap is
- * counted inside `create_session_with_laps` for this route, under a per-rider
- * lock, rather than by the form's count.
+ * copy whichever surface a session came from - and one write, since the form's
+ * server action now mints an id and goes through `create_session_with_laps` too.
+ * The free-plan session cap is counted inside that function, under a per-rider
+ * lock, for both.
  *
  * The body carries an `id` the phone minted, and the create is idempotent on it:
  * a replay after a lost response answers 200 with the stored row and
@@ -99,7 +100,7 @@ export async function POST(request: Request) {
         report: reportError,
       },
       parsed.data.input,
-      { id: parsed.data.id },
+      { id: parsed.data.id, replayable: true },
     );
 
     if (!result.ok) {

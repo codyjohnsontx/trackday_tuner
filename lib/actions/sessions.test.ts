@@ -25,7 +25,7 @@ vi.mock('@/lib/monitoring/report-error', () => ({
   reportError: vi.fn(),
 }));
 
-import { revalidatePath, revalidateTag } from 'next/cache';
+import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { getRealUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
@@ -45,7 +45,7 @@ import {
   replaceSessionLaps,
 } from '@/lib/actions/sessions';
 import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
-import { SESSION_VEHICLE_NOT_OWNED_MESSAGE } from '@/lib/sessions/create';
+import { getFreePlanLimitMessage } from '@/lib/plans';
 import { getSessionOutcome } from '@/lib/actions/outcomes';
 import {
   SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE,
@@ -57,7 +57,6 @@ import {
 } from '@/lib/session-delete';
 import { COMPARABLE_SESSION_FETCH_LIMIT, COMPARABLE_SESSION_LIMIT } from '@/lib/session-compare';
 import { MISSING_TRACK_MESSAGE, TRACK_NAME_MATCH_LIMIT } from '@/lib/session-track';
-import { createTrackNameQuery } from '@/tests/unit/helpers/track-name-query';
 import type {
   CreateSessionInput,
   Session,
@@ -112,28 +111,6 @@ function createQuery(response: QueryResponse = {}) {
 }
 
 /**
- * The wildcard lookup that follows an exact-match miss.
- *
- * Reaching for a typed name is two queries now, narrowest first, so a test whose
- * exact pattern finds nothing has one more `from('tracks')` to account for.
- */
-function createWildcardLookup(rows: { id: string; name: string }[] = []) {
-  return createQuery({ base: { data: rows, error: null } });
-}
-
-/**
- * A typed name that misses every track NAME is looked for among the circuits'
- * other names next - exact pattern, then wildcard, the same two steps - before
- * anything is created. See lib/track-directory.ts. The table is asserted so a
- * chain that has drifted fails here rather than handing an alias query the
- * insert mock that was meant for the step after it.
- */
-function createAliasMiss(table: string) {
-  expect(table).toBe('track_aliases');
-  return createQuery({ base: { data: [], error: null } });
-}
-
-/**
  * The single `tracks` read a payload carrying a `track_id` costs.
  *
  * `resolveSessionTrack` resolves the id rather than trusting it, and returns as
@@ -144,8 +121,11 @@ function createTrackIdLookup(row: { id: string; name: string } = { id: 'track-1'
   return createQuery({ single: { data: row, error: null } });
 }
 
+/** A uuid, as the database casts it: `createSession` refuses anything else. */
+const VEHICLE_ID = '22222222-2222-4222-8222-222222222222';
+
 const validInput: CreateSessionInput = {
-  vehicle_id: 'veh-1',
+  vehicle_id: VEHICLE_ID,
   // A session has to name the circuit it ran at, so the fixture the successful
   // paths below share names one: `createSession` refuses a payload that carries
   // neither an id nor a name. See lib/session-track.ts.
@@ -180,7 +160,7 @@ const validInput: CreateSessionInput = {
 const createdSession: Session = {
   id: 'sess-1',
   user_id: 'user-1',
-  vehicle_id: 'veh-1',
+  vehicle_id: VEHICLE_ID,
   track_id: 'track-1',
   track_name: 'MSR Cresson',
   layout_id: null,
@@ -215,7 +195,7 @@ const previousSession: Session = {
 const changeBaseline: VehicleBaseline = {
   id: 'baseline-1',
   user_id: 'user-1',
-  vehicle_id: 'veh-1',
+  vehicle_id: VEHICLE_ID,
   source_session_id: 'baseline-source',
   source_track_id: null,
   source_track_name: 'MSR Cresson',
@@ -232,6 +212,44 @@ const changeBaseline: VehicleBaseline = {
   created_at: '2026-02-20T10:00:00Z',
   updated_at: '2026-02-20T10:00:00Z',
 };
+
+/**
+ * A client for `createSession`'s fault cases, routed by table rather than by
+ * call order, so a change to how many reads track resolution makes cannot break
+ * a test about something else. A table the test does not name answers every
+ * read empty; the track id resolves to MSR Cresson and the vehicle is a
+ * motorcycle. `create_session_with_laps` stores and echoes the row it was sent,
+ * unless the test answers it with `createResult`.
+ */
+function createSaveClient({
+  tables = {},
+  createResult,
+  trackTakeBackResult = { data: true, error: null },
+}: {
+  tables?: Record<string, () => ReturnType<typeof createQuery>>;
+  createResult?: { data: unknown; error: QueryError | null };
+  trackTakeBackResult?: { data: unknown; error: QueryError | null };
+} = {}) {
+  const defaults: Record<string, () => ReturnType<typeof createQuery>> = {
+    tracks: () => createTrackIdLookup(),
+    vehicles: () => createQuery({ single: { data: { type: 'motorcycle' }, error: null } }),
+  };
+  const from = vi.fn(
+    (table: string) => (tables[table] ?? defaults[table] ?? (() => createQuery({ base: { data: [], error: null } })))(),
+  );
+  const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
+    if (name === 'delete_auto_created_track_if_unused') return trackTakeBackResult;
+    expect(name).toBe('create_session_with_laps');
+    return (
+      createResult ?? {
+        data: { replayed: false, session: { ...createdSession, ...(args.p_session as object), id: args.p_session_id } },
+        error: null,
+      }
+    );
+  });
+  vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
+  return { from, rpc };
+}
 
 describe('sessions actions', () => {
   beforeEach(() => {
@@ -253,6 +271,13 @@ describe('sessions actions', () => {
     }
   });
 
+  // What a save does against the database - track resolution, layouts, the
+  // free-plan cap, the vehicle check, atomicity and change records - is proven
+  // against a real one in tests/db/create-session.spec.ts. What stays here is
+  // what a real database cannot be made to do on cue: a read or a call that
+  // fails, a lookup that comes back truncated, and the paths that must not
+  // write anything at all.
+
   it('returns auth error when creating session while logged out', async () => {
     vi.mocked(getRealUser).mockResolvedValue(null);
 
@@ -264,7 +289,7 @@ describe('sessions actions', () => {
   it('refuses a session whose weather the rider never answered', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-    vi.mocked(createClient).mockResolvedValue({ from: vi.fn(), rpc: vi.fn() } as never);
+    const { rpc } = createSaveClient();
 
     const result = await createSession({
       ...validInput,
@@ -273,6 +298,7 @@ describe('sessions actions', () => {
 
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error).toBe(MISSING_CONDITIONS_MESSAGE);
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   // The Track field carried no validation while Vehicle and Date both did, so a
@@ -283,601 +309,95 @@ describe('sessions actions', () => {
   // `track_id` and `track_name` both came back null, and the detail screen showed
   // a dash. The form checks this too; these are the cases that reach the action
   // anyway. See lib/session-track.ts.
-  it('refuses a session that names no track, before reading anything', async () => {
+  it('refuses a session that names no track, before touching a track', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-    const from = vi.fn();
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn() } as never);
+    const { from, rpc } = createSaveClient();
 
     const result = await createSession({ ...validInput, track_id: null, track_name: null });
 
     expect(result).toEqual({ ok: false, error: MISSING_TRACK_MESSAGE });
     // Refused on the payload, so no track row was written for a session that
     // never existed - which on the free plan would have spent a custom-track slot.
-    expect(from).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalledWith('tracks');
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('refuses a track name that is only whitespace', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-    const from = vi.fn();
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn() } as never);
+    const { from, rpc } = createSaveClient();
 
     // `required` on the input counts a space as filled, so this is the spelling
     // the browser lets through.
     const result = await createSession({ ...validInput, track_id: null, track_name: '   ' });
 
     expect(result).toEqual({ ok: false, error: MISSING_TRACK_MESSAGE });
-    expect(from).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalledWith('tracks');
+    expect(rpc).not.toHaveBeenCalled();
   });
 
-  it('refuses a track_id that resolves to nothing with no name beside it', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    // An id the rider cannot see resolves to no row, and nothing was typed to
-    // fall back on - so the session would have stored no circuit at all.
-    const trackLookup = createQuery({ single: { data: null, error: null } });
-    const from = vi.fn().mockImplementation((table: string) => {
-      expect(table).toBe('tracks');
-      return trackLookup;
-    });
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn() } as never);
-
-    const result = await createSession({ ...validInput, track_id: 'track-nobody', track_name: null });
-
-    expect(result).toEqual({ ok: false, error: MISSING_TRACK_MESSAGE });
-    expect(from).not.toHaveBeenCalledWith('sessions');
-  });
-
-  it('enforces free tier session limit', async () => {
+  // The website form once wrote the row, its laps and its environment as three
+  // statements and counted the free-plan cap in TypeScript beforehand, so a
+  // form save racing a phone save at nine sessions stored eleven. It now makes
+  // the phone's one call, which counts under the rider's lock.
+  it('saves through create_session_with_laps under an id it mints per save, and never inserts the row itself', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free' } as never);
+    const sessions = createQuery({ base: { data: [], error: null } });
+    const { rpc } = createSaveClient({ tables: { sessions: () => sessions } });
+    const laps = [{ lap_number: 1, lap_time_ms: 142_300, included: true }];
 
-    const countQuery = createQuery({
-      base: { count: 10, data: null, error: null },
+    const first = await createSession({ ...validInput, laps });
+    const second = await createSession(validInput);
+
+    expect(first.ok && second.ok).toBe(true);
+    expect(rpc).toHaveBeenCalledTimes(2);
+    const [firstArgs, secondArgs] = rpc.mock.calls.map(([, args]) => args);
+    expect(firstArgs.p_session_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(secondArgs.p_session_id).not.toBe(firstArgs.p_session_id);
+    expect(firstArgs.p_session).toMatchObject({ user_id: 'user-1', vehicle_id: VEHICLE_ID, track_id: 'track-1' });
+    expect(firstArgs.p_laps).toEqual(laps);
+    expect(first.ok && first.data.id).toBe(firstArgs.p_session_id);
+    expect(sessions.insert).not.toHaveBeenCalled();
+  });
+
+  it('saves without looking for an earlier save first, since the id it mints names none', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const missing = { message: "Could not find the table 'public.deleted_sessions' in the schema cache", code: 'PGRST205' };
+    const { from, rpc } = createSaveClient({
+      tables: { deleted_sessions: () => createQuery({ single: { data: null, error: missing } }) },
     });
-    const from = vi.fn().mockImplementation((table: string) => {
-      expect(table).toBe('sessions');
-      return countQuery;
-    });
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
     const result = await createSession(validInput);
 
-    expect(result).toEqual({
-      ok: false,
-      error: 'Free plan is limited to 10 sessions. Upgrade to Pro for unlimited sessions.',
-    });
-  });
-
-  it('denormalizes track name when track_id is provided without track_name', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const trackLookup = createQuery({
-      single: { data: { name: 'Road America' }, error: null },
-    });
-    const insertQuery = createQuery({
-      single: { data: { id: 'sess-1' }, error: null },
-    });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return trackLookup;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      // Change-tracking follow-up queries: resolvable vehicle type, no previous session or baseline.
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({
-      ...validInput,
-      track_id: 'track-1',
-      track_name: null,
-    });
-
-    expect(result.ok).toBe(true);
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user_id: 'user-1',
-        track_id: 'track-1',
-        track_name: 'Road America',
-        session_number: 2,
-        enabled_modules: validInput.enabled_modules,
-      })
-    );
-    expect(revalidatePath).toHaveBeenCalledWith('/sessions');
-    expect(revalidatePath).toHaveBeenCalledWith('/dashboard');
-  });
-
-  it('links a typed track name to the saved track it names', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const visibleTracks = createQuery({
-      base: { data: [{ id: 'track-9', name: 'Eagles Canyon Raceway' }], error: null },
-    });
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return visibleTracks;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    // Typed with different case and doubled spacing, as a rider does.
-    const result = await createSession({
-      ...validInput,
-      track_id: null,
-      track_name: 'eagles  canyon raceway',
-    });
-
-    expect(result.ok).toBe(true);
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: 'track-9', track_name: 'Eagles Canyon Raceway' }),
-    );
-  });
-
-  it('lands a name the circuit is also known by on that circuit, not on a new one', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free' } as never);
-
-    // What the reproduction showed: "COTA" in May beside "Circuit of the
-    // Americas" in April was a second custom track. It is the seeded circuit.
-    const aliasHit = createQuery({
-      base: {
-        data: [{ alias: 'COTA', tracks: { id: 'track-cota', name: 'Circuit of the Americas' } }],
-        error: null,
-      },
-    });
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-    const tables: string[] = [];
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => createQuery({ base: { count: 0, data: null, error: null } }))
-      .mockImplementationOnce(() => createQuery({ base: { data: [], error: null } }))
-      .mockImplementationOnce(() => createWildcardLookup())
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('track_aliases');
-        return aliasHit;
-      })
-      .mockImplementationOnce((table: string) => {
-        tables.push(table);
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation((table: string) => {
-        tables.push(table);
-        return createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } });
-      });
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({ ...validInput, track_id: null, track_name: 'cota ' });
-
-    expect(result.ok).toBe(true);
-    // The circuit's own name is stored, not the alias the rider typed.
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: 'track-cota', track_name: 'Circuit of the Americas' }),
-    );
-    // And nothing was created, so no free-plan track slot was spent.
-    expect(tables).not.toContain('tracks');
-    expect(revalidateTag).not.toHaveBeenCalledWith('tracks');
-  });
-
-  it("prefers the rider's own track over a seeded circuit an alias would name", async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const ownTrack = createQuery({ base: { data: [{ id: 'track-mine', name: 'Barber' }], error: null } });
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-    const tables: string[] = [];
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        tables.push(table);
-        return ownTrack;
-      })
-      .mockImplementationOnce((table: string) => {
-        tables.push(table);
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation((table: string) => {
-        tables.push(table);
-        return createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } });
-      });
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({ ...validInput, track_id: null, track_name: 'Barber' });
-
-    expect(result.ok).toBe(true);
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: 'track-mine', track_name: 'Barber' }),
-    );
-    expect(tables).not.toContain('track_aliases');
+    expect(result.ok, !result.ok ? result.error : '').toBe(true);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(from).not.toHaveBeenCalledWith('deleted_sessions');
+    expect(reportError).not.toHaveBeenCalled();
   });
 
   it('saves the session under the typed name when the alias lookup fails', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
     vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-    const tables: string[] = [];
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => createQuery({ base: { data: [], error: null } }))
-      .mockImplementationOnce(() => createWildcardLookup())
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('track_aliases');
-        return createQuery({ base: { data: null, error: { message: 'boom' } } });
-      })
-      .mockImplementationOnce((table: string) => {
-        tables.push(table);
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation((table: string) => {
-        tables.push(table);
-        return createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } });
-      });
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+    const tracks = createQuery({ base: { data: [], error: null } });
+    const { rpc } = createSaveClient({
+      tables: {
+        tracks: () => tracks,
+        track_aliases: () => createQuery({ base: { data: null, error: { message: 'boom' } } }),
+      },
+    });
 
     const result = await createSession({ ...validInput, track_id: null, track_name: 'Some New Circuit' });
 
     // A rider is never blocked by a lookup that could not answer - and a failed
     // lookup is not "no such circuit", so no track is created behind it either.
     expect(result.ok).toBe(true);
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: null, track_name: 'Some New Circuit' }),
-    );
-    expect(vi.mocked(insertQuery.insert as (row: unknown) => unknown).mock.calls[0][0]).not.toHaveProperty('layout_id');
-    expect(tables).not.toContain('tracks');
-  });
-
-  it('records the layout the rider chose on the circuit they chose', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const layoutLookup = createQuery({ single: { data: { id: 'layout-13', name: '1.3-Mile' }, error: null } });
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => createTrackIdLookup({ id: 'track-1', name: 'MotorSport Ranch' }))
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('track_layouts');
-        return layoutLookup;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({ ...validInput, layout_id: 'layout-13' });
-
-    expect(result.ok).toBe(true);
-    // Checked against the session's own circuit, not looked up on its own.
-    expect(layoutLookup.eq).toHaveBeenCalledWith('id', 'layout-13');
-    expect(layoutLookup.eq).toHaveBeenCalledWith('track_id', 'track-1');
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        track_id: 'track-1',
-        track_name: 'MotorSport Ranch',
-        layout_id: 'layout-13',
-        layout_name: '1.3-Mile',
-      }),
-    );
-  });
-
-  it('drops a layout that is not one of the circuit\'s, and still saves', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => createTrackIdLookup())
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('track_layouts');
-        // The id exists, but on another circuit - so the scoped read finds nothing.
-        return createQuery({ single: { data: null, error: null } });
-      })
-      .mockImplementationOnce(() => insertQuery)
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({ ...validInput, layout_id: 'layout-from-vir' });
-
-    expect(result.ok).toBe(true);
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: 'track-1' }),
-    );
-    expect(vi.mocked(insertQuery.insert as (row: unknown) => unknown).mock.calls[0][0]).not.toHaveProperty('layout_id');
-    expect(vi.mocked(insertQuery.insert as (row: unknown) => unknown).mock.calls[0][0]).not.toHaveProperty('layout_name');
-  });
-
-  it('refuses the save, and reports it, when the layout lookup fails', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-    vi.mocked(reportError).mockClear();
-
-    const tables: string[] = [];
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => createTrackIdLookup())
-      .mockImplementationOnce((table: string) => {
-        tables.push(table);
-        return createQuery({ single: { data: null, error: { message: 'connection reset', code: '08006' } } });
-      })
-      .mockImplementation((table: string) => {
-        tables.push(table);
-        return createQuery({ base: { data: [], error: null }, single: { data: null, error: null } });
-      });
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({ ...validInput, layout_id: 'layout-13' });
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/not saved/);
-    // A failed read is not "no such layout": nothing is inserted with the
-    // rider's choice silently dropped.
-    expect(tables).toEqual(['track_layouts']);
-    expect(reportError).toHaveBeenCalledWith(
-      'session-layout',
-      expect.any(Error),
-      expect.objectContaining({ table: 'track_layouts' }),
-    );
-  });
-
-  it('asks nothing about layouts when the rider chose none', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-    const tables: string[] = [];
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => createTrackIdLookup())
-      .mockImplementationOnce((table: string) => {
-        tables.push(table);
-        return insertQuery;
-      })
-      .mockImplementation((table: string) => {
-        tables.push(table);
-        return createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } });
-      });
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession(validInput);
-
-    expect(result.ok).toBe(true);
-    expect(tables).not.toContain('track_layouts');
-    expect(insertQuery.insert).toHaveBeenCalled();
-    expect(vi.mocked(insertQuery.insert as (row: unknown) => unknown).mock.calls[0][0]).not.toHaveProperty('layout_id');
-    expect(vi.mocked(insertQuery.insert as (row: unknown) => unknown).mock.calls[0][0]).not.toHaveProperty('layout_name');
-  });
-
-  it('finds a doubled-space spelling on the exact-match fast path', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const visibleTracks = createTrackNameQuery([
-      { id: 'track-9', name: 'Eagles Canyon Raceway' },
-      { id: 'track-8', name: 'Harris Hill Raceway' },
-    ]);
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return visibleTracks;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({
-      ...validInput,
-      track_id: null,
-      track_name: 'eagles  canyon raceway',
-    });
-
-    expect(result.ok).toBe(true);
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: 'track-9', track_name: 'Eagles Canyon Raceway' }),
-    );
-    // The fold happens before the query, so the ordinary case is answered by a
-    // pattern carrying no wildcard at all - nothing here depends on the bound.
-    expect(visibleTracks.ilike).toHaveBeenCalledWith('name', 'eagles canyon raceway');
-    expect(visibleTracks.order).toHaveBeenCalled();
-    expect(visibleTracks.limit).toHaveBeenCalled();
-  });
-
-  it('saves to the rider\'s own track when a seeded circuit shares its name', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const visibleTracks = createTrackNameQuery([
-      { id: 'track-0-seeded', name: 'Road America', is_seeded: true },
-      { id: 'track-9-own', name: 'road america', is_seeded: false },
-    ]);
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return visibleTracks;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({ ...validInput, track_id: null, track_name: 'Road America' });
-
-    expect(result.ok).toBe(true);
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: 'track-9-own', track_name: 'road america' }),
-    );
-  });
-
-  it('keeps looking for the rider\'s own track when the exact pattern only reaches a seeded one', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const rows = [
-      { id: 'track-0-seeded', name: 'Road America', is_seeded: true },
-      { id: 'track-9-own', name: 'Road  America', is_seeded: false },
-    ];
-    const exactLookup = createTrackNameQuery(rows);
-    const wildcardLookup = createTrackNameQuery(rows);
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return exactLookup;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return wildcardLookup;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({ ...validInput, track_id: null, track_name: 'Road America' });
-
-    expect(result.ok).toBe(true);
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: 'track-9-own', track_name: 'Road  America' }),
-    );
-  });
-
-  it('falls back to the wildcard pattern for a stored spelling the fold reaches', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    // Stored with doubled spacing, typed without: the exact pattern cannot reach
-    // it, and only the wildcard one keeps this off a second row.
-    const rows = [{ id: 'track-9', name: 'Eagles  Canyon Raceway' }];
-    const exactLookup = createTrackNameQuery(rows);
-    const wildcardLookup = createTrackNameQuery(rows);
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return exactLookup;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return wildcardLookup;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({
-      ...validInput,
-      track_id: null,
-      track_name: 'Eagles Canyon Raceway',
-    });
-
-    expect(result.ok).toBe(true);
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: 'track-9', track_name: 'Eagles  Canyon Raceway' }),
-    );
-    expect(wildcardLookup.ilike).toHaveBeenCalledWith('name', '%eagles%canyon%raceway%');
-  });
-
-  it('finds a decomposed accent on its precomposed row through the narrowed track query', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const precomposedName = 'Aut\u00f3dromo Hermanos Rodr\u00edguez';
-    const visibleTracks = createTrackNameQuery([{ id: 'track-7', name: precomposedName }]);
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return visibleTracks;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    // Typed with combining acutes against a row stored precomposed: one circuit,
-    // and a filter that compared the raw string would create a second row for it.
-    const result = await createSession({
-      ...validInput,
-      track_id: null,
-      track_name: 'Auto\u0301dromo Hermanos Rodri\u0301guez',
-    });
-
-    expect(result.ok).toBe(true);
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: 'track-7', track_name: precomposedName }),
-    );
+    expect(rpc.mock.calls[0][1].p_session).toMatchObject({ track_id: null, track_name: 'Some New Circuit' });
+    expect(rpc.mock.calls[0][1].p_session).not.toHaveProperty('layout_id');
+    expect(tracks.insert).not.toHaveBeenCalled();
   });
 
   it('creates no track when the name lookup came back full', async () => {
@@ -896,994 +416,165 @@ describe('sessions actions', () => {
         error: null,
       },
     });
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
+    const { rpc } = createSaveClient({ tables: { tracks: () => truncated } });
 
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return truncated;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({
-      ...validInput,
-      track_id: null,
-      track_name: 'Harris Hill Raceway',
-    });
+    const result = await createSession({ ...validInput, track_id: null, track_name: 'Harris Hill Raceway' });
 
     // A truncated read is not evidence the circuit is new. The session saves under
     // the typed name, which every read surface still matches, rather than spending
     // a custom-track slot on a row the rider may already have.
     expect(result.ok).toBe(true);
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: null, track_name: 'Harris Hill Raceway' }),
-    );
+    expect(rpc.mock.calls[0][1].p_session).toMatchObject({ track_id: null, track_name: 'Harris Hill Raceway' });
+    expect(truncated.insert).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(
       '[sessions] visible tracks lookup truncated',
-      expect.objectContaining({
-        userId: 'user-1',
-        trackName: 'Harris Hill Raceway',
-        limit: TRACK_NAME_MATCH_LIMIT,
-      }),
+      expect.objectContaining({ userId: 'user-1', trackName: 'Harris Hill Raceway', limit: TRACK_NAME_MATCH_LIMIT }),
     );
-  });
-
-  it('saves a typed track the rider has never logged as a track of their own', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const visibleTracks = createQuery({ base: { data: [], error: null } });
-    const trackInsert = createQuery({
-      single: { data: { id: 'track-new', name: 'Harris Hill Raceway' }, error: null },
-    });
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return visibleTracks;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return createWildcardLookup();
-      })
-      .mockImplementationOnce(createAliasMiss)
-      .mockImplementationOnce(createAliasMiss)
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return trackInsert;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({
-      ...validInput,
-      track_id: null,
-      track_name: 'Harris Hill Raceway',
-    });
-
-    expect(result.ok).toBe(true);
-    // The row is the rider's own, which is what the tracks RLS insert policy admits.
-    expect(trackInsert.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'Harris Hill Raceway', is_seeded: false, created_by: 'user-1' }),
-    );
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: 'track-new', track_name: 'Harris Hill Raceway' }),
-    );
-    expect(revalidatePath).toHaveBeenCalledWith('/tracks');
-    expect(revalidateTag).toHaveBeenCalledWith('tracks');
   });
 
   it('still saves the session when the track row cannot be created', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
     vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    const visibleTracks = createQuery({ base: { data: [], error: null } });
-    const trackInsert = createQuery({ single: { data: null, error: { message: 'insert refused' } } });
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => visibleTracks)
-      .mockImplementationOnce(() => createWildcardLookup())
-      .mockImplementationOnce(createAliasMiss)
-      .mockImplementationOnce(createAliasMiss)
-      .mockImplementationOnce(() => trackInsert)
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({
-      ...validInput,
-      track_id: null,
-      track_name: 'Harris Hill Raceway',
+    const tracks = createQuery({
+      base: { data: [], error: null },
+      single: { data: null, error: { message: 'insert refused' } },
     });
+    const { rpc } = createSaveClient({ tables: { tracks: () => tracks } });
+
+    const result = await createSession({ ...validInput, track_id: null, track_name: 'Harris Hill Raceway' });
 
     expect(result.ok).toBe(true);
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: null, track_name: 'Harris Hill Raceway' }),
-    );
+    expect(tracks.insert).toHaveBeenCalled();
+    expect(rpc.mock.calls[0][1].p_session).toMatchObject({ track_id: null, track_name: 'Harris Hill Raceway' });
   });
 
-  it('does not create a track for a free rider already at the plan limit', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free' } as never);
-
-    const sessionCount = createQuery({ base: { count: 0, data: null, error: null } });
-    const visibleTracks = createQuery({ base: { data: [], error: null } });
-    const trackCount = createQuery({ base: { count: 3, data: null, error: null } });
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return sessionCount;
-      })
-      .mockImplementationOnce(() => visibleTracks)
-      .mockImplementationOnce(() => createWildcardLookup())
-      .mockImplementationOnce(createAliasMiss)
-      .mockImplementationOnce(createAliasMiss)
-      .mockImplementationOnce(() => trackCount)
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({
-      ...validInput,
-      track_id: null,
-      track_name: 'Harris Hill Raceway',
-    });
-
-    // The session is still logged - hitting the track cap must not cost the rider
-    // the session they just rode.
-    expect(result.ok).toBe(true);
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: null, track_name: 'Harris Hill Raceway' }),
-    );
-  });
-
-  it('removes the track it just created when the session insert fails', async () => {
+  it('refuses the save, and reports it, when the layout lookup fails', async () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const visibleTracks = createQuery({ base: { data: [], error: null } });
-    const trackInsert = createQuery({
-      single: { data: { id: 'track-new', name: 'Harris Hill Raceway' }, error: null },
-    });
-    const sessionInsert = createQuery({ single: { data: null, error: { message: 'session refused' } } });
-    const trackRollback = createQuery({ base: { data: null, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => visibleTracks)
-      .mockImplementationOnce(() => createWildcardLookup())
-      .mockImplementationOnce(createAliasMiss)
-      .mockImplementationOnce(createAliasMiss)
-      .mockImplementationOnce(() => trackInsert)
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return sessionInsert;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return trackRollback;
-      })
-      .mockImplementation(() => createQuery({ base: { data: [], error: null } }));
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({
-      ...validInput,
-      track_id: null,
-      track_name: 'Harris Hill Raceway',
-    });
-
-    expect(result.ok).toBe(false);
-    // The rider did not save a session, so they must not be left holding a track
-    // for it - on the free plan that would consume one of only three slots.
-    expect(trackRollback.delete).toHaveBeenCalled();
-    expect(trackRollback.eq).toHaveBeenCalledWith('id', 'track-new');
-    expect(trackRollback.eq).toHaveBeenCalledWith('created_by', 'user-1');
-  });
-
-  // The last path in createSession that handed raw PostgREST to the rider. The
-  // payload writes `enabled_modules`, which arrives with 20260228000200, so a
-  // database behind that migration printed `PGRST204 Could not find the
-  // 'enabled_modules' column of 'sessions' in the schema cache` under the Save
-  // button with nothing reaching Sentry - the Save Outcome incident shape, one
-  // statement earlier in the same function.
-  it('does not show the rider raw PostgREST when the session insert fails', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const trackLookup = createQuery({
-      single: { data: { id: 'track-1', name: 'Road America' }, error: null },
-    });
-    const sessionInsert = createQuery({
-      single: {
-        data: null,
-        error: {
-          code: 'PGRST204',
-          message: "Could not find the 'enabled_modules' column of 'sessions' in the schema cache",
-          details: null,
-          hint: null,
-        },
+    const { rpc } = createSaveClient({
+      tables: {
+        track_layouts: () => createQuery({ single: { data: null, error: { message: 'connection reset', code: '08006' } } }),
       },
     });
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => trackLookup)
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return sessionInsert;
-      })
-      .mockImplementation(() => createQuery({ base: { data: [], error: null } }));
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
-    const result = await createSession(validInput);
+    const result = await createSession({ ...validInput, layout_id: 'layout-13' });
 
     expect(result.ok).toBe(false);
-    expect(!result.ok && result.error).not.toContain('enabled_modules');
-    expect(!result.ok && result.error).not.toContain('schema cache');
-    // The same session-level sentence its two sibling paths return.
-    expect(!result.ok && result.error).toMatch(/did not save completely/i);
-    expect(!result.ok && result.error).toMatch(/on our end/i);
+    if (!result.ok) expect(result.error).toMatch(/not saved/);
+    // A failed read is not "no such layout": nothing is saved with the rider's
+    // choice silently dropped.
+    expect(rpc).not.toHaveBeenCalled();
     expect(reportError).toHaveBeenCalledWith(
-      'session-create',
-      expect.objectContaining({ message: expect.stringContaining('schema cache') }),
-      expect.objectContaining({ reason: 'PGRST204', table: 'sessions' }),
+      'session-layout',
+      expect.any(Error),
+      expect.objectContaining({ table: 'track_layouts' }),
     );
   });
 
-  // `sessions: insert own` refuses a vehicle that is not the rider's
-  // (20260928002300), and RLS answers that as 42501 - the code a missing grant
-  // also carries. The vehicle is read only once the insert refused, to choose
-  // which of those the rider is told.
-  describe('a vehicle the insert policy refuses', () => {
-    const RLS_REFUSAL = {
-      code: '42501',
-      message: 'new row violates row-level security policy for table "sessions"',
-      details: null,
-      hint: null,
-    };
-
-    function setup(vehicleRead: QueryResponse['single']) {
-      vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-      vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-      const visibleTracks = createQuery({ base: { data: [], error: null } });
-      const trackInsert = createQuery({ single: { data: { id: 'track-new', name: 'Harris Hill Raceway' }, error: null } });
-      const sessionInsert = createQuery({ single: { data: null, error: RLS_REFUSAL } });
-      const vehicleLookup = createQuery({ single: vehicleRead });
-      const trackRollback = createQuery({ base: { data: null, error: null } });
-      const from = vi
-        .fn()
-        .mockImplementationOnce(() => visibleTracks)
-        .mockImplementationOnce(() => createWildcardLookup())
-        .mockImplementationOnce(createAliasMiss)
-        .mockImplementationOnce(createAliasMiss)
-        .mockImplementationOnce(() => trackInsert)
-        .mockImplementationOnce((table: string) => {
-          expect(table).toBe('sessions');
-          return sessionInsert;
-        })
-        .mockImplementationOnce((table: string) => {
-          expect(table).toBe('vehicles');
-          return vehicleLookup;
-        })
-        .mockImplementationOnce((table: string) => {
-          expect(table).toBe('tracks');
-          return trackRollback;
-        })
-        .mockImplementation(() => createQuery({ base: { data: [], error: null } }));
-      vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-      return { vehicleLookup, trackRollback };
+  describe('a create the database could not complete', () => {
+    /** A typed circuit the rider has never logged, so this save creates its track row. */
+    function newCircuitTracks() {
+      return createQuery({
+        base: { data: [], error: null },
+        single: { data: { id: 'track-new', name: 'Harris Hill Raceway' }, error: null },
+      });
     }
 
-    const input = { ...validInput, track_id: null, track_name: 'Harris Hill Raceway' };
-
-    it('tells the rider the vehicle is not in their garage, and keeps no track for the session', async () => {
-      const { vehicleLookup, trackRollback } = setup({ data: null, error: null });
-
-      const result = await createSession(input);
-
-      expect(result).toEqual({ ok: false, error: SESSION_VEHICLE_NOT_OWNED_MESSAGE });
-      expect(vehicleLookup.eq).toHaveBeenCalledWith('id', validInput.vehicle_id);
-      expect(vehicleLookup.eq).toHaveBeenCalledWith('user_id', 'user-1');
-      expect(trackRollback.eq).toHaveBeenCalledWith('id', 'track-new');
-      expect(reportError).not.toHaveBeenCalled();
-    });
-
-    it('says the save failed on our side when the vehicle is the rider’s, since that 42501 is a grant', async () => {
-      setup({ data: { id: validInput.vehicle_id }, error: null });
-
-      const result = await createSession(input);
-
-      expect(!result.ok && result.error).toMatch(/did not save completely/i);
-      expect(reportError).toHaveBeenCalledWith(
-        'session-create',
-        expect.any(Error),
-        expect.objectContaining({ reason: '42501', table: 'sessions' }),
-      );
-    });
-
-    it('says the vehicle could not be checked when that read fails, and reports it', async () => {
-      const { trackRollback } = setup({ data: null, error: { code: '', message: 'fetch failed' } });
-
-      const result = await createSession(input);
-
-      expect(!result.ok && result.error).toMatch(/could not check the vehicle/i);
-      expect(trackRollback.delete).toHaveBeenCalled();
-      expect(reportError).toHaveBeenCalledWith(
-        'session-create',
-        expect.any(Error),
-        expect.objectContaining({ table: 'vehicles', query: 'vehicle ownership' }),
-      );
-    });
-  });
-
-  // A gateway blip needs no drift at all: postgrest-js resolves it as an
-  // ordinary error carrying an EMPTY code, which used to render as
-  // `TypeError: fetch failed` under the form.
-  it('does not show the rider a transport failure on the session insert', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const trackLookup = createQuery({
-      single: { data: { id: 'track-1', name: 'Road America' }, error: null },
-    });
-    const sessionInsert = createQuery({
-      single: {
-        data: null,
-        error: { code: '', message: 'TypeError: fetch failed', details: '', hint: '' },
-      },
-    });
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => trackLookup)
-      .mockImplementationOnce(() => sessionInsert)
-      .mockImplementation(() => createQuery({ base: { data: [], error: null } }));
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession(validInput);
-
-    expect(result.ok).toBe(false);
-    expect(!result.ok && result.error).not.toContain('fetch failed');
-    expect(!result.ok && result.error).toMatch(/did not save completely/i);
-    expect(reportError).toHaveBeenCalled();
-  });
-
-  it('leaves a track it did not create alone when the session insert fails', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const visibleTracks = createQuery({
-      base: { data: [{ id: 'track-9', name: 'Eagles Canyon Raceway' }], error: null },
-    });
-    const sessionInsert = createQuery({ single: { data: null, error: { message: 'session refused' } } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => visibleTracks)
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return sessionInsert;
-      })
-      .mockImplementation(() => {
-        throw new Error('nothing else should be queried');
-      });
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({
-      ...validInput,
-      track_id: null,
-      track_name: 'Eagles Canyon Raceway',
-    });
-
-    expect(result.ok).toBe(false);
-    // Matched, not created: it was already the rider's own track.
-    expect(from).toHaveBeenCalledTimes(2);
-  });
-
-  it('stores the track row\'s own name rather than a name typed beside its id', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const trackLookup = createQuery({
-      single: { data: { id: 'track-1', name: 'Road America' }, error: null },
-    });
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return trackLookup;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({
-      ...validInput,
-      track_id: 'track-1',
-      track_name: 'Somewhere Else Entirely',
-    });
-
-    expect(result.ok).toBe(true);
-    // The id and the name must name the same circuit.
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: 'track-1', track_name: 'Road America' }),
-    );
-  });
-
-  it('falls back to the typed name when the track id is not one the rider can see', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    // Someone else's track: RLS hides the row, so the lookup returns nothing.
-    const trackLookup = createQuery({ single: { data: null, error: null } });
-    const visibleTracks = createQuery({ base: { data: [], error: null } });
-    const trackInsert = createQuery({
-      single: { data: { id: 'track-mine', name: 'Harris Hill Raceway' }, error: null },
-    });
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => trackLookup)
-      .mockImplementationOnce(() => visibleTracks)
-      .mockImplementationOnce(() => createWildcardLookup())
-      .mockImplementationOnce(createAliasMiss)
-      .mockImplementationOnce(createAliasMiss)
-      .mockImplementationOnce(() => trackInsert)
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({
-      ...validInput,
-      track_id: 'someone-elses-track',
-      track_name: 'Harris Hill Raceway',
-    });
-
-    expect(result.ok).toBe(true);
-    // Never stores a link the rider cannot follow.
-    expect(insertQuery.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ track_id: 'track-mine', track_name: 'Harris Hill Raceway' }),
-    );
-  });
-
-  // A lap failure on the CREATE path deletes the session row that was inserted
-  // moments earlier, so the rider is not merely missing lap times - the whole
-  // session is gone. Telling them only that the laps were not saved sends them
-  // away with the laps copied and nothing else stored.
-  it('tells a rider the whole session was lost when create rolls back on a lap fault', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const insertQuery = createQuery({
-      single: { data: { id: 'sess-1', ...validInput }, error: null },
-    });
-    const rollbackQuery = createQuery({ base: { data: [{ id: 'sess-1' }], error: null } });
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return createTrackIdLookup();
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return rollbackQuery;
-      });
-    const rpc = vi.fn(async () => ({
-      data: null,
-      error: {
-        code: 'PGRST202',
-        message:
-          'Could not find the function public.replace_session_laps(p_expected_laps, p_laps, p_session_id, p_user_id) in the schema cache',
-        details: null,
-        hint: null,
-      },
-    }));
-    vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
-
-    const result = await createSession({
-      ...validInput,
-      laps: [{ lap_number: 1, lap_time_ms: 90_000, included: true }],
-    });
-
-    expect(result.ok).toBe(false);
-    // Session-level, because the whole session is at stake rather than the laps.
-    expect(!result.ok && result.error).toMatch(/session did not save completely/i);
-    expect(!result.ok && result.error).toMatch(/sessions list/i);
-    expect(!result.ok && result.error).not.toMatch(/they are still on this page/i);
-    expect(!result.ok && result.error).not.toContain('replace_session_laps');
-    expect(rollbackQuery.delete).toHaveBeenCalled();
-    expect(reportError).toHaveBeenCalled();
-  });
-
-  // The same shape as the Save Outcome incident on a plain insert:
-  // `session_environment` arrives with 20260422000400, so a database behind it
-  // answers PGRST205 and that text used to be printed under the form while the
-  // rider's whole session was rolled back, with nothing reaching Sentry.
-  it('rolls back the session when environment insert fails', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const insertQuery = createQuery({
-      single: { data: { id: 'sess-1', ...validInput }, error: null },
-    });
-    const environmentInsertQuery = createQuery({
-      base: {
-        data: null,
-        error: {
-          code: 'PGRST205',
-          message: "Could not find the table 'public.session_environment' in the schema cache",
-          details: null,
-          hint: null,
+    it('does not show the rider raw PostgREST, reports it, and takes back the track it made', async () => {
+      vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+      vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+      const tracks = newCircuitTracks();
+      const { rpc } = createSaveClient({
+        tables: { tracks: () => tracks },
+        createResult: {
+          data: null,
+          error: {
+            code: 'PGRST202',
+            message: 'Could not find the function public.create_session_with_laps in the schema cache',
+            details: null,
+            hint: null,
+          },
         },
+      });
+
+      const result = await createSession({ ...validInput, track_id: null, track_name: 'Harris Hill Raceway' });
+
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.error).not.toContain('schema cache');
+      expect(!result.ok && result.error).toMatch(/on our end/i);
+      expect(reportError).toHaveBeenCalledWith(
+        'session-create',
+        expect.objectContaining({ message: expect.stringContaining('schema cache') }),
+        expect.objectContaining({ reason: 'PGRST202', query: 'create_session_with_laps' }),
+      );
+      // A database that answered with a code rolled the whole call back, so the
+      // track resolved for it is unused - and the database decides whether it
+      // still is, since another save may have stored a session against it since.
+      expect(rpc).toHaveBeenCalledWith('delete_auto_created_track_if_unused', { p_track_id: 'track-new' });
+      expect(tracks.delete).not.toHaveBeenCalled();
+    });
+
+    it('reports a take-back of its track that failed, and still tells the rider why the save was refused', async () => {
+      vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+      vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'free' } as never);
+      createSaveClient({
+        tables: { tracks: () => newCircuitTracks() },
+        createResult: { data: null, error: { code: 'TT402', message: 'the free plan holds 10 sessions' } },
+        trackTakeBackResult: {
+          data: null,
+          error: { code: 'PGRST202', message: 'Could not find the function public.delete_auto_created_track_if_unused' },
+        },
+      });
+
+      const result = await createSession({ ...validInput, track_id: null, track_name: 'Harris Hill Raceway' });
+
+      expect(result).toEqual({ ok: false, error: getFreePlanLimitMessage('sessions') });
+      expect(reportError).toHaveBeenCalledWith(
+        'session-track-rollback',
+        expect.any(Error),
+        expect.objectContaining({ reason: 'PGRST202', trackId: 'track-new' }),
+      );
+    });
+
+    it('does not show the rider a transport failure, and keeps the track the save may have used', async () => {
+      vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+      vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+      const tracks = newCircuitTracks();
+      const { rpc } = createSaveClient({
+        tables: { tracks: () => tracks },
+        createResult: { data: null, error: { code: '', message: 'TypeError: fetch failed', details: '', hint: '' } },
+      });
+
+      const result = await createSession({ ...validInput, track_id: null, track_name: 'Harris Hill Raceway' });
+
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.error).not.toContain('fetch failed');
+      // The call may have committed, so the rider is sent to look rather than promised a clean slate.
+      expect(!result.ok && result.error).toMatch(/may not have saved/i);
+      expect(reportError).toHaveBeenCalled();
+      expect(rpc).not.toHaveBeenCalledWith('delete_auto_created_track_if_unused', expect.anything());
+    });
+  });
+
+  it('still succeeds when the change-record insert fails', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    createSaveClient({
+      tables: {
+        sessions: () => createQuery({ base: { data: [previousSession], error: null } }),
+        vehicle_baselines: () => createQuery({ base: { data: [changeBaseline], error: null } }),
+        session_changes: () => createQuery({ base: { data: null, error: { message: 'changes failed' } } }),
       },
     });
-    const rollbackQuery = createQuery({
-      base: { data: [{ id: 'sess-1' }], error: null },
-    });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return createTrackIdLookup();
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('session_environment');
-        return environmentInsertQuery;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return rollbackQuery;
-      });
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({
-      ...validInput,
-      environment: {
-        ambient_temperature_c: 24,
-        source: 'manual',
-      },
-    });
-
-    expect(result.ok).toBe(false);
-    expect(!result.ok && result.error).not.toContain('session_environment');
-    expect(!result.ok && result.error).not.toContain('schema cache');
-    expect(!result.ok && result.error).toMatch(/did not save completely/i);
-    expect(rollbackQuery.delete).toHaveBeenCalled();
-    expect(reportError).toHaveBeenCalledWith(
-      'session-create',
-      expect.objectContaining({ message: expect.stringContaining('schema cache') }),
-      expect.objectContaining({ reason: 'PGRST205', table: 'session_environment' }),
-    );
-  });
-
-  // The rollback delete reports nothing back and gives up quietly when it errors
-  // or matches no rows, and a dead transport fails the write AND the delete. So
-  // the sentence must not tell a rider the session is gone - one who believes
-  // that re-enters it and ends up with two.
-  it('does not promise the session was removed when the rollback cannot say so', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const insertQuery = createQuery({
-      single: { data: { id: 'sess-1', ...validInput }, error: null },
-    });
-    // The delete removed nothing, so the session row is still there.
-    const rollbackQuery = createQuery({ base: { data: [], error: null } });
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return createTrackIdLookup();
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return rollbackQuery;
-      });
-    const rpc = vi.fn(async () => ({
-      data: null,
-      error: { code: '', message: 'TypeError: fetch failed', details: '', hint: '' },
-    }));
-    vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
-
-    const result = await createSession({
-      ...validInput,
-      laps: [{ lap_number: 1, lap_time_ms: 90_000, included: true }],
-    });
-
-    expect(result.ok).toBe(false);
-    expect(!result.ok && result.error).not.toMatch(/nothing was stored/i);
-    expect(!result.ok && result.error).not.toMatch(/was not saved\b/i);
-    // What it does have to carry: the fault is ours, and go and look first.
-    expect(!result.ok && result.error).toMatch(/on our end/i);
-    expect(!result.ok && result.error).toMatch(/sessions list/i);
-  });
-
-  it('keeps the auto-created track when the session delete removed no row', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    const visibleTracks = createQuery({ base: { data: [], error: null } });
-    const trackInsert = createQuery({
-      single: { data: { id: 'track-new', name: 'Harris Hill Raceway' }, error: null },
-    });
-    const sessionInsert = createQuery({
-      single: { data: { id: 'sess-1', ...validInput }, error: null },
-    });
-    const environmentInsert = createQuery({ base: { data: null, error: { message: 'env failed' } } });
-    // No error, and no row either: RLS refusing a delete looks exactly like this.
-    const sessionRollback = createQuery({ base: { data: [], error: null } });
-    const trackRollback = createQuery({ base: { data: null, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => visibleTracks)
-      .mockImplementationOnce(() => createWildcardLookup())
-      .mockImplementationOnce(createAliasMiss)
-      .mockImplementationOnce(createAliasMiss)
-      .mockImplementationOnce(() => trackInsert)
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return sessionInsert;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('session_environment');
-        return environmentInsert;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return sessionRollback;
-      })
-      .mockImplementation(() => trackRollback);
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({
-      ...validInput,
-      track_id: null,
-      track_name: 'Harris Hill Raceway',
-      environment: { ambient_temperature_c: 24, source: 'manual' },
-    });
-
-    expect(result.ok).toBe(false);
-    expect(!result.ok && result.error).not.toContain('env failed');
-    expect(!result.ok && result.error).toMatch(/did not save completely/i);
-    // Silence is not proof the session went, and `sessions.track_id` is
-    // ON DELETE SET NULL, so deleting the track now would strip the circuit off a
-    // session the rider still has.
-    expect(trackRollback.delete).not.toHaveBeenCalled();
-    expect(from).toHaveBeenCalledTimes(8);
-    expect(errorSpy).toHaveBeenCalledWith(
-      '[sessions] session rollback failed',
-      expect.objectContaining({ userId: 'user-1', sessionId: 'sess-1', error: 'no rows deleted' }),
-    );
-  });
-
-  it('keeps the auto-created track when the session it belongs to could not be deleted', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    const visibleTracks = createQuery({ base: { data: [], error: null } });
-    const trackInsert = createQuery({
-      single: { data: { id: 'track-new', name: 'Harris Hill Raceway' }, error: null },
-    });
-    const sessionInsert = createQuery({
-      single: { data: { id: 'sess-1', ...validInput }, error: null },
-    });
-    const environmentInsert = createQuery({ base: { data: null, error: { message: 'env failed' } } });
-    const sessionRollback = createQuery({ base: { data: null, error: { message: 'delete refused' } } });
-    const trackRollback = createQuery({ base: { data: null, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => visibleTracks)
-      .mockImplementationOnce(() => createWildcardLookup())
-      .mockImplementationOnce(createAliasMiss)
-      .mockImplementationOnce(createAliasMiss)
-      .mockImplementationOnce(() => trackInsert)
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return sessionInsert;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('session_environment');
-        return environmentInsert;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return sessionRollback;
-      })
-      .mockImplementation(() => trackRollback);
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession({
-      ...validInput,
-      track_id: null,
-      track_name: 'Harris Hill Raceway',
-      environment: { ambient_temperature_c: 24, source: 'manual' },
-    });
-
-    expect(result.ok).toBe(false);
-    expect(!result.ok && result.error).not.toContain('env failed');
-    expect(!result.ok && result.error).toMatch(/did not save completely/i);
-    // The session row survived its own delete, and `sessions.track_id` is
-    // ON DELETE SET NULL, so removing the track now would strip the circuit off a
-    // session the rider still has. A stray track is the lesser failure.
-    expect(trackRollback.delete).not.toHaveBeenCalled();
-    expect(from).toHaveBeenCalledTimes(8);
-    expect(errorSpy).toHaveBeenCalledWith(
-      '[sessions] session rollback failed',
-      expect.objectContaining({ userId: 'user-1', sessionId: 'sess-1', error: 'delete refused' }),
-    );
-  });
-
-  it('persists change records against the previous session and the active baseline', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const insertQuery = createQuery({ single: { data: createdSession, error: null } });
-    const vehicleQuery = createQuery({ single: { data: { type: 'motorcycle' }, error: null } });
-    const previousQuery = createQuery({ base: { data: [previousSession], error: null } });
-    const baselineQuery = createQuery({ base: { data: [changeBaseline], error: null } });
-    const changesInsertQuery = createQuery({ base: { data: null, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return createTrackIdLookup();
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return insertQuery;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('vehicles');
-        return vehicleQuery;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('sessions');
-        return previousQuery;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('vehicle_baselines');
-        return baselineQuery;
-      })
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('session_changes');
-        return changesInsertQuery;
-      });
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
 
     const result = await createSession(validInput);
 
     expect(result.ok).toBe(true);
-    expect(changesInsertQuery.insert).toHaveBeenCalledTimes(1);
-    const insertedRows = vi.mocked(changesInsertQuery.insert as ReturnType<typeof vi.fn>).mock
-      .calls[0][0] as Array<Record<string, unknown>>;
-    expect(insertedRows).toHaveLength(2);
-    expect(insertedRows.map((row) => row.reference_kind)).toEqual(['previous', 'baseline']);
-    expect(insertedRows[0]).toMatchObject({ session_id: 'sess-1', reference_session_id: 'sess-0' });
-    expect(insertedRows[1]).toMatchObject({ session_id: 'sess-1', reference_session_id: 'baseline-source' });
-  });
-
-  /**
-   * The save stores the setup blobs it is handed, and `sessions.tires` and
-   * `sessions.suspension` are unconstrained `jsonb`, so the row it reads back can
-   * hold a number where text was expected or no blob at all. The change records
-   * are diffed from that row, and a diff that threw was caught and logged, so the
-   * session saved with no change records and nothing on screen said so. The
-   * number case leaves the tyre fields before it blank and the modules unset,
-   * or the "anything logged?" check stops at a sibling and never reads it.
-   */
-  it.each([
-    {
-      name: 'a pressure saved as a number',
-      tires: { ...validInput.tires, front: { brand: '', compound: '', pressure: 30 } },
-      suspension: validInput.suspension,
-      enabledModules: null,
-      frontPressure: '30',
-    },
-    {
-      name: 'no setup blobs at all',
-      tires: null,
-      suspension: null,
-      enabledModules: validInput.enabled_modules,
-      frontPressure: '',
-    },
-  ])('writes the change records for a save with $name', async ({ tires, suspension, enabledModules, frontPressure }) => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const input = { ...validInput, tires, suspension, enabled_modules: enabledModules } as unknown as CreateSessionInput;
-    const insertQuery = createQuery({
-      single: { data: { ...createdSession, tires, suspension, enabled_modules: enabledModules }, error: null },
-    });
-    const previousQuery = createQuery({ base: { data: [previousSession], error: null } });
-    const changesInsertQuery = createQuery({ base: { data: null, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => createTrackIdLookup())
-      .mockImplementationOnce(() => insertQuery)
-      .mockImplementationOnce(() => createQuery({ single: { data: { type: 'motorcycle' }, error: null } }))
-      .mockImplementationOnce(() => previousQuery)
-      .mockImplementationOnce(() => createQuery({ base: { data: [], error: null } }))
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('session_changes');
-        return changesInsertQuery;
-      });
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession(input);
-
-    expect(result.ok).toBe(true);
-    expect(insertQuery.insert).toHaveBeenCalledWith(expect.objectContaining({ tires, suspension }));
-    expect(changesInsertQuery.insert).toHaveBeenCalledTimes(1);
-    const insertedRows = vi.mocked(changesInsertQuery.insert as ReturnType<typeof vi.fn>).mock
-      .calls[0][0] as Array<{ reference_kind: string; changes: Array<Record<string, string>> }>;
-    expect(insertedRows.map((row) => row.reference_kind)).toEqual(['previous']);
-    expect(insertedRows[0].changes).toContainEqual({
-      group: 'Tires',
-      label: 'Front pressure',
-      from: '33',
-      to: frontPressure,
-    });
-  });
-
-  it('persists a single change record when only a previous session exists', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const insertQuery = createQuery({ single: { data: createdSession, error: null } });
-    const vehicleQuery = createQuery({ single: { data: { type: 'motorcycle' }, error: null } });
-    const previousQuery = createQuery({ base: { data: [previousSession], error: null } });
-    const baselineQuery = createQuery({ base: { data: [], error: null } });
-    const changesInsertQuery = createQuery({ base: { data: null, error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return createTrackIdLookup();
-      })
-      .mockImplementationOnce(() => insertQuery)
-      .mockImplementationOnce(() => vehicleQuery)
-      .mockImplementationOnce(() => previousQuery)
-      .mockImplementationOnce(() => baselineQuery)
-      .mockImplementationOnce(() => changesInsertQuery);
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession(validInput);
-
-    expect(result.ok).toBe(true);
-    const insertedRows = vi.mocked(changesInsertQuery.insert as ReturnType<typeof vi.fn>).mock
-      .calls[0][0] as Array<Record<string, unknown>>;
-    expect(insertedRows.map((row) => row.reference_kind)).toEqual(['previous']);
-  });
-
-  it('writes no change records when there is no reference to compare against', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-
-    const insertQuery = createQuery({ single: { data: createdSession, error: null } });
-    const vehicleQuery = createQuery({ single: { data: { type: 'motorcycle' }, error: null } });
-    const previousQuery = createQuery({ base: { data: [], error: null } });
-    const baselineQuery = createQuery({ base: { data: [], error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return createTrackIdLookup();
-      })
-      .mockImplementationOnce(() => insertQuery)
-      .mockImplementationOnce(() => vehicleQuery)
-      .mockImplementationOnce(() => previousQuery)
-      .mockImplementationOnce(() => baselineQuery);
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession(validInput);
-
-    expect(result.ok).toBe(true);
-    // One `tracks` resolve, the session insert, the vehicle type, the previous
-    // session and the baseline.
-    expect(from).toHaveBeenCalledTimes(5);
-    expect(from).not.toHaveBeenCalledWith('session_changes');
-  });
-
-  it('still succeeds without rollback when the change-record insert fails', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    const insertQuery = createQuery({ single: { data: createdSession, error: null } });
-    const vehicleQuery = createQuery({ single: { data: { type: 'motorcycle' }, error: null } });
-    const previousQuery = createQuery({ base: { data: [previousSession], error: null } });
-    const baselineQuery = createQuery({ base: { data: [changeBaseline], error: null } });
-    const changesInsertQuery = createQuery({ base: { data: null, error: { message: 'changes failed' } } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return createTrackIdLookup();
-      })
-      .mockImplementationOnce(() => insertQuery)
-      .mockImplementationOnce(() => vehicleQuery)
-      .mockImplementationOnce(() => previousQuery)
-      .mockImplementationOnce(() => baselineQuery)
-      .mockImplementationOnce(() => changesInsertQuery);
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
-
-    const result = await createSession(validInput);
-
-    expect(result).toEqual({ ok: true, data: createdSession });
-    expect(from).toHaveBeenCalledTimes(6);
-    expect(insertQuery.delete).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(
       '[sessions] session_changes insert failed',
-      expect.objectContaining({
-        userId: 'user-1',
-        sessionId: 'sess-1',
-        error: 'changes failed',
-      }),
+      expect.objectContaining({ userId: 'user-1', error: 'changes failed' }),
     );
   });
 
@@ -1891,32 +582,21 @@ describe('sessions actions', () => {
     vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
     vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    const insertQuery = createQuery({ single: { data: createdSession, error: null } });
-    const vehicleQuery = createQuery({ single: { data: null, error: { message: 'not found' } } });
-    const previousQuery = createQuery({ base: { data: [previousSession], error: null } });
-    const baselineQuery = createQuery({ base: { data: [changeBaseline], error: null } });
-
-    const from = vi
-      .fn()
-      .mockImplementationOnce((table: string) => {
-        expect(table).toBe('tracks');
-        return createTrackIdLookup();
-      })
-      .mockImplementationOnce(() => insertQuery)
-      .mockImplementationOnce(() => vehicleQuery)
-      .mockImplementationOnce(() => previousQuery)
-      .mockImplementationOnce(() => baselineQuery);
-    vi.mocked(createClient).mockResolvedValue({ from, rpc: vi.fn(async () => ({ data: null, error: null })) } as never);
+    const { from } = createSaveClient({
+      tables: {
+        vehicles: () => createQuery({ single: { data: null, error: { message: 'not found' } } }),
+        sessions: () => createQuery({ base: { data: [previousSession], error: null } }),
+        vehicle_baselines: () => createQuery({ base: { data: [changeBaseline], error: null } }),
+      },
+    });
 
     const result = await createSession(validInput);
 
-    expect(result).toEqual({ ok: true, data: createdSession });
-    expect(from).toHaveBeenCalledTimes(5);
+    expect(result.ok).toBe(true);
     expect(from).not.toHaveBeenCalledWith('session_changes');
     expect(errorSpy).toHaveBeenCalledWith(
       '[sessions] session_changes skipped: unresolved vehicle type',
-      expect.objectContaining({ userId: 'user-1', sessionId: 'sess-1', vehicleId: 'veh-1' }),
+      expect.objectContaining({ userId: 'user-1', vehicleId: VEHICLE_ID }),
     );
   });
 
@@ -1926,7 +606,7 @@ describe('sessions actions', () => {
     const current: Session = {
       id: 'current',
       user_id: 'user-1',
-      vehicle_id: 'veh-1',
+      vehicle_id: VEHICLE_ID,
       track_id: null,
       track_name: null,
       layout_id: null,
@@ -1971,7 +651,7 @@ describe('sessions actions', () => {
     const current: Session = {
       id: 'current',
       user_id: 'user-1',
-      vehicle_id: 'veh-1',
+      vehicle_id: VEHICLE_ID,
       track_id: 'track-1',
       track_name: 'MSR Cresson',
       layout_id: null,
@@ -2063,7 +743,7 @@ describe('sessions actions', () => {
         id: 'telemetry-1',
         user_id: 'user-1',
         session_id: 'session-1',
-        vehicle_id: 'veh-1',
+        vehicle_id: VEHICLE_ID,
         source: 'test',
         summary: null,
         metrics: { best_lap_ms: 95000 },
@@ -2329,33 +1009,6 @@ describe('sessions actions', () => {
 
     expect(result).toEqual({ ok: false, error: 'sessions cannot exceed 200 laps' });
     expect(reportError).not.toHaveBeenCalled();
-  });
-
-  it('tells a new session the database is holding none of its laps yet', async () => {
-    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
-    vi.mocked(getUserProfile).mockResolvedValue({ id: 'user-1', tier: 'pro' } as never);
-    const trackQuery = createQuery({ single: { data: { id: 'track-1', name: 'MSR Cresson' }, error: null } });
-    const insertQuery = createQuery({ single: { data: { id: 'sess-1' }, error: null } });
-    const from = vi
-      .fn()
-      .mockImplementationOnce(() => trackQuery)
-      .mockImplementationOnce(() => insertQuery)
-      .mockImplementation(() =>
-        createQuery({ base: { data: [], error: null }, single: { data: { type: 'motorcycle' }, error: null } }),
-      );
-    const rpc = vi.fn(async () => ({ data: null, error: null }));
-    vi.mocked(createClient).mockResolvedValue({ from, rpc } as never);
-
-    const result = await createSession({
-      ...validInput,
-      laps: [{ lap_number: 1, lap_time_ms: 90_000, included: true }],
-    });
-
-    expect(result.ok).toBe(true);
-    expect(rpc).toHaveBeenCalledWith(
-      'replace_session_laps',
-      expect.objectContaining({ p_expected_laps: [] }),
-    );
   });
 
   it('returns demo telemetry summaries without calling Supabase', async () => {

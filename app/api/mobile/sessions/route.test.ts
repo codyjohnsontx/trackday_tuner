@@ -1,11 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { AuthApiError, AuthRetryableFetchError, AuthSessionMissingError, AuthUnknownError } from '@supabase/supabase-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveUserAccess } from '@/lib/access';
-import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
+import { getFreePlanLimitMessage } from '@/lib/plans';
 import { MISSING_CONDITIONS_MESSAGE } from '@/lib/session-answers';
-import { SESSION_REFERENCE_GONE_MESSAGE } from '@/lib/sessions/create';
-import type { Profile } from '@/types';
+import { SESSION_VEHICLE_NOT_OWNED_MESSAGE } from '@/lib/sessions/create';
 
 /**
  * The route with everything real except Supabase: the bearer helper, the body
@@ -44,6 +42,13 @@ interface FakeOptions {
   beforeSessionInsert?: (row: Row) => void;
   /** Make every `profiles` read fail. */
   profileReadFails?: boolean;
+  /**
+   * Stage the free-plan cap: `create_session_with_laps` refuses a new session as
+   * `TT402`, after its replay checks as the real one does. The cap and the
+   * entitlement that lifts it are the database's, and tests/db runs them there;
+   * this fake only needs the route's answer to the refusal.
+   */
+  atPlanLimit?: boolean;
   /** Asked on each non-count `sessions` read; true fails that read in transit. */
   sessionReadFails?: () => boolean;
   /**
@@ -164,7 +169,7 @@ class Query {
  * `create_session_with_laps` (20260927002200, 20260928002300) as the database
  * runs it: one transaction, so it answers with everything written or nothing
  * written, and in the function's order - replay, deleted replay, the free-plan
- * cap, the vehicle. The body runs without yielding, which is what the real
+ * cap (staged, see `atPlanLimit`), the vehicle. The body runs without yielding, which is what the real
  * function's per-rider lock gives two calls from one rider.
  */
 function createSessionWithLaps(db: Db, options: FakeOptions, args: Record<string, unknown>) {
@@ -180,11 +185,7 @@ function createSessionWithLaps(db: Db, options: FakeOptions, args: Record<string
   if ((db.deleted_sessions ?? []).some((row) => row.session_id === id && row.user_id === USER_ID)) {
     return { data: { replayed: true, deleted: true, session: null }, error: null };
   }
-  const profile = (db.profiles ?? []).find((row) => row.id === USER_ID) as Profile | undefined;
-  if (
-    !resolveUserAccess(profile ?? null).hasProAccess &&
-    db.sessions.filter((row) => row.user_id === USER_ID).length >= getFreePlanLimit('sessions')
-  ) {
+  if (options.atPlanLimit) {
     return { data: null, error: { code: 'TT402', message: 'the free plan holds 10 sessions' } };
   }
   // The vehicle has to be one of this rider's - a deleted one and another rider's alike.
@@ -219,6 +220,19 @@ function createSessionWithLaps(db: Db, options: FakeOptions, args: Record<string
   return { data: { replayed: false, session }, error: null };
 }
 
+/**
+ * `delete_auto_created_track_if_unused` (20260930002400): the rider's own
+ * unseeded track, and only while no session references it. Its locking is the
+ * database's, and tests/db runs it there.
+ */
+function deleteAutoCreatedTrackIfUnused(db: Db, args: Record<string, unknown>) {
+  const id = args.p_track_id;
+  const track = (db.tracks ?? []).find((row) => row.id === id && row.created_by === USER_ID && !row.is_seeded);
+  if (!track || db.sessions.some((row) => row.track_id === id)) return { data: false, error: null };
+  db.tracks = db.tracks.filter((row) => row !== track);
+  return { data: true, error: null };
+}
+
 function fakeSupabase(db: Db, options: FakeOptions = {}) {
   const getUser =
     options.getUser ??
@@ -226,11 +240,11 @@ function fakeSupabase(db: Db, options: FakeOptions = {}) {
       token === TOKEN
         ? { data: { user: { id: USER_ID } }, error: null }
         : { data: { user: null }, error: new AuthApiError('invalid JWT', 401, 'bad_jwt') });
-  const rpc = vi.fn(async (name: string, args: Record<string, unknown>) =>
-    name === 'create_session_with_laps'
-      ? createSessionWithLaps(db, options, args)
-      : { data: null, error: { code: 'PGRST202', message: name } },
-  );
+  const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
+    if (name === 'create_session_with_laps') return createSessionWithLaps(db, options, args);
+    if (name === 'delete_auto_created_track_if_unused') return deleteAutoCreatedTrackIfUnused(db, args);
+    return { data: null, error: { code: 'PGRST202', message: name } };
+  });
   const client = {
     auth: { getUser: vi.fn(getUser) },
     from: (table: string) => new Query(db, table, options),
@@ -288,18 +302,6 @@ function deleteOnWebsite(db: Db, sessionId: string) {
   db.sessions = db.sessions.filter((row) => row.id !== sessionId);
   db.session_laps = (db.session_laps ?? []).filter((row) => row.session_id !== sessionId);
   db.deleted_sessions = [...(db.deleted_sessions ?? []), { user_id: USER_ID, session_id: sessionId }];
-}
-
-function freeRiderWith(sessionCount: number): Db {
-  return seed({
-    profiles: [{ id: USER_ID, tier: 'free', beta_access_started_at: null, beta_access_expires_at: null }],
-    sessions: Array.from({ length: sessionCount }, (_, index) => ({
-      id: randomUUID(),
-      user_id: USER_ID,
-      vehicle_id: VEHICLE_ID,
-      date: `2026-08-${String(index + 1).padStart(2, '0')}`,
-    })),
-  });
 }
 
 describe('POST /api/mobile/sessions', () => {
@@ -480,21 +482,23 @@ describe('POST /api/mobile/sessions', () => {
     expect(db.session_laps).toHaveLength(2);
   });
 
-  it('answers the replay of a free rider’s tenth session as the row, not as the cap', async () => {
-    const db = freeRiderWith(9);
+  it('answers the replay of a free rider’s last session as the row, not as the cap', async () => {
+    const db = seed();
     fakeSupabase(db);
-
     expect((await post(sessionBody())).status).toBe(200);
+    fakeSupabase(db, { atPlanLimit: true });
+
     const replay = await post(sessionBody());
 
     expect(replay.status).toBe(200);
     expect((await replay.json()).replayed).toBe(true);
-    expect(db.sessions).toHaveLength(10);
+    expect(db.sessions).toHaveLength(1);
   });
 
   it('answers a free rider’s replay as the row, not the cap, when the first call commits while this one resolves', async () => {
-    const db = freeRiderWith(9);
+    const db = seed();
     fakeSupabase(db, {
+      atPlanLimit: true,
       beforeSessionInsert: (row) => {
         if (!db.sessions.some((existing) => existing.id === row.id)) db.sessions.push({ ...row, notes: 'the first call' });
       },
@@ -506,7 +510,7 @@ describe('POST /api/mobile/sessions', () => {
     expect(replay.status).toBe(200);
     expect(body.replayed).toBe(true);
     expect(body.session.notes).toBe('the first call');
-    expect(db.sessions).toHaveLength(10);
+    expect(db.sessions).toHaveLength(1);
   });
 
   it.each<[string, FakeOptions]>([
@@ -561,17 +565,17 @@ describe('POST /api/mobile/sessions', () => {
   });
 
   it('answers a replay of a session deleted since as handled for a free rider at the cap', async () => {
-    const db = freeRiderWith(9);
+    const db = seed();
     fakeSupabase(db);
     expect((await post(sessionBody())).status).toBe(200);
     deleteOnWebsite(db, SESSION_ID);
-    db.sessions.push({ id: randomUUID(), user_id: USER_ID, vehicle_id: VEHICLE_ID, date: '2026-09-28' });
+    fakeSupabase(db, { atPlanLimit: true });
 
     const retry = await post(sessionBody());
 
     expect(retry.status).toBe(200);
     expect((await retry.json()).deleted).toBe(true);
-    expect(db.sessions).toHaveLength(10);
+    expect(db.sessions).toHaveLength(0);
   });
 
   it('answers a replay of a session deleted with its custom track as handled, not as a session with no track', async () => {
@@ -649,7 +653,7 @@ describe('POST /api/mobile/sessions', () => {
     const response = await post(sessionBody({ track_id: null, track_name: 'Blackhawk Farms' }));
 
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ ok: false, error: SESSION_REFERENCE_GONE_MESSAGE });
+    expect(await response.json()).toEqual({ ok: false, error: SESSION_VEHICLE_NOT_OWNED_MESSAGE });
     expect(db.sessions).toHaveLength(0);
     expect(db.tracks.some((track) => track.name === 'Blackhawk Farms')).toBe(false);
     expect(reportError).not.toHaveBeenCalled();
@@ -675,7 +679,7 @@ describe('POST /api/mobile/sessions', () => {
       const response = await post(sessionBody({ vehicle_id: FOREIGN_VEHICLE_ID, laps: [] }));
 
       expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ ok: false, error: SESSION_REFERENCE_GONE_MESSAGE });
+      expect(await response.json()).toEqual({ ok: false, error: SESSION_VEHICLE_NOT_OWNED_MESSAGE });
       expect(db.sessions).toHaveLength(0);
       expect(reportError).not.toHaveBeenCalled();
     });
@@ -687,7 +691,7 @@ describe('POST /api/mobile/sessions', () => {
       const response = await post(sessionBody({ vehicle_id: FOREIGN_VEHICLE_ID }));
 
       expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ ok: false, error: SESSION_REFERENCE_GONE_MESSAGE });
+      expect(await response.json()).toEqual({ ok: false, error: SESSION_VEHICLE_NOT_OWNED_MESSAGE });
       expect(db.sessions).toHaveLength(0);
       expect(db.session_laps ?? []).toHaveLength(0);
       expect(db.session_environment ?? []).toHaveLength(0);
@@ -760,42 +764,20 @@ describe('POST /api/mobile/sessions', () => {
     expect((await response.json()).error).toMatch(/already in use/);
   });
 
-  it('refuses a free rider’s eleventh session as 402 with the plan message, writing nothing', async () => {
-    const db = freeRiderWith(10);
-    const client = fakeSupabase(db);
+  it('refuses a free rider’s session past the cap as 402 with the plan message, writing nothing', async () => {
+    const db = seed();
+    const client = fakeSupabase(db, { atPlanLimit: true });
 
     const response = await post(sessionBody({ track_id: null, track_name: 'Blackhawk Farms' }));
 
     expect(response.status).toBe(402);
     expect(await response.json()).toEqual({ ok: false, error: getFreePlanLimitMessage('sessions') });
-    expect(db.sessions).toHaveLength(10);
+    expect(db.sessions).toHaveLength(0);
     // Counted inside create_session_with_laps, so the track resolved for it goes again.
-    expect(client.rpc).toHaveBeenCalledTimes(1);
+    expect(client.rpc).toHaveBeenCalledWith('create_session_with_laps', expect.anything());
+    expect(client.rpc).toHaveBeenCalledWith('delete_auto_created_track_if_unused', expect.anything());
     expect(db.tracks.some((track) => track.name === 'Blackhawk Farms')).toBe(false);
     expect(reportError).not.toHaveBeenCalled();
-  });
-
-  it('saves one and refuses the other when a free rider at nine sends two different sessions at once', async () => {
-    const db = freeRiderWith(9);
-    fakeSupabase(db);
-
-    const responses = await Promise.all([post(sessionBody()), post(sessionBody({ id: randomUUID() }))]);
-
-    expect(responses.map((response) => response.status).sort()).toEqual([200, 402]);
-    expect(db.sessions).toHaveLength(10);
-  });
-
-  it('saves a beta rider’s eleventh session, since the function reads the same entitlement', async () => {
-    const db = freeRiderWith(10);
-    db.profiles = [
-      { id: USER_ID, tier: 'free', beta_access_started_at: null, beta_access_expires_at: '2999-01-01T00:00:00Z' },
-    ];
-    fakeSupabase(db);
-
-    const response = await post(sessionBody());
-
-    expect(response.status).toBe(200);
-    expect(db.sessions).toHaveLength(11);
   });
 
   it('refuses a session with no weather answer as 400 with MISSING_CONDITIONS_MESSAGE', async () => {

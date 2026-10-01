@@ -2,6 +2,7 @@
 
 ## Stack
 - Unit tests: Vitest
+- Real-database tests: Playwright, no browser, against a local Supabase stack (`tests/db/`)
 - E2E tests: Playwright (cross-device profiles)
 
 ## Support Matrix
@@ -127,22 +128,6 @@ once. They need the service-role key and a running app, no `E2E_EMAIL`,
 plus a stack built with the `[storage.buckets.session-photos]` block and
 `20260926002000` and `20260926002100` applied - `supabase start` or `db reset`
 since they were added. It fails rather than skips without them.
-`tests/e2e/create-session-with-laps.spec.ts` calls the phone's create function
-(`20260927002200`, `20260928002300`) directly, as throwaway riders and as nobody,
-and reads what was stored back through the service role. It also meets the
-`sessions` policies as the website form's insert does (a session on another
-rider's vehicle), deletes a session and retries its create, and races two
-creates by a free rider one short of the cap in `lib/plans.ts`. At the cap it
-sets each entitlement case through the service role - no profile row, free, Pro,
-and the beta windows - and expects `TT402` exactly when `resolveUserAccess` gives
-that profile no Pro access, which makes it the behavioural pin for the SQL copy
-of the cap; `tests/unit/session-create-plan-cap.test.ts` only guards the two
-copies' text against drifting apart. The mobile route's unit suite fakes that
-function, so this spec is the only one that exercises the real transaction,
-RLS, grants and error codes. It needs the service-role key and
-`NEXT_PUBLIC_SUPABASE_ANON_KEY`, and no browser, dev server or `E2E_*` account,
-so `--project desktop-chrome` is enough. A stack without those migrations fails the
-spec rather than skipping it.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a
@@ -163,6 +148,7 @@ npx playwright install
 ## Run tests
 ```bash
 npm run test:unit
+npm run test:db    # needs a local Supabase stack - see "Real-database tests"
 npm run test:e2e
 ```
 
@@ -186,6 +172,46 @@ npx playwright test --project=iphone-safari
 npx playwright test --project=android-chrome
 npx playwright test --project=ipad-safari
 ```
+
+## Real-database tests
+`tests/db/` holds specs that sign riders in with the anon key and call the
+database - or the server code that writes to it - as them, then read what was
+stored back through the service role. They need no browser, dev server or
+`E2E_*` account, only a stack built from `supabase/migrations/`:
+
+```bash
+npx supabase start
+eval "$(npx supabase status -o env --override-name api.url=NEXT_PUBLIC_SUPABASE_URL \
+  --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY \
+  --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY)"
+export NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY
+npm run test:db
+```
+
+CI runs exactly this on every pull request (the `db` job in
+`.github/workflows/ci.yml`). `playwright.db.config.ts` refuses to start without
+those three variables rather than letting every spec skip, because a skipped
+suite reports green, and refuses a `NEXT_PUBLIC_SUPABASE_URL` whose host is not
+loopback, because the specs create and delete Auth users with the service role
+and the config also loads `.env.local`. A stack missing a migration the specs
+assert fails them.
+
+- `create-session.spec.ts` saves sessions through `createSessionForUser`, the
+  one writer the website form's server action and the phone's route share:
+  track, alias and layout resolution, the vehicle check, the free-plan cap -
+  including two saves racing at one short of it, and a scheduled pair where the
+  refused save created the track the winner used - the track take-back
+  leaving a track another rider's session references, atomicity, and change
+  records. The fault paths a real database cannot produce on cue stay in
+  `lib/actions/sessions.test.ts`.
+- `create-session-with-laps.spec.ts` calls `create_session_with_laps`
+  (`20260927002200`, `20260928002300`) directly, as throwaway riders and as
+  nobody: atomicity, concurrent calls on one id, late replays, deleted-session
+  tombstones, the `sessions` ownership policies, the execute grant, and the cap
+  at every entitlement case `resolveUserAccess` distinguishes - the behavioural
+  pin that the SQL cap and entitlement match `lib/plans.ts` and `lib/access.ts`.
+  The mobile route's unit suite fakes that function, so this spec is the only
+  one that exercises the real transaction, RLS, grants and error codes.
 
 ## Auth redirect setup checklist (Supabase)
 
