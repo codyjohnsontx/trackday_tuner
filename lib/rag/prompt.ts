@@ -5,6 +5,16 @@ import {
   magnitudeAllowed,
   type ComponentPolicy,
 } from '@/lib/rag/component-vocabulary';
+import {
+  classifyStoredRiderText,
+  type RiderTextField,
+  type SkippableSource,
+} from '@/lib/rag/domain-guard';
+import {
+  DISCLAIMER_NOTE,
+  ONE_CHANGE_NOTE,
+  type AdviceDataUsed,
+} from '@/lib/rag/schema';
 import type { RetrievedChunk } from '@/lib/rag/types';
 import {
   buildDayTrend,
@@ -41,12 +51,7 @@ Confidence levels:
 
 ${describeComponentVocabulary()}`;
 
-export const DISCLAIMER_NOTE =
-  'This is informational only. You are responsible for vehicle safety and on-track conduct.';
-export const ONE_CHANGE_NOTE =
-  'Make one change at a time and re-test for a full session before stacking another change.';
-
-export interface BuildPromptInput {
+interface BuildPromptInput {
   session: Session;
   previousSession: Session | null;
   vehicle: Vehicle;
@@ -58,7 +63,7 @@ export interface BuildPromptInput {
   raceEngineerContext?: RaceEngineerContext | null;
 }
 
-export interface BuildDayPlanInput {
+interface BuildDayPlanInput {
   vehicle: Vehicle;
   targetDate: string;
   trackName?: string | null;
@@ -68,24 +73,41 @@ export interface BuildDayPlanInput {
   retrieved: RetrievedChunk[];
 }
 
-// How many recent sessions the day-plan prompt prints. Shared with
-// `collectDayPlanRiderText` so the screen cannot cover a different set of
-// sessions than the prompt interpolates.
+// THE PRINTED WINDOWS. Each list below is read with more rows than the prompt
+// prints, and each is cut to its window exactly once, by the `prepare*`
+// function at the bottom of this file, before anything else sees it. The
+// formatters, the rider-text collectors, the session-id collectors and
+// `dropScreenedSources` all work on that one windowed input and none of them
+// slices again - so the screen, the prompt and the accepted citation ids cannot
+// disagree about which rows were in the window. They used to be sliced three
+// or four times each, and only the shared constant kept the copies aligned.
+
+// How many recent sessions the day-plan prompt prints. The route reads ten.
 const DAY_PLAN_SESSION_LIMIT = 8;
 
-// How many saved recommendations `formatRaceEngineerContext` prints. Shared
-// with the collector below and with `dropScreenedSources`, because the context
-// loader reads more rows than the prompt shows: filtering a row out of the full
-// list would promote one the collector never screened into the printed window.
+// How many saved recommendations `formatRaceEngineerContext` prints. The
+// context loader reads five, and the window matters most to
+// `dropScreenedSources`: filtering a row out of the full list would promote one
+// the collector never screened into the printed window.
 const RECENT_RECOMMENDATION_LIMIT = 3;
 
-// How many saved outcomes `formatRaceEngineerContext` prints. Shared with the
-// collector below so the screen cannot cover fewer rows than the prompt prints.
-// The context loader reads eight (`limit(8)` on `session_feedback`,
-// `lib/rag/race-engineer-context.ts`), so with the window written out at each
-// site the two agreed only by coincidence: raising the formatter's alone would
-// have printed symptoms and notes nothing had screened.
+// How many saved outcomes `formatRaceEngineerContext` prints. The context
+// loader reads eight (`limit(8)` on `session_feedback`,
+// `lib/rag/race-engineer-context.ts`); raising the window here once raises it
+// for the screen and the id set at the same time.
 const RECENT_FEEDBACK_LIMIT = 5;
+
+/**
+ * The context cut to what the prompt prints. The one place the feedback and
+ * recommendation windows are applied - see THE PRINTED WINDOWS above.
+ */
+function windowContext(context: RaceEngineerContext): RaceEngineerContext {
+  return {
+    ...context,
+    recentFeedback: context.recentFeedback.slice(0, RECENT_FEEDBACK_LIMIT),
+    recentRecommendations: context.recentRecommendations.slice(0, RECENT_RECOMMENDATION_LIMIT),
+  };
+}
 
 // Neutralize any closing-tag sequence a user might slip into a free-text field
 // (notes, nickname, question, symptom chip, etc.) so they cannot escape a data
@@ -368,7 +390,7 @@ function formatRaceEngineerContext(context: RaceEngineerContext | null | undefin
 
   if (context.recentFeedback.length > 0) {
     lines.push('  recent_feedback:');
-    context.recentFeedback.slice(0, RECENT_FEEDBACK_LIMIT).forEach((feedback, idx) => {
+    context.recentFeedback.forEach((feedback, idx) => {
       lines.push(`    [${idx + 1}] session_id=${feedback.session_id} outcome=${feedback.outcome} confidence=${feedback.rider_confidence ?? '—'} symptoms=${sanitizeFreeText(feedback.symptoms.join(', ') || '—')}`);
       if (feedback.notes) {
         lines.push(`        notes=${sanitizeFreeText(truncateAtWordBoundary(feedback.notes.trim(), 220))}`);
@@ -380,7 +402,7 @@ function formatRaceEngineerContext(context: RaceEngineerContext | null | undefin
 
   if (context.recentRecommendations.length > 0) {
     lines.push('  recent_recommendations:');
-    context.recentRecommendations.slice(0, RECENT_RECOMMENDATION_LIMIT).forEach((recommendation, idx) => {
+    context.recentRecommendations.forEach((recommendation, idx) => {
       // `id` is the recommendation's own id and is not a session id. The two
       // session ids on the row are the ones the policy accepts as evidence, so
       // they are printed beside it rather than left for the model to guess.
@@ -424,7 +446,7 @@ function wrapBlock(tag: 'user_data' | 'session_data' | 'knowledge', body: string
   return `<${tag}>\n${body}\n</${tag}>`;
 }
 
-export function buildUserPrompt(input: BuildPromptInput): string {
+function buildUserPrompt(input: BuildPromptInput): string {
   const userBlock = wrapBlock('user_data', formatMetaBlock(input));
   const sessionBlock = wrapBlock(
     'session_data',
@@ -462,7 +484,7 @@ export function buildUserPrompt(input: BuildPromptInput): string {
   ].join('\n');
 }
 
-export function buildDayPlanPrompt(input: BuildDayPlanInput): string {
+function buildDayPlanPrompt(input: BuildDayPlanInput): string {
   const targetBlock = wrapBlock(
     'user_data',
     [
@@ -481,7 +503,6 @@ export function buildDayPlanPrompt(input: BuildDayPlanInput): string {
       input.recentSessions.length === 0
         ? '  (none)'
         : input.recentSessions
-            .slice(0, DAY_PLAN_SESSION_LIMIT)
             .map((session, idx) => formatSessionBlock(`  [${idx + 1}]`, session))
             .join('\n\n'),
       '',
@@ -508,50 +529,6 @@ export function buildDayPlanPrompt(input: BuildDayPlanInput): string {
   ].join('\n');
 }
 
-/**
- * Something `dropScreenedSources` knows how to remove from a
- * `RaceEngineerContext`. A skippable field names one of these rather than a bare
- * id, so the caller can act on it without guessing which collection it came
- * from, and so adding a kind cannot compile until that function handles it.
- */
-export type SkippableSource =
-  | { kind: 'recommendation'; id: string }
-  | { kind: 'sessionEnvironment' };
-
-/**
- * A stored free-text value one of the AI prompts interpolates, paired with a
- * name the rider would recognise on screen and with what to do when it matches
- * the injection screen.
- *
- * The label is phrased to read after "the wording in ...", because a screen that
- * refuses over stored text has to say which field to edit.
- *
- * REFUSE when the rider can go and change the thing the refusal names. SKIP
- * when they cannot, whoever originally typed it. A refusal naming something out
- * of reach is not a guard, it is a trap: it withholds a paid route and nothing
- * the rider does gets them past it. Dropping that value from the prompt closes
- * the same channel and still answers the question.
- *
- * Authorship is NOT the axis, and `race_engineer_memory.summary` is where the
- * two come apart. The app wrote that row from a template, but it embeds the
- * rider's own outcome note, and saving that outcome again overwrites the whole
- * summary (`summary = excluded.summary` in
- * `20260716000800_add_session_outcomes.sql`) - so it refuses, and its label
- * names the outcome notes rather than the memory row, because that is the thing
- * the rider can open. The worked example in the other direction is
- * `session_environment`: the same two columns refuse on day-plan, where the
- * rider just typed them, and skip on tuning-advice, where they are a stored row
- * with no edit path. Provenance decides it, not the column and not the author.
- *
- * `onMatch` is required and has no default, because choosing between those two
- * is the safety decision and a field added without making it is a silent hole.
- * `source` is required on the skip branch: skipping only means anything if the
- * caller can remove exactly that value from the prompt.
- */
-export type RiderTextField =
-  | { onMatch: 'refuse'; label: string; value: string }
-  | { onMatch: 'skip'; label: string; value: string; source: SkippableSource };
-
 type RiderTextDisposition =
   | { onMatch: 'refuse' }
   | { onMatch: 'skip'; source: SkippableSource };
@@ -561,20 +538,6 @@ const SKIP_SESSION_ENVIRONMENT: RiderTextDisposition = {
   onMatch: 'skip',
   source: { kind: 'sessionEnvironment' },
 };
-
-/** Identity of a source, for de-duplicating drops reported by several fields. */
-export function skippableSourceKey(source: SkippableSource): string {
-  switch (source.kind) {
-    case 'recommendation':
-      return `recommendation:${source.id}`;
-    case 'sessionEnvironment':
-      return 'sessionEnvironment';
-    default: {
-      const unhandled: never = source;
-      throw new Error(`Unhandled skippable source: ${JSON.stringify(unhandled)}`);
-    }
-  }
-}
 
 function pushRiderText(
   fields: RiderTextField[],
@@ -764,7 +727,7 @@ function collectRaceEngineerContextRiderText(
 
   // Dated in the rider's zone exactly as the memory label above is, and worded
   // the same way, because both name the outcome the rider logged.
-  for (const feedback of context.recentFeedback.slice(0, RECENT_FEEDBACK_LIMIT)) {
+  for (const feedback of context.recentFeedback) {
     const suffix = `on the outcome you logged on ${riderDateOfTimestamp(feedback.created_at, riderTimeZone)}`;
     pushRiderText(fields, REFUSE_ON_MATCH, `the symptoms ${suffix}`, feedback.symptoms.join(', '));
     pushRiderText(fields, REFUSE_ON_MATCH, `the notes ${suffix}`, feedback.notes);
@@ -787,7 +750,7 @@ function collectRaceEngineerContextRiderText(
   // `id` is a uuid and `status` is held to four values by
   // `ai_recommendations_status_check`, so neither is collected. The label keeps
   // its UTC date: a skipped field's label never reaches a rider.
-  for (const recommendation of context.recentRecommendations.slice(0, RECENT_RECOMMENDATION_LIMIT)) {
+  for (const recommendation of context.recentRecommendations) {
     const disposition = {
       onMatch: 'skip',
       source: { kind: 'recommendation', id: recommendation.id },
@@ -942,7 +905,7 @@ function collectRaceEngineerContextRiderText(
  * forgot to pass it would name the UTC day and point a rider at the wrong
  * outcome. `undefined` is an honest answer when the request carried none.
  */
-export function collectDayPlanRiderText(
+function collectDayPlanRiderText(
   input: Omit<BuildDayPlanInput, 'retrieved'>,
   riderTimeZone: string | undefined,
 ): RiderTextField[] {
@@ -961,7 +924,7 @@ export function collectDayPlanRiderText(
     ...requestFields,
     ...collectEnvironmentRiderText(input.environment, 'you entered for today', REFUSE_ON_MATCH),
     ...collectVehicleRiderText(input.vehicle),
-    ...input.recentSessions.slice(0, DAY_PLAN_SESSION_LIMIT).flatMap(collectSessionRiderText),
+    ...input.recentSessions.flatMap(collectSessionRiderText),
     ...collectRaceEngineerContextRiderText(
       input.raceEngineerContext,
       'you entered for today',
@@ -985,7 +948,7 @@ export function collectDayPlanRiderText(
  * audit status, which `isRefusalThrottled` does not count, and a rider looping
  * injection probes would stop being throttled. `temperatureC` is a number.
  */
-export function collectTuningAdviceRiderText(
+function collectTuningAdviceRiderText(
   input: Omit<BuildPromptInput, 'retrieved'>,
   riderTimeZone: string | undefined,
 ): RiderTextField[] {
@@ -1014,12 +977,12 @@ export function collectTuningAdviceRiderText(
 }
 
 /**
- * The session ids a `RaceEngineerContext` prints, which is not the same thing as
- * the ids the context holds: `formatRaceEngineerContext` caps both lists at the
- * printed limit, so reading past it would accept an id the model was never
- * shown. That direction is the harmless one - an accepted id nothing can cite is
- * merely inert - but it is also how the defect below started, so the cap is
- * applied here for the same reason `dropScreenedSources` applies it.
+ * The session ids a `RaceEngineerContext` prints. The context arrives already
+ * cut to the printed window (`windowContext`), so every id read here is one
+ * `formatRaceEngineerContext` printed. The loader reads more rows than that,
+ * and reading past the window would accept an id the model was never shown -
+ * the harmless direction, since an accepted id nothing can cite is merely
+ * inert, but also how the defect below started.
  */
 function contextSessionIds(
   context: RaceEngineerContext | null | undefined,
@@ -1027,10 +990,8 @@ function contextSessionIds(
   if (!context) return [];
   return [
     ...context.similarSessions.map((item) => item.session.id),
-    ...context.recentFeedback.slice(0, RECENT_FEEDBACK_LIMIT).map((item) => item.session_id),
-    ...context.recentRecommendations
-      .slice(0, RECENT_RECOMMENDATION_LIMIT)
-      .flatMap((item) => [item.session_id, item.outcome_session_id]),
+    ...context.recentFeedback.map((item) => item.session_id),
+    ...context.recentRecommendations.flatMap((item) => [item.session_id, item.outcome_session_id]),
   ];
 }
 
@@ -1056,13 +1017,15 @@ function uniqueIds(ids: Array<string | null | undefined>): string[] {
  * `previousSession` is here: the prompt has always printed that session and told
  * the model to diagnose with it, and the allowed set left it out.
  *
- * `tests/unit/ai-session-evidence-ids.test.ts` builds both prompts and both id
- * sets from one input and fails on either direction, so this cannot drift back.
- * It does NOT widen what counts as real: every id here belongs to a row read
+ * `prepareTuningAdvicePrompt` and `prepareDayPlanPrompt` return this set beside
+ * the messages it was built with, from the one input both were derived from, so
+ * no route can pair a prompt with an id set from anywhere else; `prompt.test.ts`
+ * reads both off that return value and fails on either direction. It does NOT
+ * widen what counts as real: every id here belongs to a row read
  * from the database under the rider's own RLS scope, and an id from anywhere
  * else is still refused.
  */
-export function collectTuningAdviceSessionIds(
+function collectTuningAdviceSessionIds(
   input: Omit<BuildPromptInput, 'retrieved'>,
 ): string[] {
   return uniqueIds([
@@ -1083,11 +1046,11 @@ export function collectTuningAdviceSessionIds(
  * `similar_sessions` entries appear, and those are drawn from `recentSessions`,
  * whose ids are already below.
  */
-export function collectDayPlanSessionIds(
+function collectDayPlanSessionIds(
   input: Omit<BuildDayPlanInput, 'retrieved'>,
 ): string[] {
   return uniqueIds([
-    ...input.recentSessions.slice(0, DAY_PLAN_SESSION_LIMIT).map((session) => session.id),
+    ...input.recentSessions.map((session) => session.id),
     ...contextSessionIds(input.raceEngineerContext),
   ]);
 }
@@ -1098,11 +1061,15 @@ export function collectDayPlanSessionIds(
  * offending value actually leaves the prompt; left in and merely unscreened, it
  * would be worse than the refusal it replaced.
  *
- * The cap before the recommendation filter is load-bearing. `loadRaceEngineerContext`
- * reads five recommendations and both the formatter and the collector work on
- * the first `RECENT_RECOMMENDATION_LIMIT`, so filtering the full list would
- * slide the next unscreened row into the window the drop just freed and re-open
- * the channel this exists to close. Everything that survives has been screened.
+ * It is handed the WINDOWED context, and that is load-bearing.
+ * `loadRaceEngineerContext` reads five recommendations and the formatter and
+ * the collector both see only the first `RECENT_RECOMMENDATION_LIMIT`, so
+ * filtering the full list would slide the next unscreened row into the window
+ * the drop just freed and re-open the channel this exists to close. The
+ * `prepare*` functions window before they screen, so everything that survives
+ * here has been screened. `loadedRecommendations` is the unwindowed list, and
+ * it is read for one thing only: the `feedback` flag, which describes what the
+ * loader read rather than what the prompt prints.
  *
  * The switch is exhaustive and fail-closed twice over: a new `SkippableSource`
  * kind does not compile until it is handled here, and a drop that removed
@@ -1114,10 +1081,11 @@ export function collectDayPlanSessionIds(
  * derived from the environment, so it is recomputed through the same function
  * the loader used rather than replaced with a string written here.
  */
-export function dropScreenedSources(
+function dropScreenedSources(
   context: RaceEngineerContext,
   droppedSources: readonly SkippableSource[],
   session: Session,
+  loadedRecommendations: RaceEngineerContext['recentRecommendations'],
 ): RaceEngineerContext {
   if (droppedSources.length === 0) return context;
 
@@ -1141,11 +1109,13 @@ export function dropScreenedSources(
 
   let recentRecommendations = context.recentRecommendations;
   if (droppedRecommendationIds.size > 0) {
-    const window = context.recentRecommendations.slice(0, RECENT_RECOMMENDATION_LIMIT);
-    recentRecommendations = window.filter(
+    recentRecommendations = context.recentRecommendations.filter(
       (recommendation) => !droppedRecommendationIds.has(recommendation.id),
     );
-    if (recentRecommendations.length !== window.length - droppedRecommendationIds.size) {
+    if (
+      recentRecommendations.length !==
+      context.recentRecommendations.length - droppedRecommendationIds.size
+    ) {
       throw new Error('A screened recommendation was not in the window it was collected from.');
     }
   }
@@ -1157,15 +1127,28 @@ export function dropScreenedSources(
   // (`recentFeedback.length > 0 || recentRecommendations.some(status !== 'proposed')`
   // in `race-engineer-context`), so dropping the only applied recommendation can
   // leave the prompt claiming feedback it just withheld - the same defect the
-  // `weather` recompute below exists to prevent, one field over. Recomputed from
-  // the surviving lists rather than left alone, and recomputed on BOTH exits
-  // because a recommendation drop does not require an environment drop.
-  const dataUsedAfterDrops: RaceEngineerContext['dataUsed'] = {
-    ...context.dataUsed,
-    feedback:
-      context.recentFeedback.length > 0 ||
-      recentRecommendations.some((recommendation) => recommendation.status !== 'proposed'),
-  };
+  // `weather` recompute below exists to prevent, one field over. Recomputed on
+  // BOTH exits because a recommendation drop does not require an environment
+  // drop.
+  //
+  // FROM EVERY ROW THE LOADER READ, LESS THE DROPPED ONES - not from the printed
+  // window. The loader derived the flag from the full list, so recomputing from
+  // the window would forget an `applied` row past it, and whether that row
+  // counted would depend on whether some other row had been dropped. With no
+  // recommendation dropped the recompute is the loader's own value, so it is
+  // skipped.
+  const dataUsedAfterDrops: RaceEngineerContext['dataUsed'] =
+    droppedRecommendationIds.size === 0
+      ? context.dataUsed
+      : {
+          ...context.dataUsed,
+          feedback:
+            context.recentFeedback.length > 0 ||
+            loadedRecommendations.some(
+              (recommendation) =>
+                !droppedRecommendationIds.has(recommendation.id) && recommendation.status !== 'proposed',
+            ),
+        };
 
   if (!dropSessionEnvironment) {
     return { ...context, recentRecommendations, dataUsed: dataUsedAfterDrops };
@@ -1195,16 +1178,254 @@ export function dropScreenedSources(
   };
 }
 
-export function buildMessages(input: BuildPromptInput) {
+function buildMessages(input: BuildPromptInput): AdviceMessages {
   return [
     { role: 'system' as const, content: SYSTEM_PROMPT },
     { role: 'user' as const, content: buildUserPrompt(input) },
   ];
 }
 
-export function buildDayPlanMessages(input: BuildDayPlanInput) {
+function buildDayPlanMessages(input: BuildDayPlanInput): AdviceMessages {
   return [
     { role: 'system' as const, content: SYSTEM_PROMPT },
     { role: 'user' as const, content: buildDayPlanPrompt(input) },
   ];
+}
+
+/**
+ * The chat messages one model call is sent: `SYSTEM_PROMPT`, then the route's
+ * own user prompt.
+ */
+export type AdviceMessages = Array<{ role: 'system' | 'user'; content: string }>;
+
+/**
+ * A prompt ready for the model, and everything that has to agree with it.
+ *
+ * THIS IS THE ONE PLACE A ROUTE'S PROMPT AND THE RULES ABOUT IT ARE DERIVED,
+ * FROM ONE INPUT. `messages`, `allowedSessionIds` and `fallbackDataUsed` are
+ * all built from the same screened, windowed context, so the ids the policy
+ * accepts are the ids the prompt printed, the `data_used` the policy falls back
+ * to is the one the prompt printed, and the stored rider text that was screened
+ * is the text the prompt interpolates. Each route used to build the collector
+ * input and the prompt input as two object literals, with `lib/rag/advice.ts`
+ * copying fields a third time into the message builder, and the only thing
+ * holding the three together was a test policing them from outside.
+ *
+ * `messages` is a function because retrieval comes after preparation: the
+ * knowledge snippets are the one part of the prompt that is not known until
+ * `retrieval.query` has been embedded and searched (`generateAdvice`).
+ */
+export interface PreparedAdvicePrompt {
+  decision: 'proceed';
+  /** What `generateAdvice` embeds, and the vehicle type whose chunks it searches. */
+  retrieval: { query: string; vehicleType: Vehicle['type'] };
+  messages: (retrieved: RetrievedChunk[]) => AdviceMessages;
+  /**
+   * Exactly the session ids `messages` prints, for `evaluateAdvicePolicy`'s
+   * `validSessionIds`. See `collectTuningAdviceSessionIds` for why both
+   * directions of that equality are a defect when broken.
+   */
+  allowedSessionIds: string[];
+  /** What `evaluateAdvicePolicy` falls back to when the model's `data_used` is unusable. */
+  fallbackDataUsed: AdviceDataUsed;
+  /**
+   * The context the prompt was built from: windowed, and with every skipped
+   * source already dropped. Anything a route derives from the context after
+   * this point - the snapshot stored beside a recommendation - reads this, so a
+   * dropped value is gone from all of it rather than from the prompt alone.
+   */
+  screenedContext: RaceEngineerContext;
+}
+
+/**
+ * Stored rider text the prompt would have interpolated reads as an instruction,
+ * and the rider can go and edit it. `message` names the field, never the text.
+ */
+export interface RefusedAdvicePrompt {
+  decision: 'refuse';
+  message: string;
+}
+
+export type AdvicePromptPreparation = PreparedAdvicePrompt | RefusedAdvicePrompt;
+
+export interface TuningAdvicePromptInput {
+  session: Session;
+  previousSession: Session | null;
+  vehicle: Vehicle;
+  question: string;
+  symptoms?: string[] | null;
+  changeIntent?: string | null;
+  temperatureC?: number | null;
+  raceEngineerContext: RaceEngineerContext;
+  /**
+   * The request's `time_zone`, which dates the outcome labels a refusal names.
+   * Required with no default - see `collectDayPlanRiderText`. `undefined` is an
+   * honest answer when the request carried none.
+   */
+  riderTimeZone: string | undefined;
+}
+
+export interface DayPlanPromptInput {
+  vehicle: Vehicle;
+  targetDate: string;
+  trackName?: string | null;
+  environment: CreateSessionEnvironmentInput | null;
+  /** Newest first. The prompt prints the first `DAY_PLAN_SESSION_LIMIT`. */
+  recentSessions: Session[];
+  raceEngineerContext: RaceEngineerContext;
+  /** As on `TuningAdvicePromptInput`. */
+  riderTimeZone: string | undefined;
+}
+
+function tuningAdviceRetrievalQuery(input: Omit<BuildPromptInput, 'retrieved'>): string {
+  const symptomText = (input.symptoms ?? []).join(' ');
+  const temperatureLine =
+    input.temperatureC != null ? `ambient temperature ${input.temperatureC} C` : '';
+  return [
+    input.question,
+    symptomText,
+    input.changeIntent ?? '',
+    temperatureLine,
+  ]
+    .filter((part) => part && part.trim().length > 0)
+    .join('\n')
+    .trim();
+}
+
+function dayPlanRetrievalQuery(input: Omit<BuildDayPlanInput, 'retrieved'>): string {
+  return [
+    'track day morning plan',
+    input.vehicle.type,
+    input.trackName ?? '',
+    input.environment?.weather_condition ?? '',
+    input.environment?.ambient_temperature_c != null
+      ? `ambient ${input.environment.ambient_temperature_c} C`
+      : '',
+    input.environment?.track_temperature_c != null
+      ? `track ${input.environment.track_temperature_c} C`
+      : '',
+    'warming day tire pressure hot pressure cold track',
+  ]
+    .filter((part) => part && String(part).trim().length > 0)
+    .join('\n');
+}
+
+/**
+ * The tuning-advice prompt module: screen the stored rider text the prompt
+ * would interpolate, drop what the rider cannot reach, and build the prompt,
+ * the accepted citation ids and the fallback `data_used` from what is left.
+ *
+ * Screen two of the route's two injection screens. It has to run after the
+ * reads, which is why `classifyRaceEngineerQuestion` cannot cover it; and the
+ * submitted fields are deliberately not in it - see `collectTuningAdviceRiderText`.
+ *
+ * A match on a field the rider cannot reach is skipped rather than refused, and
+ * skipping only means anything if the offending value leaves the prompt -
+ * `dropScreenedSources` removes it before anything below is built, so it is
+ * gone from the messages, the id set, the fallback and `screenedContext` at
+ * once.
+ */
+export function prepareTuningAdvicePrompt(
+  input: TuningAdvicePromptInput,
+): AdvicePromptPreparation {
+  const { riderTimeZone, ...fields } = input;
+  const windowed = { ...fields, raceEngineerContext: windowContext(fields.raceEngineerContext) };
+
+  const assessment = classifyStoredRiderText({
+    unableMessage: 'I could not answer that from your saved setup data.',
+    fields: collectTuningAdviceRiderText(windowed, riderTimeZone),
+  });
+  if (assessment.decision === 'refuse') {
+    return {
+      decision: 'refuse',
+      message:
+        assessment.message ??
+        'I could not answer that from your saved setup data. Check your saved vehicle and session notes for wording that reads as an instruction.',
+    };
+  }
+
+  const screenedContext = dropScreenedSources(
+    windowed.raceEngineerContext,
+    assessment.droppedSources,
+    fields.session,
+    fields.raceEngineerContext.recentRecommendations,
+  );
+  const promptInput = { ...windowed, raceEngineerContext: screenedContext };
+
+  return {
+    decision: 'proceed',
+    retrieval: {
+      query: tuningAdviceRetrievalQuery(promptInput),
+      vehicleType: promptInput.vehicle.type,
+    },
+    messages: (retrieved) => buildMessages({ ...promptInput, retrieved }),
+    allowedSessionIds: collectTuningAdviceSessionIds(promptInput),
+    // The context's own flags, except that an ambient temperature the rider
+    // submitted with the question counts as weather data - `formatMetaBlock`
+    // prints it - even when no environment row is stored for the session.
+    fallbackDataUsed: {
+      ...screenedContext.dataUsed,
+      weather: promptInput.temperatureC != null || screenedContext.dataUsed.weather,
+    },
+    screenedContext,
+  };
+}
+
+/**
+ * The day-plan prompt module, the twin of `prepareTuningAdvicePrompt`. Its
+ * collector, id set and window are its own, for the reason there are two
+ * collectors at all: each is derived from the input its own prompt is built
+ * from.
+ *
+ * It fails closed rather than open on a skip. Nothing this prompt collects is
+ * skippable today: the route's context carries no recommendations and this
+ * route's environment is disposed `refuse` because the rider just typed it. But
+ * the first of those is a fact about the route's `buildContext`, and the skip
+ * disposition reaches here through the shared context collector - give day-plan
+ * real recommendations later and a value would be neither screened nor
+ * withheld, with nothing failing. `dropScreenedSources` needs a `Session` to
+ * rebuild the day trend and a day plan has none to hand it, so this throws
+ * instead; the route's error boundary turns that into the shaped 500 and closes
+ * the reserved slot.
+ */
+export function prepareDayPlanPrompt(input: DayPlanPromptInput): AdvicePromptPreparation {
+  const { riderTimeZone, ...fields } = input;
+  const promptInput = {
+    ...fields,
+    recentSessions: fields.recentSessions.slice(0, DAY_PLAN_SESSION_LIMIT),
+    raceEngineerContext: windowContext(fields.raceEngineerContext),
+  };
+
+  const assessment = classifyStoredRiderText({
+    unableMessage: 'I could not build a plan from your saved setup data.',
+    fields: collectDayPlanRiderText(promptInput, riderTimeZone),
+  });
+  if (assessment.decision === 'refuse') {
+    return {
+      decision: 'refuse',
+      message:
+        assessment.message ??
+        'I could not build a plan from your saved setup data. Check your saved vehicle and session notes for wording that reads as an instruction.',
+    };
+  }
+  if (assessment.droppedSources.length > 0) {
+    throw new Error(
+      'Day-plan collected a skippable field but has no way to drop it from the prompt.',
+    );
+  }
+
+  return {
+    decision: 'proceed',
+    retrieval: {
+      query: dayPlanRetrievalQuery(promptInput),
+      vehicleType: promptInput.vehicle.type,
+    },
+    messages: (retrieved) => buildDayPlanMessages({ ...promptInput, retrieved }),
+    // Only real, persisted sessions ground personal evidence. The planning
+    // session the route synthesises is not one of them and is never printed -
+    // see `collectDayPlanSessionIds`.
+    allowedSessionIds: collectDayPlanSessionIds(promptInput),
+    fallbackDataUsed: promptInput.raceEngineerContext.dataUsed,
+    screenedContext: promptInput.raceEngineerContext,
+  };
 }

@@ -36,6 +36,17 @@ export interface AdviceDataUsed {
   telemetry: boolean;
 }
 
+/**
+ * The two standard entries every response's `safety_notes` carries.
+ * `SYSTEM_PROMPT` and both prompt builders ask the model for them verbatim,
+ * `completeAdvice` appends whichever the model left out, and every refusal
+ * `buildRefusalAdvice` writes carries both.
+ */
+export const DISCLAIMER_NOTE =
+  'This is informational only. You are responsible for vehicle safety and on-track conduct.';
+export const ONE_CHANGE_NOTE =
+  'Make one change at a time and re-test for a full session before stacking another change.';
+
 export interface AdviceResponse {
   summary: string;
   recommended_changes: RecommendedChange[];

@@ -8,7 +8,7 @@ import { assertNotDemoRoute } from '@/lib/demo/mode';
 import { readStoredSessions } from '@/lib/stored-session';
 import { createClient } from '@/lib/supabase/server';
 import { reportError } from '@/lib/monitoring/report-error';
-import { generateDayPlan, UpstreamTimeoutError } from '@/lib/rag/advice';
+import { generateAdvice, UpstreamTimeoutError } from '@/lib/rag/advice';
 import {
   recordRefusedRequest,
   releaseReservation,
@@ -26,9 +26,8 @@ import {
 import {
   buildRefusalAdvice,
   classifyDayPlanRequest,
-  classifyStoredRiderText,
 } from '@/lib/rag/domain-guard';
-import { collectDayPlanRiderText, collectDayPlanSessionIds } from '@/lib/rag/prompt';
+import { prepareDayPlanPrompt } from '@/lib/rag/prompt';
 import { evaluateAdvicePolicy } from '@/lib/rag/policy';
 import { isUuid, validateTimeZone } from '@/lib/rag/validation';
 import { dateInTimeZone } from '@/lib/local-date';
@@ -670,24 +669,24 @@ export async function POST(request: Request) {
       feedback,
     });
 
-    // Screen two: rider text this request did not submit but the prompt still
-    // interpolates. It has to run after the read, which is exactly why screen
-    // one cannot cover it. The fields come from `collectDayPlanRiderText`,
-    // which is built from the same input the prompt builder takes, so the
-    // screen cannot cover less than the prompt hands over.
-    const storedAssessment = classifyStoredRiderText({
-      unableMessage: 'I could not build a plan from your saved setup data.',
-      fields: collectDayPlanRiderText({
-        vehicle,
-        targetDate: computedTargetDate,
-        trackName: validated.data.track_name,
-        environment: hasEnvironment ? environment : null,
-        recentSessions,
-        raceEngineerContext,
-      }, validated.data.time_zone),
+    // Screen two, the stored rider text the prompt interpolates, runs inside
+    // the prompt module: it has to run after the read, which is exactly why
+    // screen one cannot cover it, and it has to see exactly what the prompt
+    // prints. What comes back is either a refusal naming the field or the
+    // prompt with everything that has to agree with it. It is inside this
+    // error boundary because it fails closed by throwing - see
+    // `prepareDayPlanPrompt`.
+    const prepared = prepareDayPlanPrompt({
+      vehicle,
+      targetDate: computedTargetDate,
+      trackName: validated.data.track_name,
+      environment: hasEnvironment ? environment : null,
+      recentSessions,
+      raceEngineerContext,
+      riderTimeZone: validated.data.time_zone,
     });
 
-    if (storedAssessment.decision === 'refuse') {
+    if (prepared.decision === 'refuse') {
       // Audited under its own status, which the refusal throttle does not
       // count: stored text refuses deterministically, so counting it would lock
       // the rider out of every AI route for a note they wrote weeks ago.
@@ -707,9 +706,7 @@ export async function POST(request: Request) {
           request_id: requestId,
           advice: buildRefusalAdvice({
             reason: 'prompt_injection',
-            message:
-              storedAssessment.message ??
-              'I could not build a plan from your saved setup data. Check your saved vehicle and session notes for wording that reads as an instruction.',
+            message: prepared.message,
             dataUsed: refusalDataUsed(hasEnvironment),
           }),
           retrieved: [],
@@ -718,43 +715,14 @@ export async function POST(request: Request) {
       );
     }
 
-    // Fail closed rather than fail open. Nothing this route collects is
-    // skippable today, so this cannot fire: `buildContext` above hardcodes an
-    // empty recommendation list on both branches, and this route's environment
-    // is disposed `refuse` because the rider just typed it. But both of those
-    // are facts about other code, and the skip disposition reaches here through
-    // the shared collector - give day-plan real recommendations later and a
-    // value would be neither screened nor withheld, with nothing failing. This
-    // route has no `Session` to hand `dropScreenedSources`, so it refuses to
-    // proceed instead; the catch below turns it into the shaped 500 and closes
-    // the reserved slot.
-    if (storedAssessment.droppedSources.length > 0) {
-      throw new Error(
-        'Day-plan collected a skippable field but has no way to drop it from the prompt.',
-      );
-    }
+    const result = await generateAdvice(prepared);
 
-    // One object builds the prompt and the id set the policy will accept, so a
-    // plan may cite exactly the sessions its own prompt printed.
-    const promptInput = {
-      vehicle,
-      targetDate: computedTargetDate,
-      trackName: validated.data.track_name,
-      environment: hasEnvironment ? environment : null,
-      recentSessions,
-      raceEngineerContext,
-    };
-
-    const result = await generateDayPlan(promptInput);
-
-    // Only real, persisted sessions ground personal evidence. The planning
-    // session buildContext synthesises is not one of them, so its id is
-    // deliberately absent from the collector: a plan citing it would be citing
-    // itself, and `formatSessionBlock` never prints it.
+    // A plan may cite exactly the sessions its own prompt printed: the id set
+    // and the fallback come out of the same preparation as the prompt.
     const policyResult = evaluateAdvicePolicy({
       advice: result.advice,
-      fallbackDataUsed: raceEngineerContext.dataUsed,
-      validSessionIds: collectDayPlanSessionIds(promptInput),
+      fallbackDataUsed: prepared.fallbackDataUsed,
+      validSessionIds: prepared.allowedSessionIds,
       // A morning plan whose right answer is "run your baseline and check hot
       // pressures" recommends no change, and the day-plan prompt says so
       // explicitly. Every other policy check still applies, including the

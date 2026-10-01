@@ -1490,7 +1490,7 @@ describe('grounding measurement', () => {
   });
 
   it('reports null for a case the retriever never ran for', () => {
-    // A classifier refusal returns before `generateTuningAdvice`. Zero words
+    // A classifier refusal returns before `generateAdvice`. Zero words
     // would say the model was handed nothing; it was never asked.
     expect(summarizeContext(null, whole)).toBeNull();
   });

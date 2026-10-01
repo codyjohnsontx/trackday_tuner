@@ -1046,14 +1046,14 @@ const BASELINE_CORRECTION_RECORD = {
  * `telemetry: false` - each the same expression production evaluates against
  * the same empty input.
  *
- * NOTE WHAT IS DELIBERATELY NOT CHANGED. `runCase`'s `fallbackDataUsed` and the
- * `weather` it folds onto the model result still read `manual: true` and
- * `temperatureC != null`, and that is correct: they mirror the ROUTE's own
- * `buildFallbackDataUsed`, which hard-codes exactly those two
- * (`app/api/ai/tuning-advice/route.ts`). Deriving them there would introduce a
- * divergence rather than remove one. The context and the fallback are two
- * different production expressions and the harness copies each from its own
- * source.
+ * NOTE WHAT IS DELIBERATELY NOT CHANGED. `runCase`'s `fallbackDataUsed` for
+ * its two refusal paths still reads `manual: true` and `temperatureC != null`,
+ * and that is correct: it mirrors the ROUTE's own `buildFallbackDataUsed`,
+ * which hard-codes exactly those two (`app/api/ai/tuning-advice/route.ts`).
+ * Deriving it there would introduce a divergence rather than remove one. The
+ * fallback the policy reads for a MODEL answer is not copied at all - it is
+ * `prepareTuningAdvicePrompt`'s own `fallbackDataUsed`, the object the route
+ * hands the policy.
  */
 function buildContext({ session, buildDayTrend, hasManualSessionData }) {
   const similarSessions = [];
@@ -1093,14 +1093,12 @@ function buildContext({ session, buildDayTrend, hasManualSessionData }) {
 async function runCase(testCase, deps) {
   const {
     classifyRaceEngineerQuestion,
-    classifyStoredRiderText,
     classifyDangerousPremise,
     applyPremiseRejection,
     buildRefusalAdvice,
-    collectTuningAdviceRiderText,
-    dropScreenedSources,
     excerptForPrompt,
-    generateTuningAdvice,
+    generateAdvice,
+    prepareTuningAdvicePrompt,
     buildDayTrend,
     hasManualSessionData,
   } = deps;
@@ -1142,6 +1140,11 @@ async function runCase(testCase, deps) {
     changeIntent,
   });
 
+  // Production runs no policy on the two classifier refusals below - they return
+  // before the model is asked, so there is no answer and no evidence id to
+  // check. The scorer still reads a refusal through the policy, and a refusal
+  // carries no personal evidence, so the empty id set is the honest one: no
+  // id was printed to a model on either path.
   if (questionAssessment.decision === 'refuse') {
     return {
       stage: `classifier:${questionAssessment.reason}`,
@@ -1153,48 +1156,19 @@ async function runCase(testCase, deps) {
       retrievedSources: null,
       contextDepth: null,
       fallbackDataUsed,
-      validSessionIds: [session.id],
+      validSessionIds: [],
     };
   }
 
-  const context = buildContext({ session, buildDayTrend, hasManualSessionData });
-
-  const storedAssessment = classifyStoredRiderText({
-    unableMessage: 'I could not answer that from your saved setup data.',
-    fields: collectTuningAdviceRiderText({
-      session,
-      previousSession: null,
-      vehicle,
-      question: testCase.input.question,
-      symptoms,
-      changeIntent,
-      temperatureC,
-      raceEngineerContext: context,
-    // The route passes the request's `time_zone`; a golden case carries none,
-    // and it only dates refusal labels, never prompt text.
-    }, undefined),
-  });
-
-  if (storedAssessment.decision === 'refuse') {
-    return {
-      stage: 'classifier:stored_rider_text',
-      response: applyPremiseRejection(buildRefusalAdvice({
-        reason: 'prompt_injection',
-        message:
-          storedAssessment.message ??
-          'I could not answer that from your saved setup data.',
-        dataUsed: fallbackDataUsed,
-      }), premise),
-      retrievedSources: null,
-      contextDepth: null,
-      fallbackDataUsed,
-      validSessionIds: [session.id],
-    };
-  }
-
-  const screened = dropScreenedSources(context, storedAssessment.droppedSources, session);
-
-  const result = await generateTuningAdvice({
+  // THE PRODUCTION PROMPT MODULE, CALLED RATHER THAN RESTATED. The stored-text
+  // screen, the drop of anything skipped, the prompt, the session ids the
+  // policy may accept and the fallback `data_used` all come out of this one
+  // call, exactly as they do in the route. The harness used to assemble those
+  // itself and passed `validSessionIds: [session.id]` - a guess that happened
+  // to equal production's answer for a golden case, which carries no previous
+  // session and no history, and would have stopped equalling it the day one
+  // did.
+  const prepared = prepareTuningAdvicePrompt({
     session,
     previousSession: null,
     vehicle,
@@ -1202,8 +1176,28 @@ async function runCase(testCase, deps) {
     symptoms,
     changeIntent,
     temperatureC,
-    raceEngineerContext: screened,
+    raceEngineerContext: buildContext({ session, buildDayTrend, hasManualSessionData }),
+    // The route passes the request's `time_zone`; a golden case carries none,
+    // and it only dates refusal labels, never prompt text.
+    riderTimeZone: undefined,
   });
+
+  if (prepared.decision === 'refuse') {
+    return {
+      stage: 'classifier:stored_rider_text',
+      response: applyPremiseRejection(buildRefusalAdvice({
+        reason: 'prompt_injection',
+        message: prepared.message,
+        dataUsed: fallbackDataUsed,
+      }), premise),
+      retrievedSources: null,
+      contextDepth: null,
+      fallbackDataUsed,
+      validSessionIds: [],
+    };
+  }
+
+  const result = await generateAdvice(prepared);
 
   return {
     stage: 'model',
@@ -1215,11 +1209,8 @@ async function runCase(testCase, deps) {
     usage: result.usage,
     latencyMs: result.latencyMs,
     model: result.model,
-    fallbackDataUsed: {
-      ...screened.dataUsed,
-      weather: temperatureC != null || screened.dataUsed.weather,
-    },
-    validSessionIds: [session.id],
+    fallbackDataUsed: prepared.fallbackDataUsed,
+    validSessionIds: prepared.allowedSessionIds,
   };
 }
 
@@ -1982,7 +1973,7 @@ export async function main(argv) {
         const retrieval = scoreRetrieval(outcome.retrievedSources, testCase.expected_sources ?? []);
         // Whether the MODEL reached the human's answer is only a question about a
         // case the model was asked. A classifier refusal returns before
-        // `generateTuningAdvice`, so there is no answer to compare and the case is
+        // `generateAdvice`, so there is no answer to compare and the case is
         // not applicable - the same distinction `scoreRetrieval` draws one line
         // above. A model that WAS asked and recommended nothing is a miss, not a
         // skip.

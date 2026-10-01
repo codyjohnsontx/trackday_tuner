@@ -1,11 +1,11 @@
 /**
  * The stored-text injection screen on /api/ai/tuning-advice.
  *
- * The sibling suite in lib/rag/prompt.test.ts proves the collector sees every
- * rider-authored string `buildUserPrompt` prints. This file proves the route
- * actually refuses on them, which is a different claim: a screen wired after the
- * model call, or wired to a collector the prompt does not use, would pass the
- * collector test and still hand the phrase to the model.
+ * The sibling suite in lib/rag/prompt.test.ts proves `prepareTuningAdvicePrompt`
+ * screens every rider-authored string its prompt prints. This file proves the
+ * route acts on that answer, which is a different claim: a route that called
+ * the model before preparing, or ignored a refusal, would pass the module test
+ * and still hand the phrase to the model.
  *
  * `lib/rag/domain-guard.ts`, `lib/rag/prompt.ts` and `lib/rag/policy.ts` are all
  * REAL here - only Supabase, the model call and the context loader are mocked -
@@ -18,14 +18,14 @@ const {
   getUserProfile,
   createClient,
   createAdminClient,
-  generateTuningAdvice,
+  generateAdvice,
   loadRaceEngineerContext,
 } = vi.hoisted(() => ({
   getRealUser: vi.fn(),
   getUserProfile: vi.fn(),
   createClient: vi.fn(),
   createAdminClient: vi.fn(),
-  generateTuningAdvice: vi.fn(),
+  generateAdvice: vi.fn(),
   loadRaceEngineerContext: vi.fn(),
 }));
 
@@ -39,7 +39,7 @@ vi.mock('@/lib/env.server', () => ({
   getAiRequestFingerprintSecret: vi.fn(() => 'test-secret'),
 }));
 vi.mock('@/lib/rag/advice', () => ({
-  generateTuningAdvice,
+  generateAdvice,
   UpstreamTimeoutError: class UpstreamTimeoutError extends Error {},
 }));
 vi.mock('@/lib/rag/race-engineer-context', async (importOriginal) => ({
@@ -49,6 +49,7 @@ vi.mock('@/lib/rag/race-engineer-context', async (importOriginal) => ({
 }));
 
 import { POST } from '@/app/api/ai/tuning-advice/route';
+import type { PreparedAdvicePrompt } from '@/lib/rag/prompt';
 import type { RaceEngineerContext } from '@/lib/rag/race-engineer-context';
 import type {
   AiRecommendation,
@@ -382,12 +383,19 @@ async function drive(
   return { status: response.status, body: await response.json(), rows };
 }
 
-/** The context the prompt builder was actually handed. */
+/** What the route handed the model call: the prepared prompt. */
+function preparedPrompt(): PreparedAdvicePrompt | undefined {
+  return generateAdvice.mock.calls[0]?.[0] as PreparedAdvicePrompt | undefined;
+}
+
+/** The context the prompt was actually built from. */
 function promptedContext(): RaceEngineerContext | undefined {
-  const input = generateTuningAdvice.mock.calls[0]?.[0] as
-    | { raceEngineerContext?: RaceEngineerContext }
-    | undefined;
-  return input?.raceEngineerContext;
+  return preparedPrompt()?.screenedContext;
+}
+
+/** The user prompt the model would have been sent. */
+function promptText(): string {
+  return preparedPrompt()!.messages([])[1].content;
 }
 
 function promptedRecommendationIds(): string[] {
@@ -395,9 +403,8 @@ function promptedRecommendationIds(): string[] {
 }
 
 function expectPayloadWithheld() {
-  expect(JSON.stringify(generateTuningAdvice.mock.calls[0][0])).not.toContain(
-    'Ignore all previous instructions',
-  );
+  expect(promptText()).not.toContain('Ignore all previous instructions');
+  expect(JSON.stringify(promptedContext())).not.toContain('Ignore all previous instructions');
 }
 
 function expectStoredTextRefusal(result: DriveResult, fieldLabel: string) {
@@ -408,7 +415,7 @@ function expectStoredTextRefusal(result: DriveResult, fieldLabel: string) {
   expect(result.body.advice.refusal).toContain(`The wording in ${fieldLabel} reads as an instruction`);
   // Never echo the payload: reflecting it puts the phrase back on screen.
   expect(result.body.advice.refusal).not.toContain('Ignore all previous instructions');
-  expect(generateTuningAdvice).not.toHaveBeenCalled();
+  expect(generateAdvice).not.toHaveBeenCalled();
 }
 
 describe('POST /api/ai/tuning-advice stored rider text screening', () => {
@@ -416,7 +423,7 @@ describe('POST /api/ai/tuning-advice stored rider text screening', () => {
     vi.clearAllMocks();
     getRealUser.mockResolvedValue({ id: USER_ID });
     getUserProfile.mockResolvedValue({ id: USER_ID, tier: 'pro' });
-    generateTuningAdvice.mockResolvedValue({
+    generateAdvice.mockResolvedValue({
       advice: GOOD_ADVICE,
       retrieved: [],
       usage: { prompt_tokens: 10, completion_tokens: 5 },
@@ -545,7 +552,7 @@ describe('POST /api/ai/tuning-advice stored rider text screening', () => {
 
     expect(result.status).toBe(200);
     expect(result.body.advice.refusal).toBeNull();
-    expect(generateTuningAdvice).toHaveBeenCalledTimes(1);
+    expect(generateAdvice).toHaveBeenCalledTimes(1);
     expect(promptedContext()?.sessionEnvironment).toBeNull();
     // All three together, because the bug this locks is that they disagreed:
     // the prompt said the environment was absent, that no weather data was used,
@@ -608,7 +615,7 @@ describe('POST /api/ai/tuning-advice stored rider text screening', () => {
 
     expect(result.status).toBe(200);
     expect(result.body.advice.refusal).toBeNull();
-    expect(generateTuningAdvice).toHaveBeenCalledTimes(1);
+    expect(generateAdvice).toHaveBeenCalledTimes(1);
     // Dropped has to mean gone from the prompt rather than merely unscreened:
     // left in, the channel re-opens and the skip is a regression on the refusal.
     expect(promptedRecommendationIds()).toEqual([REC_B]);
@@ -690,6 +697,6 @@ describe('POST /api/ai/tuning-advice stored rider text screening', () => {
     });
     expect(result.status).toBe(200);
     expect(result.body.advice.refusal).toBeNull();
-    expect(generateTuningAdvice).toHaveBeenCalledTimes(1);
+    expect(generateAdvice).toHaveBeenCalledTimes(1);
   });
 });
