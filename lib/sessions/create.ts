@@ -185,9 +185,10 @@ const SESSION_CREATE_SAVE_FAILED_MESSAGE =
  * save is refused another save may have found the same track by name and stored
  * its session against it - and a plain delete here took the track out from under
  * that stored session (`on delete set null`). The function locks the row and
- * deletes it only while no session references it, so the track stays with the
- * save that won. A failed call leaves a stray track, the lesser harm, and is
- * reported.
+ * deletes it only while no session references it - any rider's, through the
+ * `security definer` check `auto_created_track_is_referenced` (20261001002500) -
+ * so the track stays with the save that won. A failed call leaves a stray
+ * track, the lesser harm, and is reported.
  */
 async function rollbackAutoCreatedTrack(
   supabase: SessionWriteClient,

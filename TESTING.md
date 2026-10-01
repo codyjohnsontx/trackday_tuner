@@ -200,7 +200,8 @@ assert fails them.
   one writer the website form's server action and the phone's route share:
   track, alias and layout resolution, the vehicle check, the free-plan cap -
   including two saves racing at one short of it, and a scheduled pair where the
-  refused save created the track the winner used - atomicity, and change
+  refused save created the track the winner used - the track take-back
+  leaving a track another rider's session references, atomicity, and change
   records. The fault paths a real database cannot produce on cue stay in
   `lib/actions/sessions.test.ts`.
 - `create-session-with-laps.spec.ts` calls `create_session_with_laps`
