@@ -1115,7 +1115,9 @@ environment also clears `dataUsed.weather` and recomputes `dayTrend` through
 weather data was used, and that the track temperature is logged. `dataUsed.feedback`
 is derived from the recommendation list as well as the feedback list, so a
 recommendation drop recomputes it on both exits - otherwise the prompt withholds
-every feedback source and still tells the model feedback was used. It throws when a
+every feedback source and still tells the model feedback was used. That flag
+describes the rows the loader READ, not the printed window, so the recompute reads
+every loaded recommendation less the dropped ones. It throws when a
 drop removed nothing, and its switch over `SkippableSource` is exhaustive, so a new
 kind does not compile until it is handled.
 
