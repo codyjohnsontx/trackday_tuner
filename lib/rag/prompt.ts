@@ -1067,7 +1067,9 @@ function collectDayPlanSessionIds(
  * filtering the full list would slide the next unscreened row into the window
  * the drop just freed and re-open the channel this exists to close. The
  * `prepare*` functions window before they screen, so everything that survives
- * here has been screened.
+ * here has been screened. `loadedRecommendations` is the unwindowed list, and
+ * it is read for one thing only: the `feedback` flag, which describes what the
+ * loader read rather than what the prompt prints.
  *
  * The switch is exhaustive and fail-closed twice over: a new `SkippableSource`
  * kind does not compile until it is handled here, and a drop that removed
@@ -1083,6 +1085,7 @@ function dropScreenedSources(
   context: RaceEngineerContext,
   droppedSources: readonly SkippableSource[],
   session: Session,
+  loadedRecommendations: RaceEngineerContext['recentRecommendations'],
 ): RaceEngineerContext {
   if (droppedSources.length === 0) return context;
 
@@ -1124,16 +1127,16 @@ function dropScreenedSources(
   // (`recentFeedback.length > 0 || recentRecommendations.some(status !== 'proposed')`
   // in `race-engineer-context`), so dropping the only applied recommendation can
   // leave the prompt claiming feedback it just withheld - the same defect the
-  // `weather` recompute below exists to prevent, one field over. Recomputed from
-  // the surviving lists rather than left alone, on BOTH exits because a
-  // recommendation drop does not require an environment drop.
+  // `weather` recompute below exists to prevent, one field over. Recomputed on
+  // BOTH exits because a recommendation drop does not require an environment
+  // drop.
   //
-  // ONLY WHEN A RECOMMENDATION WAS ACTUALLY REMOVED. The loader derived the flag
-  // from every row it read, and the lists here are already cut to the printed
-  // window, so recomputing after an environment-only drop would forget an
-  // `applied` row past the window and flip `feedback` to false over a drop that
-  // never touched a recommendation. Left alone, the flag is exactly what it was
-  // before the drop.
+  // FROM EVERY ROW THE LOADER READ, LESS THE DROPPED ONES - not from the printed
+  // window. The loader derived the flag from the full list, so recomputing from
+  // the window would forget an `applied` row past it, and whether that row
+  // counted would depend on whether some other row had been dropped. With no
+  // recommendation dropped the recompute is the loader's own value, so it is
+  // skipped.
   const dataUsedAfterDrops: RaceEngineerContext['dataUsed'] =
     droppedRecommendationIds.size === 0
       ? context.dataUsed
@@ -1141,7 +1144,10 @@ function dropScreenedSources(
           ...context.dataUsed,
           feedback:
             context.recentFeedback.length > 0 ||
-            recentRecommendations.some((recommendation) => recommendation.status !== 'proposed'),
+            loadedRecommendations.some(
+              (recommendation) =>
+                !droppedRecommendationIds.has(recommendation.id) && recommendation.status !== 'proposed',
+            ),
         };
 
   if (!dropSessionEnvironment) {
@@ -1342,6 +1348,7 @@ export function prepareTuningAdvicePrompt(
     windowed.raceEngineerContext,
     assessment.droppedSources,
     fields.session,
+    fields.raceEngineerContext.recentRecommendations,
   );
   const promptInput = { ...windowed, raceEngineerContext: screenedContext };
 

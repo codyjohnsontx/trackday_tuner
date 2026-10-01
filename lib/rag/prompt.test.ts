@@ -1467,6 +1467,38 @@ describe('prepareTuningAdvicePrompt: what a skip drops', () => {
     expect(userPrompt(prepared)).not.toContain(PAYLOAD);
   });
 
+  // The same applied row past the window, now with a recommendation dropped from
+  // inside it. The recompute reads every row the loader read less the dropped
+  // one, so the fourth row still counts and the flag does not depend on whether
+  // some other row happened to be withheld.
+  it('keeps the feedback flag across a recommendation drop when the applied row is past the window', () => {
+    const proposed = (id: string): AiRecommendation => ({ ...recommendationRow(id), status: 'proposed' });
+    const prepared = prepare(context({
+      sessionEnvironment: null,
+      recentFeedback: [],
+      recentRecommendations: [
+        { ...poisoned('a'), status: 'proposed' },
+        proposed('b'),
+        proposed('c'),
+        recommendationRow('d'),
+      ],
+      dataUsed: {
+        manual: true,
+        weather: false,
+        history: false,
+        // What the loader derives from the applied fourth row.
+        feedback: true,
+        lap_data: false,
+        telemetry: false,
+      },
+    }));
+
+    expect(prepared.screenedContext.recentRecommendations.map((row) => row.id)).toEqual(['b', 'c']);
+    expect(prepared.fallbackDataUsed.feedback).toBe(true);
+    expect(userPrompt(prepared)).toContain('feedback=true');
+    expect(userPrompt(prepared)).not.toContain(PAYLOAD);
+  });
+
   // The mirror case: a surviving feedback row still justifies the flag, so the
   // recompute must not clear it just because a recommendation went.
   it('keeps the feedback flag when a feedback row survives the drop', () => {
