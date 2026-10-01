@@ -1440,8 +1440,6 @@ describe('prepareTuningAdvicePrompt: what a skip drops', () => {
     expect(userPrompt(prepared)).not.toContain(PAYLOAD);
   });
 
-  // The mirror case: a surviving feedback row still justifies the flag, so the
-  // recompute must not clear it just because a recommendation went.
   // The loader derives the flag from every row it read - five recommendations -
   // and the prompt prints three. An environment-only drop touches no
   // recommendation, so it must not recompute the flag from the printed window
@@ -1469,6 +1467,8 @@ describe('prepareTuningAdvicePrompt: what a skip drops', () => {
     expect(userPrompt(prepared)).not.toContain(PAYLOAD);
   });
 
+  // The mirror case: a surviving feedback row still justifies the flag, so the
+  // recompute must not clear it just because a recommendation went.
   it('keeps the feedback flag when a feedback row survives the drop', () => {
     const prepared = prepare(context({
       sessionEnvironment: null,
