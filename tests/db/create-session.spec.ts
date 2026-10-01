@@ -15,7 +15,7 @@ import {
   deleteThrowawayRider,
   type ThrowawayRider,
 } from '@/tests/e2e/helpers/throwaway-rider';
-import { createVehicle, signIn, type Client } from '@/tests/db/helpers/rider';
+import { anonClient, createVehicle, signIn, type Client } from '@/tests/db/helpers/rider';
 import type { CreateSessionInput, Profile } from '@/types';
 
 /**
@@ -536,6 +536,82 @@ test.describe('createSessionForUser against a real database', () => {
 
       expect(result).toEqual({ ok: false, error: MISSING_TRACK_MESSAGE, kind: 'invalid' });
       expect(await sessionsOf(rider)).toEqual([]);
+    });
+  });
+
+  test.describe('taking back a track a refused save created', () => {
+    /** A session of `rider`'s on `trackId`, written directly - the path a crafted request takes. */
+    async function sessionOn(rider: Rider, trackId: string) {
+      const { conditions, tires, suspension, enabled_modules } = formInput(rider.vehicle);
+      const { data, error } = await rider.client
+        .from('sessions')
+        .insert({
+          user_id: rider.rider.id,
+          vehicle_id: rider.vehicle,
+          track_id: trackId,
+          track_name: NEW_CIRCUIT,
+          date: '2026-09-27',
+          conditions,
+          tires,
+          suspension,
+          enabled_modules: enabled_modules!,
+        })
+        .select('id')
+        .single();
+      expect(error, error?.message).toBeNull();
+      return data!.id;
+    }
+
+    // A rider's custom track is not visible to anyone else, but the foreign key
+    // does not know that, so another rider's session can point at it. The
+    // reference check has to see that session even though the rider asking
+    // cannot, or the delete would clear the other rider's track_id.
+    test('leaves the track in place while another rider’s session references it', async () => {
+      const owner = await newRider('take-back-owner');
+      const other = await newRider('take-back-other');
+      const track = await ownTrack(owner, NEW_CIRCUIT);
+      const theirs = await sessionOn(other, track);
+
+      const { data, error } = await owner.client.rpc('delete_auto_created_track_if_unused', { p_track_id: track });
+
+      expect(error, error?.message).toBeNull();
+      expect(data).toBe(false);
+      expect(await ownTracks(owner)).toEqual([{ id: track, name: NEW_CIRCUIT }]);
+      const stored = await admin.from('sessions').select('track_id').eq('id', theirs).single();
+      expect(stored.data).toEqual({ track_id: track });
+    });
+
+    // The check behind it sees every rider's sessions, so it must not answer for
+    // a track that is not the caller's own: that would let a rider learn whether
+    // other riders have sessions on any track id they can name.
+    test('has a reference check that answers only for the caller’s own auto-created track', async () => {
+      const owner = await newRider('take-back-probe-owner');
+      const other = await newRider('take-back-probe-other');
+      const track = await ownTrack(owner, NEW_CIRCUIT);
+      await sessionOn(owner, track);
+      const roadAmerica = await seededTrack('Road America');
+      await save(other, { track_id: roadAmerica.id, track_name: roadAmerica.name });
+
+      const own = await owner.client.rpc('auto_created_track_is_referenced', { p_track_id: track });
+      const someoneElses = await other.client.rpc('auto_created_track_is_referenced', { p_track_id: track });
+      const seeded = await other.client.rpc('auto_created_track_is_referenced', { p_track_id: roadAmerica.id });
+      const nobody = await anonClient().rpc('auto_created_track_is_referenced', { p_track_id: track });
+
+      expect(own).toMatchObject({ data: true, error: null });
+      expect(someoneElses).toMatchObject({ data: null, error: null });
+      expect(seeded).toMatchObject({ data: null, error: null });
+      expect(nobody.error?.code).toBe('42501');
+    });
+
+    test('deletes the rider’s own track once nothing references it', async () => {
+      const owner = await newRider('take-back-unused');
+      const track = await ownTrack(owner, NEW_CIRCUIT);
+
+      const { data, error } = await owner.client.rpc('delete_auto_created_track_if_unused', { p_track_id: track });
+
+      expect(error, error?.message).toBeNull();
+      expect(data).toBe(true);
+      expect(await ownTracks(owner)).toEqual([]);
     });
   });
 

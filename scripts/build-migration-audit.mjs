@@ -64,6 +64,7 @@ export const SESSION_VEHICLE_OWNED_CHECK_MD5 = '7c9b3da91045db80e54e45052117e6e2
 
 const CREATE_SESSION_WITH_LAPS = "to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)')";
 const DELETE_AUTO_CREATED_TRACK = "to_regprocedure('public.delete_auto_created_track_if_unused(uuid)')";
+const AUTO_CREATED_TRACK_IS_REFERENCED = "to_regprocedure('public.auto_created_track_is_referenced(uuid)')";
 const RECORD_DELETED_SESSION = "to_regprocedure('public.record_deleted_session()')";
 
 /**
@@ -452,17 +453,41 @@ export const MIGRATION_PROBES = {
       'Read by its body, so a hand-edited copy that deletes without the lock or',
       'the reference check reads MISSING, and by the invoker security, pinned',
       'search path and rider-only execute it is declared with.',
+      '20261001002500 replaces the body, so its fingerprint is accepted here too.',
     ],
     kind: 'function',
     object: 'public.delete_auto_created_track_if_unused(uuid)',
     present: [
       `${DELETE_AUTO_CREATED_TRACK} is not null`,
-      '     and (select md5(p.prosrc) = ' +
-        `'${functionBodyMd5('20260930002400_delete_auto_created_track_if_unused')}'`,
+      '     and (select md5(p.prosrc) in (' +
+        `'${functionBodyMd5('20260930002400_delete_auto_created_track_if_unused')}', ` +
+        `'${functionBodyMd5('20261001002500_auto_created_track_reference_check_sees_every_session', 'delete_auto_created_track_if_unused')}')`,
       '            and not p.prosecdef',
       "            and p.proconfig = array['search_path=\"\"']",
       "            and has_function_privilege('authenticated', p.oid, 'execute')",
       "            and not has_function_privilege('anon', p.oid, 'execute')",
+      `          from pg_proc p where p.oid = ${DELETE_AUTO_CREATED_TRACK})`,
+    ],
+  },
+  '20261001002500_auto_created_track_reference_check_sees_every_session': {
+    note: [
+      'Two functions, each by its body: the definer reference check with its',
+      'empty search path and rider-only execute, and the take-back that calls it.',
+    ],
+    kind: 'function + function',
+    object: 'public.auto_created_track_is_referenced(uuid), delete_auto_created_track_if_unused body',
+    present: [
+      `${AUTO_CREATED_TRACK_IS_REFERENCED} is not null`,
+      '     and (select md5(p.prosrc) = ' +
+        `'${functionBodyMd5('20261001002500_auto_created_track_reference_check_sees_every_session', 'auto_created_track_is_referenced')}'`,
+      '            and p.prosecdef',
+      "            and p.proconfig = array['search_path=\"\"']",
+      "            and has_function_privilege('authenticated', p.oid, 'execute')",
+      "            and not has_function_privilege('anon', p.oid, 'execute')",
+      `          from pg_proc p where p.oid = ${AUTO_CREATED_TRACK_IS_REFERENCED})`,
+      `     and ${DELETE_AUTO_CREATED_TRACK} is not null`,
+      '     and (select md5(p.prosrc) = ' +
+        `'${functionBodyMd5('20261001002500_auto_created_track_reference_check_sees_every_session', 'delete_auto_created_track_if_unused')}'`,
       `          from pg_proc p where p.oid = ${DELETE_AUTO_CREATED_TRACK})`,
     ],
   },

@@ -812,6 +812,7 @@ describe('supabase migrations bootstrap a database from nothing', () => {
     );
 
     expect([...definers].sort()).toEqual([
+      'auto_created_track_is_referenced',
       'consume_beta_rate_limit',
       'create_beta_invite',
       'handle_new_auth_user',

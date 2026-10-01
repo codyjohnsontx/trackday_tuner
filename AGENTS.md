@@ -714,8 +714,14 @@ load-bearing:
   plain delete: another save can find that track by name and store its session
   against it before the refusal lands, and a delete then unlinks the winner
   (`on delete set null`). The function locks the row and deletes only while no
-  session references it; it is hand-applied too ("Take back a refused save's
-  track safely, by hand"), and without it the take-back fails, is reported, and
+  session references it - ANY rider's, through the `security definer` check
+  `auto_created_track_is_referenced` (20261001002500), because a rider's custom
+  track is private but the foreign key lets another rider's session point at it.
+  That check answers only for the caller's own auto-created track (null for any
+  other), so it is not a lookup into other riders' data; the take-back itself
+  stays `security invoker`. Both are hand-applied ("Take back a refused save's
+  track safely, by hand", then "Let the track take-back see every rider's
+  sessions, by hand"), and without them the take-back fails, is reported, and
   leaves a stray track. **The website form now depends on the function too**, so
   a hosted project without it cannot save a session from either client: it is
   applied by hand ("Apply the session create function by hand" in
