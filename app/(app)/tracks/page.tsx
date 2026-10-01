@@ -8,11 +8,8 @@ import { TrackListClient } from '@/components/tracks/track-list-client';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { resolveUserAccess } from '@/lib/access';
-import {
-  getFreePlanLimitMessage,
-  getFreePlanLimitTitle,
-  isAtFreePlanLimit,
-} from '@/lib/plans';
+import { getFreePlanLimitMessage, getFreePlanLimitTitle } from '@/lib/plans';
+import { isAtCustomTrackCap } from '@/lib/track-lookup';
 
 export default async function TracksPage() {
   const [{ tracks, aliases, layouts }, profile, demoMode] = await Promise.all([
@@ -20,12 +17,7 @@ export default async function TracksPage() {
     getUserProfile(),
     isDemoMode(),
   ]);
-  const customTracks = tracks.filter((track) => !track.is_seeded);
-  const atTrackLimit = isAtFreePlanLimit(
-    'tracks',
-    customTracks.length,
-    resolveUserAccess(profile).hasProAccess,
-  );
+  const atTrackLimit = isAtCustomTrackCap(tracks, resolveUserAccess(profile).hasProAccess);
 
   return (
     <div className="space-y-5">

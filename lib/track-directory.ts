@@ -17,16 +17,11 @@
  * what it cannot do is catch a typo nobody wrote down, and that is the accepted
  * limit of this approach.
  *
- * The lookup order is names first, then aliases, and that order is the rule that
- * matters: a rider who has made their own track called "Barber" means THAT one,
- * not the seeded Barber Motorsports Park an alias would otherwise redirect them
- * to. Their own naming wins.
- *
- * That order is what the code does today, not the rule going forward:
- * docs/adr/0001-what-a-track-is.md (decisions 7 and 8) has the seeded circuit
- * win where the two are the same venue. Not yet rebuilt.
+ * What a typed name resolves to - the lookup order, and which of two same-named
+ * rows wins - is lib/track-lookup.ts, the one track-name resolver. This file
+ * builds the indexes that resolver reads.
  */
-import { findSavedTrackByName, trackNameKey } from '@/lib/session-track';
+import { trackNameKey } from '@/lib/session-track';
 import type { Track, TrackAlias, TrackLayout } from '@/types';
 
 /** A circuit's alternate spellings, keyed the way `trackNameKey` keys a name. */
@@ -91,40 +86,4 @@ export function buildTrackLayoutIndex(rows: readonly TrackLayout[]): TrackLayout
   }
 
   return index;
-}
-
-/**
- * The visible track a typed name means, the rider's own before a seeded one.
- *
- * A rider who logged "Road America" as a custom track before the seed arrived
- * now sees two rows with that name. Taking whichever came back first would split
- * their history across both, so their own row wins, as it does over an alias.
- * Superseded by docs/adr/0001-what-a-track-is.md decision 8 (the seeded circuit
- * wins); this is current behaviour, not yet rebuilt.
- */
-export function findTrackByName<T extends { name: string; is_seeded: boolean }>(
-  name: string | null | undefined,
-  tracks: readonly T[],
-): T | null {
-  return (
-    findSavedTrackByName(
-      name,
-      tracks.filter((track) => !track.is_seeded),
-    ) ?? findSavedTrackByName(name, tracks)
-  );
-}
-
-/** The circuit an alias names, or null when the name is not one. */
-export function findTrackByAlias<T extends { id: string }>(
-  name: string | null | undefined,
-  aliases: TrackAliasIndex,
-  tracks: readonly T[],
-): T | null {
-  const key = trackNameKey(name);
-  if (!key) return null;
-
-  const trackId = aliases[key];
-  if (!trackId) return null;
-
-  return tracks.find((track) => track.id === trackId) ?? null;
 }

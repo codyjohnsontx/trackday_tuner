@@ -34,7 +34,8 @@ import {
   normalizeTrackName,
   trackNameKey,
 } from '@/lib/session-track';
-import { findTrackByAlias, findTrackByName, type TrackAliasIndex, type TrackLayoutIndex } from '@/lib/track-directory';
+import type { TrackAliasIndex, TrackLayoutIndex } from '@/lib/track-directory';
+import { CUSTOM_TRACK_LABEL, isCustomTrack, resolveTrackInDirectory } from '@/lib/track-lookup';
 import {
   getAvailableSessionModules,
   getDefaultAdvancedVisibility,
@@ -303,14 +304,13 @@ export function SessionForm({
   // over the same data, that `resolveSessionTrack` applies on save. Without the
   // typed half a rider who wrote "VIR" out in full would never be offered its
   // layouts, though the session they save lands on VIR regardless.
-  const identifiedTrackId = useMemo(() => {
-    if (trackId) return trackId;
-    return (
-      findTrackByName(trackQuery, tracks)?.id ??
-      findTrackByAlias(trackQuery, trackAliases, tracks)?.id ??
-      null
-    );
-  }, [trackId, trackQuery, tracks, trackAliases]);
+  // A picked id is kept even when it is missing from the list - see
+  // `UnlistedTrackId` for why this and `resolvableTrackId` below differ there.
+  const identifiedTrackId = useMemo(
+    () =>
+      resolveTrackInDirectory({ trackId, typed: trackQuery, tracks, aliases: trackAliases, unlistedId: 'keep' }),
+    [trackId, trackQuery, tracks, trackAliases],
+  );
 
   const layoutOptions = identifiedTrackId ? (trackLayouts[identifiedTrackId] ?? []) : [];
   // A layout only means something on the circuit it belongs to. Deriving the
@@ -333,12 +333,15 @@ export function SessionForm({
   // Held back while the list is open, so a rider part-way through typing a saved
   // circuit is shown the circuit and not a warning about the fragment typed so
   // far - which is why handleSubmit refuses to let that hiding reach a save.
-  // The typed name falls back to an alias as well, as `resolveSessionTrack` does,
-  // so "VIR" links rather than warning.
-  const resolvableTrackId =
-    (trackId && tracks.some((track) => track.id === trackId) ? trackId : null) ??
-    findTrackByAlias(trackQuery, trackAliases, tracks)?.id ??
-    null;
+  // The typed name resolves by name and then by alias, as `resolveSessionTrack`
+  // does, so "VIR" links rather than warning.
+  const resolvableTrackId = resolveTrackInDirectory({
+    trackId,
+    typed: trackQuery,
+    tracks,
+    aliases: trackAliases,
+    unlistedId: 'ignore',
+  });
   const trackGap = describeSessionTrackGap({
     trackId: resolvableTrackId,
     trackName: trackQuery,
@@ -955,7 +958,7 @@ export function SessionForm({
               >
                 <span className="font-medium">{track.name}</span>
                 {track.location ? <span className="ml-1 text-ink-faint">{track.location}</span> : null}
-                {!track.is_seeded ? <span className="ml-1 text-ink-faint">· Custom</span> : null}
+                {isCustomTrack(track) ? <span className="ml-1 text-ink-faint">· {CUSTOM_TRACK_LABEL}</span> : null}
               </li>
             ))}
           </ul>

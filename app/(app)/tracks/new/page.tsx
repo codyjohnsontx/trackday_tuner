@@ -6,7 +6,7 @@ import { isDemoMode } from '@/lib/demo/mode';
 import { getTracks } from '@/lib/actions/tracks';
 import { getUserProfile } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
-import { isAtFreePlanLimit } from '@/lib/plans';
+import { isAtCustomTrackCap } from '@/lib/track-lookup';
 import { pageTitleClass } from '@/components/ui/page-header';
 import { cn } from '@/lib/utils';
 
@@ -21,11 +21,7 @@ export default async function NewTrackPage() {
     return <DemoReadOnlyNotice backHref="/tracks" backLabel="Back to Tracks" />;
   }
 
-  // The limit counts the rider's own tracks; the seeded ones are shared, which
-  // is the same split /tracks and resolveSessionTrack already count on.
-  const customTrackCount = tracks.filter((track) => !track.is_seeded).length;
-
-  if (isAtFreePlanLimit('tracks', customTrackCount, resolveUserAccess(profile).hasProAccess)) {
+  if (isAtCustomTrackCap(tracks, resolveUserAccess(profile).hasProAccess)) {
     return (
       <PlanLimitNotice
         resource="tracks"

@@ -11,6 +11,7 @@ import { SessionCard } from '@/components/sessions/session-card';
 import { Button } from '@/components/ui/button';
 import { pageTitleClass } from '@/components/ui/page-header';
 import { buildLapSummaryLabel } from '@/lib/session-compare';
+import { isCustomTrack } from '@/lib/track-lookup';
 import { cn } from '@/lib/utils';
 
 interface TrackDetailPageProps {
@@ -26,7 +27,7 @@ export default async function TrackDetailPage({ params }: TrackDetailPageProps) 
   }
 
   const track = result.data;
-  const isCustom = !track.is_seeded;
+  const isCustom = isCustomTrack(track);
 
   const [sessionsResult, vehicles] = await Promise.all([getSessionsAtTrack(track), getVehicles()]);
   const sessions = sessionsResult.ok ? sessionsResult.data : [];
