@@ -6,7 +6,8 @@ import { runResourceId } from '@/tests/e2e/helpers/run-id';
 /**
  * The core loop on the shape of data riders actually produce: several sessions on
  * one track day, Start Time left blank because it is optional and nobody stops to
- * fill it between runs.
+ * fill it between runs. The form now defaults it to the time of logging, so this
+ * clears it, but older rows and a rider who clears it still have none.
  *
  * This used to fail silently. All three previous-session lookups filtered with a raw
  * `start_time.lt.<t>` predicate, and `NULL < '23:59:59'` is NULL rather than true, so
@@ -100,8 +101,12 @@ async function logSessionWithoutStartTime(
   await page.getByRole('group', { name: 'Weather' }).getByRole('button', { name: 'Sunny' }).click();
   await page.getByLabel('Front Pressure', { exact: true }).fill(frontPressure);
 
-  // The whole point of the test: Start Time stays empty.
-  await expect(page.getByLabel('Start Time', { exact: true })).toHaveValue('');
+  // The whole point of the test: Start Time is empty. It opens on the current
+  // time, so clear it the way a rider would.
+  const startTimeField = page.getByLabel('Start Time', { exact: true });
+  await expect(startTimeField).not.toHaveValue('', { timeout: 15_000 });
+  await startTimeField.fill('');
+  await expect(startTimeField).toHaveValue('');
 
   await page.getByRole('button', { name: 'Save Session' }).click();
   // Saving is a server action followed by a client navigation that waits on the new
