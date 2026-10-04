@@ -619,7 +619,9 @@ claim into the setup diff, the prompts and the recommendation learning record.
 (`components/ui/choice-row.tsx`) renders a row where `null` is a value. Which of
 the three blocks a save follows the column: `sessions.conditions` and
 `session_feedback.outcome` are NOT NULL so they are required, and
-`tires.condition` is inside JSON so it stores null.
+`tires.condition` is inside JSON so it stores null. The outcome panel's two
+1-5 ratings (rider confidence, AI usefulness) are nullable and open on "Not
+rated", so an untouched one stores null (`buildSessionOutcomeBody`).
 
 The same shape applies to anything derived rather than given:
 

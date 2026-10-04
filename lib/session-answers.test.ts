@@ -4,8 +4,11 @@ import {
   MISSING_CONDITIONS_MESSAGE,
   SESSION_CONDITION_OPTIONS,
   TIRE_CONDITION_OPTIONS,
+  buildSessionOutcomeBody,
   isSessionCondition,
   normalizeTireCondition,
+  parseRatingAnswer,
+  ratingSelectValue,
 } from '@/lib/session-answers';
 
 describe('what counts as an answer', () => {
@@ -52,5 +55,49 @@ describe('what counts as an answer', () => {
       'worse',
       'unknown',
     ]);
+  });
+});
+
+describe('outcome ratings the rider never touched', () => {
+  const answered = {
+    referenceSessionId: 'ref',
+    recommendationId: 'rec',
+    outcome: 'better' as const,
+    confidence: '',
+    helpfulness: '',
+    symptoms: [],
+    notes: '',
+  };
+
+  it('sends an untouched confidence and usefulness as null, not as 3 and 4', () => {
+    const body = buildSessionOutcomeBody(answered);
+    expect(body.rider_confidence).toBeNull();
+    expect(body.recommendation_helpfulness).toBeNull();
+  });
+
+  it('sends a rating the rider picked as that number', () => {
+    const body = buildSessionOutcomeBody({ ...answered, confidence: '2', helpfulness: '5' });
+    expect(body.rider_confidence).toBe(2);
+    expect(body.recommendation_helpfulness).toBe(5);
+  });
+
+  it('drops usefulness when no recommendation is linked, whatever the select held', () => {
+    const body = buildSessionOutcomeBody({ ...answered, recommendationId: '', helpfulness: '5' });
+    expect(body.recommendation_id).toBeNull();
+    expect(body.recommendation_helpfulness).toBeNull();
+  });
+
+  it('reads anything outside 1-5 as unrated', () => {
+    expect(parseRatingAnswer('')).toBeNull();
+    expect(parseRatingAnswer('0')).toBeNull();
+    expect(parseRatingAnswer('6')).toBeNull();
+    expect(parseRatingAnswer('2.5')).toBeNull();
+    expect(parseRatingAnswer('3')).toBe(3);
+  });
+
+  it('reopens an unrated stored row unrated and a rated one on its rating', () => {
+    expect(ratingSelectValue(null)).toBe('');
+    expect(ratingSelectValue(undefined)).toBe('');
+    expect(ratingSelectValue(4)).toBe('4');
   });
 });
