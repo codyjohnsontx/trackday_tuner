@@ -70,6 +70,44 @@
 Never change `BETA_INVITE_SECRET` while active invitations exist; invitation hashes
 cannot be recovered after rotation.
 
+### Check the hosted schema for drift
+
+The audit (`scripts/sql/audit-migrations-against-database.sql`) answers which
+migrations a database has, one sentinel object each. It cannot see the rest of
+what a migration makes, or anything made by hand that no migration describes -
+a missing column beside a present function, a dashboard-made trigger function,
+a grant that never ran. `scripts/sql/schema-inventory.sql` lists all of it, one
+object per line, so the hosted project can be diffed against a database built
+from `supabase/migrations/`. Run it before and after any hand-apply block below.
+
+It is one read-only `select` over the system catalogues: no DDL, no writes, no
+`set role`, and no row from any application table. The only non-catalogue
+source is `storage.buckets`, configuration columns only.
+
+1. Paste `scripts/sql/schema-inventory.sql` into the hosted SQL editor and run
+   it. Save the result with **Download CSV**, not by copying rows out of the
+   grid.
+2. Build the reference: a local stack from this checkout's migrations and
+   nothing else (`npx supabase db reset`, or a fresh `npx supabase start`).
+   A stack carrying another branch's migrations is a different reference.
+3. `npm run db:drift -- <downloaded.csv>`. It runs the same file against the
+   local stack and prints every line that differs: `-` for what the migrations
+   make and hosted does not have, `+` for what hosted has and the migrations do
+   not make. An object defined differently on the two sides appears once under
+   each. Exit 0 means the two agree, 1 means drift, 2 means a side could not be
+   read - an empty or wrong file is refused, never reported as agreement.
+   `--reference <csv>` compares against a saved inventory instead of the stack.
+
+Expected on the hosted project even when it is fully caught up: the
+`MIGRATIONS table_exists` line differs (the CLI has never recorded a history
+there), and is printed but not counted. Anything else is drift. A `-` line
+names the migration to look at - search `supabase/migrations/` for the object's
+name - and the hand-apply blocks below are how it is closed. A `+` line was made
+outside the migrations and needs a decision rather than a paste: a
+`FUNCGRANT ... <default acl: EXECUTE to PUBLIC>` on a function the migrations
+lock down is a grant that never ran, and a trigger on `auth.users` that no
+migration names fires alongside the one that does.
+
 ### Before applying the profiles trigger: confirm the hosted table takes its insert
 
 `20260816001200` puts a `profiles` insert on the path of **every** signup,

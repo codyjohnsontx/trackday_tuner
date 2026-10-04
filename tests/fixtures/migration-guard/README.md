@@ -122,6 +122,16 @@ Postgres accepts because its option list is order-independent, and
 search_path supplies. Both ship the identical world-executable function, so the
 guard has to read both.
 
+Three cover the deferred-execute check, each loaded after a fixture that creates
+the function. `execute_decided_later.sql` decides execute on the function
+`invoker_without_revoke.sql` creates and leaves undecided, which is how the hosted
+project ended up with no grant on `save_session_outcome`: `20260719001100` held
+the pair, and a database that took `20260716000800` by hand never ran it.
+`execute_decided_later_on_definer.sql` is the same deferral on a `security
+definer` function. `execute_corrected_later.sql` is the control: a later grant on
+a function whose own migration already decided execute is an ordinary
+correction, and the guard has to stay quiet about it.
+
 Four cover the rider-text grant check on `ai_request_text`, where a rider may
 read and delete their own retained question text and nothing more.
 `grant_update_on_ai_request_text_to_authenticated.sql` is the hazard it exists

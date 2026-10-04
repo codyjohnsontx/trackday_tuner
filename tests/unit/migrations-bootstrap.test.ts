@@ -44,6 +44,11 @@ import { describe, expect, it } from 'vitest';
 //     order-independent, so `security definer` after the body declares the same
 //     function, and a name with no `public.` qualifier lands in public via
 //     search_path and is the same function too
+//   - a function of any security whose execute is decided in a later migration
+//     than the one that first creates it. A database holding the first and not
+//     the second has the function at Postgres's default, execute to public, and
+//     neither file says so to whoever applies one by hand. This is how the hosted
+//     project lost the save_session_outcome grant; see deferredExecuteDecisions
 //
 // WHAT IT DOES NOT CATCH, because a guard assumed to cover more than it does is
 // worse than none: whether a migration actually runs. This reads SQL as text, so a
@@ -65,7 +70,8 @@ import { describe, expect, it } from 'vitest';
 // the triggers that name it rather than called by a client; and 20260719001100
 // revokes `save_session_outcome` and `record_race_engineer_memory_feedback` in a
 // *later* migration than the one that creates them, which the same-migration rule
-// below would flag. That rule is deliberately strict for `security definer`,
+// below would flag (the deferral check pins those two as the only exceptions).
+// That rule is deliberately strict for `security definer`,
 // where the gap between the two migrations is a window in which the function is
 // world-executable, and it is why widening this check to every function would
 // fail main today. Nor does it see a missing table named anywhere other
@@ -298,6 +304,46 @@ function executeViolations(migrations: Migration[]): string[] {
     ...definerFunctionsWithoutAnExecuteDecision(migrations),
     ...schemaWideExecuteGrants(migrations),
   ];
+}
+
+const GRANT_ON_FUNCTION = /grant\s+[^;]*\son\s+function\s+(?:public\.)?(\w+)/gi;
+
+// A function whose execute privilege is decided in a later migration than the one
+// that first creates it, whatever its security. A database that has the creating
+// migration and not the later one holds the function with Postgres's default -
+// execute to public - and nothing in it says so. That is how the hosted project
+// came to have no grant on save_session_outcome: 20260719001100 carried the pair
+// on the belief that 20260716000800 was already applied there, the belief was
+// wrong, and the hand-applied catch-up never knew a later file held part of it.
+//
+// Only a function some migration decides at all is judged, so `set_updated_at`,
+// which no migration grants or revokes and none needs to, is out of it. A later
+// migration correcting a decision the creating migration already made is fine:
+// the creating migration alone leaves the function decided.
+function deferredExecuteDecisions(migrations: Migration[]): string[] {
+  const createdIn = new Map<string, { file: string; decided: boolean }>();
+  const violations: string[] = [];
+
+  for (const { file, sql } of migrations) {
+    const decidedHere = new Set([
+      ...matchAll(sql, REVOKE_ON_FUNCTION),
+      ...matchAll(sql, GRANT_ON_FUNCTION),
+    ]);
+
+    for (const { name } of functionStatements(sql)) {
+      if (!createdIn.has(name)) createdIn.set(name, { file, decided: decidedHere.has(name) });
+    }
+
+    for (const name of decidedHere) {
+      const creation = createdIn.get(name);
+      if (creation === undefined || creation.decided || creation.file === file) continue;
+      violations.push(
+        `${file}: decides execute on public.${name}, which ${creation.file} creates without deciding it`,
+      );
+    }
+  }
+
+  return violations;
 }
 
 // Every install and removal of an after-insert trigger on auth.users, matched by
@@ -833,6 +879,17 @@ describe('supabase migrations bootstrap a database from nothing', () => {
       /alter\s+default\s+privileges\s+in\s+schema\s+public\s+revoke\s+(?:execute|all)\s+on\s+(?:routines|functions)\s+from\s+public/,
     );
   });
+
+  it('decides execute on a function in the migration that creates it', () => {
+    // These two predate the check and are applied, so they cannot be moved into
+    // the files that create them. Pinned exactly, so a new deferral fails and a
+    // listed one cannot quietly stop being what the list says it is. A database
+    // given 20260716000800 by hand needs 20260719001100's pair for it by hand too.
+    expect(deferredExecuteDecisions(migrations)).toEqual([
+      '20260719001100_grant_data_api_access.sql: decides execute on public.save_session_outcome, which 20260716000800_add_session_outcomes.sql creates without deciding it',
+      '20260719001100_grant_data_api_access.sql: decides execute on public.record_race_engineer_memory_feedback, which 20260422000400_add_adaptive_race_engineer.sql creates without deciding it',
+    ]);
+  });
 });
 
 // The tests above pass against a repository that got it right, and would pass just
@@ -1115,6 +1172,35 @@ describe('the execute check, against migrations written wrongly on purpose', () 
       ]);
     });
   }
+});
+
+describe('the deferred-execute check, against migrations written wrongly on purpose', () => {
+  it('catches a function whose execute is decided only in a later migration', () => {
+    const fixtures = loadFixtures('invoker_without_revoke.sql', 'execute_decided_later.sql');
+
+    expect(deferredExecuteDecisions(fixtures)).toEqual([
+      'execute_decided_later.sql: decides execute on public.save_rider_note, which invoker_without_revoke.sql creates without deciding it',
+    ]);
+  });
+
+  it('catches the same deferral on a security definer function', () => {
+    const fixtures = loadFixtures('definer_without_revoke.sql', 'execute_decided_later_on_definer.sql');
+
+    expect(deferredExecuteDecisions(fixtures)).toEqual([
+      'execute_decided_later_on_definer.sql: decides execute on public.promote_rider, which definer_without_revoke.sql creates without deciding it',
+    ]);
+  });
+
+  it('accepts a later migration correcting a decision the creating one made', () => {
+    const fixtures = loadFixtures('definer_with_revoke.sql', 'execute_corrected_later.sql');
+
+    expect(deferredExecuteDecisions(fixtures)).toEqual([]);
+  });
+
+  it('leaves a function no migration ever decides alone', () => {
+    // set_updated_at's shape: reached through triggers, granted nothing, needing nothing.
+    expect(deferredExecuteDecisions(loadFixtures('invoker_without_revoke.sql'))).toEqual([]);
+  });
 });
 
 describe('the entitlement-write check, against migrations written wrongly on purpose', () => {

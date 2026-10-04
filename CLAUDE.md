@@ -77,6 +77,7 @@ npm run db:status    # which migrations are applied on the linked project
 npm run db:new <name>  # scaffold a migration
 npm run db:push      # apply pending migrations to the linked project
 npm run db:audit     # regenerate the live-schema migration audit query
+npm run db:drift -- <hosted.csv>  # diff a hosted schema inventory against the local stack
 ```
 
 **Never run `npm run build` while a dev server is up.** They share `.next`, and
@@ -369,10 +370,14 @@ their caller, so RLS still applies and execute is not the access control.
 
 The check requires the decision in the function's **own** migration, because the
 gap between two migrations is a window in which a `security definer` function is
-world-executable. Note that `20260719001100` revokes `save_session_outcome` and
-`record_race_engineer_memory_feedback` in a later migration than the one creating
-them. That is fine for those two, which are `security invoker`, but a
-`security definer` function written that way is flagged on purpose.
+world-executable. **A deferred decision is flagged whatever the function's
+security**, because it is not only a window: a database that takes the creating
+migration and never the later one keeps the function at execute-to-public, and
+nothing in the first file says so. That is how the hosted project lost the
+`save_session_outcome` grant - `20260719001100` revokes it and
+`record_race_engineer_memory_feedback` in a later migration than the ones
+creating them, on the belief that `20260716000800` was already applied there.
+Those two are applied, so they are pinned as the only exceptions; a third fails.
 
 `tests/unit/migrations-bootstrap.test.ts` reads the SQL as text and fails if a
 migration alters or references a table nothing earlier creates, if those grants go
@@ -1977,7 +1982,11 @@ has never had. **It is GENERATED** by `scripts/build-migration-audit.mjs` from
 `supabase/migrations/` (`npm run db:audit`), because a hand-kept list of rows
 reports the migration it never heard of as present - the audit answering its own
 question wrongly. Adding a migration means adding its probe there; generation
-fails naming the file until you do.
+fails naming the file until you do. The audit sees one sentinel per migration;
+`scripts/sql/schema-inventory.sql` is the whole schema, one object per line, and
+`npm run db:drift -- <hosted.csv>` diffs the hosted download against a local stack
+built from the migrations - "Check the hosted schema for drift" in
+`docs/beta-runbook.md`.
 
 **`/api/monitoring/ai-health` reads `ai_requests` and every status has to be
 classified.** Refusals, rate limiting and duplicate suppression are not
