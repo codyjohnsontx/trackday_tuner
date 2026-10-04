@@ -37,15 +37,16 @@
    request that ships the matching caller. Either order leaves a window and both
    were walked in a browser: the mismatched call gets `PGRST202` from PostgREST,
    nothing is saved and nothing stored is lost. The rider no longer reads that
-   `PGRST202`: `lib/sessions/create.ts` passes through only the function's own
-   domain rejections and answers everything else with a sentence saying the save
-   did not happen, sending the real error to `reportError`. So the window is
-   quiet on screen, and what names it is the deployment's own `/api/health` -
-   its `schema_contract` check resolves `replace_session_laps` by parameter name
-   and fails on exactly this drift (see `docs/monitoring.md`).
+   `PGRST202`: `replaceSessionLaps` (`lib/actions/sessions.ts`) and
+   `lib/sessions/create.ts` pass through only their functions' own domain
+   rejections and answer everything else with a sentence saying the save did not
+   happen, sending the real error to `reportError`. So the window is quiet on
+   screen, and what names it is the deployment's own `/api/health` - its
+   `schema_contract` check resolves `replace_session_laps` by parameter name and
+   fails on exactly this drift (see `docs/monitoring.md`).
    Saving laps *and* logging a session are both down for that window -
-   `createSession` calls the function even for a session with no laps - while
-   reading is unaffected. Each migration's own header carries the detail.
+   `create_session_with_laps` calls the function even for a session with no
+   laps - while reading is unaffected. Each migration's own header carries the detail.
    `20260924001700` (retained AI question text and its 90-day purge) also goes
    in by hand on a project with no migration history, and also before the
    release that ships it - see "Apply the AI question-text table by hand" below.
@@ -1320,6 +1321,14 @@ phone parks it). It is `security invoker`, so RLS applies as
 for any rider query. Apply it before merging the pull request that adds it:
 without it every session the phone sends is answered 503 and retried.
 
+The website form writes through it too since the session writers were made one:
+its server action mints an id per save and makes the same call. So on a project
+without this function no session can be saved from the website either, and on
+one without "Close session ownership, deleted-session replays and the free-plan
+race by hand" below the form saves with no free-plan cap at all, since that
+block is where the cap is counted. Confirm both are applied (each block's own
+verification) before deploying that release.
+
 **1. Precheck (read-only).**
 
 ```sql
@@ -1959,6 +1968,274 @@ alter policy "sessions: update own"
 drop trigger if exists sessions_record_deleted on public.sessions;
 drop function if exists public.record_deleted_session();
 drop table if exists public.deleted_sessions;
+commit;
+```
+
+### Take back a refused save's track safely, by hand
+
+`20260930002400` adds `public.delete_auto_created_track_if_unused(uuid)`. A
+session save that names a circuit the rider has never logged creates their own
+track first and then calls `create_session_with_laps`; when that call is refused
+(the free-plan cap, a vehicle that is not theirs, a constraint) the save takes
+the track back. It used to do that with a plain delete, which could take the
+track out from under a session another save had just stored against it, leaving
+that session with a name and no track. The function locks the track row, and
+deletes it only when it is the caller's own unseeded track and no session
+references it. Apply it before merging the pull request that calls it.
+
+Without it nothing is refused that would otherwise save: the save's take-back
+call fails, is reported to Sentry as `session-track-rollback`, and leaves a
+stray custom track in that rider's list - which on the free plan spends one of
+their three slots. `/api/health`'s `schema_contract` names the function until it
+is applied.
+
+**1. Precheck (read-only).**
+
+```sql
+-- hosted-auto-track-rollback-precheck
+select
+  to_regprocedure('public.delete_auto_created_track_if_unused(uuid)') is not null as function_exists,
+  has_table_privilege('authenticated', 'public.tracks', 'update') as rider_can_lock_tracks;
+```
+
+Expect `false`, `true`. `function_exists = true` means it is already there:
+compare it with the migration rather than applying over it (the block is
+`create or replace`, so re-running it is harmless, but a different definition is
+a finding). `rider_can_lock_tracks = false` stops here: the function locks the
+track `for update` as the rider, which needs that privilege
+(`20260719001100`), and would fail on every call without it.
+
+**2. Apply.**
+
+```sql
+-- hosted-auto-track-rollback: mirror of supabase/migrations/20260930002400_delete_auto_created_track_if_unused.sql
+begin;
+create or replace function public.delete_auto_created_track_if_unused(p_track_id uuid)
+returns boolean
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  perform 1
+     from public.tracks t
+    where t.id = p_track_id
+      and t.created_by = auth.uid()
+      and not t.is_seeded
+      for update;
+
+  if not found then
+    return false;
+  end if;
+
+  if exists (select 1 from public.sessions s where s.track_id = p_track_id) then
+    return false;
+  end if;
+
+  delete from public.tracks t
+   where t.id = p_track_id
+     and t.created_by = auth.uid()
+     and not t.is_seeded;
+
+  return true;
+end;
+$$;
+
+revoke all on function public.delete_auto_created_track_if_unused(uuid) from public, anon;
+grant execute on function public.delete_auto_created_track_if_unused(uuid) to authenticated;
+commit;
+```
+
+**3. Verify.**
+
+```sql
+-- hosted-auto-track-rollback-verify
+select
+  p.prosecdef as security_definer,
+  p.proconfig as settings,
+  has_function_privilege('authenticated', p.oid, 'execute') as rider_can_execute,
+  has_function_privilege('anon', p.oid, 'execute') as anon_can_execute,
+  md5(p.prosrc) = '7f101aee6dea2c710011d0684e0faa13' as definition_is_the_migration
+from pg_proc p
+where p.oid = to_regprocedure('public.delete_auto_created_track_if_unused(uuid)');
+```
+
+Expect one row: `false`, `{"search_path=\"\""}` (an empty `search_path`, as Postgres quotes it), `true`, `false`, `true`.
+The last column compares the md5 of the installed function body with the body
+in the migration, so it is `true` only when what is installed is exactly the
+block above. If it reads `false`, run the apply block again rather than editing
+the function in place - unless "Let the track take-back see every rider's
+sessions, by hand" below has been applied, which replaces the body on purpose;
+its own verify query is then the one to read. Row 27 of
+`scripts/sql/audit-migrations-against-database.sql` then reads `present`, and
+`/api/health`'s `schema_contract` check stops naming the function.
+
+**4. Rollback.** Harmless to the saves themselves: without the function a
+refused save keeps the track it created, as described above.
+
+```sql
+-- hosted-auto-track-rollback-rollback
+begin;
+drop function if exists public.delete_auto_created_track_if_unused(uuid);
+commit;
+```
+
+### Let the track take-back see every rider's sessions, by hand
+
+`20261001002500` follows "Take back a refused save's track safely, by hand"
+above and needs it applied first. That function checked "does any session use
+this track?" as the rider, so it saw only their own sessions - and another
+rider's session can point at a rider's custom track, since the foreign key does
+not know the track is private. The take-back then deleted the track and cleared
+that other rider's link. This adds `public.auto_created_track_is_referenced(uuid)`,
+`security definer` so it sees every session, answering only for the caller's
+own auto-created track (null for any other track, so it cannot be used to
+probe), and makes the take-back call it. The take-back itself stays
+`security invoker`. Apply it before merging the pull request that adds it.
+
+**1. Precheck (read-only).**
+
+```sql
+-- hosted-track-reference-check-precheck
+select
+  (select md5(p.prosrc) = '7f101aee6dea2c710011d0684e0faa13'
+     from pg_proc p
+    where p.oid = to_regprocedure('public.delete_auto_created_track_if_unused(uuid)')) as take_back_is_20260930002400,
+  to_regprocedure('public.auto_created_track_is_referenced(uuid)') is not null as check_exists;
+```
+
+Expect `true`, `false`. A null or `false` first column means the block above has
+not been applied, or was changed: apply and verify it first. `check_exists =
+true` means this block already ran; read its verify instead of applying again.
+
+**2. Apply.**
+
+```sql
+-- hosted-track-reference-check: mirror of supabase/migrations/20261001002500_auto_created_track_reference_check_sees_every_session.sql
+begin;
+create or replace function public.auto_created_track_is_referenced(p_track_id uuid)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if not exists (
+    select 1
+      from public.tracks t
+     where t.id = p_track_id
+       and t.created_by = auth.uid()
+       and not t.is_seeded
+  ) then
+    return null;
+  end if;
+
+  return exists (select 1 from public.sessions s where s.track_id = p_track_id);
+end;
+$$;
+
+revoke all on function public.auto_created_track_is_referenced(uuid) from public, anon, authenticated;
+grant execute on function public.auto_created_track_is_referenced(uuid) to authenticated;
+
+create or replace function public.delete_auto_created_track_if_unused(p_track_id uuid)
+returns boolean
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  perform 1
+     from public.tracks t
+    where t.id = p_track_id
+      and t.created_by = auth.uid()
+      and not t.is_seeded
+      for update;
+
+  if not found then
+    return false;
+  end if;
+
+  if public.auto_created_track_is_referenced(p_track_id) is not false then
+    return false;
+  end if;
+
+  delete from public.tracks t
+   where t.id = p_track_id
+     and t.created_by = auth.uid()
+     and not t.is_seeded;
+
+  return true;
+end;
+$$;
+commit;
+```
+
+**3. Verify.**
+
+```sql
+-- hosted-track-reference-check-verify
+select
+  p.proname as function,
+  p.prosecdef as security_definer,
+  p.proconfig as settings,
+  has_function_privilege('authenticated', p.oid, 'execute') as rider_can_execute,
+  has_function_privilege('anon', p.oid, 'execute') as anon_can_execute,
+  md5(p.prosrc) in ('8b42dbdda465b809e74afd84c9e21e2e', '65913c39a7070ab1b68c76b2fa3093fc') as definition_is_the_migration
+from pg_proc p
+where p.oid in (
+  to_regprocedure('public.auto_created_track_is_referenced(uuid)'),
+  to_regprocedure('public.delete_auto_created_track_if_unused(uuid)')
+)
+order by p.proname;
+```
+
+Expect two rows. `auto_created_track_is_referenced`: `true`, `{"search_path=\"\""}`, `true`, `false`, `true`.
+`delete_auto_created_track_if_unused`: `false`, `{"search_path=\"\""}`, `true`, `false`, `true`.
+A `false` in the last column means a body is not this migration's: run the apply
+block again rather than editing in place. Rows 27 and 28 of
+`scripts/sql/audit-migrations-against-database.sql` then read `present`. The
+previous block's verify reads `false` in its last column from here on, by
+design: this block replaces that body.
+
+**4. Rollback.** Puts back the `20260930002400` take-back, which sees only the
+rider's own sessions, and drops the check.
+
+```sql
+-- hosted-track-reference-check-rollback
+begin;
+create or replace function public.delete_auto_created_track_if_unused(p_track_id uuid)
+returns boolean
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  perform 1
+     from public.tracks t
+    where t.id = p_track_id
+      and t.created_by = auth.uid()
+      and not t.is_seeded
+      for update;
+
+  if not found then
+    return false;
+  end if;
+
+  if exists (select 1 from public.sessions s where s.track_id = p_track_id) then
+    return false;
+  end if;
+
+  delete from public.tracks t
+   where t.id = p_track_id
+     and t.created_by = auth.uid()
+     and not t.is_seeded;
+
+  return true;
+end;
+$$;
+
+drop function if exists public.auto_created_track_is_referenced(uuid);
 commit;
 ```
 

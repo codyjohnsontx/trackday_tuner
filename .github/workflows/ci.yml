@@ -82,6 +82,42 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+  # The real-database suite (tests/db/, TESTING.md "Real-database tests") on
+  # every pull request, against a local Supabase stack built from
+  # supabase/migrations/ inside the runner. The stack is thrown away with it, so
+  # this job needs no secret; the credentials `supabase status` prints are the
+  # CLI's fixed local ones and replace the placeholders above for the test step.
+  db:
+    name: Real-database tests (local Supabase)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Only the database, auth, the REST API and its gateway are needed, plus
+      # storage so the buckets in supabase/config.toml are provisioned as on any
+      # other stack.
+      - name: Start local Supabase
+        run: npx supabase start -x imgproxy,supavisor,postgres-meta,vector,logflare,studio,edge-runtime,realtime
+
+      - name: Real-database tests
+        run: |
+          eval "$(npx supabase status -o env \
+            --override-name api.url=NEXT_PUBLIC_SUPABASE_URL \
+            --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY \
+            --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY)"
+          export NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY
+          npm run test:db
+
   # Manual-only: needs a live app plus real Supabase/OpenAI credentials.
   # Deliberately NOT part of the PR-required checks.
   e2e:

@@ -675,13 +675,15 @@ The same shape applies to anything derived rather than given:
   `lib/track-directory.test.ts` checks the current lookup against the rows the
   migration ships
 
-## The Phone's Write Path
+## The Session Write Path
 
-`POST /api/mobile/sessions` (owner decision D1) is how a session logged in the
-phone app reaches the server. It is `createSessionForUser` behind
-`authenticateBearer` (`lib/supabase/bearer.ts`): the anon key plus the rider's
-own access token, so RLS applies exactly as with cookies, and never the service
-role. Four things are load-bearing:
+A session has one writer, `createSessionForUser` (`lib/sessions/create.ts`), and
+one write, `create_session_with_laps`. The website form's server action calls it
+with an id it mints per save (`randomUUID()`); `POST /api/mobile/sessions` (owner
+decision D1) calls it with the id the phone minted, behind `authenticateBearer`
+(`lib/supabase/bearer.ts`): the anon key plus the rider's own access token, so
+RLS applies exactly as with cookies, and never the service role. Four things are
+load-bearing:
 
 - **The status is the phone's retry decision.** 400, 402 and 409 are the rider's
   to fix and the sync engine parks them; 401 means signed out; 503 is ours and is
@@ -696,28 +698,49 @@ role. Four things are load-bearing:
   session the rider deleted since; that answers 200 with `replayed: true`,
   `deleted: true` and `session: null`, which tells the phone the save was handled
   and the rider has since deleted that session, so it clears the outbox entry and
-  removes its local copy. The phone's free-plan cap is counted inside
+  removes its local copy. **The free-plan session cap exists once**, inside
   `create_session_with_laps` under a per-rider advisory lock, after the replay
-  checks, and mirrors `resolveUserAccess` in SQL. The behavioural pin is
-  `tests/e2e/create-session-with-laps.spec.ts`, which runs the function at the
-  cap for every entitlement case against `resolveUserAccess`;
-  `tests/unit/session-create-plan-cap.test.ts` is only a structural guard against
-  the two copies drifting apart. The website form still counts in TypeScript and
-  is not covered by that lock.
-- **Atomic, where the website's create is not.** With an id, the row, laps and
-  environment are one call to `create_session_with_laps` (20260927002200), so a
-  failure stores nothing and a stored session is always complete - which is what
-  lets a replay write nothing and answer 200 without looking. The website's form
-  still writes them as three statements and rolls back; its rider sees a failed
-  save, where the phone's retry would read a half-written row as synced. The
-  hosted project needs the function applied by hand ("Apply the session create
-  function by hand" in `docs/beta-runbook.md`, then "Close session ownership,
-  deleted-session replays and the free-plan race by hand"). A session's vehicle
-  must be the rider's on every path: the `sessions` insert and update policies
-  check it, and the function raises `TT404` first so the phone can park it.
+  checks, mirroring `resolveUserAccess` in SQL - so a form save and a phone save
+  at a free rider's last slot cannot both pass (the form's old TypeScript count
+  let them reach eleven). `lib/plans.ts` is only the number the app prints;
+  `tests/db/create-session-with-laps.spec.ts` pins the SQL to it and to
+  `resolveUserAccess` for every entitlement case. 20260928002300's header still
+  says the form counts in the application and names a structural test of the two
+  copies; both were true until the form moved onto the function, and an applied
+  migration is not edited.
+- **Atomic.** The row, laps and environment are one call to
+  `create_session_with_laps` (20260927002200), so a failure stores nothing and a
+  stored session is always complete - which is what lets a replay write nothing
+  and answer 200 without looking. Only a track row the save created sits outside
+  it, and on any refusal the database answered with a code the save takes it
+  back through `delete_auto_created_track_if_unused` (20260930002400), never a
+  plain delete: another save can find that track by name and store its session
+  against it before the refusal lands, and a delete then unlinks the winner
+  (`on delete set null`). The function locks the row and deletes only while no
+  session references it - ANY rider's, through the `security definer` check
+  `auto_created_track_is_referenced` (20261001002500), because a rider's custom
+  track is private but the foreign key lets another rider's session point at it.
+  That check answers only for the caller's own auto-created track (null for any
+  other), so it is not a lookup into other riders' data; the take-back itself
+  stays `security invoker`. Both are hand-applied ("Take back a refused save's
+  track safely, by hand", then "Let the track take-back see every rider's
+  sessions, by hand"), and without them the take-back fails, is reported, and
+  leaves a stray track. **The website form now depends on the function too**, so
+  a hosted project without it cannot save a session from either client: it is
+  applied by hand ("Apply the session create function by hand" in
+  `docs/beta-runbook.md`, then "Close session ownership, deleted-session replays
+  and the free-plan race by hand"), and `/api/health`'s `schema_contract` names
+  it. A session's vehicle must be the rider's on every path: the `sessions`
+  insert and update policies check it, and the function raises `TT404` first,
+  which both clients read as the garage sentence.
 - **The body is validated leaf by leaf** (`lib/sessions/parse-create-request.ts`)
   because the setup blobs are unconstrained `jsonb`, so the phone stores the shape
-  the form does; the screens no longer depend on it (`lib/stored-session.ts`).
+  the form does; which keys a blob may hold is read off `SETUP_FIELDS`, and the
+  screens no longer depend on it (`lib/stored-session.ts`).
+
+`tests/db/create-session.spec.ts` is where this path's behaviour is proven, as
+both clients call it, against a real database; `lib/actions/sessions.test.ts`
+keeps only the faults a database cannot produce on cue.
 
 CORS allows only `MOBILE_APP_ORIGINS`; the native app sends no `Origin`.
 
@@ -752,6 +775,15 @@ opening unpressed, a save refusing, a confirm appearing) belongs in `tests/e2e/`
 evidence a change works, not a gate that will catch its regression. Run the specs
 locally against a Supabase stack - `TESTING.md` owns the environment they need -
 and watch each new one fail before it passes.
+
+`npm run test:db` **is** a gate: `tests/db/` needs no browser or dev server, so CI
+starts a local stack from `supabase/migrations/` and runs it on every pull
+request. Behaviour that lives in the database - a write's atomicity, a policy, a
+cap, which row a lookup lands on - is proven there rather than with a queued fake
+of the client, which has to script every query in order and breaks on changes a
+rider cannot see. `playwright.db.config.ts` refuses to run without a stack, since
+a suite that skips reports green, and refuses any Supabase URL that is not
+loopback, since the specs create and delete riders with the service role.
 
 ## Current AI Status
 
@@ -1041,11 +1073,10 @@ logged; existing rows are left as they are. `storedLeafText` there is the ONE
 leaf rule - `formatValue` and `leafText` are it plus their own trimming - and
 `SETUP_FIELDS` the one field list the setup view, both compares, the history
 summary, the export and the "anything logged?" checks are built from. **A new
-read of `sessions` goes through `readStoredSession`.** Two things still keep
-their own copy on purpose: the export's column names, which are a file format,
-and what the save side writes (`lib/sessions/create.ts`,
-`lib/sessions/parse-create-request.ts`), whose move onto `SETUP_FIELDS` is later
-work. `tests/unit/stored-session-screens.test.ts`
+read of `sessions` goes through `readStoredSession`.** The phone's save check
+(`lib/sessions/parse-create-request.ts`) reads which setup keys a body may carry
+off `SETUP_FIELDS` too. The export's column names keep their own copy on
+purpose, because they are a file format. `tests/unit/stored-session-screens.test.ts`
 walks both crashes through the real server actions.
 
 **`formatValue` IS NOT THE ONLY READER OF THOSE LEAVES, AND IT IS NOT THE FIRST
