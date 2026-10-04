@@ -215,6 +215,29 @@ describe('describeAiHealth', () => {
 
   it('reads as an all-clear when nothing is firing', () => {
     const summary = summarizeAiRequests([row('ok')], NOW);
-    expect(describeAiHealth(summary, evaluateAiHealth(summary))).toContain('healthy');
+    expect(describeAiHealth(summary, evaluateAiHealth(summary))).toBe(
+      'Trackday Tuner AI is healthy: 0 failures in the last 60 minutes, 1 request.',
+    );
+  });
+
+  // Guard outcomes are not failures, so the all-clear must not print a success
+  // fraction that makes them read like one.
+  it('states the failure count rather than a success fraction when guards declined requests', () => {
+    const summary = summarizeAiRequests(
+      [
+        row('ok'),
+        row('ok'),
+        row('ok_confidence_downgraded'),
+        row('ok'),
+        row('completed_refusal_prompt_injection'),
+        row('rate_limited_hour'),
+        row('duplicate_recent_request'),
+      ],
+      NOW,
+    );
+    const text = describeAiHealth(summary, evaluateAiHealth(summary));
+    expect(text).toBe('Trackday Tuner AI is healthy: 0 failures in the last 60 minutes, 7 requests.');
+    expect(text).not.toMatch(/\d+\/\d+/);
+    expect(text).not.toContain('succeeded');
   });
 });
