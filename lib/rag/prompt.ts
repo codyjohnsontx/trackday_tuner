@@ -225,7 +225,7 @@ function formatSessionBlock(label: string, session: Session | null): string {
   // rider, which is most of them - could not get a verifiable `source_session_id`
   // out of the model by any route: asked for personal evidence about a session it
   // had never been shown an id for, it invented one, and
-  // `hasInvalidPersonalEvidence` discarded the whole answer as fabricated. That
+  // the policy discarded the whole answer as fabricated. That
   // is `invalid_personal_evidence` firing on a session the app itself supplied.
   // The ids printed here and the ids the policy accepts are now derived from one
   // place - see `collectTuningAdviceSessionIds` / `collectDayPlanSessionIds`

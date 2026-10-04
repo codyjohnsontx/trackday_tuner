@@ -171,8 +171,10 @@ describe('adversarial responses the old harness passed', () => {
  *
  * THESE ARE PARSED AND THE ADVERSARIAL THREE ARE NOT, which is the point: the
  * fix is in `parseAdviceResponse`, so a fixture scored raw would skip the only
- * step under test. Both halves are asserted below - raw is refused, parsed is
- * served - so this cannot pass by the policy having been loosened instead.
+ * step under test. Both halves are asserted below. Since the captain's decision
+ * of 2026-10-04 an unverifiable reference costs only that evidence item, so raw
+ * is served WITHOUT the evidence and with a notice, while parsed is served WITH
+ * it - the parser is still what keeps the rider's own evidence on screen.
  */
 describe('responses production must serve', () => {
   it('has the placeholder-session-reference fixture', () => {
@@ -205,22 +207,39 @@ describe('responses production must serve', () => {
     },
   );
 
-  it('is refused unparsed, so the parser is what rescues it', () => {
+  it('loses its evidence unparsed, so the parser is what keeps it', () => {
     const fixture = mustServe.cases.find(
       (c) => c.id === 'MUST-SERVE-placeholder-session-reference',
     )!;
-    const evaluation = evaluateAdvicePolicy({
+    const raw = evaluateAdvicePolicy({
       advice: fixture.response as never,
       fallbackDataUsed: fixture.response.data_used as never,
       validSessionIds: [],
     });
-    expect(evaluation.decision).toBe('force_refusal');
-    expect(evaluation.violations).toContain('invalid_personal_evidence');
+    expect(raw.violations).toContain('invalid_personal_evidence');
+    expect(raw.advice.personal_evidence).toEqual([]);
+    expect(raw.advice.unverified_evidence_notice).toBeTruthy();
+
+    const parsed = parseAdviceResponse(fixture.response);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const served = evaluateAdvicePolicy({
+      advice: parsed.data,
+      fallbackDataUsed: parsed.data.data_used,
+      validSessionIds: [],
+    });
+    expect(served.violations).not.toContain('invalid_personal_evidence');
+    expect(served.advice.personal_evidence).toHaveLength(
+      (fixture.response.personal_evidence as unknown[]).length,
+    );
+    expect(served.advice.unverified_evidence_notice).toBeUndefined();
   });
 
-  it('still refuses a reference the prompt never printed', () => {
+  it('still never serves a reference the prompt never printed', () => {
     // The other direction, which the fix must not weaken: an id that is not a
-    // placeholder is passed through untouched and the policy still refuses it.
+    // placeholder is passed through untouched by the parser. The policy drops
+    // that evidence item and flags it (captain's decision, 2026-10-04) rather
+    // than serving it.
     const fixture = mustServe.cases.find(
       (c) => c.id === 'MUST-SERVE-placeholder-session-reference',
     )!;
@@ -239,8 +258,9 @@ describe('responses production must serve', () => {
       fallbackDataUsed: fabricated.data.data_used,
       validSessionIds: [],
     });
-    expect(evaluation.decision).toBe('force_refusal');
     expect(evaluation.violations).toContain('invalid_personal_evidence');
+    expect(JSON.stringify(evaluation.advice)).not.toContain('99999999-9999-4999-8999-999999999999');
+    expect(evaluation.advice.unverified_evidence_notice).toBeTruthy();
   });
 });
 

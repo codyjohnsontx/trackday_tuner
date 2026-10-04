@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AdviceResponse } from '@/lib/rag/schema';
-import { evaluateAdvicePolicy } from '@/lib/rag/policy';
+import { UNVERIFIED_EVIDENCE_NOTICE, evaluateAdvicePolicy } from '@/lib/rag/policy';
 
 // The default summary describes rather than instructs. It used to read "Drop
 // front pressure 0.5 psi.", which is an actionable delta, and every empty-plan
@@ -153,7 +153,60 @@ describe('evaluateAdvicePolicy', () => {
     expect(result.violations).toEqual([]);
   });
 
-  it('forces refusal for personal evidence that references unknown sessions', () => {
+  // Captain's decision, 2026-10-04: an unverifiable citation removes that
+  // evidence item and flags it; it no longer refuses the whole answer.
+  it('keeps the advice and drops evidence that references an unknown session', () => {
+    const verified = {
+      label: 'Session A',
+      detail: 'Lower front pressure improved turn-in.',
+      source_session_id: 'session-a',
+    };
+    const observation = { label: 'Your notes', detail: 'Front pushes mid-corner.', source_session_id: null };
+    const result = evaluateAdvicePolicy({
+      advice: buildAdvice({
+        personal_evidence: [
+          verified,
+          {
+            label: 'Fabricated session',
+            detail: 'Claims a session that was not loaded.',
+            source_session_id: 'unknown-session',
+          },
+          observation,
+        ],
+      }),
+      fallbackDataUsed: buildAdvice().data_used,
+      validSessionIds: ['session-a'],
+    });
+    expect(result.decision).toBe('allow');
+    expect(result.violations).toEqual(['invalid_personal_evidence']);
+    expect(result.advice.refusal).toBeNull();
+    expect(result.advice.recommended_changes).toEqual(buildAdvice().recommended_changes);
+    expect(result.advice.personal_evidence).toEqual([verified, observation]);
+    expect(result.advice.unverified_evidence_notice).toBe(UNVERIFIED_EVIDENCE_NOTICE);
+  });
+
+  it('drops evidence that references a session when no valid session ids are available', () => {
+    const result = evaluateAdvicePolicy({
+      advice: buildAdvice({
+        personal_evidence: [
+          {
+            label: 'Fabricated session',
+            detail: 'Claims a session that was not loaded.',
+            source_session_id: 'unknown-session',
+          },
+        ],
+      }),
+      fallbackDataUsed: buildAdvice().data_used,
+      validSessionIds: [],
+    });
+    expect(result.decision).toBe('allow');
+    expect(result.violations).toEqual(['invalid_personal_evidence']);
+    expect(result.advice.personal_evidence).toEqual([]);
+    expect(result.advice.recommended_changes).toHaveLength(1);
+    expect(result.advice.unverified_evidence_notice).toBe(UNVERIFIED_EVIDENCE_NOTICE);
+  });
+
+  it('still refuses as ungrounded when the unverifiable session was the only support', () => {
     const result = evaluateAdvicePolicy({
       advice: buildAdvice({
         citations: [],
@@ -169,26 +222,43 @@ describe('evaluateAdvicePolicy', () => {
       validSessionIds: ['session-a'],
     });
     expect(result.decision).toBe('force_refusal');
-    expect(result.violations).toContain('invalid_personal_evidence');
+    expect(result.violations).toEqual(['ungrounded_recommendation', 'invalid_personal_evidence']);
+    expect(result.advice.recommended_changes).toEqual([]);
   });
 
-  it('forces refusal when personal evidence references a session but no valid session ids are available', () => {
+  it('still refuses an unsafe change, with the change as the reason', () => {
     const result = evaluateAdvicePolicy({
       advice: buildAdvice({
-        citations: [],
+        recommended_changes: [
+          { component: 'front_tire_pressure', direction: 'decrease', magnitude: '5 psi', reason: 'Too much.' },
+        ],
         personal_evidence: [
-          {
-            label: 'Fabricated session',
-            detail: 'Claims a session that was not loaded.',
-            source_session_id: 'unknown-session',
-          },
+          { label: 'Fabricated', detail: 'Not loaded.', source_session_id: 'unknown-session' },
         ],
       }),
       fallbackDataUsed: buildAdvice().data_used,
-      validSessionIds: [],
+      validSessionIds: ['session-a'],
     });
     expect(result.decision).toBe('force_refusal');
+    expect(result.violations[0]).toBe('unsafe_magnitude');
     expect(result.violations).toContain('invalid_personal_evidence');
+  });
+
+  it('raises no notice when every reference is verified or absent', () => {
+    const result = evaluateAdvicePolicy({
+      advice: buildAdvice({
+        personal_evidence: [
+          { label: 'Session A', detail: 'Logged.', source_session_id: 'session-a' },
+          { label: 'Notes', detail: 'No session.', source_session_id: null },
+        ],
+        unverified_evidence_notice: 'smuggled in by the input',
+      }),
+      fallbackDataUsed: buildAdvice().data_used,
+      validSessionIds: ['session-a'],
+    });
+    expect(result.violations).toEqual([]);
+    expect(result.advice.personal_evidence).toHaveLength(2);
+    expect(result.advice.unverified_evidence_notice).toBeUndefined();
   });
 
   it('forces refusal with a distinct violation when no recommendations are generated', () => {
@@ -436,7 +506,7 @@ describe('evaluateAdvicePolicy allowEmptyRecommendations', () => {
     expect(result.advice.refusal).toBe('I cannot plan this day safely.');
   });
 
-  it('still rejects unverifiable personal evidence when recommendations may be empty', () => {
+  it('drops unverifiable personal evidence and keeps the plan when recommendations may be empty', () => {
     const advice = buildAdvice({
       recommended_changes: [],
       personal_evidence: [
@@ -453,8 +523,11 @@ describe('evaluateAdvicePolicy allowEmptyRecommendations', () => {
       allowEmptyRecommendations: true,
       validSessionIds: ['55555555-5555-5555-5555-555555555555'],
     });
-    expect(result.decision).toBe('force_refusal');
-    expect(result.violations).toContain('invalid_personal_evidence');
+    expect(result.decision).toBe('allow');
+    expect(result.violations).toEqual(['invalid_personal_evidence']);
+    expect(result.advice.refusal).toBeNull();
+    expect(result.advice.personal_evidence).toEqual([]);
+    expect(result.advice.unverified_evidence_notice).toBe(UNVERIFIED_EVIDENCE_NOTICE);
   });
 });
 

@@ -21,6 +21,11 @@ export type AdvicePolicyViolation =
 
 export interface AdvicePolicyEvaluation {
   decision: AdvicePolicyDecision;
+  /**
+   * Every rule the response broke. Not empty on `allow` when
+   * `invalid_personal_evidence` was corrected by removing the evidence item
+   * rather than by refusing; on a refusal the first entry is the reason.
+   */
   violations: AdvicePolicyViolation[];
   advice: AdviceResponse;
 }
@@ -191,17 +196,31 @@ function hasVerifiedPersonalEvidence(
   );
 }
 
-function hasInvalidPersonalEvidence(
-  advice: AdviceResponse,
-  validSessionIds: string[] | undefined,
+/**
+ * Personal evidence citing a session the prompt never named cannot be verified,
+ * so that ITEM is removed and the rest of the answer is kept. Captain's
+ * decision, 2026-10-04: one unverifiable citation used to force-refuse the whole
+ * response, which threw away good advice over a single evidence line. The
+ * removal is never silent - the rider is told evidence is missing through
+ * `unverified_evidence_notice`, and the audit row records
+ * `invalid_personal_evidence` among the violations.
+ *
+ * Every other rule still runs on what is left: removed evidence never counted
+ * toward `grounded` or high confidence anyway, so an answer whose only support
+ * was the unverifiable session is still refused as ungrounded.
+ *
+ * A null reference is not unverifiable - it is an observation with no session
+ * behind it, which is what `parseAdviceResponse` turns the `"null"` placeholder
+ * into - so it is kept and raises no notice.
+ */
+export const UNVERIFIED_EVIDENCE_NOTICE =
+  'Some session evidence could not be matched to a session you logged, so it was removed from this answer.';
+
+function isUnverifiableEvidence(
+  entry: AdviceResponse['personal_evidence'][number],
+  allowed: Set<string>,
 ): boolean {
-  const allowed = validSessionIdSet(validSessionIds);
-  if (allowed.size === 0) {
-    return advice.personal_evidence.some((entry) => entry.source_session_id != null);
-  }
-  return advice.personal_evidence.some(
-    (entry) => entry.source_session_id != null && !allowed.has(entry.source_session_id),
-  );
+  return entry.source_session_id != null && !allowed.has(entry.source_session_id);
 }
 
 function grounded(
@@ -299,24 +318,27 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
     };
   }
 
-  if (hasInvalidPersonalEvidence(advice, input.validSessionIds)) {
-    return {
-      decision: 'force_refusal',
-      violations: ['invalid_personal_evidence'],
-      advice: buildRefusalAdvice({
-        reason: 'no_safe_answer',
-        message:
-          'I could not verify the historical session evidence referenced in that response, so I am not returning a setup recommendation.',
-        dataUsed: advice.data_used,
-      }),
-    };
+  const allowedSessionIds = validSessionIdSet(input.validSessionIds);
+  const verifiableEvidence = advice.personal_evidence.filter(
+    (entry) => !isUnverifiableEvidence(entry, allowedSessionIds),
+  );
+  // Appended after any refusal reason, never ahead of it: the routes read
+  // `violations[0]` as the refusal reason on the audit row's status.
+  const evidenceViolations: AdvicePolicyViolation[] = [];
+  if (verifiableEvidence.length < advice.personal_evidence.length) {
+    evidenceViolations.push('invalid_personal_evidence');
+    advice.personal_evidence = verifiableEvidence;
+    advice.unverified_evidence_notice = UNVERIFIED_EVIDENCE_NOTICE;
+  } else {
+    // Only the policy writes the notice; never pass one through from input.
+    delete advice.unverified_evidence_notice;
   }
 
   const violations = advice.recommended_changes.flatMap(changeViolations);
   if (violations.length > 0) {
     return {
       decision: 'force_refusal',
-      violations,
+      violations: [...violations, ...evidenceViolations],
       advice: buildRefusalAdvice({
         reason: 'no_safe_answer',
         message:
@@ -329,7 +351,7 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
   if (!grounded(advice, input.validSessionIds)) {
     return {
       decision: 'force_refusal',
-      violations: ['ungrounded_recommendation'],
+      violations: ['ungrounded_recommendation', ...evidenceViolations],
       advice: buildRefusalAdvice({
         reason: 'no_safe_answer',
         message:
@@ -342,7 +364,7 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
   if (!supportedHighConfidence(advice, input.validSessionIds)) {
     return {
       decision: 'downgrade_confidence',
-      violations: ['high_confidence_without_support'],
+      violations: ['high_confidence_without_support', ...evidenceViolations],
       advice: {
         ...advice,
         confidence: downgradeConfidence(),
@@ -352,7 +374,7 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
 
   return {
     decision: 'allow',
-    violations: [],
+    violations: evidenceViolations,
     advice: {
       ...advice,
       refusal: null,

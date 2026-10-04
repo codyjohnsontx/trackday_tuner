@@ -1409,14 +1409,17 @@ no information under any reading. **A new member needs a recording behind it**,
 because every member turns a policy refusal into a served answer. What is
 NOT normalised is anything else, whatever its shape - declining to give a
 reference and inventing one are different acts, and a fabricated id still reaches
-the policy and is still refused.
+the policy and is still never served.
 
 The fix is at the PARSER and not at the policy, and that boundary is the whole
 design: `parseAdviceResponse` decides what the model actually said, and
 `evaluateAdvicePolicy` decides whether what it said may be served. A placeholder
-is a question about the first. **Whether ONE unverifiable citation should discard
-the WHOLE response, or only that evidence item, is a separate product call and is
-deliberately still open** - the parser fix must not quietly become it.
+is a question about the first. **One unverifiable citation costs that evidence
+item, not the response** (captain's decision, 2026-10-04): the policy removes it,
+sets `unverified_evidence_notice` so `AdviceReport` tells the rider evidence is
+missing, records `invalid_personal_evidence` on an otherwise `ok` audit row, and
+runs every other rule on what is left - so an answer whose only support was that
+session is still refused as ungrounded.
 
 **An `AdviceResponse` is rendered in exactly one place, and that is the guard.**
 `components/ai/advice-report.tsx` prints the whole payload; the Race Engineer and
