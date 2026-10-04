@@ -496,7 +496,7 @@ export const MIGRATION_PROBES = {
     note: [
       'The function, by its body, empty search path and service_role-only execute.',
       'The relink it ran is data and has no probe; re-running the function reports',
-      'what is still ambiguous or unmatched, and relinks only what now resolves.',
+      'what it still leaves alone, and relinks only what now resolves.',
     ],
     kind: 'function',
     object: 'public.relink_legacy_session_tracks(uuid)',

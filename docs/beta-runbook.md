@@ -2246,10 +2246,12 @@ once. It finds every session with a track name and no `track_id` - saved before
 the circuit was seeded, saved at the free-plan custom-track cap or when the track
 row could not be made, left behind when its custom track was deleted, or written
 straight to the table - and links each to the one track its name resolves to by
-the rules a new save uses (`lib/track-lookup.ts`): the rider's own track, then a
-seeded circuit, then an alias. A name that two equally good tracks share is left
-alone and reported as `ambiguous`; a name that matches nothing is left alone and
-reported as `unmatched`. It creates no track, never changes a session that
+the rules a new save uses (`lib/track-lookup.ts`): a track name, then an alias.
+A name that matches both a track of the rider's own and a seeded circuit, by name
+or by alias, is left alone and reported as `own_and_seeded`, because a save and
+ADR 0001 decision 8 disagree on which wins; a name that two tracks of one kind
+share is left alone and reported as `ambiguous`; a name that matches nothing is
+left alone and reported as `unmatched`. It creates no track, never changes a session that
 already has one, and leaves the stored `track_name` as it is. Nothing in the app
 calls the function, so it can go in before or after any deploy.
 
@@ -2300,24 +2302,15 @@ as $$
   named as (
     select * from legacy where name_key <> ''
   ),
-  by_name_ranked as (
-    select l.id as session_id,
-           t.id as track_id,
-           rank() over (partition by l.id order by t.is_seeded) as precedence
+  matches as (
+    select l.id as session_id, t.id as track_id, t.is_seeded, true as by_name
       from named l
       join public.tracks t
         on (t.is_seeded or t.created_by = l.user_id)
        and lower(btrim(regexp_replace(normalize(t.name, NFC),
              '[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+', ' ', 'g'))) = l.name_key
-  ),
-  by_name as (
-    select r.session_id, array_agg(r.track_id order by r.track_id) as track_ids
-      from by_name_ranked r
-     where r.precedence = 1
-     group by r.session_id
-  ),
-  by_alias as (
-    select l.id as session_id, array_agg(distinct t.id order by t.id) as track_ids
+    union
+    select l.id, t.id, t.is_seeded, false
       from named l
       join public.track_aliases a
         on lower(btrim(regexp_replace(normalize(a.alias, NFC),
@@ -2325,15 +2318,23 @@ as $$
       join public.tracks t
         on t.id = a.track_id
        and (t.is_seeded or t.created_by = l.user_id)
-     where not exists (select 1 from by_name n where n.session_id = l.id)
-     group by l.id
+  ),
+  grouped as (
+    select m.session_id,
+           bool_or(m.is_seeded) and bool_or(not m.is_seeded) as own_and_seeded,
+           array_agg(distinct m.track_id order by m.track_id) as all_ids,
+           array_agg(distinct m.track_id order by m.track_id) filter (where m.by_name) as name_ids,
+           array_agg(distinct m.track_id order by m.track_id) filter (where not m.by_name) as alias_ids
+      from matches m
+     group by m.session_id
   ),
   resolved as (
     select l.id, l.user_id, l.track_name,
-           coalesce(n.track_ids, a.track_ids, '{}'::uuid[]) as track_ids
+           coalesce(g.own_and_seeded, false) as own_and_seeded,
+           case when g.own_and_seeded then g.all_ids
+                else coalesce(g.name_ids, g.alias_ids, '{}'::uuid[]) end as track_ids
       from named l
-      left join by_name n on n.session_id = l.id
-      left join by_alias a on a.session_id = l.id
+      left join grouped g on g.session_id = l.id
   ),
   relinked as (
     update public.sessions s
@@ -2349,6 +2350,7 @@ as $$
          r.track_name,
          case
            when u.id is not null then 'relinked'
+           when r.own_and_seeded then 'own_and_seeded'
            when cardinality(r.track_ids) > 1 then 'ambiguous'
            else 'unmatched'
          end,
@@ -2369,8 +2371,8 @@ commit;
 
 **3. Relink.** The migration's last statement, run on its own so the SQL editor
 shows its result: one row per session it looked at, with its `outcome`
-(`relinked`, `ambiguous` or `unmatched`), the `track_id` it was linked to, and
-for an ambiguous one the `candidate_track_ids`. **Download that result as CSV
+(`relinked`, `own_and_seeded`, `ambiguous` or `unmatched`), the `track_id` it
+was linked to, and for one left alone the `candidate_track_ids`. **Download that result as CSV
 before closing the tab** - the `relinked` rows are the only record of which
 sessions moved, and the rollback below needs them.
 
@@ -2380,8 +2382,7 @@ select * from public.relink_legacy_session_tracks();
 ```
 
 It is safe to run again at any time: a relinked session has a track and is not
-looked at twice, so a second run reports only what is still ambiguous or
-unmatched, plus anything that has come to resolve since - a track the rider
+looked at twice, so a second run reports only what is still left alone, plus anything that has come to resolve since - a track the rider
 added, or a session saved at the cap.
 
 **4. Verify.**
@@ -2394,23 +2395,25 @@ select
   has_function_privilege('service_role', p.oid, 'execute') as service_role_can_execute,
   has_function_privilege('authenticated', p.oid, 'execute') as rider_can_execute,
   has_function_privilege('anon', p.oid, 'execute') as anon_can_execute,
-  md5(p.prosrc) = '9947b459ad535d33d44a1f9c76be7fa2' as definition_is_the_migration,
+  md5(p.prosrc) = '6c0b3c643a5a2fa2185b9ca3f8693bcd' as definition_is_the_migration,
   (select count(*) from public.sessions s where s.track_id is null and nullif(btrim(s.track_name), '') is not null) as sessions_still_unlinked
 from pg_proc p
 where p.oid = to_regprocedure('public.relink_legacy_session_tracks(uuid)');
 ```
 
 Expect one row: `false`, `{"search_path=\"\""}`, `true`, `false`, `false`, `true`,
-and `sessions_still_unlinked` equal to the `ambiguous` plus `unmatched` rows step
-3 returned (more only by the spacing-only names the precheck mentions, or by a
+and `sessions_still_unlinked` equal to the `own_and_seeded`, `ambiguous` and
+`unmatched` rows step 3 returned (more only by the spacing-only names the precheck mentions, or by a
 session saved since). A `false` in `definition_is_the_migration` means the body
 is not this migration's: run the apply block again rather than editing in place.
 Row 29 of `scripts/sql/audit-migrations-against-database.sql` then reads
 `present`.
 
-The `ambiguous` rows are for a person to settle: each names the tracks it could
-mean, almost always two custom tracks of one rider whose names fold together.
-Nothing is lost by leaving them.
+The `own_and_seeded` and `ambiguous` rows are for a person to settle: each names
+the tracks it could mean. An `own_and_seeded` row is a rider's custom track
+sharing a name with a seeded circuit, which ADR 0001 decision 9 resolves only
+with that rider's yes; an `ambiguous` one is almost always two custom tracks of
+one rider whose names fold together. Nothing is lost by leaving them.
 
 **5. Rollback.** Unlinks only the sessions step 3 relinked and that still point
 where it put them, then drops the function. Fill the `values` list from the CSV's

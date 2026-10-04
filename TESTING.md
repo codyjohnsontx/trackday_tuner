@@ -214,8 +214,9 @@ assert fails them.
   one that exercises the real transaction, RLS, grants and error codes.
 - `relink-legacy-session-tracks.spec.ts` calls `relink_legacy_session_tracks`
   (`20261004002600`) with the service role over legacy rows it writes straight
-  to `sessions`: a name or alias linked to its circuit, the rider's own track
-  first, an ambiguous name and an unmatched one left alone and reported, an
+  to `sessions`: a name or alias linked to its circuit, a name over an alias, a
+  name matching both an own track and a seeded circuit (by name or alias), an
+  ambiguous name and an unmatched one left alone and reported, an
   already-linked session untouched, a second run changing nothing, and no Data
   API role able to call it. Every call is scoped to the spec's own rider, since
   an unscoped run would relink other specs' sessions.

@@ -23,7 +23,7 @@
 -- track page lists a track's sessions by id, so each of these is missing from
 -- the circuit's own history and from every track-scoped read.
 --
--- THE RULES ARE lib/track-lookup.ts's, WRITTEN IN SQL
+-- THE RULES ARE lib/track-lookup.ts's, WRITTEN IN SQL, WHERE THEY ARE NOT IN DOUBT
 --
 -- `findVisibleTrackByName`, then `findVisibleTrackByAlias`, in the scope the
 -- session's own rider sees (`visibleTracksFilter`: seeded, or created by them):
@@ -31,15 +31,21 @@
 --   - names are equal when `trackNameKey` folds them equal - NFC, runs of
 --     whitespace collapsed, trimmed, lowercased. The whitespace class is
 --     JavaScript's `\s` spelled out, because Postgres's `\s` leaves U+FEFF out;
---   - the rider's own track wins over a seeded one of the same name (the
---     current precedence; ADR 0001 decision 8 reverses it and is not built);
 --   - an alias is consulted only when no name matched.
 --
--- One deliberate difference: where the resolver takes the first of two rows at
--- the same precedence - two custom tracks of the rider's own that fold to one
--- name - this takes NEITHER. A save picks for the rider in front of the form;
--- a backfill picking for a rider who is not there would be a guess, so the row
--- is left alone and reported as `ambiguous` with the candidates.
+-- Two deliberate differences, both cases where a save picks for the rider in
+-- front of the form and a backfill picking for a rider who is not there would
+-- be a guess, so the row is left alone and reported with its candidates:
+--
+--   - a name matching both a track of the rider's own and a seeded circuit, by
+--     name or by alias, is `own_and_seeded`. A save today takes the rider's own
+--     track; ADR 0001 decision 8 sends that name to the seeded circuit instead,
+--     and decision 9 moves a rider's sessions off their own duplicate only with
+--     their yes. Linking either way here would write one of those two rules
+--     into every rider's history without asking, so neither is written;
+--   - two tracks of one kind that fold to one name - almost always two custom
+--     tracks of the rider's own - are `ambiguous`, where the resolver takes the
+--     first.
 --
 -- WHAT IT DOES NOT DO
 --
@@ -89,24 +95,15 @@ as $$
   named as (
     select * from legacy where name_key <> ''
   ),
-  by_name_ranked as (
-    select l.id as session_id,
-           t.id as track_id,
-           rank() over (partition by l.id order by t.is_seeded) as precedence
+  matches as (
+    select l.id as session_id, t.id as track_id, t.is_seeded, true as by_name
       from named l
       join public.tracks t
         on (t.is_seeded or t.created_by = l.user_id)
        and lower(btrim(regexp_replace(normalize(t.name, NFC),
              '[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+', ' ', 'g'))) = l.name_key
-  ),
-  by_name as (
-    select r.session_id, array_agg(r.track_id order by r.track_id) as track_ids
-      from by_name_ranked r
-     where r.precedence = 1
-     group by r.session_id
-  ),
-  by_alias as (
-    select l.id as session_id, array_agg(distinct t.id order by t.id) as track_ids
+    union
+    select l.id, t.id, t.is_seeded, false
       from named l
       join public.track_aliases a
         on lower(btrim(regexp_replace(normalize(a.alias, NFC),
@@ -114,15 +111,23 @@ as $$
       join public.tracks t
         on t.id = a.track_id
        and (t.is_seeded or t.created_by = l.user_id)
-     where not exists (select 1 from by_name n where n.session_id = l.id)
-     group by l.id
+  ),
+  grouped as (
+    select m.session_id,
+           bool_or(m.is_seeded) and bool_or(not m.is_seeded) as own_and_seeded,
+           array_agg(distinct m.track_id order by m.track_id) as all_ids,
+           array_agg(distinct m.track_id order by m.track_id) filter (where m.by_name) as name_ids,
+           array_agg(distinct m.track_id order by m.track_id) filter (where not m.by_name) as alias_ids
+      from matches m
+     group by m.session_id
   ),
   resolved as (
     select l.id, l.user_id, l.track_name,
-           coalesce(n.track_ids, a.track_ids, '{}'::uuid[]) as track_ids
+           coalesce(g.own_and_seeded, false) as own_and_seeded,
+           case when g.own_and_seeded then g.all_ids
+                else coalesce(g.name_ids, g.alias_ids, '{}'::uuid[]) end as track_ids
       from named l
-      left join by_name n on n.session_id = l.id
-      left join by_alias a on a.session_id = l.id
+      left join grouped g on g.session_id = l.id
   ),
   relinked as (
     update public.sessions s
@@ -138,6 +143,7 @@ as $$
          r.track_name,
          case
            when u.id is not null then 'relinked'
+           when r.own_and_seeded then 'own_and_seeded'
            when cardinality(r.track_ids) > 1 then 'ambiguous'
            else 'unmatched'
          end,

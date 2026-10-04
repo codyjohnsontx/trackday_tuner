@@ -12,8 +12,9 @@ import type { Suspension, Tires } from '@/types/supabase';
 /**
  * `relink_legacy_session_tracks` (20261004002600) against a real database: a
  * session that names a circuit and points at no track is linked to the one track
- * that name resolves to by lib/track-lookup.ts's rules, and anything ambiguous or
- * unmatched is reported and left alone.
+ * that name resolves to by lib/track-lookup.ts's rules, and anything matching
+ * both an own and a seeded track, ambiguous or unmatched is reported and left
+ * alone.
  *
  * The legacy rows are written straight to `sessions` with the service role,
  * which is how they came to exist - none of them went through the resolver that
@@ -134,18 +135,50 @@ test('keeps the typed name as it was stored', async () => {
   expect(data!.track_name).toBe('cota');
 });
 
-test("prefers the rider's own track over a seeded one, and a name over an alias, as a save does", async () => {
+test("leaves a name matching both the rider's own track and a seeded circuit alone, by name or by alias", async () => {
+  const seededRoadAtlanta = await seededTrackId('Road Atlanta');
+  const roadAmerica = await seededTrackId('Road America');
   const ownRoadAtlanta = await customTrack(rider!.id, 'Road Atlanta');
+  // "Elkhart Lake" is a seeded alias of Road America and the name of the rider's own track.
   const ownElkhart = await customTrack(rider!.id, 'Elkhart Lake');
   const sameName = await legacySession('Road Atlanta');
-  // "Elkhart Lake" is a seeded alias of Road America; the rider's own track by
-  // that name is consulted first.
   const aliasName = await legacySession('elkhart lake');
 
-  await relink(rider!.id);
+  const rows = await relink(rider!.id);
 
-  expect(await trackIdOf(sameName)).toBe(ownRoadAtlanta);
-  expect(await trackIdOf(aliasName)).toBe(ownElkhart);
+  expect(await trackIdOf(sameName)).toBeNull();
+  expect(await trackIdOf(aliasName)).toBeNull();
+  expect(rows).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        session_id: sameName,
+        outcome: 'own_and_seeded',
+        track_id: null,
+        candidate_track_ids: [ownRoadAtlanta, seededRoadAtlanta].sort(),
+      }),
+      expect.objectContaining({
+        session_id: aliasName,
+        outcome: 'own_and_seeded',
+        track_id: null,
+        candidate_track_ids: [ownElkhart, roadAmerica].sort(),
+      }),
+    ]),
+  );
+  expect(rows).toHaveLength(2);
+});
+
+test('prefers a name over an alias when every candidate is the same kind', async () => {
+  const name = `Lakeside Loop ${rider!.id}`;
+  const byName = await customTrack(rider!.id, name);
+  const byAlias = await customTrack(rider!.id, `Ridge Loop ${rider!.id}`);
+  const { error } = await admin.from('track_aliases').insert({ track_id: byAlias, alias: name.toLowerCase() });
+  expect(error, error?.message).toBeNull();
+  const session = await legacySession(name);
+
+  const rows = await relink(rider!.id);
+
+  expect(await trackIdOf(session)).toBe(byName);
+  expect(rows).toEqual([expect.objectContaining({ session_id: session, outcome: 'relinked', track_id: byName })]);
 });
 
 test('leaves a name with two equally good tracks alone and reports both', async () => {

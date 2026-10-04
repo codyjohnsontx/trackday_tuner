@@ -675,8 +675,10 @@ The same shape applies to anything derived rather than given:
   `lib/track-directory.test.ts` checks the current lookup against the rows the
   migration ships. A session holding a name and no `track_id` (saved before the
   seed, at the custom-track cap, or left by a deleted track) is relinked by
-  `relink_legacy_session_tracks` (20261004002600), the same lookup in SQL; it
-  is service_role only and safe to re-run, and a change to the lookup's rules
+  `relink_legacy_session_tracks` (20261004002600), the same lookup in SQL
+  except that a name matching both an own and a seeded track is left alone
+  (`own_and_seeded`) rather than decided before ADR 0001 is built; it is
+  service_role only and safe to re-run, and a change to the lookup's rules
   changes that function too
 
 ## The Session Write Path
