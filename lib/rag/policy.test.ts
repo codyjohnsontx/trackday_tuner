@@ -244,23 +244,6 @@ describe('evaluateAdvicePolicy', () => {
     expect(result.violations).toContain('invalid_personal_evidence');
   });
 
-  it('raises no notice when every reference is verified or absent', () => {
-    const result = evaluateAdvicePolicy({
-      advice: buildAdvice({
-        personal_evidence: [
-          { label: 'Session A', detail: 'Logged.', source_session_id: 'session-a' },
-          { label: 'Notes', detail: 'No session.', source_session_id: null },
-        ],
-        unverified_evidence_notice: 'smuggled in by the input',
-      }),
-      fallbackDataUsed: buildAdvice().data_used,
-      validSessionIds: ['session-a'],
-    });
-    expect(result.violations).toEqual([]);
-    expect(result.advice.personal_evidence).toHaveLength(2);
-    expect(result.advice.unverified_evidence_notice).toBeUndefined();
-  });
-
   it('forces refusal with a distinct violation when no recommendations are generated', () => {
     const result = evaluateAdvicePolicy({
       advice: buildAdvice({

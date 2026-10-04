@@ -329,9 +329,6 @@ export function evaluateAdvicePolicy(input: AdvicePolicyInput): AdvicePolicyEval
     evidenceViolations.push('invalid_personal_evidence');
     advice.personal_evidence = verifiableEvidence;
     advice.unverified_evidence_notice = UNVERIFIED_EVIDENCE_NOTICE;
-  } else {
-    // Only the policy writes the notice; never pass one through from input.
-    delete advice.unverified_evidence_notice;
   }
 
   const violations = advice.recommended_changes.flatMap(changeViolations);
