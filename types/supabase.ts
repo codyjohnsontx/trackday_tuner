@@ -1154,6 +1154,25 @@ export type Database = {
          */
         Returns: boolean;
       };
+      relink_legacy_session_tracks: {
+        Args: {
+          /** One rider's sessions, or every rider's when omitted. */
+          p_user_id?: string;
+        };
+        /**
+         * One row per session that names a circuit and has no track: linked to
+         * the one track its name resolves to, or left alone as `ambiguous` (with
+         * the candidates) or `unmatched`. service_role only (20261004002600).
+         */
+        Returns: {
+          session_id: string;
+          user_id: string;
+          track_name: string;
+          outcome: 'relinked' | 'ambiguous' | 'unmatched';
+          track_id: string | null;
+          candidate_track_ids: string[];
+        }[];
+      };
       create_beta_invite: {
         Args: {
           p_waitlist_id: string | null;

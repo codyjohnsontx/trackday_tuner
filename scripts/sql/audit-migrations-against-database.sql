@@ -273,7 +273,20 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                 from pg_proc p where p.oid = to_regprocedure('public.auto_created_track_is_referenced(uuid)'))
            and to_regprocedure('public.delete_auto_created_track_if_unused(uuid)') is not null
            and (select md5(p.prosrc) = '65913c39a7070ab1b68c76b2fa3093fc'
-                from pg_proc p where p.oid = to_regprocedure('public.delete_auto_created_track_if_unused(uuid)')))
+                from pg_proc p where p.oid = to_regprocedure('public.delete_auto_created_track_if_unused(uuid)'))),
+  -- The function, by its body, empty search path and service_role-only execute.
+  -- The relink it ran is data and has no probe; re-running the function reports
+  -- what is still ambiguous or unmatched, and relinks only what now resolves.
+  (29, '20261004002600_relink_legacy_session_tracks', 'function',
+      'public.relink_legacy_session_tracks(uuid)',
+      to_regprocedure('public.relink_legacy_session_tracks(uuid)') is not null
+           and (select md5(p.prosrc) = '1bacdeb7cdb8cdff7be9deb8a123f2d0'
+                  and not p.prosecdef
+                  and p.proconfig = array['search_path=""']
+                  and has_function_privilege('service_role', p.oid, 'execute')
+                  and not has_function_privilege('authenticated', p.oid, 'execute')
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                from pg_proc p where p.oid = to_regprocedure('public.relink_legacy_session_tracks(uuid)')))
 )
 select ordinality as "#",
        migration,
