@@ -280,7 +280,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   (29, '20261004002600_relink_legacy_session_tracks', 'function',
       'public.relink_legacy_session_tracks(uuid)',
       to_regprocedure('public.relink_legacy_session_tracks(uuid)') is not null
-           and (select md5(p.prosrc) = '1bacdeb7cdb8cdff7be9deb8a123f2d0'
+           and (select md5(p.prosrc) = '9947b459ad535d33d44a1f9c76be7fa2'
                   and not p.prosecdef
                   and p.proconfig = array['search_path=""']
                   and has_function_privilege('service_role', p.oid, 'execute')

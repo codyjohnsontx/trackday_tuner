@@ -92,7 +92,7 @@ as $$
   by_name_ranked as (
     select l.id as session_id,
            t.id as track_id,
-           case when t.is_seeded then 1 else 0 end as precedence
+           rank() over (partition by l.id order by t.is_seeded) as precedence
       from named l
       join public.tracks t
         on (t.is_seeded or t.created_by = l.user_id)
@@ -102,7 +102,7 @@ as $$
   by_name as (
     select r.session_id, array_agg(r.track_id order by r.track_id) as track_ids
       from by_name_ranked r
-     where r.precedence = (select min(o.precedence) from by_name_ranked o where o.session_id = r.session_id)
+     where r.precedence = 1
      group by r.session_id
   ),
   by_alias as (
