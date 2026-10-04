@@ -7,10 +7,11 @@ import { getDemoTrackLayouts, getDemoTracks } from '@/lib/demo/data';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { createClient } from '@/lib/supabase/server';
 import { getUserProfile } from '@/lib/actions/vehicles';
-import { getFreePlanLimitMessage, getFreePlanLimit } from '@/lib/plans';
+import { getFreePlanLimitMessage } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
 import { reportError } from '@/lib/monitoring/report-error';
 import { buildTrackAliasIndex, buildTrackLayoutIndex, type TrackDirectory } from '@/lib/track-directory';
+import { isAtCustomTrackCapInDatabase, visibleTracksFilter } from '@/lib/track-lookup';
 import type { TableInsert } from '@/types/supabase';
 import type { ActionResult, Track, TrackAlias, TrackLayout } from '@/types';
 
@@ -19,7 +20,7 @@ const getTracksForUser = cache(async (userId: string): Promise<Track[]> => {
   const { data, error } = await supabase
     .from('tracks')
     .select('*')
-    .or(`is_seeded.eq.true,created_by.eq.${userId}`)
+    .or(visibleTracksFilter(userId))
     .order('name', { ascending: true });
 
   if (error) {
@@ -126,19 +127,11 @@ export async function createTrack(input: {
 
   const supabase = await createClient();
   const profile = await getUserProfile();
-  if (!resolveUserAccess(profile).hasProAccess) {
-    const { count } = await supabase
-      .from('tracks')
-      .select('id', { count: 'exact', head: true })
-      .eq('created_by', user.id)
-      .eq('is_seeded', false);
-
-    if ((count ?? 0) >= getFreePlanLimit('tracks')) {
-      return {
-        ok: false,
-        error: getFreePlanLimitMessage('tracks'),
-      };
-    }
+  if (await isAtCustomTrackCapInDatabase(supabase, user.id, resolveUserAccess(profile).hasProAccess)) {
+    return {
+      ok: false,
+      error: getFreePlanLimitMessage('tracks'),
+    };
   }
 
   const payload: TableInsert<'tracks'> = {

@@ -25,8 +25,8 @@ import { SessionOutcomePanel } from '@/components/sessions/session-outcome-panel
 import { VehicleOutcomeHistory } from '@/components/sessions/vehicle-outcome-history';
 import { effectiveTier, resolveUserAccess } from '@/lib/access';
 import { reportError } from '@/lib/monitoring/report-error';
-import { isAtFreePlanLimit } from '@/lib/plans';
 import { describeSessionTrackGap, hasTrackName } from '@/lib/session-track';
+import { isAtCustomTrackCap } from '@/lib/track-lookup';
 import { resolveChangeSets } from '@/lib/session-changes';
 import { resolveSessionEnabledModules } from '@/lib/session-modules';
 import { buildSetupView } from '@/lib/setup-view';
@@ -133,9 +133,7 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
     trackId: session.track_id,
     trackName: session.track_name,
     savedTracks: savedTracks ?? [],
-    atTrackLimit:
-      savedTracks !== null &&
-      isAtFreePlanLimit('tracks', savedTracks.filter((track) => !track.is_seeded).length, hasProAccess),
+    atTrackLimit: savedTracks !== null && isAtCustomTrackCap(savedTracks, hasProAccess),
   });
   const tier = effectiveTier(profile);
   const vehicle = vehicles.find((v) => v.id === session.vehicle_id);

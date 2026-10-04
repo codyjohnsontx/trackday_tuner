@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { TrackDeleteForm } from '@/components/tracks/track-delete-form';
 import { trackNameKey } from '@/lib/session-track';
 import type { TrackAliasIndex, TrackLayoutIndex } from '@/lib/track-directory';
+import { CUSTOM_TRACK_LABEL, isCustomTrack } from '@/lib/track-lookup';
 import { cn } from '@/lib/utils';
 import type { Track } from '@/types';
 
@@ -50,8 +51,8 @@ export function TrackListClient({
     });
   }, [query, tracks, aliasKeysByTrack]);
 
-  const customTracks = filteredTracks.filter((track) => !track.is_seeded);
-  const seededTracks = filteredTracks.filter((track) => track.is_seeded);
+  const customTracks = filteredTracks.filter(isCustomTrack);
+  const seededTracks = filteredTracks.filter((track) => !isCustomTrack(track));
 
   return (
     <div className="space-y-4">
@@ -85,7 +86,7 @@ export function TrackListClient({
                     {track.location ? <p className="text-xs text-ink-dim">{track.location}</p> : null}
                   </div>
                   <span className="rounded-plate bg-surface-2 px-2 py-1 text-xs text-ink-dim">
-                    Custom
+                    {CUSTOM_TRACK_LABEL}
                   </span>
                 </div>
                 <div className={cn('grid gap-2', !demoMode && 'grid-cols-2')}>

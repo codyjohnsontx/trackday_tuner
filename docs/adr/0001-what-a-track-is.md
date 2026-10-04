@@ -105,11 +105,11 @@ Already true, and kept:
 
 Contradicted by current behaviour - **not yet built**:
 
-- **PR #73's rule is reversed.** `findTrackByName` (`lib/track-directory.ts`)
+- **PR #73's rule is reversed.** The track-name resolver (`lib/track-lookup.ts`)
   prefers the rider's own track over a same-named seeded circuit, and
   `createSession` saves to it; the picker labels it "Custom". Decision 8 sends
   the session to the seeded circuit and labels the custom one "your older
-  entry". The same file's header also resolves a rider's own track name before a
+  entry". The same module also resolves a rider's own track name before a
   seeded alias, which decision 7 overrides where the two are the same venue.
 - **Only Buttonwillow records direction today**, and only inside two layout
   names. Nothing records a session's direction, no circuit has a normal
