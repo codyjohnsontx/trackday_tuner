@@ -1161,14 +1161,15 @@ export type Database = {
         };
         /**
          * One row per session that names a circuit and has no track: linked to
-         * the one track its name resolves to, or left alone as `ambiguous` (with
-         * the candidates) or `unmatched`. service_role only (20261004002600).
+         * the one track its name resolves to, or left alone as `own_and_seeded`
+         * or `ambiguous` (with the candidates) or `unmatched`. service_role only
+         * (20261004002600).
          */
         Returns: {
           session_id: string;
           user_id: string;
           track_name: string;
-          outcome: 'relinked' | 'ambiguous' | 'unmatched';
+          outcome: 'relinked' | 'own_and_seeded' | 'ambiguous' | 'unmatched';
           track_id: string | null;
           candidate_track_ids: string[];
         }[];
