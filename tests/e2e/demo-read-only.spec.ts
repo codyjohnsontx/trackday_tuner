@@ -29,6 +29,10 @@ test.describe('demo is read-only', () => {
     // The calculator itself still works.
     const front = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Front' }) });
     await front.getByLabel('Fully Extended (L0)').fill('600');
+    await front.getByLabel('Bike Only (L1)').fill('570');
+    await front.getByLabel('Rider On Bike (L2)').fill('560');
+    await expect(front.getByText('30.0 mm')).toBeVisible();
+    await expect(front.getByText('40.0 mm')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reset' })).toBeVisible();
   });
 });
