@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error - see above.
 import { functionBodyMd5 } from '@/scripts/build-migration-audit.mjs';
 
-// docs/beta-runbook.md carries a copy of 20261004002600 for the hosted project,
+// docs/beta-runbook.md carries a copy of 20261004002700 for the hosted project,
 // which is patched in the SQL editor by hand. A copy that drifted from the
 // migration - one that stopped reading the verified claim, or dropped the
 // existing-identity condition - would read as applied and gate nothing, so the
@@ -14,7 +14,7 @@ import { functionBodyMd5 } from '@/scripts/build-migration-audit.mjs';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(testDir, '../..');
-const MIGRATION = '20261004002600_refuse_unverified_identity_link';
+const MIGRATION = '20261004002700_refuse_unverified_identity_link';
 const migration = readFileSync(path.join(root, `supabase/migrations/${MIGRATION}.sql`), 'utf8');
 const runbook = readFileSync(path.join(root, 'docs/beta-runbook.md'), 'utf8');
 

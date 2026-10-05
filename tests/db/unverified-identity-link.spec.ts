@@ -11,7 +11,7 @@ import { runAsAuthAdmin } from '@/tests/db/helpers/auth-database';
 
 /**
  * An external sign-in whose provider has not verified the email never joins an
- * existing account (20261004002600).
+ * existing account (20261004002700).
  *
  * GoTrue links a Google sign-in into the account that already holds its email
  * address, and with "Confirm email" off it does that whatever the provider's

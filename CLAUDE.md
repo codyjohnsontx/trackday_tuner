@@ -193,7 +193,7 @@ links a provider sign-in into the account that holds its email, and counts the
 provider's email as verified whenever "Confirm email" is off
 (`enable_confirmations = false` here) - so an unverified Google address was given
 a session on another rider's account, reproduced end to end against a stub
-issuer. `20261004002600` refuses an external identity whose `email_verified` is
+issuer. `20261004002700` refuses an external identity whose `email_verified` is
 not true when the user already has another identity; a new account and a
 verified link pass. `tests/db/unverified-identity-link.spec.ts` replays GoTrue's
 insert as `supabase_auth_admin`, and the hosted setting is in

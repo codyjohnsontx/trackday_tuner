@@ -2241,7 +2241,7 @@ commit;
 
 ### Refuse unverified Google sign-ins into existing accounts, by hand
 
-`20261004002600` stops a Google sign-in - or any external provider's - whose
+`20261004002700` stops a Google sign-in - or any external provider's - whose
 email the provider has NOT verified from being linked into the account that
 already holds that address. Without it GoTrue links it whenever "Confirm email"
 is off and hands the sign-in a session on that rider's account: an account
@@ -2294,7 +2294,7 @@ each before applying.
 **2. Apply.**
 
 ```sql
--- hosted-unverified-identity-link: mirror of supabase/migrations/20261004002600_refuse_unverified_identity_link.sql
+-- hosted-unverified-identity-link: mirror of supabase/migrations/20261004002700_refuse_unverified_identity_link.sql
 begin;
 create or replace function public.refuse_unverified_identity_link()
 returns trigger

@@ -276,7 +276,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                 from pg_proc p where p.oid = to_regprocedure('public.delete_auto_created_track_if_unused(uuid)'))),
   -- The trigger, enabled, and the function it runs by its body, so a hand-edited
   -- copy that stops checking the claim or the existing identity reads MISSING.
-  (29, '20261004002600_refuse_unverified_identity_link', 'trigger + function',
+  (29, '20261004002700_refuse_unverified_identity_link', 'trigger + function',
       'refuse_unverified_identity_link on auth.identities',
       exists (select 1 from pg_trigger
               where tgname='refuse_unverified_identity_link'
