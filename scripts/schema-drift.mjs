@@ -15,9 +15,9 @@
  *
  * Exit 0 when the two agree, 1 when they differ, 2 when either side could not
  * be read. Only what the migrations control counts: lines the Supabase platform
- * owns are printed apart and never make it exit 1. An empty inventory is refused rather than compared: two empty files
- * agree perfectly, and "no drift" over nothing is the answer this exists to
- * stop anyone getting.
+ * owns are printed apart and never make it exit 1. An empty inventory is
+ * refused rather than compared: two empty files agree perfectly, and "no drift"
+ * over nothing is the answer this exists to stop anyone getting.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';

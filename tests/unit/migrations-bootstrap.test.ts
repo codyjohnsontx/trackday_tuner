@@ -71,10 +71,10 @@ import { describe, expect, it } from 'vitest';
 // revokes `save_session_outcome` and `record_race_engineer_memory_feedback` in a
 // *later* migration than the one that creates them, which the same-migration rule
 // below would flag (the deferral check pins those two as the only exceptions).
-// That rule is deliberately strict for `security definer`,
-// where the gap between the two migrations is a window in which the function is
-// world-executable, and it is why widening this check to every function would
-// fail main today. Nor does it see a missing table named anywhere other
+// That rule is deliberately strict for `security definer`, where the gap between
+// the two migrations is a window in which the function is world-executable, and
+// it is why widening this check to every function would fail main today. Nor
+// does it see a missing table named anywhere other
 // than a foreign key: a policy or function body reading `from public.X` or
 // `insert into public.X` aborts `supabase start` exactly the way the missing
 // profiles table did, and passes here, because matching those would also fire on
