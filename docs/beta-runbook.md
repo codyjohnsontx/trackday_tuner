@@ -2239,6 +2239,200 @@ drop function if exists public.auto_created_track_is_referenced(uuid);
 commit;
 ```
 
+### Relink sessions that name a circuit but have no track, by hand
+
+`20261004002600` adds `public.relink_legacy_session_tracks(uuid)` and runs it
+once. It finds every session with a track name and no `track_id` - saved before
+the circuit was seeded, saved at the free-plan custom-track cap or when the track
+row could not be made, left behind when its custom track was deleted, or written
+straight to the table - and links each to the one track its name resolves to by
+the rules a new save uses (`lib/track-lookup.ts`): a track name, then an alias.
+A name that matches both a track of the rider's own and a seeded circuit, by name
+or by alias, is left alone and reported as `own_and_seeded`, because a save and
+ADR 0001 decision 8 disagree on which wins; a name that two tracks of one kind
+share is left alone and reported as `ambiguous`; a name that matches nothing is
+left alone and reported as `unmatched`. It creates no track, never changes a session that
+already has one, and leaves the stored `track_name` as it is. Nothing in the app
+calls the function, so it can go in before or after any deploy.
+
+**1. Precheck (read-only).**
+
+```sql
+-- hosted-relink-legacy-session-tracks-precheck
+select
+  to_regclass('public.track_aliases') is not null as aliases_exist,
+  to_regprocedure('public.relink_legacy_session_tracks(uuid)') is not null as function_exists,
+  (select count(*) from public.sessions s where s.track_id is null and nullif(btrim(s.track_name), '') is not null) as sessions_to_look_at;
+```
+
+Expect `true`, `false`, and a count. `aliases_exist = false` stops here: the
+seeded circuits and their aliases (`20260916001600`) have to be in first, or the
+function has nothing to match against and does not compile. `function_exists =
+true` means this block already ran; read the verify below, and use step 3 to run
+the relink again. `sessions_to_look_at` is the most step 3 can report; a name
+made only of tabs or other unusual spacing is counted here and skipped there.
+
+**2. Apply.** Installs the function. It changes no session yet.
+
+```sql
+-- hosted-relink-legacy-session-tracks: mirror of supabase/migrations/20261004002600_relink_legacy_session_tracks.sql
+begin;
+create or replace function public.relink_legacy_session_tracks(p_user_id uuid default null)
+returns table (
+  session_id uuid,
+  user_id uuid,
+  track_name text,
+  outcome text,
+  track_id uuid,
+  candidate_track_ids uuid[]
+)
+language sql
+volatile
+security invoker
+set search_path = ''
+as $$
+  with legacy as (
+    select s.id, s.user_id, s.track_name,
+           lower(btrim(regexp_replace(normalize(s.track_name, NFC),
+             '[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+', ' ', 'g'))) as name_key
+      from public.sessions s
+     where s.track_id is null
+       and (p_user_id is null or s.user_id = p_user_id)
+  ),
+  named as (
+    select * from legacy where name_key <> ''
+  ),
+  matches as (
+    select l.id as session_id, t.id as track_id, t.is_seeded, true as by_name
+      from named l
+      join public.tracks t
+        on (t.is_seeded or t.created_by = l.user_id)
+       and lower(btrim(regexp_replace(normalize(t.name, NFC),
+             '[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+', ' ', 'g'))) = l.name_key
+    union
+    select l.id, t.id, t.is_seeded, false
+      from named l
+      join public.track_aliases a
+        on lower(btrim(regexp_replace(normalize(a.alias, NFC),
+             '[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+', ' ', 'g'))) = l.name_key
+      join public.tracks t
+        on t.id = a.track_id
+       and (t.is_seeded or t.created_by = l.user_id)
+  ),
+  grouped as (
+    select m.session_id,
+           bool_or(m.is_seeded) and bool_or(not m.is_seeded) as own_and_seeded,
+           array_agg(distinct m.track_id order by m.track_id) as all_ids,
+           array_agg(distinct m.track_id order by m.track_id) filter (where m.by_name) as name_ids,
+           array_agg(distinct m.track_id order by m.track_id) filter (where not m.by_name) as alias_ids
+      from matches m
+     group by m.session_id
+  ),
+  resolved as (
+    select l.id, l.user_id, l.track_name,
+           coalesce(g.own_and_seeded, false) as own_and_seeded,
+           case when g.own_and_seeded then g.all_ids
+                else coalesce(g.name_ids, g.alias_ids, '{}'::uuid[]) end as track_ids
+      from named l
+      left join grouped g on g.session_id = l.id
+  ),
+  relinked as (
+    update public.sessions s
+       set track_id = r.track_ids[1]
+      from resolved r
+     where s.id = r.id
+       and cardinality(r.track_ids) = 1
+       and s.track_id is null
+    returning s.id
+  )
+  select r.id,
+         r.user_id,
+         r.track_name,
+         case
+           when u.id is not null then 'relinked'
+           when r.own_and_seeded then 'own_and_seeded'
+           when cardinality(r.track_ids) > 1 then 'ambiguous'
+           else 'unmatched'
+         end,
+         case when u.id is not null then r.track_ids[1] end,
+         r.track_ids
+    from resolved r
+    left join relinked u on u.id = r.id
+   -- A single match that was not written was linked by someone else between
+   -- the read and the write; it is no longer a legacy row, so it is not reported.
+   where u.id is not null or cardinality(r.track_ids) <> 1
+   order by 4, r.user_id, r.track_name, r.id;
+$$;
+
+revoke all on function public.relink_legacy_session_tracks(uuid) from public, anon, authenticated;
+grant execute on function public.relink_legacy_session_tracks(uuid) to service_role;
+commit;
+```
+
+**3. Relink.** The migration's last statement, run on its own so the SQL editor
+shows its result: one row per session it looked at, with its `outcome`
+(`relinked`, `own_and_seeded`, `ambiguous` or `unmatched`), the `track_id` it
+was linked to, and for one left alone the `candidate_track_ids`. **Download that result as CSV
+before closing the tab** - the `relinked` rows are the only record of which
+sessions moved, and the rollback below needs them.
+
+```sql
+-- hosted-relink-legacy-session-tracks-run
+select * from public.relink_legacy_session_tracks();
+```
+
+It is safe to run again at any time: a relinked session has a track and is not
+looked at twice, so a second run reports only what is still left alone, plus anything that has come to resolve since - a track the rider
+added, or a session saved at the cap.
+
+**4. Verify.**
+
+```sql
+-- hosted-relink-legacy-session-tracks-verify
+select
+  p.prosecdef as security_definer,
+  p.proconfig as settings,
+  has_function_privilege('service_role', p.oid, 'execute') as service_role_can_execute,
+  has_function_privilege('authenticated', p.oid, 'execute') as rider_can_execute,
+  has_function_privilege('anon', p.oid, 'execute') as anon_can_execute,
+  md5(p.prosrc) = '6c0b3c643a5a2fa2185b9ca3f8693bcd' as definition_is_the_migration,
+  (select count(*) from public.sessions s where s.track_id is null and nullif(btrim(s.track_name), '') is not null) as sessions_still_unlinked
+from pg_proc p
+where p.oid = to_regprocedure('public.relink_legacy_session_tracks(uuid)');
+```
+
+Expect one row: `false`, `{"search_path=\"\""}`, `true`, `false`, `false`, `true`,
+and `sessions_still_unlinked` equal to the `own_and_seeded`, `ambiguous` and
+`unmatched` rows step 3 returned (more only by the spacing-only names the precheck mentions, or by a
+session saved since). A `false` in `definition_is_the_migration` means the body
+is not this migration's: run the apply block again rather than editing in place.
+Row 29 of `scripts/sql/audit-migrations-against-database.sql` then reads
+`present`.
+
+The `own_and_seeded` and `ambiguous` rows are for a person to settle: each names
+the tracks it could mean. An `own_and_seeded` row is a rider's custom track
+sharing a name with a seeded circuit, which ADR 0001 decision 9 resolves only
+with that rider's yes; an `ambiguous` one is almost always two custom tracks of
+one rider whose names fold together. Nothing is lost by leaving them.
+
+**5. Rollback.** Unlinks only the sessions step 3 relinked and that still point
+where it put them, then drops the function. Fill the `values` list from the CSV's
+`relinked` rows - the block does not parse until it is filled in.
+
+```sql
+-- hosted-relink-legacy-session-tracks-rollback
+begin;
+update public.sessions s
+   set track_id = null
+  from (values
+    -- ('<session_id>'::uuid, '<track_id>'::uuid),  one line per relinked row
+  ) as r(session_id, track_id)
+ where s.id = r.session_id
+   and s.track_id = r.track_id;
+drop function if exists public.relink_legacy_session_tracks(uuid);
+commit;
+```
+
 ## Invite a Rider
 
 ```bash

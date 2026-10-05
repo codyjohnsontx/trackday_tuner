@@ -66,6 +66,7 @@ const CREATE_SESSION_WITH_LAPS = "to_regprocedure('public.create_session_with_la
 const DELETE_AUTO_CREATED_TRACK = "to_regprocedure('public.delete_auto_created_track_if_unused(uuid)')";
 const AUTO_CREATED_TRACK_IS_REFERENCED = "to_regprocedure('public.auto_created_track_is_referenced(uuid)')";
 const RECORD_DELETED_SESSION = "to_regprocedure('public.record_deleted_session()')";
+const RELINK_LEGACY_SESSION_TRACKS = "to_regprocedure('public.relink_legacy_session_tracks(uuid)')";
 
 /**
  * The tombstone trigger, proved field by field rather than by name: on
@@ -489,6 +490,25 @@ export const MIGRATION_PROBES = {
       '     and (select md5(p.prosrc) = ' +
         `'${functionBodyMd5('20261001002500_auto_created_track_reference_check_sees_every_session', 'delete_auto_created_track_if_unused')}'`,
       `          from pg_proc p where p.oid = ${DELETE_AUTO_CREATED_TRACK})`,
+    ],
+  },
+  '20261004002600_relink_legacy_session_tracks': {
+    note: [
+      'The function, by its body, empty search path and service_role-only execute.',
+      'The relink it ran is data and has no probe; re-running the function reports',
+      'what it still leaves alone, and relinks only what now resolves.',
+    ],
+    kind: 'function',
+    object: 'public.relink_legacy_session_tracks(uuid)',
+    present: [
+      `${RELINK_LEGACY_SESSION_TRACKS} is not null`,
+      `     and (select md5(p.prosrc) = '${functionBodyMd5('20261004002600_relink_legacy_session_tracks')}'`,
+      '            and not p.prosecdef',
+      "            and p.proconfig = array['search_path=\"\"']",
+      "            and has_function_privilege('service_role', p.oid, 'execute')",
+      "            and not has_function_privilege('authenticated', p.oid, 'execute')",
+      "            and not has_function_privilege('anon', p.oid, 'execute')",
+      `          from pg_proc p where p.oid = ${RELINK_LEGACY_SESSION_TRACKS})`,
     ],
   },
 };
