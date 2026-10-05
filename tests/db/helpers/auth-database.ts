@@ -13,8 +13,7 @@ import path from 'node:path';
  * against anything but a stack `supabase start` built on this machine.
  *
  * The container is `supabase_db_<project_id>` from supabase/config.toml, which is
- * what both a developer's stack and CI's are called; set SUPABASE_DB_CONTAINER
- * to point at a stack started from another workdir.
+ * what both a developer's stack and CI's are called.
  */
 export interface SqlResult {
   ok: boolean;
@@ -23,7 +22,6 @@ export interface SqlResult {
 }
 
 function databaseContainer(): string {
-  if (process.env.SUPABASE_DB_CONTAINER) return process.env.SUPABASE_DB_CONTAINER;
   const config = readFileSync(path.join(process.cwd(), 'supabase/config.toml'), 'utf8');
   const projectId = /^project_id\s*=\s*"([^"]+)"/m.exec(config)?.[1];
   if (!projectId) throw new Error('supabase/config.toml has no project_id');

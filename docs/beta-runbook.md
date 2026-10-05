@@ -2250,8 +2250,10 @@ It is a `before insert` trigger on `auth.identities` that raises when the new
 identity is external, its `email_verified` claim is not true, and the user
 already has another identity. A brand-new account from an unverified sign-in is
 untouched, and a verified one still links. The refused sign-in gets no session,
-the account is unchanged, and the rider lands on `/login?error=auth_callback_failed`,
-whose copy is written for an expired email link rather than for this.
+the account is unchanged, and GoTrue sends the rider to `/auth/callback` with
+`error_description=Error creating identity` and no code, which the callback turns
+into `/login?error=provider_email_unverified` - copy telling them the provider has
+not verified that email and to sign in with their email and password.
 Apply it before merging the pull request that adds it.
 
 **The hosted setting that also governs this.** Dashboard → Authentication →

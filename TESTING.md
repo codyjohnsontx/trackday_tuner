@@ -217,8 +217,7 @@ assert fails them.
   email into an existing account. The Data API cannot write `auth`, so it writes
   the identity row the way GoTrue does - as `supabase_auth_admin`, through `psql`
   inside the stack's database container (`tests/db/helpers/auth-database.ts`),
-  which needs Docker and the container `supabase_db_<project_id>`; set
-  `SUPABASE_DB_CONTAINER` for a stack started from another workdir.
+  which needs Docker and the container `supabase_db_<project_id>`.
 
 ## Auth redirect setup checklist (Supabase)
 
