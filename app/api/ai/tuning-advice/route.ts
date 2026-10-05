@@ -227,19 +227,6 @@ export async function POST(request: Request) {
     return errorResponse(400, validated.error, requestId);
   }
 
-  // The one screen in this pipeline that reads what was ASKED. It needs nothing
-  // but the validated request, so it is computed before any I/O and stamped onto
-  // EVERY advice-bearing return below - the duplicate refusal and both
-  // classifier refusals included. A rider who asks the same dangerous question
-  // twice inside the dedupe window, or whose request is withheld for an
-  // unrelated reason, is not a rider who should go unwarned.
-  // See lib/rag/premise-guard.ts for why no other layer can catch this.
-  const premise = classifyDangerousPremise({
-    question: validated.data.question,
-    symptoms: validated.data.symptoms,
-    changeIntent: validated.data.change_intent,
-  });
-
   const user = await getRealUser();
   if (!user) {
     return errorResponse(401, 'Not authenticated.', requestId);
@@ -345,6 +332,23 @@ export async function POST(request: Request) {
       requestId,
     );
   }
+
+  // The one screen in this pipeline that reads what was ASKED. It needs the
+  // validated request and the vehicle's type - the tire-pressure value arm
+  // compares against the envelope published for motorcycles or for cars - so it
+  // is computed as soon as the vehicle row is in hand, before any model I/O, and
+  // stamped onto EVERY advice-bearing return below: the duplicate refusal and
+  // both classifier refusals included. A rider who asks the same dangerous
+  // question twice inside the dedupe window, or whose request is withheld for an
+  // unrelated reason, is not a rider who should go unwarned. The returns above
+  // this line carry no advice object to stamp.
+  // See lib/rag/premise-guard.ts for why no other layer can catch this.
+  const premise = classifyDangerousPremise({
+    question: validated.data.question,
+    symptoms: validated.data.symptoms,
+    changeIntent: validated.data.change_intent,
+    vehicleType: vehicle.type,
+  });
 
   const duplicateRequestId = await findRecentDuplicateRequest({
     userId: user.id,

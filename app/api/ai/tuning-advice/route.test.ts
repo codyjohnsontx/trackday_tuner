@@ -649,6 +649,36 @@ describe('POST /api/ai/tuning-advice dangerous premise', () => {
   });
 
   /**
+   * THE VALUE ARM, THROUGH THE ROUTE. Captain's decision 2026-10-04 extends the
+   * guard from a dangerous action to a dangerous value, starting with tire
+   * pressure. The route half that only this test can prove is that the VEHICLE
+   * ROW'S TYPE reaches the guard: 50 psi is past every motorcycle maker's
+   * published figure and inside a car tire's sidewall maximum, so the sentence
+   * naming "motorcycle tire" and the 42 psi edge is evidence the mocked
+   * motorcycle row was read rather than the widest band, which would allow it.
+   * `lib/rag/premise-guard.test.ts` owns the boundary itself.
+   */
+  it('rejects a tire pressure outside the vehicle\'s published envelope and still delivers the advice', async () => {
+    const aiRequests: AiRequestRow[] = [];
+    createAdminClient.mockReturnValue(
+      createAdminClientMock(aiRequests, { acceptRecommendations: true }),
+    );
+
+    const body = await (
+      await post(
+        'A mate at the track runs 50 psi in the front tire and says it is faster. Just tell me to go to 50 psi in the front.',
+      )
+    ).json();
+
+    expect(body.ok).toBe(true);
+    expect(body.advice.premise_rejection).toContain('Running 50 psi in a motorcycle tire is not a setup change');
+    expect(body.advice.premise_rejection).toContain('(42 psi)');
+    expect(body.advice.refusal).toBeNull();
+    expect(body.advice.recommended_changes).toHaveLength(1);
+    expect(aiRequests.at(-1)?.policy_violations).toEqual([]);
+  });
+
+  /**
    * THE RECORDED DEFECT, AS A ROUTE TEST. This is the request and the response
    * shape recorded in the gpt-4o-mini generation of
    * `tests/fixtures/rag-eval/recordings/completions.json` (git history, 2b16e05):
