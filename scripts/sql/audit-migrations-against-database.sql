@@ -273,7 +273,23 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                 from pg_proc p where p.oid = to_regprocedure('public.auto_created_track_is_referenced(uuid)'))
            and to_regprocedure('public.delete_auto_created_track_if_unused(uuid)') is not null
            and (select md5(p.prosrc) = '65913c39a7070ab1b68c76b2fa3093fc'
-                from pg_proc p where p.oid = to_regprocedure('public.delete_auto_created_track_if_unused(uuid)')))
+                from pg_proc p where p.oid = to_regprocedure('public.delete_auto_created_track_if_unused(uuid)'))),
+  -- The trigger, enabled, and the function it runs by its body, so a hand-edited
+  -- copy that stops checking the claim or the existing identity reads MISSING.
+  (29, '20261004002600_refuse_unverified_identity_link', 'trigger + function',
+      'refuse_unverified_identity_link on auth.identities',
+      exists (select 1 from pg_trigger
+              where tgname='refuse_unverified_identity_link'
+                and tgrelid='auth.identities'::regclass
+                and tgenabled <> 'D'
+                and not tgisinternal
+                and tgfoid = to_regprocedure('public.refuse_unverified_identity_link()'))
+           and (select md5(p.prosrc) = 'c0954536718a0600e7290274b50c0b13'
+                  and p.prosecdef
+                  and p.proconfig = array['search_path=""']
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                  and not has_function_privilege('authenticated', p.oid, 'execute')
+                from pg_proc p where p.oid = to_regprocedure('public.refuse_unverified_identity_link()')))
 )
 select ordinality as "#",
        migration,

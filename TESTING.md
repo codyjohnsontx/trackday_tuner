@@ -212,6 +212,13 @@ assert fails them.
   pin that the SQL cap and entitlement match `lib/plans.ts` and `lib/access.ts`.
   The mobile route's unit suite fakes that function, so this spec is the only
   one that exercises the real transaction, RLS, grants and error codes.
+- `unverified-identity-link.spec.ts` pins the `auth.identities` trigger
+  (`20261004002600`) that refuses to link an external sign-in with an unverified
+  email into an existing account. The Data API cannot write `auth`, so it writes
+  the identity row the way GoTrue does - as `supabase_auth_admin`, through `psql`
+  inside the stack's database container (`tests/db/helpers/auth-database.ts`),
+  which needs Docker and the container `supabase_db_<project_id>`; set
+  `SUPABASE_DB_CONTAINER` for a stack started from another workdir.
 
 ## Auth redirect setup checklist (Supabase)
 
@@ -229,6 +236,10 @@ the site URL instead of the reset form.
 For OAuth specifically:
 - Enable Google and Apple providers in `Supabase Dashboard -> Auth -> Providers`.
 - Configure each provider's client credentials in Supabase.
+- With "Confirm email" off, GoTrue links a provider sign-in into the account
+  holding its address even when the provider says the email is unverified;
+  `20261004002600` refuses that link. See "Refuse unverified Google sign-ins into
+  existing accounts, by hand" in `docs/beta-runbook.md`.
 
 ## Stripe billing setup checklist
 - Create one recurring monthly Pro price in Stripe at `$2.99` and set `STRIPE_PRO_MONTHLY_PRICE_ID`.

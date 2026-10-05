@@ -2239,6 +2239,140 @@ drop function if exists public.auto_created_track_is_referenced(uuid);
 commit;
 ```
 
+### Refuse unverified Google sign-ins into existing accounts, by hand
+
+`20261004002600` stops a Google sign-in - or any external provider's - whose
+email the provider has NOT verified from being linked into the account that
+already holds that address. Without it GoTrue links it whenever "Confirm email"
+is off and hands the sign-in a session on that rider's account: an account
+takeover through a Google Workspace domain whose admin creates the mailbox.
+It is a `before insert` trigger on `auth.identities` that raises when the new
+identity is external, its `email_verified` claim is not true, and the user
+already has another identity. A brand-new account from an unverified sign-in is
+untouched, and a verified one still links. The refused sign-in gets no session,
+the account is unchanged, and the rider lands on `/login?error=auth_callback_failed`,
+whose copy is written for an expired email link rather than for this.
+Apply it before merging the pull request that adds it.
+
+**The hosted setting that also governs this.** Dashboard → Authentication →
+Sign In / Providers → Email → **Confirm email**. When it is ON, GoTrue itself
+refuses to link an unverified provider email (the sign-in answers
+`provider_email_needs_verification` and no session is issued), so the hole is
+closed with or without this trigger. When it is OFF - which is how
+`supabase/config.toml` runs local development - only this trigger closes it.
+Turning it on also makes every ordinary email signup confirm by mail, so it is a
+product decision of its own; this block does not require it and works either
+way.
+
+**1. Precheck (read-only).**
+
+```sql
+-- hosted-unverified-identity-link-precheck
+select
+  exists (select 1 from pg_trigger
+           where tgname = 'refuse_unverified_identity_link'
+             and tgrelid = 'auth.identities'::regclass) as trigger_exists,
+  has_table_privilege('auth.identities', 'trigger') as can_create_trigger,
+  (select count(*)
+     from auth.identities i
+    where i.provider not in ('email', 'phone')
+      and i.provider not like 'sso:%'
+      and lower(coalesce(i.identity_data ->> 'email_verified', '')) <> 'true'
+      and exists (select 1 from auth.identities o
+                   where o.user_id = i.user_id and o.id <> i.id)) as unverified_links_already_present;
+```
+
+Expect `false`, `true`, `0`. `trigger_exists = true` means this block already
+ran; read its verify instead. `can_create_trigger = false` means the SQL editor
+role cannot add a trigger to `auth.identities` on this project: stop and report
+it rather than working around it. A non-zero last column is an account that
+already has an unverified external identity linked beside its own sign-in -
+possibly an earlier takeover. The trigger does not remove one; list them with the
+same query selecting `i.user_id, i.provider, i.email, i.created_at` and decide
+each before applying.
+
+**2. Apply.**
+
+```sql
+-- hosted-unverified-identity-link: mirror of supabase/migrations/20261004002600_refuse_unverified_identity_link.sql
+begin;
+create or replace function public.refuse_unverified_identity_link()
+returns trigger
+language plpgsql
+security definer
+-- The trigger fires as supabase_auth_admin, the role GoTrue writes auth tables
+-- as; definer rights let it read the user's other identities whoever fires it.
+-- search_path is pinned empty and every name is schema-qualified.
+set search_path = ''
+as $$
+begin
+  if new.provider in ('email', 'phone') or new.provider like 'sso:%' then
+    return new;
+  end if;
+
+  if lower(coalesce(new.identity_data ->> 'email_verified', '')) = 'true' then
+    return new;
+  end if;
+
+  if not exists (
+    select 1
+      from auth.identities i
+     where i.user_id = new.user_id
+       and i.id is distinct from new.id
+  ) then
+    return new;
+  end if;
+
+  raise exception 'refusing to link an unverified % email into an existing account', new.provider
+    using errcode = 'TT403',
+          hint = 'The provider did not verify this email address; sign in with the account''s existing method.';
+end;
+$$;
+
+-- Not callable by anyone but the trigger. `public` is named because anon and
+-- authenticated are members of it (CLAUDE.md, "Database Migrations").
+revoke all on function public.refuse_unverified_identity_link() from public, anon, authenticated;
+
+drop trigger if exists refuse_unverified_identity_link on auth.identities;
+create trigger refuse_unverified_identity_link
+  before insert on auth.identities
+  for each row execute function public.refuse_unverified_identity_link();
+commit;
+```
+
+**3. Verify.**
+
+```sql
+-- hosted-unverified-identity-link-verify
+select
+  t.tgenabled <> 'D' as trigger_enabled,
+  p.prosecdef as security_definer,
+  p.proconfig as settings,
+  has_function_privilege('anon', p.oid, 'execute') as anon_can_execute,
+  has_function_privilege('authenticated', p.oid, 'execute') as rider_can_execute,
+  md5(p.prosrc) = 'c0954536718a0600e7290274b50c0b13' as definition_is_the_migration
+from pg_trigger t
+join pg_proc p on p.oid = t.tgfoid
+where t.tgname = 'refuse_unverified_identity_link'
+  and t.tgrelid = 'auth.identities'::regclass;
+```
+
+Expect one row: `true`, `true`, `{"search_path=\"\""}`, `false`, `false`, `true`.
+A `false` in the last column means the body is not this migration's: run the
+apply block again rather than editing in place. Row 29 of
+`scripts/sql/audit-migrations-against-database.sql` then reads `present`.
+
+**4. Rollback.** Takes the gate away; GoTrue goes back to linking whatever
+"Confirm email" allows.
+
+```sql
+-- hosted-unverified-identity-link-rollback
+begin;
+drop trigger if exists refuse_unverified_identity_link on auth.identities;
+drop function if exists public.refuse_unverified_identity_link();
+commit;
+```
+
 ## Invite a Rider
 
 ```bash
