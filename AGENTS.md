@@ -522,6 +522,19 @@ e2e suite asserts a rendered colour.
 
 `@/*` maps to project root.
 
+## The Demo Is Read-Only
+
+Owner decision, 2026-10-04: the public demo is a tour of sample data, never a
+sandbox. Every server action that writes starts with `assertNotDemoMode()` and
+every cookie-authenticated write route with `assertNotDemoRoute()`
+(`lib/demo/mode.ts`), and a screen in demo offers no save at all rather than a
+button that refuses after the click. `tests/unit/demo-read-only.test.ts` finds
+every `'use server'` module and every mutating route handler on disk and fails on
+one that writes in demo; a write route that is genuinely not the demo's (Stripe's
+webhook, bearer-authenticated mobile) goes on its `NOT_DEMO_SCOPED` list with the
+reason. A server action is treated as a read only when its name starts with
+`get` or `has`.
+
 ## Leaving Demo Mode
 
 `/demo/exit` clears the demo cookie and redirects to `/login`, or to a sanitized
