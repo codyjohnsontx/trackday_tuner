@@ -1445,13 +1445,14 @@ have one (`app/api/ai/*/route.test.ts`); they mock Supabase and the model but le
 the guards themselves real, so the refusal they assert is the refusal a rider gets.
 
 The two classifiers are not interchangeable. `classifyRaceEngineerQuestion` also
-refuses out-of-domain requests. A question with an off-topic word is refused unless
-it also names setup vocabulary in the form the list has always matched: a plural
-or other inflection never rescues it ("a recipe for chicken wings" stays refused),
-and nothing sent as a symptom or intent does either. A question with no off-topic
-word is let through by setup vocabulary in any inflection the table lists, or by
-that original vocabulary in free text sent as a symptom or intent, never by a chip
-id (see `MOTORSPORT_VOCABULARY` in `lib/rag/domain-guard.ts`).
+refuses out-of-domain requests, judging the question text alone: nothing sent as
+a symptom or intent, chip id or free text, ever rescues a question (owner,
+2026-10-04). A question with an off-topic word is refused unless it also names
+setup vocabulary in the form the list has always matched - a plural or other
+inflection never rescues it ("a recipe for chicken wings" stays refused). A
+question with no off-topic word is let through by setup vocabulary in any
+inflection the table lists (see `MOTORSPORT_VOCABULARY` in
+`lib/rag/domain-guard.ts`).
 `classifyDayPlanRequest` screens only for injection, because a day plan has no
 question - just a track name and two condition strings, which carry no motorsport
 vocabulary and would be refused on every single request. `evaluateAdvicePolicy`

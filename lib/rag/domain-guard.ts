@@ -240,12 +240,14 @@ const NON_DOMAIN_PATTERNS = [
  * wings" scored a setup signal that outweighed `recipe` and reached the model.
  * So:
  *
- * - the off-topic check and the symptom and intent fields read the first column
- *   only, the vocabulary they always had, so an inflection can never rescue a
- *   question carrying an off-topic word, and one sent as a symptom or intent
- *   never rescues anything;
- * - the second column counts in the question itself and nowhere else, and only
- *   once that check has found no off-topic word in it.
+ * - the off-topic check reads the first column only, the vocabulary it always
+ *   had, so an inflection can never rescue a question carrying an off-topic
+ *   word;
+ * - the second column counts in the question itself, and only once that check
+ *   has found no off-topic word in it.
+ *
+ * Neither column is read over the symptom or intent fields: the domain screen
+ * judges the question alone, so nothing sent there rescues a question.
  *
  * What that leaves open is a question with no off-topic word whose only
  * vocabulary is an everyday plural - "Where can I buy cheap forks and spoons?".
@@ -320,12 +322,6 @@ export function classifyRaceEngineerQuestion(
   input: ClassifyRaceEngineerQuestionInput,
 ): RaceEngineerQuestionAssessment {
   const questionText = input.question.trim();
-  const supportingText = [
-    ...(input.symptoms ?? []),
-    input.changeIntent ?? '',
-  ]
-    .join(' ')
-    .trim();
 
   // Every rider-authored field reaches the model, not just the question:
   // formatMetaBlock in lib/rag/prompt.ts prints symptoms and change intent into
@@ -354,9 +350,11 @@ export function classifyRaceEngineerQuestion(
   const questionMotorsportSignals = countMatches(questionText, MOTORSPORT_PATTERNS);
   const questionNonDomainSignals = countMatches(questionText, NON_DOMAIN_PATTERNS);
 
-  // The free-text question is the primary signal for intent. Symptom chips and
-  // intent selectors are supporting context only; they must not "rescue" an
-  // obviously unrelated question into the setup domain.
+  // The domain screen judges the rider's own question and nothing else. Symptom
+  // chips and the change intent are context for the model, never evidence that
+  // the question is about setup: owner's decision 2026-10-04, a chip must not
+  // turn an off-topic question into an allowed one. They are still screened for
+  // injection above, because they still reach the prompt.
   if (questionMotorsportSignals === 0 && questionNonDomainSignals > 0) {
     return {
       decision: 'refuse',
@@ -366,36 +364,12 @@ export function classifyRaceEngineerQuestion(
     };
   }
 
-  // THIS ARM IS INERT FOR THE PANEL'S CHIPS. The ids it posts -
-  // `understeer_mid`, `reduce_tire_wear` - are joined by `_`, which is a word
-  // character, so no `\b`-anchored pattern above matches inside one and no chip
-  // ever adds a signal here. Every chip combination the route accepts, with
-  // questions of every kind, was run through this function and none changed a
-  // classification. Free text in these fields still can: the route accepts any
-  // short string, so a request carrying "Understeer on entry" as a symptom
-  // rescues a question with no signal of its own. That free text is read against
-  // the vocabulary as it always matched, so an inflection sent there counts for
-  // nothing - see MOTORSPORT_VOCABULARY.
-  //
-  // Whether a chip SHOULD be able to rescue such a question is an open product
-  // decision. Teaching the patterns to read ids would decide it one way and
-  // deleting this arm would decide it the other, so it is left as it is until
-  // that decision is made.
-  const combinedMotorsportSignals = countMatches(
-    [questionText, supportingText].filter(Boolean).join(' '),
-    MOTORSPORT_PATTERNS,
-  );
-
   // Inflections count here and nowhere else: in the question itself, which the
   // off-topic check above has already cleared of any off-topic word or rescued
   // with vocabulary in its original form.
   const questionInflectedSignals = countMatches(questionText, INFLECTED_MOTORSPORT_PATTERNS);
 
-  if (
-    combinedMotorsportSignals === 0 &&
-    questionInflectedSignals === 0 &&
-    questionNonDomainSignals === 0
-  ) {
+  if (questionInflectedSignals === 0 && questionNonDomainSignals === 0) {
     return {
       decision: 'refuse',
       reason: 'out_of_domain',
