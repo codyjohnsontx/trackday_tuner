@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { test, expect } from '@playwright/test';
 import { createTestAdminClient } from '@/tests/e2e/helpers/supabase';
 import {
@@ -47,12 +49,43 @@ function googleIdentityData(email: string, verified: unknown, sub: string): stri
 }
 
 /** The insert GoTrue makes when it links `provider` into the rider's account. */
-function linkIdentity(userId: string, email: string, verified: unknown, provider = 'google') {
+function linkIdentitySql(userId: string, email: string, verified: unknown, provider = 'google'): string {
   const sub = `${Date.now()}${Math.floor(Math.random() * 1e6)}`;
-  return runAsAuthAdmin(`
+  return `
     insert into auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
     values ('${sub}', '${userId}', '${googleIdentityData(email, verified, sub)}'::jsonb, '${provider}', now(), now(), now());
-  `);
+  `;
+}
+
+function linkIdentity(userId: string, email: string, verified: unknown, provider = 'google') {
+  return runAsAuthAdmin(linkIdentitySql(userId, email, verified, provider));
+}
+
+/** The runbook's precheck for the hosted paste, as a person would run it in the SQL editor. */
+function runbookPrecheck(): string {
+  const marker = '-- hosted-unverified-identity-link-precheck';
+  const runbook = readFileSync(path.join(process.cwd(), 'docs/beta-runbook.md'), 'utf8');
+  const start = runbook.indexOf(marker);
+  if (start === -1) throw new Error(`docs/beta-runbook.md has no block opening with ${marker}`);
+  const end = runbook.indexOf('\n```', start);
+  if (end === -1) throw new Error(`the block opening with ${marker} never closes`);
+  return runbook.slice(start, end);
+}
+
+/**
+ * `unverified_links_already_present` before and after `sql`, read in the same
+ * transaction so nothing else on the stack moves it in between.
+ */
+function precheckCountAround(sql: string): [number, number] {
+  const precheck = runbookPrecheck();
+  const result = runAsAuthAdmin(`${precheck}\n${sql}\n${precheck}`);
+  expect(result.ok, result.stderr).toBe(true);
+  const counts = result.stdout
+    .split('\n')
+    .filter((line) => line.includes('|'))
+    .map((line) => Number(line.split('|').at(-1)));
+  expect(counts).toHaveLength(2);
+  return [counts[0], counts[1]];
 }
 
 async function providersOf(userId: string): Promise<string[]> {
@@ -135,4 +168,29 @@ test('a new account from an unverified Google sign-in is not blocked - there is 
   } finally {
     runAsAuthAdmin(`delete from auth.users where id = '${userId}';`);
   }
+});
+
+test.describe("the runbook's precheck for links made before the gate existed", () => {
+  test('counts an unverified Google identity linked beside an existing sign-in', async () => {
+    rider = await createThrowawayRider('unverified-link');
+    expect(linkIdentity(rider.id, rider.email, true).ok).toBe(true);
+
+    // The gate reads inserts only, so turning the claim false afterwards leaves
+    // the row a hosted project could hold from before the trigger was applied.
+    const [before, after] = precheckCountAround(`
+      update auth.identities
+         set identity_data = jsonb_set(identity_data, '{email_verified}', 'false')
+       where user_id = '${rider.id}' and provider = 'google';
+    `);
+
+    expect(after - before).toBe(1);
+  });
+
+  test('does not count a verified one', async () => {
+    rider = await createThrowawayRider('unverified-link');
+
+    const [before, after] = precheckCountAround(linkIdentitySql(rider.id, rider.email, true));
+
+    expect(after).toBe(before);
+  });
 });

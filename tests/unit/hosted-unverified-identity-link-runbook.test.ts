@@ -10,7 +10,8 @@ import { functionBodyMd5 } from '@/scripts/build-migration-audit.mjs';
 // which is patched in the SQL editor by hand. A copy that drifted from the
 // migration - one that stopped reading the verified claim, or dropped the
 // existing-identity condition - would read as applied and gate nothing, so the
-// apply, precheck, verify and rollback are all pinned to the migration.
+// apply, verify and rollback are all pinned to the migration. The precheck is
+// run against a real database in tests/db/unverified-identity-link.spec.ts.
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(testDir, '../..');
@@ -19,7 +20,6 @@ const migration = readFileSync(path.join(root, `supabase/migrations/${MIGRATION}
 const runbook = readFileSync(path.join(root, 'docs/beta-runbook.md'), 'utf8');
 
 const BLOCK_MARKER = `-- hosted-unverified-identity-link: mirror of supabase/migrations/${MIGRATION}.sql`;
-const PRECHECK_MARKER = '-- hosted-unverified-identity-link-precheck';
 const VERIFY_MARKER = '-- hosted-unverified-identity-link-verify';
 const ROLLBACK_MARKER = '-- hosted-unverified-identity-link-rollback';
 
@@ -60,17 +60,6 @@ describe('the hosted unverified identity link block in docs/beta-runbook.md', ()
     const bodies = dollarBodies(migration);
     expect(bodies).toHaveLength(1);
     expect(dollarBodies(fencedBlock(runbook, BLOCK_MARKER))).toEqual(bodies);
-  });
-
-  it('prechecks with the same rule the trigger enforces', () => {
-    const precheck = statements(fencedBlock(runbook, PRECHECK_MARKER)).join(';');
-    // The audit of links already present must not be a looser or stricter
-    // reading of "unverified external identity beside another" than the gate.
-    expect(precheck).toContain("i.provider not in ('email', 'phone')");
-    expect(precheck).toContain("i.provider not like 'sso:%'");
-    expect(precheck).toContain("lower(coalesce(i.identity_data ->> 'email_verified', '')) <> 'true'");
-    expect(migration).toContain("new.provider in ('email', 'phone') or new.provider like 'sso:%'");
-    expect(migration).toContain("lower(coalesce(new.identity_data ->> 'email_verified', '')) = 'true'");
   });
 
   it('verifies the trigger by its enabled state, security, search path, grants and body fingerprint', () => {
