@@ -96,6 +96,7 @@ export function SagCalculator({ initialEntries, demoMode = false }: SagCalculato
   const [, startHistoryTransition] = useTransition();
 
   useEffect(() => {
+    if (demoMode) return;
     const draft = loadDraft<{
       front: SagSectionValues;
       rear: SagSectionValues;
@@ -111,11 +112,12 @@ export function SagCalculator({ initialEntries, demoMode = false }: SagCalculato
     setLabel(draft.label ?? '');
     setNotes(draft.notes ?? '');
     setDraftMessage('Draft restored from this device.');
-  }, []);
+  }, [demoMode]);
 
   useEffect(() => {
+    if (demoMode) return;
     saveDraft(draftKey, { front, rear, label, notes });
-  }, [front, rear, label, notes]);
+  }, [demoMode, front, rear, label, notes]);
 
   function resetAll() {
     setFront(emptySide);
@@ -127,7 +129,7 @@ export function SagCalculator({ initialEntries, demoMode = false }: SagCalculato
     setErrorMessage('');
     setSuccessMessage('');
     setDraftMessage('');
-    clearDraft(draftKey);
+    if (!demoMode) clearDraft(draftKey);
   }
 
   function loadEntry(entry: SagEntry) {

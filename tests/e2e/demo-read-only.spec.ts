@@ -35,4 +35,27 @@ test.describe('demo is read-only', () => {
     await expect(front.getByText('40.0 mm')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reset' })).toBeVisible();
   });
+
+  test("the sag calculator leaves this device's real draft alone", async ({ page, baseURL }) => {
+    const draftKey = 'track_tuner:draft:sag_calculator';
+    const riderDraft = JSON.stringify({
+      front: { l0: '610', l1: '585', l2: '575', travel: '120' },
+      rear: { l0: '', l1: '', l2: '', travel: '' },
+      label: 'New springs',
+      notes: 'Unsaved notes',
+    });
+    await page.addInitScript(([key, value]) => window.localStorage.setItem(key, value), [draftKey, riderDraft] as const);
+    await enterDemo(page, baseURL!);
+    await page.goto('/sag');
+
+    const front = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Front' }) });
+    await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue('');
+    await front.getByLabel('Fully Extended (L0)').fill('600');
+    await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue('600');
+    expect(await page.evaluate((key) => window.localStorage.getItem(key), draftKey)).toBe(riderDraft);
+
+    await page.getByRole('button', { name: 'Reset' }).click();
+    await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue('');
+    expect(await page.evaluate((key) => window.localStorage.getItem(key), draftKey)).toBe(riderDraft);
+  });
 });
