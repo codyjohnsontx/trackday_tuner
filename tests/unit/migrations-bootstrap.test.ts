@@ -315,8 +315,42 @@ const DROP_FUNCTION = /drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?(\w+)\b
 // A function is its name and its argument types: each overload is a separate
 // function with its own proacl, null until something grants or revokes on it.
 // Argument names, modes and defaults are not part of that, and OUT arguments are
-// not either. A type whose name is several words keeps its first one.
-const MULTI_WORD_TYPE_START = /^(?:double|timestamp|time|character|bit|interval)$/i;
+// not either. A type whose name is several words keeps its first one, and every
+// spelling Postgres resolves to one type - an alias, a schema qualifier, a
+// typmod it ignores in a signature - is written one way, so `f(int)` names the
+// function `f(p integer)` created.
+const MULTI_WORD_TYPE_START = /^(?:(?:pg_catalog|public)\.)?(?:double|timestamp|time|character|bit|interval)(?:\(|$)/i;
+
+const TYPE_ALIASES: Record<string, string> = {
+  int: 'integer',
+  int4: 'integer',
+  int2: 'smallint',
+  int8: 'bigint',
+  bool: 'boolean',
+  float: 'double precision',
+  float8: 'double precision',
+  float4: 'real',
+  decimal: 'numeric',
+  char: 'character',
+  bpchar: 'character',
+  varchar: 'character varying',
+  timestamp: 'timestamp without time zone',
+  timestamptz: 'timestamp with time zone',
+  time: 'time without time zone',
+  timetz: 'time with time zone',
+};
+
+function canonicalType(type: string): string {
+  const arrayAt = type.search(/\s*\[/);
+  const base = (arrayAt === -1 ? type : type.slice(0, arrayAt))
+    .toLowerCase()
+    .replace(/\s*\([^)]*\)?/g, '')
+    .replace(/^(?:pg_catalog|public)\./, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const dimensions = arrayAt === -1 ? '' : '[]'.repeat((type.slice(arrayAt).match(/\[/g) ?? []).length);
+  return (TYPE_ALIASES[base] ?? base) + dimensions;
+}
 
 function topLevelParts(list: string): string[] {
   const parts = [''];
@@ -337,7 +371,7 @@ function identityArgs(list: string): string {
     .map((words) => {
       const typed = /^(?:in|inout|variadic)$/i.test(words[0]) ? words.slice(1) : words;
       const named = typed.length > 1 && !MULTI_WORD_TYPE_START.test(typed[0]);
-      return (named ? typed.slice(1) : typed).join(' ').toLowerCase();
+      return canonicalType((named ? typed.slice(1) : typed).join(' '));
     })
     .join(', ');
 }
@@ -1264,6 +1298,32 @@ describe('the deferred-execute check, against migrations written wrongly on purp
 
     expect(deferredExecuteDecisions(fixtures)).toEqual([
       'execute_corrected_later.sql: decides execute on public.promote_rider(uuid), which recreated_without_revoke.sql creates without deciding it',
+    ]);
+  });
+
+  it('catches a deferral spelled with different names for the same types', () => {
+    const fixtures = loadFixtures('alias_created_without_revoke.sql', 'alias_decided_later.sql');
+
+    expect(deferredExecuteDecisions(fixtures)).toEqual([
+      'alias_decided_later.sql: decides execute on public.cap_rider_sessions(uuid, integer, timestamp with time zone, boolean, character varying), which alias_created_without_revoke.sql creates without deciding it',
+    ]);
+  });
+
+  it('accepts a creating migration that decides execute under other spellings of its types', () => {
+    const fixtures = loadFixtures('alias_created_with_revoke.sql', 'alias_decided_later.sql');
+
+    expect(deferredExecuteDecisions(fixtures)).toEqual([]);
+  });
+
+  it('catches a recreation after a drop spelled with other names for the same types', () => {
+    const fixtures = loadFixtures(
+      'alias_created_with_revoke.sql',
+      'alias_recreated_without_revoke.sql',
+      'alias_decided_later.sql',
+    );
+
+    expect(deferredExecuteDecisions(fixtures)).toEqual([
+      'alias_decided_later.sql: decides execute on public.cap_rider_sessions(uuid, integer, timestamp with time zone, boolean, character varying), which alias_recreated_without_revoke.sql creates without deciding it',
     ]);
   });
 

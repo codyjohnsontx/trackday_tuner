@@ -96,11 +96,22 @@ source is `storage.buckets`, configuration columns only.
    not make. An object defined differently on the two sides appears once under
    each. Exit 0 means the two agree, 1 means drift, 2 means a side could not be
    read - an empty or wrong file is refused, never reported as agreement.
-   `--reference <csv>` compares against a saved inventory instead of the stack.
 
-Expected on the hosted project even when it is fully caught up: the
-`MIGRATIONS table_exists` line differs (the CLI has never recorded a history
-there), and is printed but not counted. Anything else is drift. A `-` line
+Drift means a difference in what the migrations control, and only that makes
+the command exit 1. Two kinds of line are printed but never counted, so a fully
+caught-up hosted project still exits 0:
+
+- **Platform-managed, informational.** Lines Supabase owns rather than the
+  migrations, which hosted and a local stack each carry their own version of:
+  an `EXTENSION` whose version differs while the extension is on both sides,
+  a `TRIGGER storage.objects` whose function is not in `public` (the storage
+  service's own, which moves with its API version), and a `DEFACL` row for
+  `schema=<all>` or owner `supabase_admin`. An extension missing from one side
+  altogether is still drift, since a migration creates it.
+- **`MIGRATIONS table_exists`**, which differs because the CLI has never
+  recorded a history on hosted.
+
+Everything under the `-` and `+` headings is drift. A `-` line
 names the migration to look at - search `supabase/migrations/` for the object's
 name - and the hand-apply blocks below are how it is closed. A `+` line was made
 outside the migrations and needs a decision rather than a paste: a

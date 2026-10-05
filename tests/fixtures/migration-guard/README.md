@@ -122,7 +122,7 @@ Postgres accepts because its option list is order-independent, and
 search_path supplies. Both ship the identical world-executable function, so the
 guard has to read both.
 
-Five cover the deferred-execute check, each loaded after a fixture that creates
+Ten cover the deferred-execute check, each loaded after a fixture that creates
 the function. `execute_decided_later.sql` decides execute on the function
 `invoker_without_revoke.sql` creates and leaves undecided, which is how the hosted
 project ended up with no grant on `save_session_outcome`: `20260719001100` held
@@ -136,7 +136,15 @@ signature, because each overload is a separate function that starts undecided:
 decided `promote_rider(uuid)` and `overload_decided_later.sql` decides only the
 new one later, and `recreated_without_revoke.sql` drops and recreates
 `promote_rider(uuid)`, so the same later grant that is a correction in the
-control becomes a deferral.
+control becomes a deferral. A signature is read the way Postgres reads it, so
+the four `alias_*` files spell the same argument types differently - `int4`
+for `integer`, `timestamptz` for `timestamp with time zone`, `bool`, `varchar`,
+a `pg_catalog.` qualifier, a typmod on a created argument:
+`alias_decided_later.sql` is still a deferral after
+`alias_created_without_revoke.sql`, still a correction after
+`alias_created_with_revoke.sql`, and a deferral again once
+`alias_recreated_without_revoke.sql` has dropped the function by yet another
+spelling and made it anew.
 
 Four cover the rider-text grant check on `ai_request_text`, where a rider may
 read and delete their own retained question text and nothing more.

@@ -1,22 +1,20 @@
-import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
-  INVENTORY_SQL_PATH,
   compareInventories,
   describeUnusableInventory,
   formatDriftReport,
   hasDrift,
+  main,
   parseInventoryCsv,
 } from '@/scripts/schema-drift.mjs';
 
 // The hosted drift checker (`npm run db:drift`): the parse and comparison it
-// does over two inventories, and the CLI's exit codes, without a database.
+// does over two inventories, and the command's exit codes with the local stack's
+// inventory handed in, so none of it needs a database.
 // Running the inventory itself against a real one is tests/db/schema-inventory.spec.ts.
-
-const SCRIPT = path.resolve(path.dirname(INVENTORY_SQL_PATH), '../schema-drift.mjs');
 
 // Lines in the shape the inventory prints, from the drift the report on the
 // hosted project found: save_session_outcome missing there, a hand-made
@@ -104,6 +102,52 @@ describe('describeUnusableInventory', () => {
   });
 });
 
+describe('platform-managed lines', () => {
+  const STORAGE_TRIGGER =
+    'TRIGGER storage.objects update_objects_updated_at enabled=O CREATE TRIGGER update_objects_updated_at BEFORE UPDATE ON storage.objects FOR EACH ROW EXECUTE FUNCTION storage.update_updated_at_column()';
+  const OWN_STORAGE_TRIGGER =
+    'TRIGGER storage.objects stamp_photo enabled=O CREATE TRIGGER stamp_photo BEFORE INSERT ON storage.objects FOR EACH ROW EXECUTE FUNCTION public.stamp_photo()';
+  const UNQUALIFIED_STORAGE_TRIGGER =
+    'TRIGGER storage.objects stamp_photo enabled=O CREATE TRIGGER stamp_photo BEFORE INSERT ON storage.objects FOR EACH ROW EXECUTE FUNCTION stamp_photo()';
+  const ALL_SCHEMAS_DEFACL = 'DEFACL schema=<all> owner=postgres objtype=f postgres=EXECUTE';
+  const PLATFORM_DEFACL = 'DEFACL schema=public owner=supabase_admin objtype=f anon=EXECUTE, authenticated=EXECUTE';
+  const OWN_DEFACL = 'DEFACL schema=public owner=postgres objtype=f postgres=EXECUTE';
+
+  it('prints platform-owned differences apart and does not count them as drift', () => {
+    const result = compareInventories(
+      [PROFILES, 'EXTENSION pg_net version=0.20.3 schema=extensions', STORAGE_TRIGGER, PLATFORM_DEFACL],
+      [PROFILES, 'EXTENSION pg_net version=0.14.0 schema=extensions', ALL_SCHEMAS_DEFACL],
+    );
+
+    expect(hasDrift(result)).toBe(false);
+    expect(result.platform).toEqual({
+      missingFromHosted: [PLATFORM_DEFACL, 'EXTENSION pg_net version=0.20.3 schema=extensions', STORAGE_TRIGGER].sort(),
+      onlyOnHosted: [ALL_SCHEMAS_DEFACL, 'EXTENSION pg_net version=0.14.0 schema=extensions'].sort(),
+    });
+
+    const report = formatDriftReport(result);
+    expect(report).toMatch(/^No drift/);
+    expect(report).toContain('Platform-managed, informational');
+    expect(report).toContain(`  - ${STORAGE_TRIGGER}`);
+    expect(report).toContain(`  + ${ALL_SCHEMAS_DEFACL}`);
+  });
+
+  it('counts an extension missing from one side as drift', () => {
+    const result = compareInventories([PROFILES, 'EXTENSION pg_cron version=1.6.4 schema=pg_catalog'], [PROFILES]);
+
+    expect(result.missingFromHosted).toEqual(['EXTENSION pg_cron version=1.6.4 schema=pg_catalog']);
+    expect(result.platform.missingFromHosted).toEqual([]);
+  });
+
+  it('counts a storage.objects trigger on a public function, and a migration-made default privilege, as drift', () => {
+    const result = compareInventories([PROFILES, OWN_STORAGE_TRIGGER, OWN_DEFACL], [PROFILES, UNQUALIFIED_STORAGE_TRIGGER]);
+
+    expect(result.missingFromHosted).toEqual([OWN_DEFACL, OWN_STORAGE_TRIGGER].sort());
+    expect(result.onlyOnHosted).toEqual([UNQUALIFIED_STORAGE_TRIGGER]);
+    expect(result.platform).toEqual({ missingFromHosted: [], onlyOnHosted: [] });
+  });
+});
+
 describe('npm run db:drift', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'schema-drift-'));
   const write = (name: string, text: string) => {
@@ -111,10 +155,22 @@ describe('npm run db:drift', () => {
     writeFileSync(file, text);
     return file;
   };
-  const run = (...args: string[]) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' });
+  const run = (argv: string[], readReference: () => string[] = () => reference) => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const log = vi.spyOn(console, 'log').mockImplementation((line: string) => void out.push(line));
+    const error = vi.spyOn(console, 'error').mockImplementation((line: string) => void err.push(line));
+    try {
+      const status = main(argv, readReference);
+      return { status, stdout: out.join('\n'), stderr: err.join('\n') };
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+    }
+  };
 
   it('exits 1 and names the drift', () => {
-    const result = run(write('hosted.csv', csv(hosted)), '--reference', write('ref.csv', csv(reference)));
+    const result = run([write('hosted.csv', csv(hosted))]);
 
     expect(result.status).toBe(1);
     expect(result.stdout).toContain(`- ${OUTCOME_FN}`);
@@ -122,22 +178,39 @@ describe('npm run db:drift', () => {
   });
 
   it('exits 0 when the two agree', () => {
-    const file = write('same.csv', csv(reference));
-    const result = run(file, '--reference', file);
+    const result = run([write('same.csv', csv(reference))]);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/^No drift/);
   });
 
+  it('exits 0 when only platform-managed lines differ', () => {
+    const result = run(
+      [write('platform.csv', csv([...reference, 'EXTENSION pg_net version=0.14.0 schema=extensions']))],
+      () => [...reference, 'EXTENSION pg_net version=0.20.3 schema=extensions'],
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('+ EXTENSION pg_net version=0.14.0 schema=extensions');
+  });
+
   it('exits 2 rather than agreeing over two empty files', () => {
-    const empty = write('empty.csv', 'line\n');
-    const result = run(empty, '--reference', empty);
+    const result = run([write('empty.csv', 'line\n')], () => []);
 
     expect(result.status).toBe(2);
     expect(result.stderr).toMatch(/empty/);
   });
 
   it('exits 2 with usage when no hosted file is given', () => {
-    expect(run().status).toBe(2);
+    expect(run([]).status).toBe(2);
+  });
+
+  it('exits 2 when the reference cannot be read', () => {
+    const result = run([write('no-stack.csv', csv(hosted))], () => {
+      throw new Error('supabase db query failed (exit 1): no stack');
+    });
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toBe('supabase db query failed (exit 1): no stack');
   });
 });
