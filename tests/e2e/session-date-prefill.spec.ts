@@ -17,7 +17,10 @@ import { runResourceId } from '@/tests/e2e/helpers/run-id';
  * Start Time is seeded by the same effect, to the rider's clock at that instant
  * (decision 2026-10-04), so a session is timed to when it was logged unless the
  * rider changes it. A blank one sorts as midnight and put a session logged
- * without one ahead of every timed session that day.
+ * without one ahead of every timed session that day. The form saves a draft as
+ * soon as it opens, so the draft records whether the rider touched Start Time:
+ * an untouched default is seeded again when the draft is restored, and a time
+ * the rider set is kept.
  */
 
 const SESSION_DRAFT_KEY = 'track_tuner:draft:session_form_new';
@@ -26,6 +29,9 @@ const EVENING_IN_TEXAS = new Date('2026-08-18T04:30:00.000Z');
 const RIDERS_DAY = '2026-08-17';
 const UTC_DAY = '2026-08-18';
 const RIDERS_CLOCK = '23:30';
+// Twenty minutes on, the same evening in Texas.
+const LATER_IN_TEXAS = new Date('2026-08-18T04:50:00.000Z');
+const RIDERS_LATER_CLOCK = '23:50';
 
 async function createRunVehicle(page: Page, nickname: string): Promise<string> {
   await page.goto('/garage/new');
@@ -83,6 +89,18 @@ test.describe('a rider logging in the evening', () => {
     await page.goto('/sessions/new');
     await page.evaluate((key) => localStorage.removeItem(key), SESSION_DRAFT_KEY);
     await page.reload();
+  }
+
+  /** Waits for the draft the form keeps on this device to hold `startTime`. */
+  async function expectDraftStartTime(page: Page, startTime: string, startTimeEdited: boolean) {
+    await expect
+      .poll(() =>
+        page.evaluate((key) => {
+          const draft = JSON.parse(localStorage.getItem(key) ?? 'null');
+          return draft ? { startTime: draft.startTime, startTimeEdited: draft.startTimeEdited } : null;
+        }, SESSION_DRAFT_KEY),
+      )
+      .toEqual({ startTime, startTimeEdited });
   }
 
   /** Fills what a save requires, saves, and returns the stored start_time. */
@@ -175,5 +193,43 @@ test.describe('a rider logging in the evening', () => {
     await expect(startTimeField).toHaveValue('09:15');
 
     expect(await saveAndReadStartTime(page, createdVehicleId)).toBe('09:15:00');
+  });
+
+  test('seeds the current time again when a draft holds the untouched default', async ({
+    page,
+  }, testInfo: TestInfo) => {
+    await signIn(page);
+    createdVehicleId = await createRunVehicle(page, `PW Start Time Draft ${runResourceId(testInfo)}`);
+
+    await openFreshForm(page);
+    const startTimeField = page.getByLabel('Start Time', { exact: true });
+    await expect(startTimeField).toHaveValue(RIDERS_CLOCK, { timeout: 15_000 });
+    await expectDraftStartTime(page, RIDERS_CLOCK, false);
+
+    // The rider leaves without touching it and comes back later.
+    await page.clock.setFixedTime(LATER_IN_TEXAS);
+    await page.reload();
+
+    await expect(page.getByText('Draft restored from this device.')).toBeVisible({ timeout: 15_000 });
+    await expect(startTimeField).toHaveValue(RIDERS_LATER_CLOCK);
+  });
+
+  test('keeps a start time the rider set when the draft is restored', async ({
+    page,
+  }, testInfo: TestInfo) => {
+    await signIn(page);
+    createdVehicleId = await createRunVehicle(page, `PW Start Time Draft Edit ${runResourceId(testInfo)}`);
+
+    await openFreshForm(page);
+    const startTimeField = page.getByLabel('Start Time', { exact: true });
+    await expect(startTimeField).toHaveValue(RIDERS_CLOCK, { timeout: 15_000 });
+    await startTimeField.fill('09:15');
+    await expectDraftStartTime(page, '09:15', true);
+
+    await page.clock.setFixedTime(LATER_IN_TEXAS);
+    await page.reload();
+
+    await expect(page.getByText('Draft restored from this device.')).toBeVisible({ timeout: 15_000 });
+    await expect(startTimeField).toHaveValue('09:15');
   });
 });

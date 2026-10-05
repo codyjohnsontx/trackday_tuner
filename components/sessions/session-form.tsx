@@ -133,6 +133,13 @@ interface SessionDraft {
   layoutId?: string | null;
   date: string;
   startTime: string;
+  /**
+   * False while Start Time still holds the default the form seeded, so a restore
+   * seeds the current time again instead of the time the form was first opened.
+   * Absent on drafts saved before the default existed, whose start time was the
+   * rider's own.
+   */
+  startTimeEdited?: boolean;
   sessionNumber: string;
   conditions: SessionCondition | null;
   /** As typed, in `temperatureUnit`. Older drafts have no unit and were Celsius. */
@@ -234,6 +241,7 @@ export function SessionForm({
   // production) into the markup and hydrate over it. See lib/local-date.ts.
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('');
+  const [startTimeEdited, setStartTimeEdited] = useState(false);
   const [sessionNumber, setSessionNumber] = useState('');
   // Weather and tire condition start unanswered. Seeding them with a default
   // filed a claim the rider never made - see lib/session-answers.ts.
@@ -368,7 +376,7 @@ export function SessionForm({
     const draft = loadDraft<SessionDraft>(sessionDraftKey);
     if (!draft) {
       // Start Time defaults to when the session is logged and stays editable.
-      // A restored draft keeps whatever the rider left there, cleared included.
+      // A restored draft keeps a time the rider set, cleared included.
       const now = new Date();
       setDate(todayLocalDate(now));
       setStartTime(localTimeOfDay(now));
@@ -384,7 +392,9 @@ export function SessionForm({
     setTrackId(draft.trackId ?? null);
     setLayoutId(draft.layoutId ?? null);
     setDate(draft.date || todayLocalDate());
-    setStartTime(draft.startTime ?? '');
+    const draftStartTimeEdited = draft.startTimeEdited !== false;
+    setStartTimeEdited(draftStartTimeEdited);
+    setStartTime(draftStartTimeEdited ? (draft.startTime ?? '') : localTimeOfDay());
     setSessionNumber(draft.sessionNumber ?? '');
     setConditions(isSessionCondition(draft.conditions) ? draft.conditions : null);
     // A draft typed in one unit, reopened under another, is re-expressed rather
@@ -427,6 +437,7 @@ export function SessionForm({
       layoutId,
       date,
       startTime,
+      startTimeEdited,
       sessionNumber,
       conditions,
       ambientTemperature,
@@ -457,6 +468,7 @@ export function SessionForm({
     layoutId,
     date,
     startTime,
+    startTimeEdited,
     sessionNumber,
     conditions,
     ambientTemperature,
@@ -575,8 +587,13 @@ export function SessionForm({
     setSessionNumber(digits ? String(Math.max(1, Number(digits))) : '');
   }
 
+  function handleStartTimeChange(value: string) {
+    setStartTime(value);
+    setStartTimeEdited(true);
+  }
+
   function handleSetTimeNow() {
-    setStartTime(localTimeOfDay());
+    handleStartTimeChange(localTimeOfDay());
   }
 
   function handleCopyLastSetup() {
@@ -996,7 +1013,7 @@ export function SessionForm({
 
         <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
         <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
-          <Input label="Start Time" type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+          <Input label="Start Time" type="time" value={startTime} onChange={(event) => handleStartTimeChange(event.target.value)} />
           <Button
             type="button"
             variant="secondary"
