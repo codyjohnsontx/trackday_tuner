@@ -44,8 +44,9 @@
 --
 -- The refusal is an exception, so GoTrue rolls back the whole sign-in: no
 -- identity, no session, and the rider's account is exactly as it was. The
--- sign-in reaches the app's /auth/callback with no code, which already answers
--- `/login?error=auth_callback_failed`.
+-- sign-in reaches the app's /auth/callback with no code and
+-- `error_description=Error creating identity`, which it answers with
+-- `/login?error=provider_email_unverified`.
 --
 -- Manual linking (`linkIdentity`, a signed-in rider adding a provider to their
 -- own account) is refused the same way when the provider's claim is unverified.
