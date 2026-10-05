@@ -17,7 +17,7 @@ import {
 } from '@/lib/lap-times';
 import { createSession } from '@/lib/actions/sessions';
 import { clearDraft, loadDraft, saveDraft } from '@/lib/drafts';
-import { todayLocalDate } from '@/lib/local-date';
+import { localTimeOfDay, todayLocalDate } from '@/lib/local-date';
 import {
   MISSING_CONDITIONS_MESSAGE,
   SESSION_CONDITION_OPTIONS,
@@ -133,6 +133,13 @@ interface SessionDraft {
   layoutId?: string | null;
   date: string;
   startTime: string;
+  /**
+   * False while Start Time still holds the default the form seeded, so a restore
+   * seeds the current time again instead of the time the form was first opened.
+   * Absent on drafts saved before the default existed, whose start time was the
+   * rider's own.
+   */
+  startTimeEdited?: boolean;
   sessionNumber: string;
   conditions: SessionCondition | null;
   /** As typed, in `temperatureUnit`. Older drafts have no unit and were Celsius. */
@@ -229,11 +236,12 @@ export function SessionForm({
   // the whole time and this index becomes `aria-activedescendant`, which is what
   // a screen reader follows - see the combobox notes on the field below.
   const [activeTrackIndex, setActiveTrackIndex] = useState<number | null>(null);
-  // Seeded on mount rather than at render, because the rider's calendar day is
-  // only knowable in their browser: SSR would stamp the server's day (UTC in
+  // Seeded on mount rather than at render, because the rider's calendar day and
+  // clock are only knowable in their browser: SSR would stamp the server's day (UTC in
   // production) into the markup and hydrate over it. See lib/local-date.ts.
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('');
+  const [startTimeEdited, setStartTimeEdited] = useState(false);
   const [sessionNumber, setSessionNumber] = useState('');
   // Weather and tire condition start unanswered. Seeding them with a default
   // filed a claim the rider never made - see lib/session-answers.ts.
@@ -367,7 +375,11 @@ export function SessionForm({
   useEffect(() => {
     const draft = loadDraft<SessionDraft>(sessionDraftKey);
     if (!draft) {
-      setDate(todayLocalDate());
+      // Start Time defaults to when the session is logged and stays editable.
+      // A restored draft keeps a time the rider set, cleared included.
+      const now = new Date();
+      setDate(todayLocalDate(now));
+      setStartTime(localTimeOfDay(now));
       hydratedRef.current = true;
       return;
     }
@@ -380,7 +392,9 @@ export function SessionForm({
     setTrackId(draft.trackId ?? null);
     setLayoutId(draft.layoutId ?? null);
     setDate(draft.date || todayLocalDate());
-    setStartTime(draft.startTime ?? '');
+    const draftStartTimeEdited = draft.startTimeEdited !== false;
+    setStartTimeEdited(draftStartTimeEdited);
+    setStartTime(draftStartTimeEdited ? (draft.startTime ?? '') : localTimeOfDay());
     setSessionNumber(draft.sessionNumber ?? '');
     setConditions(isSessionCondition(draft.conditions) ? draft.conditions : null);
     // A draft typed in one unit, reopened under another, is re-expressed rather
@@ -423,6 +437,7 @@ export function SessionForm({
       layoutId,
       date,
       startTime,
+      startTimeEdited,
       sessionNumber,
       conditions,
       ambientTemperature,
@@ -453,6 +468,7 @@ export function SessionForm({
     layoutId,
     date,
     startTime,
+    startTimeEdited,
     sessionNumber,
     conditions,
     ambientTemperature,
@@ -571,11 +587,13 @@ export function SessionForm({
     setSessionNumber(digits ? String(Math.max(1, Number(digits))) : '');
   }
 
+  function handleStartTimeChange(value: string) {
+    setStartTime(value);
+    setStartTimeEdited(true);
+  }
+
   function handleSetTimeNow() {
-    const now = new Date();
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    setStartTime(`${hours}:${minutes}`);
+    handleStartTimeChange(localTimeOfDay());
   }
 
   function handleCopyLastSetup() {
@@ -995,7 +1013,7 @@ export function SessionForm({
 
         <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
         <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
-          <Input label="Start Time" type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+          <Input label="Start Time" type="time" value={startTime} onChange={(event) => handleStartTimeChange(event.target.value)} />
           <Button
             type="button"
             variant="secondary"
