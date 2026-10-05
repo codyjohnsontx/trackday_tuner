@@ -122,7 +122,7 @@ export function hasDrift(result) {
 export function formatDriftReport(result) {
   const out = [];
   if (!hasDrift(result)) {
-    out.push('No drift: the hosted inventory matches the reference line for line.');
+    out.push('No drift: hosted matches the reference in everything the migrations control.');
   } else {
     out.push(
       `Drift: ${result.missingFromHosted.length} line(s) the migrations make that hosted does not have, ` +

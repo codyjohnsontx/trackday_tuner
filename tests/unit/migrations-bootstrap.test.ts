@@ -309,7 +309,8 @@ function executeViolations(migrations: Migration[]): string[] {
 // A grant, revoke or drop naming a function, with its argument list when it has
 // one. Without a list it names every function of that name, which is what
 // Postgres does with it when the name is unique.
-const DECIDE_ON_FUNCTION = /(?:grant|revoke)\s+[^;]*?\son\s+function\s+(?:public\.)?(\w+)\b(?:\s*\(([^)]*)\))?/gi;
+const DECIDE_ON_FUNCTION =
+  /(?:grant|revoke)\s+[^;]*?\son\s+function\s+(?:public\.)?(\w+)\b(?:\s*\(([^)]*)\))?\s+(?:to|from)\s+([^;]+)/gi;
 const DROP_FUNCTION = /drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?(\w+)\b(?:\s*\(([^)]*)\))?/gi;
 
 // A function is its name and its argument types: each overload is a separate
@@ -386,10 +387,14 @@ function createdArgs(statement: string): string {
   return '';
 }
 
-function namedFunctions(sql: string, pattern: RegExp): { name: string; args: string | undefined }[] {
-  return Array.from(sql.matchAll(pattern), ([, name, args]) => ({
+function namedFunctions(
+  sql: string,
+  pattern: RegExp,
+): { name: string; args: string | undefined; roles: string | undefined }[] {
+  return Array.from(sql.matchAll(pattern), ([, name, args, roles]) => ({
     name,
     args: args === undefined ? undefined : identityArgs(args),
+    roles,
   }));
 }
 
@@ -410,6 +415,10 @@ function names(target: { name: string; args: string | undefined }, fn: { name: s
 // function is gone, so creating it again starts it undecided too, while
 // `create or replace` over a live one keeps the privileges it had.
 //
+// The creating migration decides it only by naming `public`, as the definer
+// check above requires: a grant to `authenticated` on a fresh function leaves
+// public's default execute in place, and so does a revoke from `anon` alone.
+//
 // Only a function some migration decides at all is judged, so `set_updated_at`,
 // which no migration grants or revokes and none needs to, is out of it. A later
 // migration correcting a decision the creating migration already made is fine:
@@ -428,7 +437,8 @@ function deferredExecuteDecisions(migrations: Migration[]): string[] {
       const args = createdArgs(statement);
       const key = `${name}(${args})`;
       if (created.has(key)) continue;
-      created.set(key, { name, args, file, decided: decidedHere.some((target) => names(target, { name, args })) });
+      const decided = decidedHere.some((target) => names(target, { name, args }) && namesPublic(target.roles));
+      created.set(key, { name, args, file, decided });
     }
 
     for (const [key, fn] of created) {
@@ -1324,6 +1334,23 @@ describe('the deferred-execute check, against migrations written wrongly on purp
 
     expect(deferredExecuteDecisions(fixtures)).toEqual([
       'alias_decided_later.sql: decides execute on public.cap_rider_sessions(uuid, integer, timestamp with time zone, boolean, character varying), which alias_recreated_without_revoke.sql creates without deciding it',
+    ]);
+  });
+
+  it('catches a deferral after a creating migration that never names public', () => {
+    // A grant to authenticated on a null proacl writes Postgres's default in
+    // first, so public keeps execute; revoking from anon by name leaves it too.
+    expect(
+      deferredExecuteDecisions(loadFixtures('invoker_granted_to_authenticated_only.sql', 'execute_decided_later.sql')),
+    ).toEqual([
+      'execute_decided_later.sql: decides execute on public.save_rider_note(uuid, text), which invoker_granted_to_authenticated_only.sql creates without deciding it',
+    ]);
+    expect(
+      deferredExecuteDecisions(
+        loadFixtures('definer_revoked_from_anon_only.sql', 'execute_decided_later_on_definer.sql'),
+      ),
+    ).toEqual([
+      'execute_decided_later_on_definer.sql: decides execute on public.promote_rider(uuid), which definer_revoked_from_anon_only.sql creates without deciding it',
     ]);
   });
 
