@@ -13,6 +13,8 @@ import type { SagEntry } from '@/types';
 
 interface SagCalculatorProps {
   initialEntries: SagEntry[];
+  /** The demo is read-only: the calculator works, but nothing is offered to save. */
+  demoMode?: boolean;
 }
 
 const emptySide: SagSectionValues = {
@@ -60,7 +62,7 @@ function formStateKey(
 
 const EMPTY_FORM_STATE_KEY = formStateKey(emptySide, emptySide, '', '');
 
-export function SagCalculator({ initialEntries }: SagCalculatorProps) {
+export function SagCalculator({ initialEntries, demoMode = false }: SagCalculatorProps) {
   const draftKey = 'sag_calculator';
   const [entries, setEntries] = useState<SagEntry[]>(initialEntries);
   const [selectedId, setSelectedIdState] = useState<string | null>(null);
@@ -94,6 +96,7 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
   const [, startHistoryTransition] = useTransition();
 
   useEffect(() => {
+    if (demoMode) return;
     const draft = loadDraft<{
       front: SagSectionValues;
       rear: SagSectionValues;
@@ -109,11 +112,12 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
     setLabel(draft.label ?? '');
     setNotes(draft.notes ?? '');
     setDraftMessage('Draft restored from this device.');
-  }, []);
+  }, [demoMode]);
 
   useEffect(() => {
+    if (demoMode) return;
     saveDraft(draftKey, { front, rear, label, notes });
-  }, [front, rear, label, notes]);
+  }, [demoMode, front, rear, label, notes]);
 
   function resetAll() {
     setFront(emptySide);
@@ -125,7 +129,7 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
     setErrorMessage('');
     setSuccessMessage('');
     setDraftMessage('');
-    clearDraft(draftKey);
+    if (!demoMode) clearDraft(draftKey);
   }
 
   function loadEntry(entry: SagEntry) {
@@ -217,53 +221,67 @@ export function SagCalculator({ initialEntries }: SagCalculatorProps) {
       <SagSection title="Front" values={front} onChange={setFront} />
       <SagSection title="Rear" values={rear} onChange={setRear} />
 
-      <section className="space-y-3 rounded-card bg-surface p-4">
-        <h2 className="text-base font-semibold text-ink">Save Entry</h2>
+      {demoMode ? (
+        <section className="space-y-3 rounded-card bg-surface p-4">
+          <h2 className="text-base font-semibold text-ink">Read-only demo</h2>
+          <p className="text-sm text-ink-dim">
+            Demo mode is read-only. Start a real account to save sag entries.
+          </p>
+          <Button type="button" variant="secondary" fullWidth onClick={resetAll}>
+            Reset
+          </Button>
+        </section>
+      ) : (
+        <>
+          <section className="space-y-3 rounded-card bg-surface p-4">
+            <h2 className="text-base font-semibold text-ink">Save Entry</h2>
 
-        <form className="space-y-3" onSubmit={handleSave}>
-          <Input
-            label="Label (optional)"
-            type="text"
-            placeholder="e.g. Baseline, New Springs"
-            value={label}
-            onChange={(event) => setLabel(event.target.value)}
+            <form className="space-y-3" onSubmit={handleSave}>
+              <Input
+                label="Label (optional)"
+                type="text"
+                placeholder="e.g. Baseline, New Springs"
+                value={label}
+                onChange={(event) => setLabel(event.target.value)}
+              />
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-ink">Notes (optional)</span>
+                <textarea
+                  className="w-full rounded-row bg-surface-2 px-4 py-3 text-base text-ink placeholder:text-ink-faint"
+                  rows={3}
+                  placeholder="Track temp, tire setup, spring preload notes..."
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                />
+              </label>
+
+              {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
+              {successMessage ? <p className="text-sm text-faster">{successMessage}</p> : null}
+              {draftMessage ? <p className="text-sm text-faster">{draftMessage}</p> : null}
+
+              <div className="grid grid-cols-2 gap-2">
+                <Button type="submit" fullWidth disabled={isPending}>
+                  {isPending ? 'Saving...' : 'Save'}
+                </Button>
+                <Button type="button" variant="secondary" fullWidth onClick={resetAll}>
+                  Reset
+                </Button>
+              </div>
+            </form>
+          </section>
+
+          <SagHistoryList
+            entries={entries}
+            selectedId={selectedId}
+            hasUnsavedWork={formStateKey(front, rear, label, notes) !== committedKey}
+            onSelect={loadEntry}
+            onDelete={removeEntry}
+            deletingId={deletingId}
+            errorMessage={historyError}
           />
-
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-ink">Notes (optional)</span>
-            <textarea
-              className="w-full rounded-row bg-surface-2 px-4 py-3 text-base text-ink placeholder:text-ink-faint"
-              rows={3}
-              placeholder="Track temp, tire setup, spring preload notes..."
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-            />
-          </label>
-
-          {errorMessage ? <p className="text-sm text-slower">{errorMessage}</p> : null}
-          {successMessage ? <p className="text-sm text-faster">{successMessage}</p> : null}
-          {draftMessage ? <p className="text-sm text-faster">{draftMessage}</p> : null}
-
-          <div className="grid grid-cols-2 gap-2">
-            <Button type="submit" fullWidth disabled={isPending}>
-              {isPending ? 'Saving...' : 'Save'}
-            </Button>
-            <Button type="button" variant="secondary" fullWidth onClick={resetAll}>
-              Reset
-            </Button>
-          </div>
-        </form>
-      </section>
-
-      <SagHistoryList
-        entries={entries}
-        selectedId={selectedId}
-        hasUnsavedWork={formStateKey(front, rear, label, notes) !== committedKey}
-        onSelect={loadEntry}
-        onDelete={removeEntry}
-        deletingId={deletingId}
-        errorMessage={historyError}
-      />
+        </>
+      )}
     </div>
   );
 }
