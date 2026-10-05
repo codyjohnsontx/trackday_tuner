@@ -14,13 +14,16 @@ import { test, expect } from '@playwright/test';
  * for its reference, which targets the stack `supabase/config.toml` names rather
  * than the URL this suite was handed. In CI that is the one stack.
  *
- * The one write is a probe function standing in for a migration the hosted
- * project never received, dropped again however the test ends.
+ * The writes are a probe function standing in for a migration the hosted
+ * project never received, and a role the inventory is run as to show it reads
+ * no application row and writes nothing; both are dropped however the test ends.
  */
 
 const ROOT = path.resolve(__dirname, '../..');
 const INVENTORY = path.join(ROOT, 'scripts/sql/schema-inventory.sql');
 const PROBE = 'schema_drift_probe';
+const READER = 'schema_inventory_reader';
+const READER_PASSWORD = 'schema-inventory-reader';
 // The installed CLI rather than `npx`, which spends seconds resolving it per call.
 const SUPABASE = path.join(ROOT, 'node_modules/.bin/supabase');
 
@@ -35,6 +38,14 @@ function supabaseQuery(...args: string[]): string {
   });
   if (result.status !== 0) throw new Error(`supabase db query failed: ${result.stderr}`);
   return result.stdout;
+}
+
+function localDbUrl(): URL {
+  const result = spawnSync(SUPABASE, ['status', '-o', 'env'], { cwd: ROOT, encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(`supabase status failed: ${result.stderr}`);
+  const match = /^DB_URL="([^"]+)"$/m.exec(result.stdout);
+  if (!match) throw new Error('supabase status printed no DB_URL');
+  return new URL(match[1]);
 }
 
 function inventoryCsv(): string {
@@ -65,6 +76,46 @@ test('the inventory runs as one statement, and runs the same twice', () => {
     'TABLE public.ai_replay_export kind=view owner=postgres options=security_invoker=true',
   ]) {
     expect(lines.some((line) => line.startsWith(prefix)), prefix).toBe(true);
+  }
+});
+
+test('the inventory reads no application row and writes nothing', () => {
+  // BYPASSRLS so the bucket rows are visible as they are to the SQL editor; the
+  // only table it may read is the bucket configuration columns, and every
+  // transaction it opens is read-only.
+  supabaseQuery(`create role ${READER} login bypassrls password '${READER_PASSWORD}'`);
+
+  try {
+    supabaseQuery(`alter role ${READER} set default_transaction_read_only = on`);
+    supabaseQuery(`grant usage on schema storage to ${READER}`);
+    supabaseQuery(`grant select (id, public, file_size_limit, allowed_mime_types) on storage.buckets to ${READER}`);
+
+    // Taken after the grants, which the inventory prints like any other.
+    const asPostgres = inventoryCsv();
+    const url = localDbUrl();
+    url.username = READER;
+    url.password = READER_PASSWORD;
+    const asReader = (...args: string[]) =>
+      spawnSync(SUPABASE, ['db', 'query', '--db-url', url.toString(), ...args], { cwd: ROOT, encoding: 'utf8' });
+
+    const inventory = asReader('-f', INVENTORY, '-o', 'csv');
+    expect(inventory.status, inventory.stderr).toBe(0);
+    expect(inventory.stdout).toBe(asPostgres);
+
+    // Which is only evidence because the role really cannot read a rider row or
+    // write anything.
+    for (const table of ['public.profiles', 'public.sessions', 'storage.objects']) {
+      const read = asReader(`select 1 from ${table} limit 1`);
+      expect(read.status, table).not.toBe(0);
+      expect(read.stdout + read.stderr, table).toContain(`permission denied for table ${table.split('.')[1]}`);
+    }
+    const write = asReader(`create function public.${PROBE}() returns integer language sql as 'select 1'`);
+    expect(write.status).not.toBe(0);
+    expect(write.stdout + write.stderr).toContain('read-only transaction');
+  } finally {
+    supabaseQuery(`revoke select on storage.buckets from ${READER}`);
+    supabaseQuery(`revoke usage on schema storage from ${READER}`);
+    supabaseQuery(`drop role if exists ${READER}`);
   }
 });
 

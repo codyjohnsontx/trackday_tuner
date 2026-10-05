@@ -156,8 +156,8 @@ lines as (
   select format('FUNCGRANT   %I.%I(%s)  %s', n.nspname, p.proname,
                 pg_get_function_identity_arguments(p.oid),
                 case when p.proacl is null then '<default acl: EXECUTE to PUBLIC>'
-                     else (select string_agg(format('%s=%s', coalesce(nullif(pg_get_userbyid(g.grantee), ''), 'PUBLIC'), g.privilege_type),
-                                             ', ' order by pg_get_userbyid(g.grantee), g.privilege_type)
+                     else (select string_agg(format('%s=%s', case when g.grantee = 0 then 'PUBLIC' else pg_get_userbyid(g.grantee) end, g.privilege_type),
+                                             ', ' order by case when g.grantee = 0 then 'PUBLIC' else pg_get_userbyid(g.grantee) end, g.privilege_type)
                            from aclexplode(p.proacl) g)
                 end)
   from pg_proc p

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -139,32 +139,5 @@ describe('npm run db:drift', () => {
 
   it('exits 2 with usage when no hosted file is given', () => {
     expect(run().status).toBe(2);
-  });
-});
-
-describe('scripts/sql/schema-inventory.sql', () => {
-  // The owner pastes this into the hosted SQL editor, which runs as postgres, so
-  // the promise that it changes nothing and reads no rider row has to be true of
-  // the text. That it runs, and runs the same twice, is the real-database spec.
-  const sql = readFileSync(INVENTORY_SQL_PATH, 'utf8')
-    .replace(/--[^\n]*/g, ' ')
-    .replace(/'(?:[^']|'')*'/g, "''");
-
-  it('is one statement', () => {
-    expect(sql.trim().replace(/;\s*$/, '')).not.toContain(';');
-  });
-
-  it('writes nothing and changes no role or setting', () => {
-    expect(sql).not.toMatch(
-      /\b(?:insert|update|delete|truncate|create|alter|drop|grant|revoke|copy|set|reset|notify|call|do|lock|vacuum|analyze)\b/i,
-    );
-  });
-
-  it('reads catalogues and bucket configuration, never an application table', () => {
-    const sources = Array.from(sql.matchAll(/\b(?:from|join)\s+(?:lateral\s+)?([\w.]+)/gi), (match) => match[1].toLowerCase());
-    const allowed = /^(?:pg_\w+|storage\.buckets|scoped_ns|scoped_rel|lines|aclexplode|unnest)$/;
-
-    expect(sources.length).toBeGreaterThan(0);
-    expect(sources.filter((source) => !allowed.test(source))).toEqual([]);
   });
 });
