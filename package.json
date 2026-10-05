@@ -19,6 +19,7 @@
     "db:push": "supabase db push",
     "db:new": "supabase migration new",
     "db:audit": "node scripts/build-migration-audit.mjs",
+    "db:drift": "node scripts/schema-drift.mjs",
     "analyze": "ANALYZE=true next build",
     "check:agent-docs": "node scripts/check-agent-docs.mjs",
     "ai:requests": "node scripts/inspect-ai-requests.mjs",

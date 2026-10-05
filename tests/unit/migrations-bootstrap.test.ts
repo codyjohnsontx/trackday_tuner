@@ -44,6 +44,11 @@ import { describe, expect, it } from 'vitest';
 //     order-independent, so `security definer` after the body declares the same
 //     function, and a name with no `public.` qualifier lands in public via
 //     search_path and is the same function too
+//   - a function of any security whose execute is decided in a later migration
+//     than the one that first creates it. A database holding the first and not
+//     the second has the function at Postgres's default, execute to public, and
+//     neither file says so to whoever applies one by hand. This is how the hosted
+//     project lost the save_session_outcome grant; see deferredExecuteDecisions
 //
 // WHAT IT DOES NOT CATCH, because a guard assumed to cover more than it does is
 // worse than none: whether a migration actually runs. This reads SQL as text, so a
@@ -65,10 +70,11 @@ import { describe, expect, it } from 'vitest';
 // the triggers that name it rather than called by a client; and 20260719001100
 // revokes `save_session_outcome` and `record_race_engineer_memory_feedback` in a
 // *later* migration than the one that creates them, which the same-migration rule
-// below would flag. That rule is deliberately strict for `security definer`,
-// where the gap between the two migrations is a window in which the function is
-// world-executable, and it is why widening this check to every function would
-// fail main today. Nor does it see a missing table named anywhere other
+// below would flag (the deferral check pins those two as the only exceptions).
+// That rule is deliberately strict for `security definer`, where the gap between
+// the two migrations is a window in which the function is world-executable, and
+// it is why widening this check to every function would fail main today. Nor
+// does it see a missing table named anywhere other
 // than a foreign key: a policy or function body reading `from public.X` or
 // `insert into public.X` aborts `supabase start` exactly the way the missing
 // profiles table did, and passes here, because matching those would also fire on
@@ -298,6 +304,150 @@ function executeViolations(migrations: Migration[]): string[] {
     ...definerFunctionsWithoutAnExecuteDecision(migrations),
     ...schemaWideExecuteGrants(migrations),
   ];
+}
+
+// A grant, revoke or drop naming a function, with its argument list when it has
+// one. Without a list it names every function of that name, which is what
+// Postgres does with it when the name is unique.
+const DECIDE_ON_FUNCTION =
+  /(?:grant|revoke)\s+[^;]*?\son\s+function\s+(?:public\.)?(\w+)\b(?:\s*\(([^)]*)\))?\s+(?:to|from)\s+([^;]+)/gi;
+const DROP_FUNCTION = /drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?(\w+)\b(?:\s*\(([^)]*)\))?/gi;
+
+// A function is its name and its argument types: each overload is a separate
+// function with its own proacl, null until something grants or revokes on it.
+// Argument names, modes and defaults are not part of that, and OUT arguments are
+// not either. A type whose name is several words keeps its first one, and every
+// spelling Postgres resolves to one type - an alias, a schema qualifier, a
+// typmod it ignores in a signature - is written one way, so `f(int)` names the
+// function `f(p integer)` created.
+const MULTI_WORD_TYPE_START = /^(?:(?:pg_catalog|public)\.)?(?:double|timestamp|time|character|bit|interval)(?:\(|$)/i;
+
+const TYPE_ALIASES: Record<string, string> = {
+  int: 'integer',
+  int4: 'integer',
+  int2: 'smallint',
+  int8: 'bigint',
+  bool: 'boolean',
+  float: 'double precision',
+  float8: 'double precision',
+  float4: 'real',
+  decimal: 'numeric',
+  char: 'character',
+  bpchar: 'character',
+  varchar: 'character varying',
+  timestamp: 'timestamp without time zone',
+  timestamptz: 'timestamp with time zone',
+  time: 'time without time zone',
+  timetz: 'time with time zone',
+};
+
+function canonicalType(type: string): string {
+  const arrayAt = type.search(/\s*\[/);
+  const base = (arrayAt === -1 ? type : type.slice(0, arrayAt))
+    .toLowerCase()
+    .replace(/\s*\([^)]*\)?/g, '')
+    .replace(/^(?:pg_catalog|public)\./, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const dimensions = arrayAt === -1 ? '' : '[]'.repeat((type.slice(arrayAt).match(/\[/g) ?? []).length);
+  return (TYPE_ALIASES[base] ?? base) + dimensions;
+}
+
+function topLevelParts(list: string): string[] {
+  const parts = [''];
+  let depth = 0;
+  for (const char of list) {
+    if (char === '(') depth += 1;
+    if (char === ')') depth -= 1;
+    if (char === ',' && depth === 0) parts.push('');
+    else parts[parts.length - 1] += char;
+  }
+  return parts;
+}
+
+function identityArgs(list: string): string {
+  return topLevelParts(list)
+    .map((arg) => arg.replace(/\s+(?:default\b|=)[\s\S]*$/i, '').trim().split(/\s+/))
+    .filter((words) => words[0] !== '' && !/^out$/i.test(words[0]))
+    .map((words) => {
+      const typed = /^(?:in|inout|variadic)$/i.test(words[0]) ? words.slice(1) : words;
+      const named = typed.length > 1 && !MULTI_WORD_TYPE_START.test(typed[0]);
+      return canonicalType((named ? typed.slice(1) : typed).join(' '));
+    })
+    .join(', ');
+}
+
+function createdArgs(statement: string): string {
+  const open = statement.indexOf('(');
+  let depth = 0;
+  for (let index = open; index < statement.length; index += 1) {
+    if (statement[index] === '(') depth += 1;
+    if (statement[index] === ')' && (depth -= 1) === 0) return identityArgs(statement.slice(open + 1, index));
+  }
+  return '';
+}
+
+function namedFunctions(
+  sql: string,
+  pattern: RegExp,
+): { name: string; args: string | undefined; roles: string | undefined }[] {
+  return Array.from(sql.matchAll(pattern), ([, name, args, roles]) => ({
+    name,
+    args: args === undefined ? undefined : identityArgs(args),
+    roles,
+  }));
+}
+
+function names(target: { name: string; args: string | undefined }, fn: { name: string; args: string }): boolean {
+  return target.name === fn.name && (target.args === undefined || target.args === fn.args);
+}
+
+// A function whose execute privilege is decided in a later migration than the one
+// that creates it, whatever its security. A database that has the creating
+// migration and not the later one holds the function with Postgres's default -
+// execute to public - and nothing in it says so. That is how the hosted project
+// came to have no grant on save_session_outcome: 20260719001100 carried the pair
+// on the belief that 20260716000800 was already applied there, the belief was
+// wrong, and the hand-applied catch-up never knew a later file held part of it.
+//
+// It is judged per overload, because a new signature is how this repository
+// changes a function's arguments and each one starts undecided. A dropped
+// function is gone, so creating it again starts it undecided too, while
+// `create or replace` over a live one keeps the privileges it had.
+//
+// The creating migration decides it only by naming `public`, as the definer
+// check above requires: a grant to `authenticated` on a fresh function leaves
+// public's default execute in place, and so does a revoke from `anon` alone.
+//
+// Only a function some migration decides at all is judged, so `set_updated_at`,
+// which no migration grants or revokes and none needs to, is out of it. A later
+// migration correcting a decision the creating migration already made is fine:
+// the creating migration alone leaves the function decided.
+function deferredExecuteDecisions(migrations: Migration[]): string[] {
+  const created = new Map<string, { name: string; args: string; file: string; decided: boolean }>();
+  const violations: string[] = [];
+
+  for (const { file, sql } of migrations) {
+    const decidedHere = namedFunctions(sql, DECIDE_ON_FUNCTION);
+
+    for (const dropped of namedFunctions(sql, DROP_FUNCTION)) {
+      for (const [key, fn] of created) if (names(dropped, fn)) created.delete(key);
+    }
+    for (const { name, statement } of functionStatements(sql)) {
+      const args = createdArgs(statement);
+      const key = `${name}(${args})`;
+      if (created.has(key)) continue;
+      const decided = decidedHere.some((target) => names(target, { name, args }) && namesPublic(target.roles));
+      created.set(key, { name, args, file, decided });
+    }
+
+    for (const [key, fn] of created) {
+      if (fn.decided || fn.file === file || !decidedHere.some((target) => names(target, fn))) continue;
+      violations.push(`${file}: decides execute on public.${key}, which ${fn.file} creates without deciding it`);
+    }
+  }
+
+  return violations;
 }
 
 // Every install and removal of an after-insert trigger on auth.users, matched by
@@ -833,6 +983,17 @@ describe('supabase migrations bootstrap a database from nothing', () => {
       /alter\s+default\s+privileges\s+in\s+schema\s+public\s+revoke\s+(?:execute|all)\s+on\s+(?:routines|functions)\s+from\s+public/,
     );
   });
+
+  it('decides execute on a function in the migration that creates it', () => {
+    // These two predate the check and are applied, so they cannot be moved into
+    // the files that create them. Pinned exactly, so a new deferral fails and a
+    // listed one cannot quietly stop being what the list says it is. A database
+    // given 20260716000800 by hand needs 20260719001100's pair for it by hand too.
+    expect(deferredExecuteDecisions(migrations)).toEqual([
+      '20260719001100_grant_data_api_access.sql: decides execute on public.record_race_engineer_memory_feedback(uuid, uuid, uuid, uuid, text, date, text, text[], text), which 20260422000400_add_adaptive_race_engineer.sql creates without deciding it',
+      '20260719001100_grant_data_api_access.sql: decides execute on public.save_session_outcome(uuid, uuid, uuid, uuid, text, smallint, text[], text, smallint), which 20260716000800_add_session_outcomes.sql creates without deciding it',
+    ]);
+  });
 });
 
 // The tests above pass against a repository that got it right, and would pass just
@@ -1115,6 +1276,94 @@ describe('the execute check, against migrations written wrongly on purpose', () 
       ]);
     });
   }
+});
+
+describe('the deferred-execute check, against migrations written wrongly on purpose', () => {
+  it('catches a function whose execute is decided only in a later migration', () => {
+    const fixtures = loadFixtures('invoker_without_revoke.sql', 'execute_decided_later.sql');
+
+    expect(deferredExecuteDecisions(fixtures)).toEqual([
+      'execute_decided_later.sql: decides execute on public.save_rider_note(uuid, text), which invoker_without_revoke.sql creates without deciding it',
+    ]);
+  });
+
+  it('catches the same deferral on a security definer function', () => {
+    const fixtures = loadFixtures('definer_without_revoke.sql', 'execute_decided_later_on_definer.sql');
+
+    expect(deferredExecuteDecisions(fixtures)).toEqual([
+      'execute_decided_later_on_definer.sql: decides execute on public.promote_rider(uuid), which definer_without_revoke.sql creates without deciding it',
+    ]);
+  });
+
+  it('catches a new overload whose execute is decided only in a later migration', () => {
+    const fixtures = loadFixtures('definer_with_revoke.sql', 'overload_without_revoke.sql', 'overload_decided_later.sql');
+
+    expect(deferredExecuteDecisions(fixtures)).toEqual([
+      'overload_decided_later.sql: decides execute on public.promote_rider(uuid, text), which overload_without_revoke.sql creates without deciding it',
+    ]);
+  });
+
+  it('catches a function dropped and created again, decided only in a later migration', () => {
+    const fixtures = loadFixtures('definer_with_revoke.sql', 'recreated_without_revoke.sql', 'execute_corrected_later.sql');
+
+    expect(deferredExecuteDecisions(fixtures)).toEqual([
+      'execute_corrected_later.sql: decides execute on public.promote_rider(uuid), which recreated_without_revoke.sql creates without deciding it',
+    ]);
+  });
+
+  it('catches a deferral spelled with different names for the same types', () => {
+    const fixtures = loadFixtures('alias_created_without_revoke.sql', 'alias_decided_later.sql');
+
+    expect(deferredExecuteDecisions(fixtures)).toEqual([
+      'alias_decided_later.sql: decides execute on public.cap_rider_sessions(uuid, integer, timestamp with time zone, boolean, character varying), which alias_created_without_revoke.sql creates without deciding it',
+    ]);
+  });
+
+  it('accepts a creating migration that decides execute under other spellings of its types', () => {
+    const fixtures = loadFixtures('alias_created_with_revoke.sql', 'alias_decided_later.sql');
+
+    expect(deferredExecuteDecisions(fixtures)).toEqual([]);
+  });
+
+  it('catches a recreation after a drop spelled with other names for the same types', () => {
+    const fixtures = loadFixtures(
+      'alias_created_with_revoke.sql',
+      'alias_recreated_without_revoke.sql',
+      'alias_decided_later.sql',
+    );
+
+    expect(deferredExecuteDecisions(fixtures)).toEqual([
+      'alias_decided_later.sql: decides execute on public.cap_rider_sessions(uuid, integer, timestamp with time zone, boolean, character varying), which alias_recreated_without_revoke.sql creates without deciding it',
+    ]);
+  });
+
+  it('catches a deferral after a creating migration that never names public', () => {
+    // A grant to authenticated on a null proacl writes Postgres's default in
+    // first, so public keeps execute; revoking from anon by name leaves it too.
+    expect(
+      deferredExecuteDecisions(loadFixtures('invoker_granted_to_authenticated_only.sql', 'execute_decided_later.sql')),
+    ).toEqual([
+      'execute_decided_later.sql: decides execute on public.save_rider_note(uuid, text), which invoker_granted_to_authenticated_only.sql creates without deciding it',
+    ]);
+    expect(
+      deferredExecuteDecisions(
+        loadFixtures('definer_revoked_from_anon_only.sql', 'execute_decided_later_on_definer.sql'),
+      ),
+    ).toEqual([
+      'execute_decided_later_on_definer.sql: decides execute on public.promote_rider(uuid), which definer_revoked_from_anon_only.sql creates without deciding it',
+    ]);
+  });
+
+  it('accepts a later migration correcting a decision the creating one made', () => {
+    const fixtures = loadFixtures('definer_with_revoke.sql', 'execute_corrected_later.sql');
+
+    expect(deferredExecuteDecisions(fixtures)).toEqual([]);
+  });
+
+  it('leaves a function no migration ever decides alone', () => {
+    // set_updated_at's shape: reached through triggers, granted nothing, needing nothing.
+    expect(deferredExecuteDecisions(loadFixtures('invoker_without_revoke.sql'))).toEqual([]);
+  });
 });
 
 describe('the entitlement-write check, against migrations written wrongly on purpose', () => {
