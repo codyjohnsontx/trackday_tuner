@@ -21,6 +21,8 @@ test.describe('demo is read-only', () => {
 
     await expect(page.getByText('You are viewing sample data.', { exact: false })).toBeVisible();
     await expect(page.getByText('Demo mode is read-only. Start a real account to save sag entries.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Read-only demo' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Save Entry' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
     await expect(page.getByLabel('Label (optional)')).toHaveCount(0);
 

@@ -221,7 +221,7 @@ export function SagCalculator({ initialEntries, demoMode = false }: SagCalculato
 
       {demoMode ? (
         <section className="space-y-3 rounded-card bg-surface p-4">
-          <h2 className="text-base font-semibold text-ink">Save Entry</h2>
+          <h2 className="text-base font-semibold text-ink">Read-only demo</h2>
           <p className="text-sm text-ink-dim">
             Demo mode is read-only. Start a real account to save sag entries.
           </p>
