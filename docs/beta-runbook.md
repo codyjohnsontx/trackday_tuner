@@ -2305,8 +2305,10 @@ begin;
 --   a rider sends can move it: it is not in the columns `authenticated` may
 --   insert or update, and a trigger pins it on insert and keeps it on every
 --   update, so even the service role cannot date an entry ahead or behind.
---   `logged_by` is pinned the same way. A buyer reads a back-filled entry
---   labelled as back-filled, worked out from these two dates.
+--   `logged_by` is the rider's own id on a rider's insert and is kept on every
+--   update; the service role, which has no rider, supplies it on insert. A buyer
+--   reads a back-filled entry labelled as back-filled, worked out from these two
+--   dates.
 -- - EDITS ARE KEPT. Every change to an entry, its items or its parts writes a
 --   snapshot to `service_entry_revisions`, from a trigger, so a write through
 --   PostgREST cannot skip the record. A rider reads their history and writes
@@ -2315,8 +2317,9 @@ begin;
 --   revision 1, not three, so "edited N times" counts edits a rider made.
 -- - DELETE IS SOFT. A rider removes an entry by setting `deleted_at`, which
 --   writes a `deleted` revision; `delete` is granted to no API role, the service
---   role included, so an entry is hard-deleted only by its vehicle's cascade. The
---   buyer's view will show "N entries removed by the owner" without the content.
+--   role included, so an entry is hard-deleted only by a cascade: its vehicle's,
+--   or its book's, which the service role can still delete. The buyer's view will
+--   show "N entries removed by the owner" without the content.
 -- - THE RIDER SHAPES THE BOOK. `service_book_fields` is the entry layout a rider
 --   adjusts - built-in fields switched off, custom fields added - and custom
 --   values live in `service_entries.custom_fields`, keyed by field id.
@@ -2337,7 +2340,9 @@ begin;
 -- moved between riders; the buyer gets a new book on their own vehicle row,
 -- `transferred_from_book_id` and `transferred_at` say where it came from, a
 -- copied entry carries `copied_from_entry_id`, and a reading carried over is
--- `source = 'transfer'`. None of those is writable by a rider. For the copy to
+-- `source = 'transfer'`. None of those is writable by a rider; on
+-- `service_books` that is the grants alone, with no pin, so the service role
+-- can set a book's transfer origin. For the copy to
 -- keep the seller's dates honest, the pins below apply to the Data API roles
 -- only: a function running as the owner (the transfer's `security definer`
 -- copy) may carry `logged_at`, `logged_by` and `read_at` forward unchanged.
@@ -2645,6 +2650,9 @@ create or replace trigger service_items_set_updated_at
 -- entry's current revision: a new row for the first write of a transaction, the
 -- same row refreshed for every later one, so the revision holds the state the
 -- transaction committed. A transaction that created the entry stays `created`.
+-- Its kind is the transaction's net change, read against the revision before it
+-- rather than the row event: a delete followed by an item edit is `deleted`, and
+-- a delete undone in the same transaction is `edited`.
 --
 -- security definer because it writes a table no API role may write. It cannot
 -- be called directly - it returns `trigger` - but the execute decision is
@@ -2657,16 +2665,27 @@ set search_path = ''
 as $$
 declare
   v_kind text;
+  v_was_deleted boolean;
   v_snapshot jsonb;
 begin
   if tg_op = 'INSERT' then
     v_kind := 'created';
-  elsif old.deleted_at is null and new.deleted_at is not null then
-    v_kind := 'deleted';
-  elsif old.deleted_at is not null and new.deleted_at is null then
-    v_kind := 'restored';
   else
-    v_kind := 'edited';
+    select r.snapshot ->> 'deleted_at' is not null
+      into v_was_deleted
+      from public.service_entry_revisions r
+     where r.entry_id = new.id
+       and r.transaction_id <> txid_current()
+     order by r.revision desc
+     limit 1;
+
+    if not v_was_deleted and new.deleted_at is not null then
+      v_kind := 'deleted';
+    elsif v_was_deleted and new.deleted_at is null then
+      v_kind := 'restored';
+    else
+      v_kind := 'edited';
+    end if;
   end if;
 
   v_snapshot := (to_jsonb(new) - 'revision' - 'updated_at') || jsonb_build_object(
@@ -3155,7 +3174,7 @@ select
     )
       and md5(p.prosrc) in (
         'de6aef12682d036a68e1c4a7ebeac5fe',
-        'd0f0b8d185e902198e6326ef638d4a6b',
+        '5ace45cb78572b449f7ec7078e61939a',
         'db3a88e2ea61179ccaefa5bed2007b11',
         'a054c4eeadd645b5206f678f2528796d'
       )) as trigger_bodies_match;

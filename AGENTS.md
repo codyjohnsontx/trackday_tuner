@@ -755,16 +755,19 @@ cannot weaken them and a new writer does not have to remember them:
   column; a book belongs to whoever owns its vehicle.
 - **`logged_at` is the server's.** No rider grant reaches it, `logged_by`,
   `revision` or a book's transfer origin - inserts and updates are granted per
-  column - and `service_entries_pin` pins them for the service role too. An edit
-  cannot move them. The rider types `service_date`; the gap between the two is
-  what labels an entry back-filled.
+  column. `service_entries_pin` dates every insert and keeps `logged_at`,
+  `logged_by` and `revision` on every update, the service role's included, but
+  the service role supplies `logged_by` on insert and nothing pins a book's
+  transfer origin against it. The rider types `service_date`; the gap between
+  the two is what labels an entry back-filled.
 - **Every write to an entry, its items or its parts writes a revision**, from a
   trigger, and one transaction is one revision - so save an entry with its items
   in one call (an RPC) if it should read "unedited". No API role, the service
   role included, can write, change or delete `service_entry_revisions`.
 - **Entries are never deleted by a rider.** `delete` is granted to no API role;
   removing one sets `deleted_at` (the server dates it), which writes a `deleted`
-  revision and drops the entry's reading. Only the vehicle's cascade hard-deletes.
+  revision and drops the entry's reading. Only a cascade hard-deletes: the
+  vehicle's, or the book's, which the service role can still delete.
 - **An entry's reading is a `vehicle_readings` row** (`source = 'entry'`),
   written and kept in step by a trigger; a rider writes only `source = 'rider'`.
 - **Transfer copies, it does not move** (owner, PQ2): the buyer gets a new book on
