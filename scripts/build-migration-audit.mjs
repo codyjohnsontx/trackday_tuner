@@ -126,6 +126,24 @@ export const SESSION_OWNERSHIP_POLICIES_TOTAL = [
   "  where p.schemaname = 'public' and p.tablename in ('sessions', 'deleted_sessions'))",
 ];
 
+const SERVICE_BOOK_TABLES = [
+  'service_books',
+  'service_book_fields',
+  'service_items',
+  'service_entries',
+  'service_entry_items',
+  'service_entry_parts',
+  'service_entry_revisions',
+  'vehicle_readings',
+];
+
+const SERVICE_BOOK_TRIGGER_FUNCTIONS = [
+  'service_entries_pin',
+  'record_service_entry_revision',
+  'touch_service_entry',
+  'sync_service_entry_reading',
+];
+
 const indent = (lines, by) => lines.map((line) => `${' '.repeat(by)}${line}`);
 
 /**
@@ -489,6 +507,42 @@ export const MIGRATION_PROBES = {
       '     and (select md5(p.prosrc) = ' +
         `'${functionBodyMd5('20261001002500_auto_created_track_reference_check_sees_every_session', 'delete_auto_created_track_if_unused')}'`,
       `          from pg_proc p where p.oid = ${DELETE_AUTO_CREATED_TRACK})`,
+    ],
+  },
+  '20261010000100_add_service_book': {
+    note: [
+      'The eight service book tables, then what makes the history honest: RLS on',
+      'the entries, no delete on them for a rider or the service role, no write',
+      'to the history for either, no rider grant on logged_at, and the pin, the',
+      'history and the reading triggers by their bodies. The privilege reads sit',
+      'behind the existence check so a database without the tables reads false',
+      'instead of failing the whole audit.',
+    ],
+    kind: 'tables + triggers',
+    object: 'public.service_books, service_entries, service_entry_revisions, vehicle_readings and their triggers',
+    present: [
+      ...SERVICE_BOOK_TABLES.map((table, index) => `${index === 0 ? '' : 'and '}to_regclass('public.${table}') is not null`),
+      "and case when to_regclass('public.service_entry_revisions') is null then false",
+      "         else (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.service_entries'))",
+      "              and not has_table_privilege('authenticated', 'public.service_entries', 'delete')",
+      "              and not has_table_privilege('service_role', 'public.service_entries', 'delete')",
+      "              and not has_table_privilege('authenticated', 'public.service_entry_revisions', 'insert, update, delete')",
+      "              and not has_table_privilege('service_role', 'public.service_entry_revisions', 'insert, update, delete')",
+      "              and not has_column_privilege('authenticated', 'public.service_entries', 'logged_at', 'insert, update')",
+      '    end',
+      ...SERVICE_BOOK_TRIGGER_FUNCTIONS.map(
+        (fn) =>
+          `and (select md5(p.prosrc) = '${functionBodyMd5('20261010000100_add_service_book', fn)}' ` +
+          `from pg_proc p where p.oid = to_regprocedure('public.${fn}()'))`,
+      ),
+    ],
+  },
+  '20261010000200_add_service_usage_overrides': {
+    kind: 'table + table',
+    object: 'public.session_usage_weights, public.service_due_overrides',
+    present: [
+      "to_regclass('public.session_usage_weights') is not null",
+      "and to_regclass('public.service_due_overrides') is not null",
     ],
   },
 };

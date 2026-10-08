@@ -744,6 +744,36 @@ keeps only the faults a database cannot produce on cue.
 
 CORS allows only `MOBILE_APP_ORIGINS`; the native app sends no `Origin`.
 
+## The Service Book
+
+A bike's maintenance record (slice 1 schema: 20261010000100, 20261010000200;
+owner decisions 2026-10-08). Its honesty rules live in the database, so a screen
+cannot weaken them and a new writer does not have to remember them:
+
+- **Ownership runs through the book.** Every child row reaches its rider through
+  `service_book_owned(book_id)` (or `service_entry_owned`), never a `user_id`
+  column; a book belongs to whoever owns its vehicle.
+- **`logged_at` is the server's.** No rider grant reaches it, `logged_by`,
+  `revision` or a book's transfer origin - inserts and updates are granted per
+  column - and `service_entries_pin` pins them for the service role too. An edit
+  cannot move them. The rider types `service_date`; the gap between the two is
+  what labels an entry back-filled.
+- **Every write to an entry, its items or its parts writes a revision**, from a
+  trigger, and one transaction is one revision - so save an entry with its items
+  in one call (an RPC) if it should read "unedited". No API role, the service
+  role included, can write, change or delete `service_entry_revisions`.
+- **Entries are never deleted by a rider.** `delete` is granted to no API role;
+  removing one sets `deleted_at` (the server dates it), which writes a `deleted`
+  revision and drops the entry's reading. Only the vehicle's cascade hard-deletes.
+- **An entry's reading is a `vehicle_readings` row** (`source = 'entry'`),
+  written and kept in step by a trigger; a rider writes only `source = 'rider'`.
+- **Transfer copies, it does not move** (owner, PQ2): the buyer gets a new book on
+  their own vehicle and the copies diverge. The pins apply to the Data API roles
+  only so an owner-run `security definer` copy can carry the seller's dates
+  forward; keep it that way when building transfer.
+
+`tests/db/service-book.spec.ts` proves each of these against a real database.
+
 ## Units
 
 Temperature is stored in Celsius in every column, prompt and export.

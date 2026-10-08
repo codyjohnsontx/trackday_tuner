@@ -818,6 +818,9 @@ describe('supabase migrations bootstrap a database from nothing', () => {
       'handle_new_auth_user',
       'purge_expired_ai_request_text',
       'record_deleted_session',
+      'record_service_entry_revision',
+      'sync_service_entry_reading',
+      'touch_service_entry',
     ]);
   });
 
