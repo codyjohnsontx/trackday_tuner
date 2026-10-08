@@ -679,6 +679,8 @@ export type Database = {
           source: VehicleReadingSource;
           /** The entry that carried this reading, when `source` is `entry`. */
           entry_id: string | null;
+          /** The rider reading this one corrects; the bike's usage is the latest reading nothing supersedes. */
+          supersedes_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -688,12 +690,9 @@ export type Database = {
           reading_date: string;
           hours?: number | null;
           distance?: number | null;
+          supersedes_id?: string | null;
         };
-        Update: {
-          reading_date?: string;
-          hours?: number | null;
-          distance?: number | null;
-        };
+        Update: Record<string, never>;
         Relationships: [];
       };
       session_usage_weights: {

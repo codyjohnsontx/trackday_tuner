@@ -513,10 +513,10 @@ export const MIGRATION_PROBES = {
     note: [
       'The eight service book tables, then what makes the history honest: RLS on',
       'the entries, no delete on them for a rider or the service role, no write',
-      'to the history for either, no rider grant on logged_at, and the pin, the',
-      'history and the reading triggers by their bodies. The privilege reads sit',
-      'behind the existence check so a database without the tables reads false',
-      'instead of failing the whole audit.',
+      'to the history for either, no rider grant on logged_at, no rider update or',
+      'delete on a reading, and the pin, the history and the reading triggers by',
+      'their bodies. The privilege reads sit behind the existence check so a',
+      'database without the tables reads false instead of failing the whole audit.',
     ],
     kind: 'tables + triggers',
     object: 'public.service_books, service_entries, service_entry_revisions, vehicle_readings and their triggers',
@@ -529,6 +529,7 @@ export const MIGRATION_PROBES = {
       "              and not has_table_privilege('authenticated', 'public.service_entry_revisions', 'insert, update, delete')",
       "              and not has_table_privilege('service_role', 'public.service_entry_revisions', 'insert, update, delete')",
       "              and not has_column_privilege('authenticated', 'public.service_entries', 'logged_at', 'insert, update')",
+      "              and not has_table_privilege('authenticated', 'public.vehicle_readings', 'update, delete')",
       '    end',
       ...SERVICE_BOOK_TRIGGER_FUNCTIONS.map(
         (fn) =>

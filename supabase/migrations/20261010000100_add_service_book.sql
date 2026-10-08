@@ -31,7 +31,10 @@
 -- - READINGS ARE THE TRUTH. An entry carrying a reading also writes a
 --   `vehicle_readings` row (`source = 'entry'`), through a trigger, so the usage
 --   math has one table to read; estimates from logged sessions are only the
---   fallback between readings and are not stored here.
+--   fallback between readings and are not stored here. A rider's own reading is
+--   never changed: a correction is a new reading naming the one it
+--   `supersedes_id`, so the old value stays in the history, and the bike's usage
+--   is the latest reading nothing supersedes.
 --
 -- OWNERSHIP RUNS THROUGH THE BOOK, NOT A user_id. A book belongs to whoever owns
 -- its vehicle, and every child row reaches that through `service_book_owned`,
@@ -198,6 +201,7 @@ create table if not exists public.vehicle_readings (
   distance numeric check (distance >= 0),
   source text not null default 'rider' check (source in ('rider', 'entry', 'transfer')),
   entry_id uuid unique references public.service_entries(id) on delete cascade,
+  supersedes_id uuid unique references public.vehicle_readings(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint vehicle_readings_has_a_value check (hours is not null or distance is not null),
@@ -641,19 +645,25 @@ create policy "vehicle_readings: select own"
   on public.vehicle_readings for select
   using (public.service_book_owned(book_id));
 
+-- A correction supersedes one of the same book's rider readings. A reading an
+-- entry wrote is corrected by editing the entry.
 create policy "vehicle_readings: insert own"
   on public.vehicle_readings for insert
-  with check (public.service_book_owned(book_id));
-
--- A reading an entry wrote is changed by editing the entry.
-create policy "vehicle_readings: update own"
-  on public.vehicle_readings for update
-  using (public.service_book_owned(book_id) and source = 'rider')
-  with check (public.service_book_owned(book_id) and source = 'rider');
+  with check (
+    public.service_book_owned(book_id)
+    and (vehicle_readings.supersedes_id is null or exists (
+      select 1
+        from public.vehicle_readings r
+       where r.id = vehicle_readings.supersedes_id
+         and r.book_id = vehicle_readings.book_id
+         and r.source = 'rider'
+    ))
+  );
 
 -- GRANTS
 --
--- No delete on entries or readings for any API role. Items and parts of an
+-- No delete on entries or readings for any API role, and no update on a
+-- reading: a rider corrects one by superseding it. Items and parts of an
 -- entry may be removed while editing it, because the revision written by that
 -- edit keeps what they were. No grant reaches the provenance columns: a book's
 -- transfer origin, an entry's `logged_at`, `logged_by`, `revision` and copy
@@ -700,8 +710,7 @@ grant update (entry_item_id, brand, part_number, quantity, unit_cost_cents)
 
 revoke all on public.vehicle_readings from public, anon, authenticated;
 grant select on public.vehicle_readings to authenticated;
-grant insert (id, book_id, reading_date, hours, distance) on public.vehicle_readings to authenticated;
-grant update (reading_date, hours, distance) on public.vehicle_readings to authenticated;
+grant insert (id, book_id, reading_date, hours, distance, supersedes_id) on public.vehicle_readings to authenticated;
 
 -- The history and the entries it describes are closed to the service role too,
 -- which otherwise holds everything through the default privileges

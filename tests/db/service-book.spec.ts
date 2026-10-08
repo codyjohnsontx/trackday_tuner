@@ -21,6 +21,8 @@ import type { TableInsert, TableUpdate } from '@/types/supabase';
  *   it on update, and even the service role's value is replaced;
  * - an entry carrying a reading writes a `vehicle_readings` row that follows
  *   the entry;
+ * - a rider's reading is never updated or deleted: a correction supersedes it,
+ *   once, from the same book, and the old value stays;
  * - `delete` on entries is refused, and removing one is a soft delete that the
  *   history records;
  * - a usage weight only counts a session from the book's own vehicle;
@@ -260,9 +262,11 @@ test.describe('the service book as riders, as nobody and as the service role', (
     expect(await readingsFor(entryId)).toMatchObject([{ reading_date: '2026-09-21', hours: 105, source: 'entry' }]);
 
     // A reading an entry wrote is changed through the entry, not directly.
-    const direct = await aliceClient.from('vehicle_readings').update({ hours: 1 }).eq('entry_id', entryId).select('id');
-    expect(direct.error, direct.error?.message).toBeNull();
-    expect(direct.data).toEqual([]);
+    const direct = await aliceClient
+      .from('vehicle_readings')
+      .update(untyped<TableUpdate<'vehicle_readings'>>({ hours: 1 }))
+      .eq('entry_id', entryId);
+    expect(direct.error?.code).toBe('42501');
     const posing = await aliceClient
       .from('vehicle_readings')
       .insert(untyped<TableInsert<'vehicle_readings'>>({ book_id: aliceBook, reading_date: '2026-09-21', hours: 1, source: 'entry', entry_id: entryId }));
@@ -281,6 +285,58 @@ test.describe('the service book as riders, as nobody and as the service role', (
 
     const noEntryReading = await createEntry();
     expect(await readingsFor(noEntryReading)).toEqual([]);
+  });
+
+  test('keeps every rider reading, and corrects one by superseding it', async () => {
+    const reading = async (fields: Partial<TableInsert<'vehicle_readings'>> = {}) =>
+      aliceClient
+        .from('vehicle_readings')
+        .insert({ book_id: aliceBook, reading_date: '2026-09-25', hours: 120, ...fields })
+        .select('id')
+        .single();
+
+    const typo = await reading({ hours: 1200 });
+    expect(typo.error, typo.error?.message).toBeNull();
+    const typoId = typo.data!.id;
+
+    const rewritten = await aliceClient
+      .from('vehicle_readings')
+      .update(untyped<TableUpdate<'vehicle_readings'>>({ hours: 120 }))
+      .eq('id', typoId);
+    expect(rewritten.error?.code).toBe('42501');
+    const removed = await aliceClient.from('vehicle_readings').delete().eq('id', typoId);
+    expect(removed.error?.code).toBe('42501');
+
+    const correction = await reading({ supersedes_id: typoId });
+    expect(correction.error, correction.error?.message).toBeNull();
+    // The rider still reads the value they corrected, beside the correction.
+    const both = await aliceClient
+      .from('vehicle_readings')
+      .select('id, hours, supersedes_id')
+      .in('id', [typoId, correction.data!.id])
+      .order('created_at');
+    expect(both.error, both.error?.message).toBeNull();
+    expect(both.data).toEqual([
+      { id: typoId, hours: 1200, supersedes_id: null },
+      { id: correction.data!.id, hours: 120, supersedes_id: typoId },
+    ]);
+
+    // Superseded once only, and only a rider reading of the same book.
+    expect((await reading({ supersedes_id: typoId })).error?.code).toBe('23505');
+    const entryId = await createEntry({ reading_hours: 130 });
+    const fromEntry = await admin.from('vehicle_readings').select('id').eq('entry_id', entryId).single();
+    expect(fromEntry.error, fromEntry.error?.message).toBeNull();
+    expect((await reading({ supersedes_id: fromEntry.data!.id })).error?.code).toBe('42501');
+
+    const bobVehicle = await createVehicle(bobClient, bob!.id);
+    const bobBook = await bobClient.from('service_books').insert({ vehicle_id: bobVehicle }).select('id').single();
+    const bobReading = await bobClient
+      .from('vehicle_readings')
+      .insert({ book_id: bobBook.data!.id, reading_date: '2026-09-25', hours: 5 })
+      .select('id')
+      .single();
+    expect(bobReading.error, bobReading.error?.message).toBeNull();
+    expect((await reading({ supersedes_id: bobReading.data!.id })).error?.code).toBe('42501');
   });
 
   test('refuses delete on entries, and records a removal as a soft delete', async () => {
@@ -346,6 +402,16 @@ test.describe('the service book as riders, as nobody and as the service role', (
     expect(
       (await aliceClient.from('service_entry_parts').insert({ entry_id: entry.data!.id, brand: 'Motul', quantity: 1 })).error,
     ).toBeNull();
+    const reading = await aliceClient
+      .from('vehicle_readings')
+      .insert({ book_id: book.data!.id, reading_date: '2026-10-02', hours: 4 })
+      .select('id')
+      .single();
+    expect(reading.error, reading.error?.message).toBeNull();
+    const correction = await aliceClient
+      .from('vehicle_readings')
+      .insert({ book_id: book.data!.id, reading_date: '2026-10-02', hours: 5, supersedes_id: reading.data!.id });
+    expect(correction.error, correction.error?.message).toBeNull();
 
     const gone = await aliceClient.from('vehicles').delete().eq('id', vehicleId);
     expect(gone.error, gone.error?.message).toBeNull();

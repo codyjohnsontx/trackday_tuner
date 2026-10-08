@@ -770,6 +770,10 @@ cannot weaken them and a new writer does not have to remember them:
   vehicle's, or the book's, which the service role can still delete.
 - **An entry's reading is a `vehicle_readings` row** (`source = 'entry'`),
   written and kept in step by a trigger; a rider writes only `source = 'rider'`.
+  A rider's reading is never updated or deleted: a correction is a new reading
+  whose `supersedes_id` names one of the same book's rider readings (at most
+  once), so the old value stays, and current usage is the latest reading that
+  nothing supersedes.
 - **Transfer copies, it does not move** (owner, PQ2): the buyer gets a new book on
   their own vehicle and the copies diverge. The pins apply to the Data API roles
   only so an owner-run `security definer` copy can carry the seller's dates
