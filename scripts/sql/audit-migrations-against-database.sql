@@ -273,7 +273,45 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                 from pg_proc p where p.oid = to_regprocedure('public.auto_created_track_is_referenced(uuid)'))
            and to_regprocedure('public.delete_auto_created_track_if_unused(uuid)') is not null
            and (select md5(p.prosrc) = '65913c39a7070ab1b68c76b2fa3093fc'
-                from pg_proc p where p.oid = to_regprocedure('public.delete_auto_created_track_if_unused(uuid)')))
+                from pg_proc p where p.oid = to_regprocedure('public.delete_auto_created_track_if_unused(uuid)'))),
+  -- The eight service book tables, then what makes the history honest: RLS on
+  -- the entries, no delete on them for a rider or the service role, no write
+  -- to the history for either, no rider grant on logged_at, no update or delete
+  -- on a reading for either, and the pin, the history and the reading triggers by
+  -- their bodies. The privilege reads sit behind the existence check so a
+  -- database without the tables reads false instead of failing the whole audit.
+  (29, '20261010000100_add_service_book', 'tables + triggers',
+      'public.service_books, service_entries, service_entry_revisions, vehicle_readings and their triggers',
+      to_regclass('public.service_books') is not null
+      and to_regclass('public.service_book_fields') is not null
+      and to_regclass('public.service_items') is not null
+      and to_regclass('public.service_entries') is not null
+      and to_regclass('public.service_entry_items') is not null
+      and to_regclass('public.service_entry_parts') is not null
+      and to_regclass('public.service_entry_revisions') is not null
+      and to_regclass('public.vehicle_readings') is not null
+      and case when to_regclass('public.service_entry_revisions') is null then false
+               else (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.service_entries'))
+                    and not has_table_privilege('authenticated', 'public.service_entries', 'delete')
+                    and not has_table_privilege('service_role', 'public.service_entries', 'delete')
+                    and not has_any_column_privilege('authenticated', 'public.service_entry_revisions', 'insert, update')
+                    and not has_table_privilege('authenticated', 'public.service_entry_revisions', 'delete')
+                    and not has_any_column_privilege('service_role', 'public.service_entry_revisions', 'insert, update')
+                    and not has_table_privilege('service_role', 'public.service_entry_revisions', 'delete')
+                    and not has_column_privilege('authenticated', 'public.service_entries', 'logged_at', 'insert, update')
+                    and not has_any_column_privilege('authenticated', 'public.vehicle_readings', 'update')
+                    and not has_table_privilege('authenticated', 'public.vehicle_readings', 'delete')
+                    and not has_any_column_privilege('service_role', 'public.vehicle_readings', 'update')
+                    and not has_table_privilege('service_role', 'public.vehicle_readings', 'delete')
+          end
+      and (select md5(p.prosrc) = 'de6aef12682d036a68e1c4a7ebeac5fe' from pg_proc p where p.oid = to_regprocedure('public.service_entries_pin()'))
+      and (select md5(p.prosrc) = '5ace45cb78572b449f7ec7078e61939a' from pg_proc p where p.oid = to_regprocedure('public.record_service_entry_revision()'))
+      and (select md5(p.prosrc) = 'db3a88e2ea61179ccaefa5bed2007b11' from pg_proc p where p.oid = to_regprocedure('public.touch_service_entry()'))
+      and (select md5(p.prosrc) = 'a054c4eeadd645b5206f678f2528796d' from pg_proc p where p.oid = to_regprocedure('public.sync_service_entry_reading()'))),
+  (30, '20261010000200_add_service_usage_overrides', 'table + table',
+      'public.session_usage_weights, public.service_due_overrides',
+      to_regclass('public.session_usage_weights') is not null
+      and to_regclass('public.service_due_overrides') is not null)
 )
 select ordinality as "#",
        migration,

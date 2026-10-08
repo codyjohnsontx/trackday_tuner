@@ -16,6 +16,22 @@ export type FeedbackOutcome = 'better' | 'same' | 'worse' | 'unknown';
 export type RecommendationStatus = 'proposed' | 'applied' | 'rejected' | 'superseded';
 export type SessionLapSource = 'manual' | 'import';
 export type AiRequestTextRoute = 'tuning_advice' | 'day_plan';
+export type DistanceUnit = 'mi' | 'km';
+export type ServiceBookBuiltinField =
+  | 'reading'
+  | 'performed_by'
+  | 'shop_name'
+  | 'cost'
+  | 'parts'
+  | 'notes'
+  | 'attachments';
+export type ServiceBookFieldType = 'text' | 'number' | 'money' | 'choice' | 'date';
+export type ServiceItemSource = 'starter' | 'typed' | 'manual_photo';
+export type ServicePerformedBy = 'self' | 'shop';
+export type ServiceEntryOrigin = 'typed' | 'photo_draft';
+export type ServiceEntryRevisionKind = 'created' | 'edited' | 'deleted' | 'restored' | 'transferred';
+export type VehicleReadingSource = 'rider' | 'entry' | 'transfer';
+export type ServiceDueOverrideKind = 'snooze' | 'skip_cycle' | 'set_next_due';
 export type ProductEventName =
   | 'beta_signup_completed'
   | 'vehicle_created'
@@ -418,6 +434,331 @@ export type Database = {
           user_id?: string;
           session_id?: string;
           deleted_at?: string;
+        };
+        Relationships: [];
+      };
+      /**
+       * The service book (20261010000100, 20261010000200). Insert and Update
+       * list only the columns `authenticated` is granted: a column missing from
+       * them - `logged_at`, `logged_by`, `revision`, a book's transfer origin, a
+       * reading's `source` - is the server's, and writing it is refused.
+       */
+      service_books: {
+        Row: {
+          id: string;
+          vehicle_id: string;
+          tracks_hours: boolean;
+          tracks_distance: boolean;
+          distance_unit: DistanceUnit;
+          default_session_minutes: number;
+          default_session_distance: number | null;
+          /** The seller's book a transfer copied this one from; written only by the transfer. */
+          transferred_from_book_id: string | null;
+          transferred_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          vehicle_id: string;
+          tracks_hours?: boolean;
+          tracks_distance?: boolean;
+          distance_unit?: DistanceUnit;
+          default_session_minutes?: number;
+          default_session_distance?: number | null;
+        };
+        Update: {
+          tracks_hours?: boolean;
+          tracks_distance?: boolean;
+          distance_unit?: DistanceUnit;
+          default_session_minutes?: number;
+          default_session_distance?: number | null;
+        };
+        Relationships: [];
+      };
+      service_book_fields: {
+        Row: {
+          id: string;
+          book_id: string;
+          /** Null for a field the rider added; then `field_type` is set. */
+          builtin_key: ServiceBookBuiltinField | null;
+          label: string;
+          field_type: ServiceBookFieldType | null;
+          options: Json | null;
+          enabled: boolean;
+          required: boolean;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          book_id: string;
+          builtin_key?: ServiceBookBuiltinField | null;
+          label: string;
+          field_type?: ServiceBookFieldType | null;
+          options?: Json | null;
+          enabled?: boolean;
+          required?: boolean;
+          sort_order?: number;
+        };
+        Update: {
+          label?: string;
+          options?: Json | null;
+          enabled?: boolean;
+          required?: boolean;
+          sort_order?: number;
+        };
+        Relationships: [];
+      };
+      service_items: {
+        Row: {
+          id: string;
+          book_id: string;
+          name: string;
+          interval_hours: number | null;
+          interval_distance: number | null;
+          interval_days: number | null;
+          source: ServiceItemSource;
+          source_attachment_id: string | null;
+          sort_order: number;
+          archived_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          book_id: string;
+          name: string;
+          interval_hours?: number | null;
+          interval_distance?: number | null;
+          interval_days?: number | null;
+          source?: ServiceItemSource;
+          sort_order?: number;
+          archived_at?: string | null;
+        };
+        Update: {
+          name?: string;
+          interval_hours?: number | null;
+          interval_distance?: number | null;
+          interval_days?: number | null;
+          sort_order?: number;
+          archived_at?: string | null;
+        };
+        Relationships: [];
+      };
+      service_entries: {
+        Row: {
+          id: string;
+          book_id: string;
+          /** The date the rider says the work was done. */
+          service_date: string;
+          reading_hours: number | null;
+          reading_distance: number | null;
+          performed_by: ServicePerformedBy | null;
+          shop_name: string | null;
+          cost_cents: number | null;
+          currency: string;
+          notes: string | null;
+          /** Values of the rider's own fields, keyed by `service_book_fields.id`. */
+          custom_fields: Json;
+          origin: ServiceEntryOrigin;
+          /** When the entry was actually logged: the server's clock, never the rider's. */
+          logged_at: string;
+          logged_by: string;
+          revision: number;
+          /** Set when the rider removed the entry; entries are never hard-deleted by a rider. */
+          deleted_at: string | null;
+          copied_from_entry_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          book_id: string;
+          service_date: string;
+          reading_hours?: number | null;
+          reading_distance?: number | null;
+          performed_by?: ServicePerformedBy | null;
+          shop_name?: string | null;
+          cost_cents?: number | null;
+          currency?: string;
+          notes?: string | null;
+          custom_fields?: Json;
+          origin?: ServiceEntryOrigin;
+        };
+        Update: {
+          service_date?: string;
+          reading_hours?: number | null;
+          reading_distance?: number | null;
+          performed_by?: ServicePerformedBy | null;
+          shop_name?: string | null;
+          cost_cents?: number | null;
+          currency?: string;
+          notes?: string | null;
+          custom_fields?: Json;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      service_entry_items: {
+        Row: {
+          id: string;
+          entry_id: string;
+          item_id: string | null;
+          /** The item's name when logged, or the whole item when `item_id` is null. */
+          label: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          entry_id: string;
+          item_id?: string | null;
+          label: string;
+        };
+        Update: {
+          item_id?: string | null;
+          label?: string;
+        };
+        Relationships: [];
+      };
+      service_entry_parts: {
+        Row: {
+          id: string;
+          entry_id: string;
+          entry_item_id: string | null;
+          brand: string | null;
+          part_number: string | null;
+          quantity: number | null;
+          unit_cost_cents: number | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          entry_id: string;
+          entry_item_id?: string | null;
+          brand?: string | null;
+          part_number?: string | null;
+          quantity?: number | null;
+          unit_cost_cents?: number | null;
+        };
+        Update: {
+          entry_item_id?: string | null;
+          brand?: string | null;
+          part_number?: string | null;
+          quantity?: number | null;
+          unit_cost_cents?: number | null;
+        };
+        Relationships: [];
+      };
+      /** Written only by triggers; a rider reads it. */
+      service_entry_revisions: {
+        Row: {
+          id: string;
+          entry_id: string;
+          revision: number;
+          kind: ServiceEntryRevisionKind;
+          /** The entry row with `items` and `parts` arrays, as they stood after the change. */
+          snapshot: Json;
+          changed_at: string;
+          changed_by: string | null;
+          transaction_id: number;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      vehicle_readings: {
+        Row: {
+          id: string;
+          book_id: string;
+          reading_date: string;
+          read_at: string;
+          hours: number | null;
+          distance: number | null;
+          source: VehicleReadingSource;
+          /** The entry that carried this reading, when `source` is `entry`. */
+          entry_id: string | null;
+          /** The rider reading this one corrects; the bike's usage is the latest reading nothing supersedes. */
+          supersedes_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          book_id: string;
+          reading_date: string;
+          hours?: number | null;
+          distance?: number | null;
+          supersedes_id?: string | null;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      session_usage_weights: {
+        Row: {
+          id: string;
+          book_id: string;
+          session_id: string;
+          /** 0 is "this day does not count"; up to 3. */
+          weight: number;
+          minutes_override: number | null;
+          distance_override: number | null;
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          book_id: string;
+          session_id: string;
+          weight?: number;
+          minutes_override?: number | null;
+          distance_override?: number | null;
+          note?: string | null;
+        };
+        Update: {
+          weight?: number;
+          minutes_override?: number | null;
+          distance_override?: number | null;
+          note?: string | null;
+        };
+        Relationships: [];
+      };
+      service_due_overrides: {
+        Row: {
+          id: string;
+          book_id: string;
+          item_id: string;
+          kind: ServiceDueOverrideKind;
+          until_date: string | null;
+          until_hours: number | null;
+          until_distance: number | null;
+          anchor_hours: number | null;
+          anchor_distance: number | null;
+          note: string | null;
+          /** The newest per item wins, so this is the server's clock. */
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          book_id: string;
+          item_id: string;
+          kind: ServiceDueOverrideKind;
+          until_date?: string | null;
+          until_hours?: number | null;
+          until_distance?: number | null;
+          anchor_hours?: number | null;
+          anchor_distance?: number | null;
+          note?: string | null;
+        };
+        Update: {
+          until_date?: string | null;
+          until_hours?: number | null;
+          until_distance?: number | null;
+          anchor_hours?: number | null;
+          anchor_distance?: number | null;
+          note?: string | null;
         };
         Relationships: [];
       };
