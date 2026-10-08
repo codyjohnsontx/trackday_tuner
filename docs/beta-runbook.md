@@ -3165,16 +3165,20 @@ select
      join pg_class c on c.oid = to_regclass('public.' || t.name)
     where c.relrowsecurity) as tables_with_rls,
   (select count(*) from service_tables t
-    where has_table_privilege('anon', 'public.' || t.name, 'select, insert, update, delete')) as anon_tables,
+    where has_any_column_privilege('anon', 'public.' || t.name, 'select, insert, update')
+       or has_table_privilege('anon', 'public.' || t.name, 'delete')) as anon_tables,
   (select count(*) from pg_policies p
      join service_tables t on t.name = p.tablename
     where p.schemaname = 'public') as policies,
   has_table_privilege('authenticated', 'public.service_entries', 'delete') as rider_can_delete_entries,
   has_table_privilege('service_role', 'public.service_entries', 'delete') as service_can_delete_entries,
-  has_table_privilege('authenticated', 'public.service_entry_revisions', 'insert, update, delete') as rider_can_write_history,
-  has_table_privilege('service_role', 'public.service_entry_revisions', 'insert, update, delete') as service_can_write_history,
+  has_any_column_privilege('authenticated', 'public.service_entry_revisions', 'insert, update')
+    or has_table_privilege('authenticated', 'public.service_entry_revisions', 'delete') as rider_can_write_history,
+  has_any_column_privilege('service_role', 'public.service_entry_revisions', 'insert, update')
+    or has_table_privilege('service_role', 'public.service_entry_revisions', 'delete') as service_can_write_history,
   has_column_privilege('authenticated', 'public.service_entries', 'logged_at', 'insert, update') as rider_can_set_logged_at,
-  has_table_privilege('authenticated', 'public.vehicle_readings', 'update, delete') as rider_can_change_readings,
+  has_any_column_privilege('authenticated', 'public.vehicle_readings', 'update')
+    or has_table_privilege('authenticated', 'public.vehicle_readings', 'delete') as rider_can_change_readings,
   has_function_privilege('anon', 'public.service_book_owned(uuid)', 'execute') as anon_can_call_owned,
   (select count(*) from pg_proc p
     where p.oid in (

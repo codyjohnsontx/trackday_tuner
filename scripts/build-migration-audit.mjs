@@ -526,10 +526,13 @@ export const MIGRATION_PROBES = {
       "         else (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.service_entries'))",
       "              and not has_table_privilege('authenticated', 'public.service_entries', 'delete')",
       "              and not has_table_privilege('service_role', 'public.service_entries', 'delete')",
-      "              and not has_table_privilege('authenticated', 'public.service_entry_revisions', 'insert, update, delete')",
-      "              and not has_table_privilege('service_role', 'public.service_entry_revisions', 'insert, update, delete')",
+      "              and not has_any_column_privilege('authenticated', 'public.service_entry_revisions', 'insert, update')",
+      "              and not has_table_privilege('authenticated', 'public.service_entry_revisions', 'delete')",
+      "              and not has_any_column_privilege('service_role', 'public.service_entry_revisions', 'insert, update')",
+      "              and not has_table_privilege('service_role', 'public.service_entry_revisions', 'delete')",
       "              and not has_column_privilege('authenticated', 'public.service_entries', 'logged_at', 'insert, update')",
-      "              and not has_table_privilege('authenticated', 'public.vehicle_readings', 'update, delete')",
+      "              and not has_any_column_privilege('authenticated', 'public.vehicle_readings', 'update')",
+      "              and not has_table_privilege('authenticated', 'public.vehicle_readings', 'delete')",
       '    end',
       ...SERVICE_BOOK_TRIGGER_FUNCTIONS.map(
         (fn) =>
