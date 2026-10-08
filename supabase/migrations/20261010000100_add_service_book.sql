@@ -712,10 +712,12 @@ revoke all on public.vehicle_readings from public, anon, authenticated;
 grant select on public.vehicle_readings to authenticated;
 grant insert (id, book_id, reading_date, hours, distance, supersedes_id) on public.vehicle_readings to authenticated;
 
--- The history and the entries it describes are closed to the service role too,
--- which otherwise holds everything through the default privileges
--- (20260719001100). The triggers write the history as the owner, and a
--- vehicle's cascade deletes as the owner, so neither needs these.
+-- The history, the entries it describes and the readings are closed to the
+-- service role too, which otherwise holds everything through the default
+-- privileges (20260719001100). The triggers write the history and an entry's
+-- reading as the owner, and a vehicle's cascade deletes as the owner, so none
+-- of them needs these.
 revoke all on public.service_entry_revisions from public, anon, authenticated, service_role;
 grant select on public.service_entry_revisions to authenticated, service_role;
 revoke delete, truncate on public.service_entries from service_role;
+revoke update, delete, truncate on public.vehicle_readings from service_role;

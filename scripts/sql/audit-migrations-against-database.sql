@@ -276,8 +276,8 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                 from pg_proc p where p.oid = to_regprocedure('public.delete_auto_created_track_if_unused(uuid)'))),
   -- The eight service book tables, then what makes the history honest: RLS on
   -- the entries, no delete on them for a rider or the service role, no write
-  -- to the history for either, no rider grant on logged_at, no rider update or
-  -- delete on a reading, and the pin, the history and the reading triggers by
+  -- to the history for either, no rider grant on logged_at, no update or delete
+  -- on a reading for either, and the pin, the history and the reading triggers by
   -- their bodies. The privilege reads sit behind the existence check so a
   -- database without the tables reads false instead of failing the whole audit.
   (29, '20261010000100_add_service_book', 'tables + triggers',
@@ -301,6 +301,8 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                     and not has_column_privilege('authenticated', 'public.service_entries', 'logged_at', 'insert, update')
                     and not has_any_column_privilege('authenticated', 'public.vehicle_readings', 'update')
                     and not has_table_privilege('authenticated', 'public.vehicle_readings', 'delete')
+                    and not has_any_column_privilege('service_role', 'public.vehicle_readings', 'update')
+                    and not has_table_privilege('service_role', 'public.vehicle_readings', 'delete')
           end
       and (select md5(p.prosrc) = 'de6aef12682d036a68e1c4a7ebeac5fe' from pg_proc p where p.oid = to_regprocedure('public.service_entries_pin()'))
       and (select md5(p.prosrc) = '5ace45cb78572b449f7ec7078e61939a' from pg_proc p where p.oid = to_regprocedure('public.record_service_entry_revision()'))

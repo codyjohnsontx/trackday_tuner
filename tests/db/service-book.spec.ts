@@ -21,8 +21,9 @@ import type { TableInsert, TableUpdate } from '@/types/supabase';
  *   it on update, and even the service role's value is replaced;
  * - an entry carrying a reading writes a `vehicle_readings` row that follows
  *   the entry;
- * - a rider's reading is never updated or deleted: a correction supersedes it,
- *   once, from the same book, and the old value stays;
+ * - a rider's reading is never updated or deleted, by the rider or the service
+ *   role: a correction supersedes it, once, from the same book, and the old
+ *   value stays;
  * - `delete` on entries is refused, and removing one is a soft delete that the
  *   history records;
  * - a usage weight only counts a session from the book's own vehicle;
@@ -306,6 +307,13 @@ test.describe('the service book as riders, as nobody and as the service role', (
     expect(rewritten.error?.code).toBe('42501');
     const removed = await aliceClient.from('vehicle_readings').delete().eq('id', typoId);
     expect(removed.error?.code).toBe('42501');
+    const serviceRewrite = await admin
+      .from('vehicle_readings')
+      .update(untyped<TableUpdate<'vehicle_readings'>>({ hours: 120 }))
+      .eq('id', typoId);
+    expect(serviceRewrite.error?.code).toBe('42501');
+    const serviceRemoved = await admin.from('vehicle_readings').delete().eq('id', typoId);
+    expect(serviceRemoved.error?.code).toBe('42501');
 
     const correction = await reading({ supersedes_id: typoId });
     expect(correction.error, correction.error?.message).toBeNull();

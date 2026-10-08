@@ -3008,13 +3008,15 @@ revoke all on public.vehicle_readings from public, anon, authenticated;
 grant select on public.vehicle_readings to authenticated;
 grant insert (id, book_id, reading_date, hours, distance, supersedes_id) on public.vehicle_readings to authenticated;
 
--- The history and the entries it describes are closed to the service role too,
--- which otherwise holds everything through the default privileges
--- (20260719001100). The triggers write the history as the owner, and a
--- vehicle's cascade deletes as the owner, so neither needs these.
+-- The history, the entries it describes and the readings are closed to the
+-- service role too, which otherwise holds everything through the default
+-- privileges (20260719001100). The triggers write the history and an entry's
+-- reading as the owner, and a vehicle's cascade deletes as the owner, so none
+-- of them needs these.
 revoke all on public.service_entry_revisions from public, anon, authenticated, service_role;
 grant select on public.service_entry_revisions to authenticated, service_role;
 revoke delete, truncate on public.service_entries from service_role;
+revoke update, delete, truncate on public.vehicle_readings from service_role;
 
 -- Where the rider overrides the service book's suggestions (owner, 2026-10-08):
 -- "Sometimes doing a day at a smaller track won't warrant an oil change but a
@@ -3179,6 +3181,8 @@ select
   has_column_privilege('authenticated', 'public.service_entries', 'logged_at', 'insert, update') as rider_can_set_logged_at,
   has_any_column_privilege('authenticated', 'public.vehicle_readings', 'update')
     or has_table_privilege('authenticated', 'public.vehicle_readings', 'delete') as rider_can_change_readings,
+  has_any_column_privilege('service_role', 'public.vehicle_readings', 'update')
+    or has_table_privilege('service_role', 'public.vehicle_readings', 'delete') as service_can_change_readings,
   has_function_privilege('anon', 'public.service_book_owned(uuid)', 'execute') as anon_can_call_owned,
   (select count(*) from pg_proc p
     where p.oid in (
@@ -3195,7 +3199,7 @@ select
       )) as trigger_bodies_match;
 ```
 
-Expect `10`, `0`, `30`, then seven `false`, then `4`.
+Expect `10`, `0`, `30`, then eight `false`, then `4`.
 
 `policies` counts every policy on the ten tables, so a policy added by hand
 beside the migration's reads above `30`. `trigger_bodies_match` reads below `4`
