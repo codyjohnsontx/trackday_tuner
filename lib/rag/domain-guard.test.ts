@@ -656,12 +656,10 @@ describe('classifyRaceEngineerQuestion supporting fields', () => {
     ).toBe('allow');
   });
 
-  // PINS TODAY'S BEHAVIOUR, NOT A RULING. Whether a chip may rescue a question
-  // with no motorsport signal of its own is an open product decision. Until it
-  // is made, no id the panel posts supplies any signal: `_` is a word character,
-  // so no `\b`-anchored pattern matches inside `overheating_tire`. This test
-  // changes when that decision is made; it also catches a pattern rewrite that
-  // starts reading inside ids by accident.
+  // OWNER'S DECISION 2026-10-04: a symptom chip must not turn an off-topic
+  // question into an allowed one. The domain screen judges the question text
+  // alone, so neither the ids the panel posts nor the human labels and free
+  // prose an API client could send in their place supply a signal.
   it('lets no symptom or intent id the panel posts supply a motorsport signal', () => {
     const NO_SIGNAL = 'Any ideas after today?';
     const refused = { decision: 'refuse', reason: 'out_of_domain' };
@@ -685,6 +683,36 @@ describe('classifyRaceEngineerQuestion supporting fields', () => {
         changeIntent: 'reduce_tire_wear',
       }),
     ).toMatchObject(refused);
+  });
+  it('lets no symptom or intent label rescue a question with no setup signal', () => {
+    const refused = { decision: 'refuse', reason: 'out_of_domain' };
+    for (const question of ['Any ideas after today?', 'Recommend a good vacuum to me']) {
+      expect(classifyRaceEngineerQuestion({ question })).toMatchObject(refused);
+      for (const symptom of REAL_SYMPTOMS) {
+        expect(
+          classifyRaceEngineerQuestion({ question, symptoms: [symptom] }),
+          `${question} + symptom: ${symptom}`,
+        ).toMatchObject(refused);
+      }
+      expect(
+        classifyRaceEngineerQuestion({
+          question,
+          symptoms: REAL_SYMPTOMS,
+          changeIntent: 'more drive off the slow corners without losing turn-in',
+        }),
+        `${question} + every symptom and a prose intent`,
+      ).toMatchObject(refused);
+    }
+  });
+
+  // The e2e refusal walk in tests/e2e/auth-and-sag.spec.ts, as the panel posts it.
+  it('refuses the vacuum question with the two chips the refusal walk presses', () => {
+    expect(
+      classifyRaceEngineerQuestion({
+        question: 'Recommend a good vacuum to me',
+        symptoms: ['packing_down', 'oversteer_exit'],
+      }),
+    ).toMatchObject({ decision: 'refuse', reason: 'out_of_domain' });
   });
 });
 
@@ -801,9 +829,8 @@ describe('classifyRaceEngineerQuestion inflected vocabulary', () => {
     }
   });
 
-  // The symptom and intent fields keep the vocabulary exactly as it was, so an
-  // inflection sent there never rescues a question either. That arm waits on an
-  // open product decision and this change must not move it in either direction.
+  // The symptom and intent fields are never read for vocabulary, so an
+  // inflection sent there never rescues a question either.
   it('lets no inflection in a symptom or intent rescue a question', () => {
     const NO_SIGNAL = 'Give me a list of the best vacuum cleaners for sale right now.';
     for (const form of ALL_INFLECTED_FORMS) {
