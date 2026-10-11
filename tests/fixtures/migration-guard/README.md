@@ -122,6 +122,36 @@ Postgres accepts because its option list is order-independent, and
 search_path supplies. Both ship the identical world-executable function, so the
 guard has to read both.
 
+Eleven cover the deferred-execute check, each loaded after a fixture that creates
+the function. `execute_decided_later.sql` decides execute on the function
+`invoker_without_revoke.sql` creates and leaves undecided, which is how the hosted
+project ended up with no grant on `save_session_outcome`: `20260719001100` held
+the pair, and a database that took `20260716000800` by hand never ran it.
+`execute_decided_later_on_definer.sql` is the same deferral on a `security
+definer` function. `execute_corrected_later.sql` is the control: a later grant on
+a function whose own migration already decided execute is an ordinary
+correction, and the guard has to stay quiet about it. The check is per
+signature, because each overload is a separate function that starts undecided:
+`overload_without_revoke.sql` adds `promote_rider(uuid, text)` beside the
+decided `promote_rider(uuid)` and `overload_decided_later.sql` decides only the
+new one later, and `recreated_without_revoke.sql` drops and recreates
+`promote_rider(uuid)`, so the same later grant that is a correction in the
+control becomes a deferral. A signature is read the way Postgres reads it, so
+the four `alias_*` files spell the same argument types differently - `int4`
+for `integer`, `timestamptz` for `timestamp with time zone`, `bool`, `varchar`,
+a `pg_catalog.` qualifier, a typmod on a created argument:
+`alias_decided_later.sql` is still a deferral after
+`alias_created_without_revoke.sql`, still a correction after
+`alias_created_with_revoke.sql`, and a deferral again once
+`alias_recreated_without_revoke.sql` has dropped the function by yet another
+spelling and made it anew.
+`invoker_granted_to_authenticated_only.sql` grants in the creating migration
+and still does not decide: a grant to `authenticated` on a fresh function keeps
+public's default execute, so only a statement naming `public` counts, and
+`execute_decided_later.sql` after it is a deferral.
+`definer_revoked_from_anon_only.sql` followed by
+`execute_decided_later_on_definer.sql` is the same near-miss as a revoke.
+
 Four cover the rider-text grant check on `ai_request_text`, where a rider may
 read and delete their own retained question text and nothing more.
 `grant_update_on_ai_request_text_to_authenticated.sql` is the hazard it exists
