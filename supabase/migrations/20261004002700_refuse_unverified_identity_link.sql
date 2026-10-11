@@ -79,7 +79,7 @@ begin
 
   raise exception 'refusing an unverified % email', new.provider
     using errcode = 'TT403',
-          hint = 'The provider did not verify this email address; use email and password instead.';
+          hint = 'The provider did not verify this email address; sign up or sign in with email and password instead.';
 end;
 $$;
 

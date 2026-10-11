@@ -2239,7 +2239,7 @@ drop function if exists public.auto_created_track_is_referenced(uuid);
 commit;
 ```
 
-### Refuse unverified Google sign-ins into existing accounts, by hand
+### Refuse unverified Google sign-ins, by hand
 
 `20261004002700` stops a Google sign-in - or any external provider's - whose
 email the provider has NOT verified from being linked into the account that
@@ -2255,7 +2255,7 @@ email and password signup is untouched. The refused sign-in gets no session,
 no account is created or changed, and GoTrue sends the rider to `/auth/callback` with
 `error_description=Error creating identity` and no code, which the callback turns
 into `/login?error=provider_email_unverified` - copy telling them the provider has
-not verified that email and to use their email and password.
+not verified that email and to sign up or sign in with their email and password.
 Apply it before merging the pull request that adds it.
 
 **The hosted setting that also governs this.** Dashboard → Authentication →
@@ -2319,7 +2319,7 @@ begin
 
   raise exception 'refusing an unverified % email', new.provider
     using errcode = 'TT403',
-          hint = 'The provider did not verify this email address; use email and password instead.';
+          hint = 'The provider did not verify this email address; sign up or sign in with email and password instead.';
 end;
 $$;
 
@@ -2344,7 +2344,7 @@ select
   p.proconfig as settings,
   has_function_privilege('anon', p.oid, 'execute') as anon_can_execute,
   has_function_privilege('authenticated', p.oid, 'execute') as rider_can_execute,
-  md5(p.prosrc) = 'fb9cf18b8c8c337a7a3478a88ae3b162' as definition_is_the_migration
+  md5(p.prosrc) = '6f93a16bdd3860ce0e82db7faa9cb45b' as definition_is_the_migration
 from pg_trigger t
 join pg_proc p on p.oid = t.tgfoid
 where t.tgname = 'refuse_unverified_identity_link'

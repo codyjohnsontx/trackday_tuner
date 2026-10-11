@@ -8,8 +8,8 @@ import { functionBodyMd5 } from '@/scripts/build-migration-audit.mjs';
 
 // docs/beta-runbook.md carries a copy of 20261004002700 for the hosted project,
 // which is patched in the SQL editor by hand. A copy that drifted from the
-// migration - one that stopped reading the verified claim, or dropped the
-// existing-identity condition - would read as applied and gate nothing, so the
+// migration - one that stopped reading the verified claim, or skipped a
+// provider it should refuse - would read as applied and gate nothing, so the
 // apply, verify and rollback are all pinned to the migration. The precheck is
 // run against a real database in tests/db/unverified-identity-link.spec.ts.
 

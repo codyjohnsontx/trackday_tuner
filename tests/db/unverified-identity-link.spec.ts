@@ -76,7 +76,7 @@ function runbookPrecheck(): string {
 }
 
 /**
- * `unverified_links_already_present` before and after `sql`, read in the same
+ * `unverified_identities_already_present` before and after `sql`, read in the same
  * transaction so nothing else on the stack moves it in between.
  */
 function precheckCountAround(sql: string): [number, number] {

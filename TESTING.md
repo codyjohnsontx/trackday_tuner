@@ -237,8 +237,8 @@ For OAuth specifically:
 - Configure each provider's client credentials in Supabase.
 - With "Confirm email" off, GoTrue links a provider sign-in into the account
   holding its address even when the provider says the email is unverified;
-  `20261004002700` refuses every unverified external identity. See "Refuse unverified Google sign-ins into
-  existing accounts, by hand" in `docs/beta-runbook.md`.
+  `20261004002700` refuses every unverified external identity. See "Refuse
+  unverified Google sign-ins, by hand" in `docs/beta-runbook.md`.
 
 ## Stripe billing setup checklist
 - Create one recurring monthly Pro price in Stripe at `$2.99` and set `STRIPE_PRO_MONTHLY_PRICE_ID`.

@@ -284,7 +284,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                 and tgenabled <> 'D'
                 and not tgisinternal
                 and tgfoid = to_regprocedure('public.refuse_unverified_identity_link()'))
-           and (select md5(p.prosrc) = 'fb9cf18b8c8c337a7a3478a88ae3b162'
+           and (select md5(p.prosrc) = '6f93a16bdd3860ce0e82db7faa9cb45b'
                   and not p.prosecdef
                   and p.proconfig = array['search_path=""']
                   and not has_function_privilege('anon', p.oid, 'execute')
