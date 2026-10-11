@@ -225,10 +225,24 @@ export function evaluateAiHealth(summary: AiHealthSummary): AiHealthAlert {
   return { firing: reasons.length > 0, reasons };
 }
 
-/** The one-line summary a webhook renders in a chat client. */
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * The one-line summary a webhook renders in a chat client.
+ *
+ * The healthy line leads with the failure count and never prints a
+ * success fraction. It once read "4/7 requests succeeded", which was accurate -
+ * the other three were guard outcomes - and read like three failures to anyone
+ * glancing at a phone at 2am.
+ */
 export function describeAiHealth(summary: AiHealthSummary, alert: AiHealthAlert): string {
   if (!alert.firing) {
-    return `Trackday Tuner AI is healthy: ${summary.success}/${summary.terminal} requests succeeded in the last ${summary.window_minutes} minutes.`;
+    return (
+      `Trackday Tuner AI is healthy: ${plural(summary.failure, 'failure')} in the last ` +
+      `${summary.window_minutes} minutes, ${plural(summary.terminal, 'request')}.`
+    );
   }
   return `Trackday Tuner AI alert - ${alert.reasons.join('; ')}.`;
 }

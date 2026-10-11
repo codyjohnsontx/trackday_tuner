@@ -150,6 +150,9 @@ describe('GET /api/monitoring/ai-health', () => {
     expect(body.status).toBe('ok');
     expect(body.alert.firing).toBe(false);
     expect(body.notified).toBe('none');
+    expect(body.message).toBe(
+      'Trackday Tuner AI is healthy: 0 failures in the last 60 minutes, 2 requests.',
+    );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
