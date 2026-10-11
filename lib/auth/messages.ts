@@ -21,7 +21,7 @@ function unverifiedProviderEmailMessage(provider: string | null | undefined): st
   const reason = label
     ? `We couldn't sign you in with ${label} because that email isn't verified with ${label}.`
     : "We couldn't sign you in because that email isn't verified with the provider you chose.";
-  return `${reason} Sign in with your email and password instead.`;
+  return `${reason} Use your email and password instead.`;
 }
 
 export function authErrorMessage(

@@ -494,7 +494,7 @@ export const MIGRATION_PROBES = {
   '20261004002700_refuse_unverified_identity_link': {
     note: [
       'The trigger, enabled, and the function it runs by its body, so a hand-edited',
-      'copy that stops checking the claim or the existing identity reads MISSING.',
+      'copy that stops checking the claim reads MISSING.',
     ],
     kind: 'trigger + function',
     object: 'refuse_unverified_identity_link on auth.identities',
@@ -507,7 +507,7 @@ export const MIGRATION_PROBES = {
       "          and tgfoid = to_regprocedure('public.refuse_unverified_identity_link()'))",
       '     and (select md5(p.prosrc) = ' +
         `'${functionBodyMd5('20261004002700_refuse_unverified_identity_link')}'`,
-      '            and p.prosecdef',
+      '            and not p.prosecdef',
       "            and p.proconfig = array['search_path=\"\"']",
       "            and not has_function_privilege('anon', p.oid, 'execute')",
       "            and not has_function_privilege('authenticated', p.oid, 'execute')",

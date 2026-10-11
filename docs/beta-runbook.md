@@ -2247,13 +2247,15 @@ already holds that address. Without it GoTrue links it whenever "Confirm email"
 is off and hands the sign-in a session on that rider's account: an account
 takeover through a Google Workspace domain whose admin creates the mailbox.
 It is a `before insert` trigger on `auth.identities` that raises when the new
-identity is external, its `email_verified` claim is not true, and the user
-already has another identity. A brand-new account from an unverified sign-in is
-untouched, and a verified one still links. The refused sign-in gets no session,
-the account is unchanged, and GoTrue sends the rider to `/auth/callback` with
+identity is external and its `email_verified` claim is not true. That includes
+a brand-new account's first identity, because an unverified sign-in that created
+an account for an unregistered address would have the real owner's later
+verified sign-in linked into it. A verified sign-in still signs up and links, and
+email and password signup is untouched. The refused sign-in gets no session,
+no account is created or changed, and GoTrue sends the rider to `/auth/callback` with
 `error_description=Error creating identity` and no code, which the callback turns
 into `/login?error=provider_email_unverified` - copy telling them the provider has
-not verified that email and to sign in with their email and password.
+not verified that email and to use their email and password.
 Apply it before merging the pull request that adds it.
 
 **The hosted setting that also governs this.** Dashboard → Authentication →
@@ -2279,17 +2281,16 @@ select
      from auth.identities i
     where i.provider not in ('email', 'phone')
       and i.provider not like 'sso:%'
-      and lower(coalesce(i.identity_data ->> 'email_verified', '')) <> 'true'
-      and exists (select 1 from auth.identities o
-                   where o.user_id = i.user_id and o.id <> i.id)) as unverified_links_already_present;
+      and lower(coalesce(i.identity_data ->> 'email_verified', '')) <> 'true') as unverified_identities_already_present;
 ```
 
 Expect `false`, `true`, `0`. `trigger_exists = true` means this block already
 ran; read its verify instead. `can_create_trigger = false` means the SQL editor
 role cannot add a trigger to `auth.identities` on this project: stop and report
 it rather than working around it. A non-zero last column is an account that
-already has an unverified external identity linked beside its own sign-in -
-possibly an earlier takeover. The trigger does not remove one; list them with the
+already holds an unverified external identity - linked beside its own sign-in,
+possibly an earlier takeover, or the account's only way in. The trigger does
+not remove one; list them with the
 same query selecting `i.user_id, i.provider, i.email, i.created_at` and decide
 each before applying.
 
@@ -2301,10 +2302,10 @@ begin;
 create or replace function public.refuse_unverified_identity_link()
 returns trigger
 language plpgsql
-security definer
--- The trigger fires as supabase_auth_admin, the role GoTrue writes auth tables
--- as; definer rights let it read the user's other identities whoever fires it.
--- search_path is pinned empty and every name is schema-qualified.
+security invoker
+-- It reads only the row being inserted, so it runs as whoever fires it -
+-- supabase_auth_admin, the role GoTrue writes auth tables as. search_path is
+-- pinned empty all the same.
 set search_path = ''
 as $$
 begin
@@ -2316,18 +2317,9 @@ begin
     return new;
   end if;
 
-  if not exists (
-    select 1
-      from auth.identities i
-     where i.user_id = new.user_id
-       and i.id is distinct from new.id
-  ) then
-    return new;
-  end if;
-
-  raise exception 'refusing to link an unverified % email into an existing account', new.provider
+  raise exception 'refusing an unverified % email', new.provider
     using errcode = 'TT403',
-          hint = 'The provider did not verify this email address; sign in with the account''s existing method.';
+          hint = 'The provider did not verify this email address; use email and password instead.';
 end;
 $$;
 
@@ -2352,14 +2344,14 @@ select
   p.proconfig as settings,
   has_function_privilege('anon', p.oid, 'execute') as anon_can_execute,
   has_function_privilege('authenticated', p.oid, 'execute') as rider_can_execute,
-  md5(p.prosrc) = 'c0954536718a0600e7290274b50c0b13' as definition_is_the_migration
+  md5(p.prosrc) = 'fb9cf18b8c8c337a7a3478a88ae3b162' as definition_is_the_migration
 from pg_trigger t
 join pg_proc p on p.oid = t.tgfoid
 where t.tgname = 'refuse_unverified_identity_link'
   and t.tgrelid = 'auth.identities'::regclass;
 ```
 
-Expect one row: `true`, `true`, `{"search_path=\"\""}`, `false`, `false`, `true`.
+Expect one row: `true`, `false`, `{"search_path=\"\""}`, `false`, `false`, `true`.
 A `false` in the last column means the body is not this migration's: run the
 apply block again rather than editing in place. Row 29 of
 `scripts/sql/audit-migrations-against-database.sql` then reads `present`.

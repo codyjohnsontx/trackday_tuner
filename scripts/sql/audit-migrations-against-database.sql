@@ -275,7 +275,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
            and (select md5(p.prosrc) = '65913c39a7070ab1b68c76b2fa3093fc'
                 from pg_proc p where p.oid = to_regprocedure('public.delete_auto_created_track_if_unused(uuid)'))),
   -- The trigger, enabled, and the function it runs by its body, so a hand-edited
-  -- copy that stops checking the claim or the existing identity reads MISSING.
+  -- copy that stops checking the claim reads MISSING.
   (29, '20261004002700_refuse_unverified_identity_link', 'trigger + function',
       'refuse_unverified_identity_link on auth.identities',
       exists (select 1 from pg_trigger
@@ -284,8 +284,8 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                 and tgenabled <> 'D'
                 and not tgisinternal
                 and tgfoid = to_regprocedure('public.refuse_unverified_identity_link()'))
-           and (select md5(p.prosrc) = 'c0954536718a0600e7290274b50c0b13'
-                  and p.prosecdef
+           and (select md5(p.prosrc) = 'fb9cf18b8c8c337a7a3478a88ae3b162'
+                  and not p.prosecdef
                   and p.proconfig = array['search_path=""']
                   and not has_function_privilege('anon', p.oid, 'execute')
                   and not has_function_privilege('authenticated', p.oid, 'execute')

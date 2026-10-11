@@ -14,14 +14,14 @@ describe('authErrorMessage', () => {
 
   it('names the provider that did not verify the email, and points at email and password', () => {
     expect(authErrorMessage('provider_email_unverified', 'google')).toBe(
-      "We couldn't sign you in with Google because that email isn't verified with Google. Sign in with your email and password instead."
+      "We couldn't sign you in with Google because that email isn't verified with Google. Use your email and password instead."
     );
     expect(authErrorMessage('provider_email_unverified', 'apple')).toContain('verified with Apple');
   });
 
   it('stays provider-neutral when the provider is missing or unknown', () => {
     const neutral =
-      "We couldn't sign you in because that email isn't verified with the provider you chose. Sign in with your email and password instead.";
+      "We couldn't sign you in because that email isn't verified with the provider you chose. Use your email and password instead.";
 
     expect(authErrorMessage('provider_email_unverified')).toBe(neutral);
     expect(authErrorMessage('provider_email_unverified', 'toString')).toBe(neutral);

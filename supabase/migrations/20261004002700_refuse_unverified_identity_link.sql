@@ -1,5 +1,5 @@
 -- An external sign-in whose provider has not verified the email address never
--- joins an account that already exists.
+-- joins an account that already exists, and never starts one either.
 --
 -- GoTrue links a new provider identity into an existing user by email address.
 -- It is meant to do that only for an address the provider vouches for, and its
@@ -33,18 +33,25 @@
 --
 -- WHAT IT REFUSES, EXACTLY
 --
--- A new identity for an external provider (anything but `email` and `phone`;
+-- Any new identity for an external provider (anything but `email` and `phone`;
 -- `sso:` providers never link by email, GoTrue keeps each in its own domain)
--- whose `identity_data.email_verified` is not true, written onto a user that
--- already has another identity. A brand-new account from that same sign-in is
--- untouched: GoTrue inserts the user and then its first identity, and that first
--- identity has nothing to join. An absent claim counts as unverified, so a
--- provider that sends none fails closed. Accepted as `true` are the JSON boolean
--- and the string "true", since Apple sends the claim as a string.
+-- whose `identity_data.email_verified` is not true - whether it would join an
+-- existing user or be the first identity of a brand-new one. An absent claim
+-- counts as unverified, so a provider that sends none fails closed. Accepted as
+-- `true` are the JSON boolean and the string "true", since Apple sends the claim
+-- as a string. Email and password signup is untouched.
+--
+-- The first identity is refused too because the takeover also runs in the
+-- other order. An unverified sign-in for an address nobody has registered yet
+-- would create an account holding that address; when its real owner later signs
+-- in with a verified identity, GoTrue links them into it - the account the
+-- unverified sign-in made - and both share it. Refusing the unverified identity
+-- outright means no account ever holds an address its provider did not vouch
+-- for.
 --
 -- The refusal is an exception, so GoTrue rolls back the whole sign-in: no
--- identity, no session, and the rider's account is exactly as it was. The
--- sign-in reaches the app's /auth/callback with no code and
+-- identity, no session, no new user, and any existing account is exactly as it
+-- was. The sign-in reaches the app's /auth/callback with no code and
 -- `error_description=Error creating identity`, which it answers with
 -- `/login?error=provider_email_unverified`.
 --
@@ -55,10 +62,10 @@
 create or replace function public.refuse_unverified_identity_link()
 returns trigger
 language plpgsql
-security definer
--- The trigger fires as supabase_auth_admin, the role GoTrue writes auth tables
--- as; definer rights let it read the user's other identities whoever fires it.
--- search_path is pinned empty and every name is schema-qualified.
+security invoker
+-- It reads only the row being inserted, so it runs as whoever fires it -
+-- supabase_auth_admin, the role GoTrue writes auth tables as. search_path is
+-- pinned empty all the same.
 set search_path = ''
 as $$
 begin
@@ -70,18 +77,9 @@ begin
     return new;
   end if;
 
-  if not exists (
-    select 1
-      from auth.identities i
-     where i.user_id = new.user_id
-       and i.id is distinct from new.id
-  ) then
-    return new;
-  end if;
-
-  raise exception 'refusing to link an unverified % email into an existing account', new.provider
+  raise exception 'refusing an unverified % email', new.provider
     using errcode = 'TT403',
-          hint = 'The provider did not verify this email address; sign in with the account''s existing method.';
+          hint = 'The provider did not verify this email address; use email and password instead.';
 end;
 $$;
 

@@ -13,14 +13,17 @@ import { runAsAuthAdmin } from '@/tests/db/helpers/auth-database';
 
 /**
  * An external sign-in whose provider has not verified the email never joins an
- * existing account (20261004002700).
+ * existing account, and never starts one (20261004002700).
  *
  * GoTrue links a Google sign-in into the account that already holds its email
  * address, and with "Confirm email" off it does that whatever the provider's
  * `email_verified` claim says - so an unverified Google address for a rider's
  * email was handed a session on that rider's account. Linking is GoTrue
  * inserting one row into `auth.identities` with the existing user's id, and
- * that insert is where the gate sits.
+ * that insert is where the gate sits. A new account is the same insert as its
+ * first identity, and is refused too: an unverified sign-in that created an
+ * account for an address would have its real owner's later verified sign-in
+ * linked into it.
  *
  * Each case writes that row exactly as GoTrue does - as `supabase_auth_admin`,
  * onto a rider GoTrue itself created through the admin API - because a real
@@ -101,7 +104,7 @@ test.describe('linking an external identity into an existing account', () => {
     const result = linkIdentity(rider.id, rider.email, false);
 
     expect(result.ok).toBe(false);
-    expect(result.stderr).toContain('refusing to link an unverified google email into an existing account');
+    expect(result.stderr).toContain('refusing an unverified google email');
     expect(await providersOf(rider.id)).toEqual(['email']);
 
     // The rider's own way in still works and still lands on their account.
@@ -147,30 +150,50 @@ test.describe('linking an external identity into an existing account', () => {
   });
 });
 
-test('a new account from an unverified Google sign-in is not blocked - there is nothing for it to join', async () => {
-  // GoTrue's CreateAccount: the user row, then its first identity, in one transaction.
-  const userId = randomUUID();
-  const email = `unverified-new-${randomUUID()}@example.com`;
-  const sub = `${Date.now()}`;
-  const result = runAsAuthAdmin(`
+/** GoTrue's CreateAccount: the user row, then its first identity, in one transaction. */
+function createAccountWithIdentity(userId: string, email: string, verified: unknown) {
+  const sub = `${Date.now()}${Math.floor(Math.random() * 1e6)}`;
+  return runAsAuthAdmin(`
     insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
     values ('00000000-0000-0000-0000-000000000000', '${userId}', 'authenticated', 'authenticated', '${email}',
             '{"provider":"google","providers":["google"]}', '{}', now(), now());
     insert into auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
-    values ('${sub}', '${userId}', '${googleIdentityData(email, false, sub)}'::jsonb, 'google', now(), now(), now());
+    values ('${sub}', '${userId}', '${googleIdentityData(email, verified, sub)}'::jsonb, 'google', now(), now(), now());
   `);
+}
 
-  try {
-    expect(result.ok, result.stderr).toBe(true);
-    // Read back in SQL: a user row written by hand lacks the empty-string token
-    // columns GoTrue's own loader expects, so the admin API cannot read it.
-    expect(runAsAuthAdmin(`select provider from auth.identities where user_id = '${userId}';`).stdout).toBe('google');
-  } finally {
-    runAsAuthAdmin(`delete from auth.users where id = '${userId}';`);
-  }
+test.describe('a new account from an external sign-in', () => {
+  // Read back in SQL: a user row written by hand lacks the empty-string token
+  // columns GoTrue's own loader expects, so the admin API cannot read it.
+  test('is refused when its email is unverified, so no account ever holds that address', async () => {
+    const userId = randomUUID();
+
+    try {
+      const result = createAccountWithIdentity(userId, `unverified-new-${randomUUID()}@example.com`, false);
+
+      expect(result.ok).toBe(false);
+      expect(result.stderr).toContain('refusing an unverified google email');
+      expect(runAsAuthAdmin(`select count(*) from auth.users where id = '${userId}';`).stdout).toBe('0');
+    } finally {
+      runAsAuthAdmin(`delete from auth.users where id = '${userId}';`);
+    }
+  });
+
+  test('is created when its email is verified', async () => {
+    const userId = randomUUID();
+
+    try {
+      const result = createAccountWithIdentity(userId, `verified-new-${randomUUID()}@example.com`, true);
+
+      expect(result.ok, result.stderr).toBe(true);
+      expect(runAsAuthAdmin(`select provider from auth.identities where user_id = '${userId}';`).stdout).toBe('google');
+    } finally {
+      runAsAuthAdmin(`delete from auth.users where id = '${userId}';`);
+    }
+  });
 });
 
-test.describe("the runbook's precheck for links made before the gate existed", () => {
+test.describe("the runbook's precheck for identities stored before the gate existed", () => {
   test('counts an unverified Google identity linked beside an existing sign-in', async () => {
     rider = await createThrowawayRider('unverified-link');
     expect(linkIdentity(rider.id, rider.email, true).ok).toBe(true);
