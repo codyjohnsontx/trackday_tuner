@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { riderDateOfTimestamp, todayLocalDate } from '@/lib/local-date';
+import { localTimeOfDay, riderDateOfTimestamp, todayLocalDate } from '@/lib/local-date';
 
 // The bug this guards only shows up where local time and UTC disagree about the
 // day, so the timezone is pinned rather than inherited: CI runs in UTC, where a
@@ -34,6 +34,20 @@ describe('todayLocalDate', () => {
 
   it('pads month and day so the value parses as a date input value', () => {
     expect(todayLocalDate(new Date(2026, 0, 5, 20, 0, 0))).toBe('2026-01-05');
+  });
+});
+
+describe('localTimeOfDay', () => {
+  it("returns the rider's wall-clock time, not UTC", () => {
+    // 19:05 in Texas is 00:05 the next day in UTC.
+    const evening = new Date(2026, 7, 16, 19, 5, 0);
+    expect(evening.toISOString().slice(11, 16)).toBe('00:05');
+
+    expect(localTimeOfDay(evening)).toBe('19:05');
+  });
+
+  it('pads hours and minutes so the value parses as a time input value', () => {
+    expect(localTimeOfDay(new Date(2026, 0, 5, 7, 3, 59))).toBe('07:03');
   });
 });
 
