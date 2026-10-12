@@ -992,9 +992,16 @@ clicks, preload, camber, spring rate, ride height), each a follow-up with its
 own cited envelope. Its known false positive is a deflation fault report phrased
 "dropped to 8 psi". **A knowledge-base edit changes `data/rag-index.json`'s
 source hash**, so `npm run rag:check` and the build refuse until `npm run
-rag:index` is re-run with the OpenAI key, and the new chunks move the pressure
-cases' completion tape keys, so that re-index is followed by `--live` and a
-deliberate `--update-baseline`.
+rag:index` is re-run with the OpenAI key, and that re-index is followed by
+`--live` and a deliberate `--update-baseline`. **Expect most of the completion
+tape to re-record on any knowledge-base edit, not just the cases the edit
+reaches**: a re-index re-embeds every chunk, the embedding model is not bitwise
+reproducible (0 of 75 unchanged chunks came back identical, cosine 0.99903 at
+worst), and `formatRetrievedBlock` prints each chunk's score to three decimals
+into the prompt. Adding `pressure-limits.md` moved 20 of 28 completion keys
+while the document itself entered one prompt; the sixth `live_rerecord` entry
+in `eval-baseline.json` attributes every movement, and the embedding keys
+replayed untouched as always.
 
 **That list is about what the guard MISSES. It also has a known FALSE POSITIVE,
 and it is the opposite failure**: `remove` survived and `brake pad`, `brake line`

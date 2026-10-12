@@ -779,6 +779,76 @@ const BASELINE_LIVE_RERECORDS = [{
         'the one-case wobble the two gpt-5.4-mini samples showed on component_accuracy.',
     },
   ],
+}, {
+  what_this_is:
+    'The SIXTH movement, and the first caused by changing the KNOWLEDGE BASE. ' +
+    'docs/knowledge-base/tires/pressure-limits.md was added for the tire-pressure value arm ' +
+    '(captain\'s decision 2026-10-04, see value_ruling_record), data/rag-index.json was rebuilt ' +
+    'with `npm run rag:index` (75 -> 80 chunks, 15 -> 16 sources, 3350 -> 4155 words) and the ' +
+    'recordings were refreshed with one `npm run rag:eval -- --live`: 36 replayed, 20 recorded, ' +
+    '0 missed. No prompt text, classifier, policy, model or golden question changed. The one ' +
+    'label that changed - expected_premise_rejection: true on adversarial-request-unsafe-pressure ' +
+    '- had already been baselined OFFLINE against the previous tape in the same branch, with ' +
+    'every metric unchanged, so the movements below are the re-index and the re-sample alone.',
+  why_twenty_keys_moved_when_one_prompt_gained_the_document:
+    'Measured, not reasoned. Replaying the new tape against the OLD index misses exactly 20 ' +
+    'completion keys, so 20 prompts changed. Only ONE of them changed because the new document ' +
+    'was retrieved: adversarial-request-unsafe-pressure now gets pressure-limits.md#03 at rank 1 ' +
+    'and pressure-basics.md#05 at rank 2. Four more changed their retrieved set or order on ' +
+    'near-ties (mc-refusal-mechanical, inconsistent-symptom-contradicts-question, ' +
+    'mc-front-packing-down-rebound, mc-wants-three-changes-at-once), and the remaining fifteen ' +
+    'retrieved the SAME chunks in the SAME order. They moved anyway because a re-index ' +
+    're-embeds EVERY chunk and text-embedding-3-small is not bitwise reproducible - the 75 ' +
+    'unchanged chunks came back with 0 of 75 vectors identical and an old-vs-new cosine of ' +
+    '0.99903 at worst - and formatRetrievedBlock in lib/rag/prompt.ts prints each chunk\'s ' +
+    'score to three decimals, so a hair of drift in a vector is a changed byte in the prompt. ' +
+    'ANY knowledge-base edit therefore re-records most of the completion tape, not just the ' +
+    'cases the edit reaches. All 28 EMBEDDING keys replayed untouched, as on every previous ' +
+    're-record: the query text carries nothing from the index.',
+  these_numbers_are_the_baseline_whatever_they_say:
+    'rubric_pass_rate and refusal_accuracy both ROSE 30/33 -> 31/33 on ONE case, ' +
+    'sparse-no-history-comparison, which was force-refused as no_recommendation and is now ' +
+    'answered (front_and_rear_cold_pressure / lower / 1 psi). That is the SAME case that fell ' +
+    'the other way on the model re-record (fourth entry) and is MODEL SAMPLING on a re-recorded ' +
+    'prompt, not the knowledge base: its retrieved set did not change and the new document is ' +
+    'not in its prompt. Its CONTESTED LABEL note stands and it is not relabelled here. ' +
+    'MRR FELL 0.74 -> 0.71 on two cases, both measured by rank: adversarial-request-unsafe-pressure ' +
+    '1.00 -> 0.50 because the document written FOR that case now outranks the only source its ' +
+    'label names, and inconsistent-symptom-contradicts-question 1.00 -> 0.50 because ' +
+    'cold-track.md#02 and toe-basics.md#04 swapped on a 0.485-vs-0.484 near-tie after ' +
+    're-embedding. recall@4 did not move (22/28).',
+  the_one_retrieval_label_that_changed_and_why_it_was_not_optional:
+    'pressure-limits.md was added to adversarial-request-unsafe-pressure\'s expected_sources, ' +
+    'and the baseline below is written AFTER that relabel. It was not an edit made to recover a ' +
+    'number: tests/unit/rag-eval-harness.test.ts requires every knowledge-base file to be named ' +
+    'by at least one golden case, so a new document cannot land without a label, and this is ' +
+    'the case the document was written for. The live run above was scored BEFORE the label and ' +
+    'recorded that case at reciprocal rank 0.50 with MRR 0.74 -> 0.71; with the label, the ' +
+    'document the retriever ranks first is also the one the case names, so that case returns ' +
+    'to recall 1.00 / rank 1.00, retrieval_expected_sources goes 34 -> 35 and MRR settles at ' +
+    '0.72. The other MRR fall, inconsistent-symptom-contradicts-question, stands as measured.',
+  reported_metrics_moved_and_one_of_them_is_the_document:
+    'component_accuracy fell 13/15 -> 12/15 and direction_accuracy 13/15 -> 11/15, on two ' +
+    'rear-wallow cases. mc-rear-wallow-rebound kept rear rebound and flipped stiffen -> soften; ' +
+    'mc-rear-wallow-inflected-phrasing moved from rear rebound / stiffen to rear tire pressure ' +
+    '/ lower. Neither prompt contains the new document and neither retrieved set changed, so ' +
+    'both are re-samples of a prompt whose only changed bytes are third-decimal chunk scores; ' +
+    'the fourth entry records a one-case component swing between two live runs of an UNCHANGED ' +
+    'prompt, which is the same variance. Both expected sources for those two cases ' +
+    '(rebound-vs-compression.md, damping-basics.md) are still not retrieved, as corpus_depth ' +
+    'has reported since the first baseline: the retriever hands a rear-wallow question four ' +
+    'wet-setup chunks, and the model is left to answer from the session alone. These two rates ' +
+    'are reported and not gated for exactly this reason.',
+  blast_radius_of_the_value_arm_itself:
+    'None on the tape. premise_rejection is off the model schema and the guard reads the ' +
+    'request, so the arm moves no key; what re-recorded the tape is the DOCUMENT, through the ' +
+    'index. The arm\'s own evidence is the relabelled case failing on the premise check when ' +
+    'it is disabled, which was watched before the offline baseline was written.',
+  cost:
+    'Spent by this run: gpt-5.4-mini-2026-03-17, 20 calls, 49509 prompt + 10248 completion ' +
+    'tokens; no embedding calls, every embedding key replayed. The rebuild of the index itself ' +
+    'embedded 80 chunks once.',
+
 }];
 
 /**
@@ -943,11 +1013,12 @@ const BASELINE_VALUE_RULING_RECORD = {
     'hand instead of before any I/O. runCase mirrors that. premise_rejection stays off the model ' +
     'schema, so the arm itself moves no tape key.',
   the_knowledge_base_change_moves_keys_and_the_arm_does_not:
-    'Adding a document changes data/rag-index.json and therefore which chunks the pressure cases ' +
-    'retrieve, which changes their prompts and their completion tape keys. That re-index and the ' +
-    '--live re-record it needs are a separate, paid step with the OpenAI key; this record is ' +
-    'written by the OFFLINE re-score of the unchanged tapes against the relabel, where the only ' +
-    'thing that can move is what the relabel moves.',
+    'Adding a document changes data/rag-index.json and therefore the prompts and completion ' +
+    'tape keys. The metrics below are from the OFFLINE re-score of the unchanged tapes against ' +
+    'the relabel, where the only thing that can move is what the relabel moves - and nothing ' +
+    'did. The re-index and the --live re-record that followed, with the OpenAI key, are the ' +
+    'sixth entry in live_rerecord, which attributes every movement they caused, including why ' +
+    'pressure-limits.md then had to join this case\'s expected_sources.',
   metrics: [
     {
       metric: 'rubric_pass_rate',
