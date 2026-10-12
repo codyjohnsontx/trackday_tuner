@@ -1479,14 +1479,17 @@ no information under any reading. **A new member needs a recording behind it**,
 because every member turns a policy refusal into a served answer. What is
 NOT normalised is anything else, whatever its shape - declining to give a
 reference and inventing one are different acts, and a fabricated id still reaches
-the policy and is still refused.
+the policy and is still never served.
 
 The fix is at the PARSER and not at the policy, and that boundary is the whole
 design: `parseAdviceResponse` decides what the model actually said, and
 `evaluateAdvicePolicy` decides whether what it said may be served. A placeholder
-is a question about the first. **Whether ONE unverifiable citation should discard
-the WHOLE response, or only that evidence item, is a separate product call and is
-deliberately still open** - the parser fix must not quietly become it.
+is a question about the first. **One unverifiable citation costs that evidence
+item, not the response** (captain's decision, 2026-10-04): the policy removes it,
+sets `unverified_evidence_notice` so `AdviceReport` tells the rider evidence is
+missing, records `invalid_personal_evidence` on an otherwise `ok` audit row, and
+runs every other rule on what is left - so an answer whose only support was that
+session is still refused as ungrounded.
 
 **An `AdviceResponse` is rendered in exactly one place, and that is the guard.**
 `components/ai/advice-report.tsx` prints the whole payload; the Race Engineer and
@@ -1546,15 +1549,17 @@ rules rather than preferences.
 
 **`evaluateAdvicePolicy` IS PART OF THE RUBRIC.** A response the policy
 force-refuses is a rubric FAILURE, not a pass - unless refusing is the case's
-expected answer (`should_refuse`). That one line is what makes the harness at
-least as strict as production. **Grounding resolves the citation path** against
-the knowledge index rather than checking the string is non-empty, which is the
-other half: `filterCitationsToRetrievedSources` (`lib/rag/advice.ts`) strips an
-invented source before a live answer reaches a scorer, so that class can only be
-caught by scoring a response directly. Both live in `scripts/eval/scoring.mjs`,
-and the three audit responses are `tests/fixtures/rag-eval/adversarial-responses.json`:
-every run scores them as a self-check and exits non-zero if any passes, so a run
-that reports a pass rate has also just proved it can report a failure.
+expected answer (`should_refuse`) - and so is one it serves only after removing
+an unverifiable session citation (`invalid_personal_evidence`). That one line is
+what makes the harness at least as strict as production. **Grounding resolves
+the citation path** against the knowledge index rather than checking the string
+is non-empty, which is the other half: `filterCitationsToRetrievedSources`
+(`lib/rag/advice.ts`) strips an invented source before a live answer reaches a
+scorer, so that class can only be caught by scoring a response directly. Both
+live in `scripts/eval/scoring.mjs`, and the three audit responses are
+`tests/fixtures/rag-eval/adversarial-responses.json`: every run scores them as a
+self-check and exits non-zero if any passes, so a run that reports a pass rate
+has also just proved it can report a failure.
 `tests/unit/rag-eval-harness.test.ts` locks that in the required checks, because
 `rag:eval` failing is not the same as `test:unit` failing.
 
@@ -1577,7 +1582,7 @@ gate.** `tests/fixtures/rag-eval/must-serve-responses.json` holds real recorded
 model outputs that production discarded and should not have, and
 `tests/unit/rag-eval-harness.test.ts` scores every one through
 `parseAdviceResponse` and the policy with `validSessionIds: []`, asserting each is
-served parsed and refused raw. `npm run rag:eval` does not read the file. **Eval
+served with all its evidence parsed and loses that evidence raw. `npm run rag:eval` does not read the file. **Eval
 measurements stay reported and are not gated until a bar has been set**, so a new
 pass/fail condition in the run is a decision for the owner, never a side effect of
 the change that motivated it.
@@ -1897,10 +1902,10 @@ is only ever paid for by a prompt that actually moved.
 
 **THE OLD NUMBER AND THE NEW ONE ARE NOT COMPARABLE, and no reading makes them
 so.** The predecessor reported 100% over eleven constants it could not fail; the
-committed baseline is 0.91 over 33 real requests it can. Different inputs, a
+committed baseline is 0.94 over 33 real requests it can. Different inputs, a
 different rubric and one of them incapable of returning anything else - a
-difference of -9 points between those two measures nothing. So
-`docs/ai-mvp-spec.md`'s 85% exit criterion is met by the 0.91 here and was never
+difference of -6 points between those two measures nothing. So
+`docs/ai-mvp-spec.md`'s 85% exit criterion is met by the 0.94 here and was never
 evidenced by the 100%, and any claim about the Race Engineer improving or
 regressing starts from this baseline rather than from anything recorded before
 it.
@@ -1924,12 +1929,12 @@ refusing to go green until somebody spent the money.
 
 **Re-recording the whole set costs about eleven cents, and the run says so in
 tokens - BOTH endpoints, which took counting them somewhere neither could
-hide.** That figure is every response the set needs: 28 completions at 68,849
-prompt + 13,929 completion tokens on `gpt-5.4-mini-2026-03-17`, plus 28 embeddings at 937 prompt
+hide.** That figure is every response the set needs: 28 completions at 69,269
+prompt + 14,311 completion tokens on `gpt-5.4-mini-2026-03-17`, plus 28 embeddings at 937 prompt
 tokens on `text-embedding-3-small`, one row per model because they bill at
 different rates. At the list prices read on 2026-09-17 - gpt-5.4-mini
 $0.75/$4.50 per million, text-embedding-3-small $0.02 per million - that is
-$0.114, of which embeddings are under a hundredth of a cent.
+$0.116, of which embeddings are under a hundredth of a cent.
 
 **The model is `gpt-5.4-mini` and it was picked by running this harness, not by
 tier.** `getAiModel` (`lib/env.server.ts`) carries the choice and the comment

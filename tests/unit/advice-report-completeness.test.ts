@@ -96,6 +96,7 @@ function everyRiderFacingString(value: AdviceResponse): string[] {
     ...value.safety_notes,
     ...(value.prediction ? [value.prediction.expected_effect, value.prediction.day_trend] : []),
     ...(value.prediction?.watch_items ?? []),
+    ...(value.unverified_evidence_notice ? [value.unverified_evidence_notice] : []),
     ...value.personal_evidence.flatMap((evidence) => [evidence.label, evidence.detail]),
     ...value.citations.flatMap((citation) => [citation.source, citation.snippet]),
   ];
@@ -120,6 +121,24 @@ describe('AdviceReport renders the whole response', () => {
     expect(html).toContain('Citations');
     // The static disclaimer, which is not part of the payload.
     expect(html).toContain('Informational only.');
+  });
+
+  it('tells the rider when unverifiable evidence was removed', () => {
+    const notice = 'Some session evidence could not be matched to a session you logged.';
+    const withEvidence = advice({ unverified_evidence_notice: notice });
+    const html = render(
+      createElement(AdviceReport, { advice: withEvidence, summaryHeading: 'Plan', refusal: REFUSAL_COPY }),
+    );
+    expectComplete(html, withEvidence);
+
+    // Every evidence item was removed: the heading and notice still show, so
+    // the rider is not left reading an answer that silently lost its evidence.
+    const allRemoved = advice({ personal_evidence: [], unverified_evidence_notice: notice });
+    const emptyHtml = render(
+      createElement(AdviceReport, { advice: allRemoved, summaryHeading: 'Plan', refusal: REFUSAL_COPY }),
+    );
+    expect(emptyHtml).toContain('Personal evidence');
+    expect(emptyHtml).toContain(notice);
   });
 
   it('renders identifiers as labels a rider reads', () => {
