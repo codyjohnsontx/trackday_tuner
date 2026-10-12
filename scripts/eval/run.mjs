@@ -2393,6 +2393,7 @@ async function report(ctx) {
             recall: r.retrieval.recall,
             reciprocal_rank: r.retrieval.reciprocalRank,
             policy: r.scored.policy.decision,
+            policy_violations: r.scored.policy.violations,
             labels: r.labels,
           },
         ]),

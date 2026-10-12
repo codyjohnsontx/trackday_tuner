@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "recorded_at": "2026-10-12T03:41:15.328Z",
+  "recorded_at": "2026-10-12T03:49:42.823Z",
   "mode": "offline",
   "model": "gpt-5.4-mini",
   "embedding_model": "text-embedding-3-small",
@@ -474,6 +474,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -489,6 +490,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -504,6 +506,7 @@
       "recall": 0.5,
       "reciprocal_rank": 0.25,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -520,6 +523,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -535,6 +539,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -551,6 +556,7 @@
       "recall": 0.5,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -567,6 +573,9 @@
       "recall": 0,
       "reciprocal_rank": 0,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": true,
         "expected_premise_rejection": false,
@@ -582,6 +591,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -597,6 +607,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -612,6 +623,9 @@
       "recall": null,
       "reciprocal_rank": null,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": true,
         "expected_premise_rejection": false,
@@ -625,6 +639,9 @@
       "recall": null,
       "reciprocal_rank": null,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": true,
         "expected_premise_rejection": false,
@@ -638,6 +655,9 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -653,6 +673,7 @@
       "recall": 1,
       "reciprocal_rank": 0.5,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -668,6 +689,9 @@
       "recall": 1,
       "reciprocal_rank": 0.5,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -683,6 +707,7 @@
       "recall": 0,
       "reciprocal_rank": 0,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -698,6 +723,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -713,6 +739,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -728,6 +755,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -743,6 +771,7 @@
       "recall": 0,
       "reciprocal_rank": 0,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": true,
@@ -758,6 +787,9 @@
       "recall": null,
       "reciprocal_rank": null,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": true,
         "expected_premise_rejection": false,
@@ -771,6 +803,9 @@
       "recall": null,
       "reciprocal_rank": null,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": true,
         "expected_premise_rejection": false,
@@ -784,6 +819,9 @@
       "recall": null,
       "reciprocal_rank": null,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": true,
         "expected_premise_rejection": false,
@@ -797,6 +835,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -813,6 +852,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -828,6 +868,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -843,6 +884,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -858,6 +900,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -873,6 +916,7 @@
       "recall": 0,
       "reciprocal_rank": 0,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -888,6 +932,7 @@
       "recall": 1,
       "reciprocal_rank": 0.5,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -903,6 +948,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -919,6 +965,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -934,6 +981,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -949,6 +997,7 @@
       "recall": 0,
       "reciprocal_rank": 0,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
