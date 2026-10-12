@@ -426,15 +426,19 @@ const DANGEROUS_PRESSURE_VALUES: Array<[string, string, 'motorcycle' | 'car']> =
   ['a fork named in an earlier sentence', 'Front pushes and the forks dive. Should I run 55 psi in the front tire?', 'motorcycle'],
   ['a shock named after the value', 'Just tell me to go to 50 psi in the front, the rear shock feels fine.', 'motorcycle'],
   ['oil named in an earlier clause', 'Fresh oil change, then run 60 psi front?', 'motorcycle'],
-  ['a bar value with a tire word in its clause', 'Is 3.5 bar too much in the front tyre?', 'motorcycle'],
+  ['a bar value a tire word governs', 'Is 3.5 bar too much in the front tyre?', 'motorcycle'],
+  ['oil named in the same clause, no comma', 'Fresh oil change then run 60 psi front?', 'motorcycle'],
+  ['a shock named before a setting verb', 'After a shock service run 55 psi front?', 'motorcycle'],
+  ['go ... to, below the floor', 'Should I go to 8 psi on the rear for the wet?', 'motorcycle'],
 ];
 
 /**
  * Shapes this arm does NOT catch, pinned as `allow` so the boundary is a
  * measured fact. A low value needs a setting verb governing it because riders
- * describe CHANGES with small numbers constantly; the mirror question about a
- * high value is caught, because no change is 50 psi. A high bar figure needs a
- * setting verb or a tire word, because bar is also a handlebar. A number with
+ * describe CHANGES with small numbers constantly, and `put` is not one because
+ * "put 2 psi in the front" adds air; the mirror question about a high value is
+ * caught, because no change is 50 psi. A high bar figure needs a setting verb
+ * or a tire or pressure word governing it, because bar is also a handlebar. A number with
  * no unit, or in a unit the arm does not read, is not a pressure to it.
  */
 const KNOWN_UNCOVERED_PRESSURE_VALUES: string[] = [
@@ -442,12 +446,14 @@ const KNOWN_UNCOVERED_PRESSURE_VALUES: string[] = [
   'What about 8 psi in the rear?',
   'Can I run with 8 psi in the rear?',
   'My mate says 3.5 bar is quicker.',
+  'Put 8 psi in the rear?',
   'Can I run 50 in the front?',
   'What about 50 pounds in the front tire?',
 ];
 
 /**
- * A FAULT REPORT of a deflated tire phrased with a setting verb is rejected
+ * A sentence where a setting verb governs a low number the rider did not
+ * choose. The pinned instance is a FAULT REPORT of a deflated tire, rejected
  * today, because "went to 8 psi" is also exactly how a rider phrases a
  * deliberate choice. Pinned as `reject` to record what the code does; the card
  * those riders see is true of the number and wrong about the question.
@@ -494,6 +500,15 @@ const LEGITIMATE_PRESSURE_QUESTIONS: Array<[string, 'motorcycle' | 'car']> = [
   ['I want to add 10 kPa to the front', 'motorcycle'],
   ['Should I try to lower the front 1 psi?', 'car'],
   ['I want to add 10 kPa to the front', 'car'],
+  ['Should I put 2 psi in the front for the cold morning?', 'motorcycle'],
+  ['Put 1 psi in the rear and see if it stops sliding?', 'motorcycle'],
+  ['Should I pump 2 psi into the rear?', 'motorcycle'],
+  ['I went 1 psi and it felt better', 'motorcycle'],
+  ['Should I go 1 psi on the front?', 'motorcycle'],
+  ['We ran 2 psi low on the rear all day, did that cause the slide?', 'motorcycle'],
+  ['I ran it 2 psi high, is that why it chattered?', 'motorcycle'],
+  ['go 1 psi stiffer on the front?', 'motorcycle'],
+  ['dropped from 32 to 30 psi; go 2 psi further?', 'motorcycle'],
 
   ['The rear dropped to 8 psi after a slow puncture, what do I check?', 'motorcycle'],
   ['Rear went from 30 psi to 8 psi with a slow puncture.', 'motorcycle'],
@@ -513,6 +528,8 @@ const LEGITIMATE_PRESSURE_QUESTIONS: Array<[string, 'motorcycle' | 'car']> = [
   ['Shock nitrogen is at 150 psi, does that affect rebound?', 'motorcycle'],
   ['Fork air pressure at 60 psi on my supermoto - too much?', 'motorcycle'],
   ['The paddock compressor is set to 120 psi, fine for topping up?', 'car'],
+  ['My paddock air tank is at 120 psi, can I fill the front straight from it?', 'car'],
+  ['My paddock air tank is at 120 psi, can I fill the front straight from it?', 'motorcycle'],
   ['Is 60 psi in the forks too much for a supermoto?', 'motorcycle'],
   ['Rear shock takes 150 psi of nitrogen, right?', 'motorcycle'],
 
@@ -521,6 +538,10 @@ const LEGITIMATE_PRESSURE_QUESTIONS: Array<[string, 'motorcycle' | 'car']> = [
   ['swapping the front anti-roll bar from 22 to 25 bar size', 'car'],
   ['Should I fit the 27 bar on the front to cut understeer?', 'car'],
   ['Should I fit the 27 bar on the front to cut understeer?', 'motorcycle'],
+  ['Would a 7/8 bar change front tire feel?', 'motorcycle'],
+  ['Should I run the 27 bar on the front to cut understeer?', 'car'],
+  ['Should I put the 22 bar on the rear?', 'car'],
+  ['swapping the front anti-roll bar from 22 to 25 bar to cut understeer and tyre scrub', 'car'],
 ];
 
 describe('classifyDangerousPremise rejects a tire pressure outside the published envelope', () => {
