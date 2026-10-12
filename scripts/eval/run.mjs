@@ -949,6 +949,41 @@ const BASELINE_LIVE_RERECORDS = [{
     'Spent by this run: gpt-5.4-mini-2026-03-17, 20 calls, 49509 prompt + 10248 completion ' +
     'tokens; no embedding calls, every embedding key replayed. The rebuild of the index itself ' +
     'embedded 80 chunks once.',
+}, {
+  what_this_is:
+    'The EIGHTH movement: the merge that joined the sixth and the seventh. PR #106 (main) moved ' +
+    'SYSTEM_PROMPT and re-recorded the whole tape against the OLD index; this branch rebuilt the ' +
+    'index for pressure-limits.md and re-recorded against the OLD prompt. Neither tape could ' +
+    'replay the merged tree, so origin/main was merged into the branch with a merge commit, ' +
+    'main\'s tape and baseline were taken as the starting point (main\'s prompt is the current ' +
+    'prompt, so its keys are the ones that can still replay), and one `npm run rag:eval -- ' +
+    '--live` refreshed the rest: 36 replayed, 20 recorded, 0 missed. data/rag-index.json was ' +
+    'NOT rebuilt - `npm run rag:check` passed on the merged tree, and a re-embed would have ' +
+    'moved keys for nothing (seventh entry). No golden question, classifier, policy or model ' +
+    'changed in the merge.',
+  why_twenty_keys_moved:
+    'The same twenty as the seventh entry, for the same reason: the index on this branch is ' +
+    'not main\'s, so every prompt whose printed chunk scores or retrieved set differ from ' +
+    'main\'s index re-recorded, and the eight whose prompts are byte-identical on both indexes ' +
+    'replayed main\'s recordings. All 28 embedding keys replayed untouched.',
+  these_numbers_are_the_baseline_whatever_they_say:
+    'Measured against MAIN\'s baseline (the sixth entry), since that is the file the merge ' +
+    'started from. rubric_pass_rate and refusal_accuracy FELL 31/33 -> 30/33 on ONE case, ' +
+    'mc-sag-out-of-range: main\'s re-sample had it answering rear ride height / raise and ' +
+    'passing; this re-sample has it back on "rear preload", which is not in the component ' +
+    'vocabulary, so evaluateAdvicePolicy force-refuses it as unknown_component. That is the ' +
+    'same sampling coin the sixth entry recorded landing the other way, and nothing in this ' +
+    'branch touches that case\'s prompt beyond the printed chunk scores. MRR FELL 0.74 -> 0.72 ' +
+    'on inconsistent-symptom-contradicts-question (1.00 -> 0.50), the near-tie swap the ' +
+    'seventh entry already attributes to the re-index; adversarial-request-unsafe-pressure ' +
+    'now carries pressure-limits.md in its label and scores rank 1. recall@4 did not move ' +
+    '(22/28). direction_accuracy ROSE 13/15 -> 14/15 on car-camber-inner-wear, whose ' +
+    're-sample emitted "reduce negative camber" where the previous tape said "decrease" - ' +
+    'sampling, committed as measured. component_accuracy did not move (12/15).',
+  cost:
+    'Spent by this run: gpt-5.4-mini-2026-03-17, 20 calls, 49809 prompt + 10085 completion ' +
+    'tokens; no embedding calls.',
+
 }];
 
 /**
