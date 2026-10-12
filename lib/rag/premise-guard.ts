@@ -382,31 +382,34 @@ export function classifyDangerousPremise(
  * - ABOVE the ceiling, a psi or kPa value is a premise on its own. A CHANGE in
  *   pressure is never 48 psi, so a number that size can only be an absolute.
  *   `bar` is the exception, because it is also a noun in this domain - a 7/8
- *   handlebar, a 27 mm anti-roll bar - so a bar figure counts only when a
- *   setting verb governs it or a tire or pressure word does (just before it,
- *   or through a preposition just after it), and it never pairs and is never
- *   the denominator of a fraction. The other thing that puts a large figure in
- *   a setup question is another pressure vessel - fork air, shock nitrogen, a
- *   compressor or air tank - and that is excluded only when the vessel word
- *   GOVERNS the number: reached back through nothing but link words like `air`,
+ *   handlebar, a 27 mm anti-roll bar - so a bar figure counts only when it is a
+ *   plausible gauge reading (at most `BAR_GAUGE_MAX`, 10 bar) and a setting
+ *   verb governs it or a tire or pressure word does (just before it, or through
+ *   a preposition just after it), and it never pairs and is never part of a
+ *   fraction. The other thing that puts a large figure in a setup question is
+ *   another pressure vessel - fork air, a shock reservoir, a compressor or air
+ *   tank - and that is excluded only when the vessel word GOVERNS the number:
+ *   reached back through nothing but link words like `air`, `nitrogen`,
  *   `pressure`, `is`, `at`, `set` and `to` ("fork air pressure at 60 psi",
- *   "compressor is set to 120 psi"), or straight after the unit ("150 psi of
- *   nitrogen", "60 psi in the forks"). A fork, shock or oil change mentioned
- *   anywhere else in the question does not switch the ceiling off.
+ *   "shock nitrogen is at 150 psi"), or straight after the unit with no tire
+ *   word following ("60 psi in the forks"). Nitrogen alone is not a vessel,
+ *   because riders fill tires with it, and a fork, shock or oil change
+ *   mentioned anywhere else in the question does not switch the ceiling off.
  * - BELOW the floor, the value has to be an ABSOLUTE, and that is decided by
  *   government too. Riders talk about pressure CHANGES constantly - "added a
  *   psi", "try to lower the front 1 psi", "went 1 psi softer", "put 2 psi in
- *   the front", "ran 2 psi low" - and every one of those is a small number below
- *   any floor. So a low value counts only when a setting verb directly governs
- *   it: `run`, `set` or `inflate` straight before the number (`run 8 psi`), or
- *   `run`, `set`, `inflate`, `go` or `sit` through `to`, `at`, `down to` or
- *   `up to`, with at most a few words naming the tire before the particle (`set
- *   the rear down to 8 psi`, `go to 8 psi`, `inflate to 1 bar`). Any other word
- *   between the verb and the number breaks it, and a change or offset word right
- *   after the unit (`1 psi softer`, `2 psi over`, `2 psi low`) turns it back
- *   into a change. Both lists are CLOSED and short, on purpose: the brake arm's
- *   history is three review rounds each finding a new misfire inside an
- *   open-ended list.
+ *   the front", "run 2 psi between front and rear" - and every one of those is
+ *   a small number below any floor. So a low value counts only when a setting
+ *   verb directly governs it: `run`, `set` or `inflate` straight before the
+ *   number (`run 8 psi`), or `run`, `set`, `inflate`, `go` or `sit` through
+ *   `to`, `at`, `down to` or `up to`, with at most a few words naming the tire
+ *   before the particle (`set the rear down to 8 psi`, `go to 8 psi`, `inflate
+ *   to 1 bar`). Any other word between the verb and the number breaks it, and
+ *   a change, offset or relation word right after the unit (`1 psi softer`, `2
+ *   psi low`, `2 psi between`, `2 psi of stagger`, `2 psi from cold to hot`)
+ *   turns it back into a change. Both lists are CLOSED and short, on purpose:
+ *   the brake arm's history is three review rounds each finding a new misfire
+ *   inside an open-ended list.
  *
  * WHAT IT DOES NOT CATCH, recorded rather than chased, and pinned as
  * `KNOWN_UNCOVERED_PRESSURE_VALUES` in the test file:
@@ -414,8 +417,11 @@ export function classifyDangerousPremise(
  *   "what about 8 psi?", "run with 8 psi", "put 8 psi in the rear". The ceiling
  *   catches the mirror ("is 50 psi too much?") because a high number needs no
  *   verb.
- * - A high bar figure no setting verb or tire or pressure word governs: "my
- *   mate says 3.5 bar is quicker", "pump the front up to 4 bar".
+ * - A low value whose unit is followed by a word on the change list: "run 8
+ *   psi from now on".
+ * - A high bar figure no setting verb or tire or pressure word governs, or one
+ *   above 10 bar: "my mate says 3.5 bar is quicker", "pump the front up to 4
+ *   bar".
  * - A value with no unit, or in a unit this arm does not read: "run 50 in the
  *   front", "50 pounds", "3.5 kg/cm2". `psi`, `bar` and `kPa` are the units the
  *   session form and the knowledge base speak.
@@ -424,7 +430,8 @@ export function classifyDangerousPremise(
  *
  * WHAT IT GETS WRONG IN THE OTHER DIRECTION, pinned as
  * `KNOWN_PRESSURE_FALSE_POSITIVES`: any sentence in which a setting verb
- * governs a low number the rider did not choose. The pinned instance is a FAULT
+ * governs a low number that is not the pressure the rider means to run, with
+ * no change word after the unit to say so. The pinned instance is a FAULT
  * REPORT of a deflated tire - "the rear went to 8 psi after a slow puncture" -
  * rejected because "went to 8 psi" is exactly how a rider also phrases a
  * deliberate choice, and the two cannot be told apart lexically. The card those
@@ -445,36 +452,47 @@ export function classifyDangerousPremise(
  * air springs run around 60 psi on the off-road bikes that have them, shock
  * reservoirs hold 150 psi of nitrogen, and a paddock compressor or air tank is
  * set well above any tire. Short and closed; `brake` is deliberately absent
- * because "runs 50 psi in the front and brakes later" is a tire sentence.
+ * because "runs 50 psi in the front and brakes later" is a tire sentence, and
+ * `nitrogen` is a link word rather than a vessel because riders fill tires with
+ * it too. A vessel named after the unit does not count when a tire word follows
+ * it in the clause.
  */
-const NON_TIRE_VESSEL_SOURCE =
-  '(?:forks?|shocks?|dampers?|nitrogen|compressors?|tanks?|boost|fuel|oil)';
+const NON_TIRE_VESSEL_SOURCE = '(?:forks?|shocks?|dampers?|compressors?|tanks?|boost|fuel|oil)';
 const NON_TIRE_VESSEL_WORD = new RegExp(`^${NON_TIRE_VESSEL_SOURCE}$`);
 const NON_TIRE_VESSEL_AFTER_UNIT = new RegExp(
-  `^\\s*(?:of|in)\\s+(?:(?:the|my|your)\\s+)?(?:(?:front|rear)\\s+)?${NON_TIRE_VESSEL_SOURCE}\\b`,
+  `^\\s*(?:of|in)\\s+(?:(?:the|my|your)\\s+)?(?:(?:front|rear)\\s+)?${NON_TIRE_VESSEL_SOURCE}\\b` +
+    '(?![^,;:!?.]*\\b(?:tires?|tyres?)\\b)',
   'i',
 );
 
 /**
  * The only words that may stand between a vessel word and the number it
- * governs: "fork AIR PRESSURE AT 60 psi", "nitrogen IS AT 150 psi",
- * "compressor IS SET TO 120 psi". Anything else - a tire word, a setting verb
- * like `run`, "oil CHANGE THEN run" - means the vessel is not what the number
- * measures.
+ * governs: "fork AIR PRESSURE AT 60 psi", "shock NITROGEN IS AT 150 psi",
+ * "compressor IS SET TO 120 psi", "shock TAKES 150 psi". Anything else - a
+ * tire word, a setting verb like `run`, "oil CHANGE THEN run" - means the
+ * vessel is not what the number measures.
  */
 const VESSEL_LINK_WORD =
-  /^(?:air|pressures?|is|are|at|to|set|runs|holds|charged|reservoir|springs?)$/;
+  /^(?:air|nitrogen|pressures?|is|are|at|to|set|runs|takes|holds|charged|reservoir|springs?)$/;
 
 /**
  * A tire or pressure word that governs a bar figure, making it a pressure
  * rather than a handlebar or an anti-roll bar: just before it ("tyre pressure
  * 2.9 bar", "front tyre at 3.5 bar"), or reached through a preposition just
- * after it ("3.5 bar too much in the front tyre").
+ * after it, with at most a few words judging the figure in between ("3.5 bar
+ * in the front tyre", "3.5 bar too much in the front tyre").
  */
 const PRESSURE_CONTEXT_WORD = /^(?:tires?|tyres?|pressures?|inflat(?:e|ed|ing|ion))$/;
 const PRESSURE_CONTEXT_BEFORE_WORDS = 2;
 const TIRE_AFTER_UNIT =
-  /^\s+(?:[a-z]+\s+){0,3}(?:in|on|for|of)\s+(?:(?:the|my|your|both)\s+)?(?:(?:front|rear)\s+)?(?:tires?|tyres?)\b/i;
+  /^\s+(?:(?:too|much|high|low|hot|cold|enough)\s+){0,3}(?:in|on|for|of)\s+(?:(?:the|my|your|both)\s+)?(?:(?:front|rear)\s+)?(?:tires?|tyres?)\b/i;
+
+/**
+ * The highest bar figure that can be a tire pressure at all. No tire is
+ * inflated anywhere near 10 bar (145 psi), and every anti-roll bar size a rider
+ * names ("the 22 bar", "a 27 bar") is above it.
+ */
+const BAR_GAUGE_MAX = 10;
 
 /**
  * A setting verb directly governing the number. Closed list, in two kinds.
@@ -498,9 +516,10 @@ const GOVERNED_BY_SETTING_VERB = new RegExp(
 );
 
 /**
- * Words right after the unit that say the figure was a change or an offset:
- * "to 2 psi HIGHER", "go to 3 psi OVER target", "0.5 psi ADJUSTMENTS", "ran 2
- * psi LOW on the rear".
+ * Words right after the unit that say the figure was a change, an offset or a
+ * relation between two pressures: "to 2 psi HIGHER", "go to 3 psi OVER
+ * target", "0.5 psi ADJUSTMENTS", "ran 2 psi LOW on the rear", "2 psi BETWEEN
+ * front and rear", "2 psi OF stagger", "2 psi FROM cold to hot", "1 psi JUMPS".
  */
 const DELTA_WORDS_AFTER = new Set([
   'higher', 'lower', 'more', 'less', 'up', 'down', 'over', 'under', 'above', 'below',
@@ -508,18 +527,19 @@ const DELTA_WORDS_AFTER = new Set([
   'decrease', 'decreased', 'change', 'changes', 'difference', 'delta', 'step', 'steps',
   'increment', 'increments', 'rise', 'swing', 'hotter', 'colder', 'extra', 'short', 'shy',
   'off', 'softer', 'harder', 'firmer', 'stiffer', 'added', 'adjustment', 'adjustments',
-  'back', 'add', 'take', 'low', 'high', 'further', 'into',
+  'back', 'add', 'take', 'low', 'high', 'further', 'into', 'between', 'stagger', 'split',
+  'splits', 'away', 'jump', 'jumps', 'from', 'of', 'apart', 'offset',
 ]);
 
 /**
  * A pressure figure as a rider types it: `50 psi`, `2.1 bar`, `220 kPa`,
  * `50psi`, `2,1 bar`, and for psi and kPa the pairs `30/22 psi` and `30-32
  * psi`, which name two pressures under one unit. A bar figure never pairs and
- * is never the denominator of a fraction, because `7/8 bar` is a handlebar.
+ * is never part of a fraction, because `7/8 bar` and `1 1/8 bar` are handlebars.
  * Only `psi`, `bar` and `kpa` are units; see the uncovered list above for why.
  */
 const PRESSURE_VALUE_PATTERN =
-  /(\d+(?:[.,]\d+)?)(?:\s*(?:\/|-|–|to)\s*(\d+(?:[.,]\d+)?))?\s*(psi|kpa)\b|(?<![\d/])(\d+(?:[.,]\d+)?)\s*(bar)\b/gi;
+  /(\d+(?:[.,]\d+)?)(?:\s*(?:\/|-|–|to)\s*(\d+(?:[.,]\d+)?))?\s*(psi|kpa)\b|(?<![\d/]|\d\s)(\d+(?:[.,]\d+)?)\s*(bar)\b/gi;
 
 /** Where the clause holding a value starts or ends. A decimal separator is not one. */
 const CLAUSE_BOUNDARY = /[;:!?]|[.,](?!\d)/g;
@@ -616,7 +636,9 @@ function matchPressureValue(text: string, band: TirePressureGuardBand): string |
     const raws = [match[1], match[2], match[4]].filter((r): r is string => typeof r === 'string');
     let absolute: boolean | null = null;
     for (const raw of raws) {
-      const psi = toPsi(parseNumber(raw), unit);
+      const value = parseNumber(raw);
+      if (unit === 'bar' && value > BAR_GAUGE_MAX) continue;
+      const psi = toPsi(value, unit);
       if (!Number.isFinite(psi)) continue;
       if (psi > band.rejectAbovePsi && (unit !== 'bar' || barIsPressure(text, start, end))) {
         return buildPressureRejection(describeValue(raw, unit, psi), band, 'above');

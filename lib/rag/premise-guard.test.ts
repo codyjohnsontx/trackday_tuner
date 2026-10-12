@@ -430,6 +430,9 @@ const DANGEROUS_PRESSURE_VALUES: Array<[string, string, 'motorcycle' | 'car']> =
   ['oil named in the same clause, no comma', 'Fresh oil change then run 60 psi front?', 'motorcycle'],
   ['a shock named before a setting verb', 'After a shock service run 55 psi front?', 'motorcycle'],
   ['go ... to, below the floor', 'Should I go to 8 psi on the rear for the wet?', 'motorcycle'],
+  ['tire nitrogen governing the value', 'Should I fill the tires with nitrogen at 60 psi?', 'motorcycle'],
+  ['nitrogen after the unit with a tire word after it', '60 psi of nitrogen in the front tire, ok?', 'motorcycle'],
+  ['nitrogen on a car', 'Should I run nitrogen at 70 psi in the fronts?', 'car'],
 ];
 
 /**
@@ -447,13 +450,15 @@ const KNOWN_UNCOVERED_PRESSURE_VALUES: string[] = [
   'Can I run with 8 psi in the rear?',
   'My mate says 3.5 bar is quicker.',
   'Put 8 psi in the rear?',
+  'Run 8 psi from now on?',
+  'Pump the front up to 4 bar?',
   'Can I run 50 in the front?',
   'What about 50 pounds in the front tire?',
 ];
 
 /**
- * A sentence where a setting verb governs a low number the rider did not
- * choose. The pinned instance is a FAULT REPORT of a deflated tire, rejected
+ * A sentence where a setting verb governs a low number that is not the
+ * pressure the rider means to run. The pinned instance is a FAULT REPORT of a deflated tire, rejected
  * today, because "went to 8 psi" is also exactly how a rider phrases a
  * deliberate choice. Pinned as `reject` to record what the code does; the card
  * those riders see is true of the number and wrong about the question.
@@ -509,6 +514,11 @@ const LEGITIMATE_PRESSURE_QUESTIONS: Array<[string, 'motorcycle' | 'car']> = [
   ['I ran it 2 psi high, is that why it chattered?', 'motorcycle'],
   ['go 1 psi stiffer on the front?', 'motorcycle'],
   ['dropped from 32 to 30 psi; go 2 psi further?', 'motorcycle'],
+  ['Should I run 2 psi between front and rear?', 'motorcycle'],
+  ['Should I run 2 psi of stagger front to rear?', 'car'],
+  ['I have been running 3 psi away from the target', 'motorcycle'],
+  ['run 2 psi from cold to hot', 'motorcycle'],
+  ['go to 1 psi jumps instead of 0.5?', 'motorcycle'],
 
   ['The rear dropped to 8 psi after a slow puncture, what do I check?', 'motorcycle'],
   ['Rear went from 30 psi to 8 psi with a slow puncture.', 'motorcycle'],
@@ -542,6 +552,10 @@ const LEGITIMATE_PRESSURE_QUESTIONS: Array<[string, 'motorcycle' | 'car']> = [
   ['Should I run the 27 bar on the front to cut understeer?', 'car'],
   ['Should I put the 22 bar on the rear?', 'car'],
   ['swapping the front anti-roll bar from 22 to 25 bar to cut understeer and tyre scrub', 'car'],
+  ['Would a 27 bar be harder on the front tyres?', 'car'],
+  ['Is the 25 bar too stiff for the front tyres?', 'car'],
+  ['Will a 25 bar be easier on the tyres than the 22?', 'car'],
+  ['running 22 bar front and 19 bar rear, should I soften?', 'car'],
 ];
 
 describe('classifyDangerousPremise rejects a tire pressure outside the published envelope', () => {

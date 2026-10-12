@@ -983,23 +983,25 @@ computes the premise once the vehicle row is in hand rather than before any
 I/O, and the type is required. **Above the ceiling a psi or kPa value counts on
 its own, below the floor only an absolute one**: riders describe changes with
 small numbers constantly ("added a psi", "went 1 psi softer", "put 2 psi in the
-front", "ran 2 psi low"), so a low value counts only when a closed-list setting
-verb governs it directly - `run`, `set` or `inflate` straight before the number,
-or those and `go` or `sit` through `to`/`at` - and no change or offset word
-follows the unit, while no change is ever 50 psi. `bar` is also a handlebar and
-an anti-roll bar, so a bar figure never pairs, is never a fraction's
-denominator, and counts above the ceiling only when a setting verb or a tire or
-pressure word governs it. A fork, shock, compressor or other vessel word
-excludes a figure only when it governs that number through link words like
-`air`, `pressure`, `is`, `at`, not anywhere in the question. `psi`, `bar` and
+front", "run 2 psi between front and rear"), so a low value counts only when a
+closed-list setting verb governs it directly - `run`, `set` or `inflate`
+straight before the number, or those and `go` or `sit` through `to`/`at` - and
+no change, offset or relation word follows the unit, while no change is ever 50
+psi. `bar` is also a handlebar and an anti-roll bar, so a bar figure counts only
+up to 10 bar, never pairs, is never part of a fraction, and counts above the
+ceiling only when a setting verb or a tire or pressure word governs it. A fork,
+shock, compressor or other vessel word excludes a figure only when it governs
+that number through link words like `air`, `nitrogen`, `is`, `at`, not anywhere
+in the question; nitrogen alone is a tire fill, not a vessel. `psi`, `bar` and
 `kPa` are the units; the rejection names the parsed number and the published
 edge, not the rider's text. Uncovered on purpose and pinned in the test file: a
-low value no setting verb governs, a high bar figure nothing governs, a value
-with no unit or in pounds, and every other value type (damper clicks, preload,
-camber, spring rate, ride height), each a follow-up with its own cited
-envelope. Its known false positives are sentences where a setting verb governs
-a low number the rider did not choose; the pinned one is a deflation fault
-report ("the rear went to 8 psi"). **A knowledge-base edit changes `data/rag-index.json`'s
+low value no setting verb governs or with a change word after it, a high bar
+figure nothing governs, a value with no unit or in pounds, and every other value
+type (damper clicks, preload, camber, spring rate, ride height), each a
+follow-up with its own cited envelope. Its known false positives are sentences
+where a setting verb governs a low number that is not the pressure the rider
+means to run; the pinned one is a deflation fault report ("the rear went to 8
+psi"). **A knowledge-base edit changes `data/rag-index.json`'s
 source hash**, so `npm run rag:check` and the build refuse until `npm run
 rag:index` is re-run with the OpenAI key, and that re-index is followed by
 `--live` and a deliberate `--update-baseline`. **Expect most of the completion
