@@ -1509,7 +1509,7 @@ gate.** `tests/fixtures/rag-eval/must-serve-responses.json` holds real recorded
 model outputs that production discarded and should not have, and
 `tests/unit/rag-eval-harness.test.ts` scores every one through
 `parseAdviceResponse` and the policy with `validSessionIds: []`, asserting each is
-served parsed and refused raw. `npm run rag:eval` does not read the file. **Eval
+served with all its evidence parsed and loses that evidence raw. `npm run rag:eval` does not read the file. **Eval
 measurements stay reported and are not gated until a bar has been set**, so a new
 pass/fail condition in the run is a decision for the owner, never a side effect of
 the change that motivated it.

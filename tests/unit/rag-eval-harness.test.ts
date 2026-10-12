@@ -196,14 +196,20 @@ describe('responses production must serve', () => {
         evaluateAdvicePolicy,
         fallbackDataUsed: parsed.data.data_used,
         // The strictest setting the policy has: with no allowed ids, ANY
-        // non-null source_session_id is unverifiable. Passing here means the
-        // reference is genuinely absent rather than luckily matched.
+        // non-null source_session_id is unverifiable. An unverifiable one no
+        // longer refuses, it is dropped, so passing alone proves nothing about
+        // the parser - every evidence item has to survive as well.
         validSessionIds: [],
         shouldRefuse: false,
       });
 
       expect(scored.failures).toEqual([]);
       expect(scored.passed).toBe(true);
+      expect(scored.policy.violations).not.toContain('invalid_personal_evidence');
+      expect(parsed.data.personal_evidence).toHaveLength(
+        (fixture.response.personal_evidence as unknown[]).length,
+      );
+      expect(parsed.data.unverified_evidence_notice).toBeUndefined();
     },
   );
 
