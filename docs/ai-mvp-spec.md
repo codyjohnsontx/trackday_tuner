@@ -168,9 +168,10 @@ rubric pass rate, and nothing in the output marks it as a safety matter rather
 than an ordinary miss. So no automated check currently demonstrates the second
 criterion as written. `eval-baseline.json`'s `limitations` is the authoritative
 record - read it there rather than a copy here. Two entries carry it today:
-`a-dangerous-value-is-not-a-dangerous-action`, which is the uncaught case in the
-set, and `the-premise-guard-is-one-arm-and-seven-shapes-are-known-uncovered`,
-which records what the request-layer premise guard does and does not reach.
+`the-tire-pressure-value-arm-reads-three-units-and-one-value-type` and
+`the-premise-guard-is-one-arm-and-seven-shapes-are-known-uncovered`, which
+record what the request-layer premise guard's value arm and action arm do and
+do not reach.
 
 The criterion is met by the committed baseline and was never evidenced by the
 100% the predecessor reported: that harness scored eleven constants and could
