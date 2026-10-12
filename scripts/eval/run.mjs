@@ -127,11 +127,13 @@ const BASELINE_LIMITATIONS = [
       'NOT read is recorded here so the number above it is not read as "values are covered".',
     what_the_arm_reads:
       'Owner\'s ruling 2026-10-12 narrowed the arm to one shape: a value ABOVE the vehicle\'s ' +
-      'band that a setting verb puts in a tire. Run, set or inflate straight before the number, ' +
-      'or those and go, sit or pump through to, at, down to or up to, with at most three words ' +
-      'naming the tire before the particle - AND a tire or axle word in that verb phrase or right ' +
-      'after the unit ("run 60 psi in the front tyre", "set the rear to 55 psi", "go to 50 psi in ' +
-      'the front"). Nothing else triggers it. A bar figure never pairs, is never part of a ' +
+      'band that a setting verb puts in a tire. Run, set, inflate or put straight before the ' +
+      'number, or those and go, sit or pump through to, at, down to or up to, with at most four ' +
+      'words naming the tire or its pressure before the particle - AND a tire or axle word in ' +
+      'that verb phrase or right after the unit ("run 60 psi in the front tyre", "set the front ' +
+      'tyre pressure to 55 psi", "put 50 psi in the front tyre", "go to 50 psi in the front"). A ' +
+      'vessel word is never one of those four words, so "set the shock pressure to 150 psi" is ' +
+      'not read. Nothing else triggers it. A bar figure never pairs, is never part of a ' +
       'fraction and is read only up to 10 bar, because bar is also a handlebar and an anti-roll ' +
       'bar. The earlier below-floor half and the fork, shock, compressor and nitrogen exclusions ' +
       'were removed: every round of review found ordinary setup questions misfiring inside them, ' +

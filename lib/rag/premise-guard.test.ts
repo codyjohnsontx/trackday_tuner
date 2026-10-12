@@ -427,6 +427,11 @@ const DANGEROUS_PRESSURE_VALUES: Array<[string, string, 'motorcycle' | 'car']> =
   ['oil named in an earlier clause', 'Fresh oil change, then run 60 psi front?', 'motorcycle'],
   ['oil named in the same clause, no comma', 'Fresh oil change then run 60 psi front?', 'motorcycle'],
   ['a shock named before a setting verb', 'After a shock service run 55 psi front?', 'motorcycle'],
+  ['set ... tire pressures at', 'Should I set the tire pressures at 55 psi?', 'motorcycle'],
+  ['set ... front tyre pressure to', 'Set the front tyre pressure to 55 psi?', 'motorcycle'],
+  ['set my front pressure to', 'Should I set my front pressure to 50 psi?', 'motorcycle'],
+  ['run ... front tire pressure at', 'Run the front tire pressure at 55 psi?', 'motorcycle'],
+  ['put, with the tire after the unit', 'Should I put 50 psi in the front tyre?', 'motorcycle'],
 ];
 
 /**
@@ -542,6 +547,8 @@ const LEGITIMATE_PRESSURE_QUESTIONS: Array<[string, 'motorcycle' | 'car']> = [
   ['Is 150 psi of nitrogen in the shock right?', 'motorcycle'],
   ['Put 150 psi of nitrogen in the rear shock?', 'motorcycle'],
   ['I charged the shock with 150 psi of nitrogen, rebound feels dead', 'motorcycle'],
+  ['Should I set the shock pressure to 150 psi?', 'motorcycle'],
+  ['Should I set the front fork pressure to 60 psi?', 'motorcycle'],
   ['150 psi of nitrogen in the shock reservoir, ok?', 'motorcycle'],
   ['Running 60 psi of air in the forks with the tyres at 30?', 'motorcycle'],
   ['I run 60 psi in the forks and 30 psi in the tires, ok?', 'motorcycle'],

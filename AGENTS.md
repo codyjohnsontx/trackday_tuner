@@ -981,11 +981,13 @@ psi is past every motorcycle figure and inside a car tire's 51 psi sidewall
 maximum, so `classifyDangerousPremise` takes `vehicleType` and the route
 computes the premise once the vehicle row is in hand rather than before any
 I/O, and the type is required. **It reads one shape (owner, 2026-10-12)**: a
-value ABOVE the band that a setting verb puts in a tire - `run`, `set` or
-`inflate` straight before the number, or those and `go`, `sit` or `pump`
-through `to`/`at`, AND a tire or axle word in that verb phrase or right after
-the unit ("run 60 psi in the front tyre", "set the rear to 55 psi"). Nothing else
-triggers it. A bar figure never pairs, is never part of a fraction and is read
+value ABOVE the band that a setting verb puts in a tire - `run`, `set`,
+`inflate` or `put` straight before the number, or those and `go`, `sit` or
+`pump` through `to`/`at` with up to four words naming the tire or its pressure,
+AND a tire or axle word in that verb phrase or right after the unit ("run 60 psi
+in the front tyre", "set the front tyre pressure to 55 psi"). A vessel word is
+never one of the four, so "set the shock pressure to 150 psi" is not read.
+Nothing else triggers it. A bar figure never pairs, is never part of a fraction and is read
 only up to 10 bar, since `bar` is also a handlebar and an anti-roll bar. The
 earlier below-floor half and the fork/shock/compressor/nitrogen exclusions were
 removed after every review round found ordinary questions misfiring inside them;

@@ -379,12 +379,15 @@ export function classifyDangerousPremise(
  *
  * ONE DIRECTION AND ONE SHAPE, by the owner's ruling of 2026-10-12. A pressure
  * counts only when it is ABOVE the vehicle's band and a setting verb governs it
- * in a tire context: `run`, `set` or `inflate` straight before the number
- * ("run 60 psi"), or those and `go`, `sit` or `pump` through `to` / `at` /
- * `down to` / `up to`, with at most three words naming the tire before the
- * particle ("set the rear to 55 psi", "pump the front up to 4 bar") - AND a
- * tire or axle word in that verb phrase or right after the unit ("run 60 psi
- * in the front tyre", "go to 50 psi in the front", "run 60 psi front"). That is
+ * in a tire context: `run`, `set`, `inflate` or `put` straight before the
+ * number ("run 60 psi", "put 50 psi in the front tyre"), or those and `go`,
+ * `sit` or `pump` through `to` / `at` / `down to` / `up to`, with at most four
+ * words naming the tire or its pressure before the particle ("set the rear to
+ * 55 psi", "set the front tyre pressure to 55 psi", "pump the front up to 4
+ * bar") - AND a tire or axle word in that verb phrase or right after the unit
+ * ("run 60 psi in the front tyre", "go to 50 psi in the front", "run 60 psi
+ * front"). A vessel word is never one of those four, so "set the shock pressure
+ * to 150 psi" is not read. That is
  * the request the recorded case makes, and it is the only one this arm reads.
  * Earlier rounds tried to read more - any high figure with a vessel exclusion,
  * and a below-floor half with closed lists of change words - and every round
@@ -434,16 +437,17 @@ const TIRE_CONTEXT_WORD = new RegExp(`\\b${TIRE_CONTEXT_SOURCE}\\b`, 'i');
 
 /**
  * A setting verb directly governing the number, capturing the words naming the
- * tire between them. `run`, `set` and `inflate` may take the number straight
- * after them; every verb may take it through a particle, with at most three
- * words naming the tire before it. `go`, `sit` and `pump` need the particle,
- * because "go 1 psi" and "pump 2 psi into the rear" are changes.
+ * tire between them. `run`, `set`, `inflate` and `put` may take the number
+ * straight after them; every verb may take it through a particle, with at most
+ * four words naming the tire or its pressure before it. `go`, `sit` and `pump`
+ * need the particle, because "go 1 psi" and "pump 2 psi into the rear" are
+ * changes.
  */
 const GOVERNED_BY_SETTING_VERB = new RegExp(
-  '\\b(?:(?:run|runs|running|ran|set|sets|setting|inflate|inflated|inflating)' +
-    '|(?:run|runs|running|ran|set|sets|setting|inflate|inflated|inflating' +
+  '\\b(?:(?:run|runs|running|ran|set|sets|setting|inflate|inflated|inflating|put|puts|putting)' +
+    '|(?:run|runs|running|ran|set|sets|setting|inflate|inflated|inflating|put|puts|putting' +
     '|go|goes|going|went|sit|sits|sitting|sat|pump|pumps|pumping|pumped)' +
-    `((?:\\s+(?:it|them|the|my|both|${TIRE_CONTEXT_SOURCE})){0,3})` +
+    `((?:\\s+(?:it|them|the|my|both|pressures?|${TIRE_CONTEXT_SOURCE})){0,4})` +
     '\\s+(?:(?:down|up)\\s+)?(?:to|at))\\s+$',
   'i',
 );
