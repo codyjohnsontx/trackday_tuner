@@ -783,6 +783,81 @@ const BASELINE_LIVE_RERECORDS = [{
         'the one-case wobble the two gpt-5.4-mini samples showed on component_accuracy.',
     },
   ],
+},
+{
+  what_this_is:
+    'The SIXTH movement, and a one-sentence prompt correction that follows a policy change. ' +
+    'Captain\'s decision 2026-10-04: one unverifiable personal_evidence citation now costs ' +
+    'that evidence item and not the whole answer - evaluateAdvicePolicy removes it, sets ' +
+    'unverified_evidence_notice and runs every other rule on what is left. SYSTEM_PROMPT rule ' +
+    '11 still told the model the entire response is discarded, so it was reworded to say the ' +
+    'item is removed and the rider told it could not be verified, keeping the instruction ' +
+    'never to invent or guess an id. Changing SYSTEM_PROMPT moves every completion tape key, ' +
+    'so the recordings were refreshed with one `npm run rag:eval -- --live`.',
+  blast_radius:
+    'All 28 completion keys moved. All 28 EMBEDDING keys replayed untouched, so retrieval ran ' +
+    'on byte-identical input and recall@k and MRR could not move; they did not.',
+  what_the_model_now_emits:
+    'Counted off the recordings. Before: 28 of 28 responses carried personal evidence, 33 ' +
+    'items citing the exact session id printed in their own prompt and 1 JSON null. After: 28 ' +
+    'of 28, 34 exact ids and no null. Zero unverifiable ids on either tape, so the policy ' +
+    'change itself decided no case here; the movements below are all re-sampling.',
+  these_numbers_are_the_baseline_whatever_they_say:
+    'Both gated rates ROSE and the rise is NOT this fix. The one case that went fail -> pass, ' +
+    'mc-sag-out-of-range, was force-refused as unknown_component because the old response ' +
+    'named "rear preload", which is not in the component vocabulary; the re-sampled model ' +
+    'answered rear ride height / raise / 2 mm. Neither response cited a session id it was ' +
+    'not given. component_accuracy FELL and is committed as measured.',
+  metrics: [
+    {
+      metric: 'rubric_pass_rate',
+      before: 0.9090909090909091,
+      after: 0.9393939393939394,
+      fraction: '30/33 -> 31/33',
+      cause:
+        'ONE case, mc-sag-out-of-range, and it is model sampling: unknown_component on the old ' +
+        'tape, allowed on the new one. No case went pass -> fail. sparse-empty-setup-fields ' +
+        'and sparse-no-history-comparison still fail as before.',
+    },
+    {
+      metric: 'refusal_accuracy',
+      before: 0.9090909090909091,
+      after: 0.9393939393939394,
+      fraction: '30/33 -> 31/33',
+      cause: 'The same single case. These two rates share a numerator over the same 33 cases.',
+    },
+    {
+      metric: 'recall_at_k',
+      before: 0.7857142857142857,
+      after: 0.7857142857142857,
+      fraction: '22/28 -> 22/28',
+      cause: 'DID NOT MOVE, and could not have: every embedding key replayed.',
+    },
+    {
+      metric: 'mrr',
+      before: 0.7410714285714286,
+      after: 0.7410714285714286,
+      fraction: '20.75/28 -> 20.75/28',
+      cause: 'DID NOT MOVE, for the same reason.',
+    },
+    {
+      metric: 'component_accuracy',
+      before: 0.8666666666666667,
+      after: 0.8,
+      fraction: '13/15 -> 12/15',
+      cause:
+        'ONE case, mc-rear-wallow-inflected-phrasing: rear rebound / stiffen before, ' +
+        'rear_compression / stiffen now. The one-case wobble the fifth movement recorded for ' +
+        'this rate on an unchanged prompt. Reported, never gated.',
+    },
+    {
+      metric: 'direction_accuracy',
+      before: 0.8666666666666667,
+      after: 0.8666666666666667,
+      fraction: '13/15 -> 13/15',
+      cause: 'DID NOT MOVE in aggregate. Re-sampled, so equal counts are coincidence rather than a guarantee.',
+    },
+  ],
 }];
 
 /**

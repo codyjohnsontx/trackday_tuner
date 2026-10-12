@@ -1829,10 +1829,10 @@ is only ever paid for by a prompt that actually moved.
 
 **THE OLD NUMBER AND THE NEW ONE ARE NOT COMPARABLE, and no reading makes them
 so.** The predecessor reported 100% over eleven constants it could not fail; the
-committed baseline is 0.91 over 33 real requests it can. Different inputs, a
+committed baseline is 0.94 over 33 real requests it can. Different inputs, a
 different rubric and one of them incapable of returning anything else - a
-difference of -9 points between those two measures nothing. So
-`docs/ai-mvp-spec.md`'s 85% exit criterion is met by the 0.91 here and was never
+difference of -6 points between those two measures nothing. So
+`docs/ai-mvp-spec.md`'s 85% exit criterion is met by the 0.94 here and was never
 evidenced by the 100%, and any claim about the Race Engineer improving or
 regressing starts from this baseline rather than from anything recorded before
 it.
@@ -1856,12 +1856,12 @@ refusing to go green until somebody spent the money.
 
 **Re-recording the whole set costs about eleven cents, and the run says so in
 tokens - BOTH endpoints, which took counting them somewhere neither could
-hide.** That figure is every response the set needs: 28 completions at 68,849
-prompt + 13,929 completion tokens on `gpt-5.4-mini-2026-03-17`, plus 28 embeddings at 937 prompt
+hide.** That figure is every response the set needs: 28 completions at 69,269
+prompt + 14,311 completion tokens on `gpt-5.4-mini-2026-03-17`, plus 28 embeddings at 937 prompt
 tokens on `text-embedding-3-small`, one row per model because they bill at
 different rates. At the list prices read on 2026-09-17 - gpt-5.4-mini
 $0.75/$4.50 per million, text-embedding-3-small $0.02 per million - that is
-$0.114, of which embeddings are under a hundredth of a cent.
+$0.116, of which embeddings are under a hundredth of a cent.
 
 **The model is `gpt-5.4-mini` and it was picked by running this harness, not by
 tier.** `getAiModel` (`lib/env.server.ts`) carries the choice and the comment
