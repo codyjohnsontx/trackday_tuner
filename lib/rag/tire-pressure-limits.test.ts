@@ -69,11 +69,10 @@ describe('the published envelope agrees with the knowledge-base document', () =>
 });
 
 describe('tirePressureGuardBand', () => {
-  it('widens each envelope by the tolerance on both sides', () => {
+  it('widens each envelope maximum by the tolerance', () => {
     for (const envelope of Object.values(TIRE_PRESSURE_PUBLISHED_ENVELOPE)) {
       const band = tirePressureGuardBand(envelope.vehicleType);
       expect(band.envelope).toBe(envelope);
-      expect(band.rejectBelowPsi).toBe(envelope.minPsi - TIRE_PRESSURE_GUARD_TOLERANCE_PSI);
       expect(band.rejectAbovePsi).toBe(envelope.maxPsi + TIRE_PRESSURE_GUARD_TOLERANCE_PSI);
     }
   });

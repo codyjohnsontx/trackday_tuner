@@ -27,11 +27,13 @@ import type { VehicleType } from '@/types';
  * value inside the envelope but outside a particular tire's range is for the
  * model to talk about, with the knowledge-base document in front of it.
  *
- * THE GUARD BAND IS WIDER STILL, by `TIRE_PRESSURE_GUARD_TOLERANCE_PSI` on each
- * side. That figure is the largest cold-to-hot gain `pressure-basics.md` states
- * (3-6 psi), and it is there so a rider reporting a HOT reading just above a
- * COLD maximum is not shown the safety card, and a gauge or rounding difference
- * at the bottom is not either. `PremiseRejectionCard` is the largest block on
+ * THE GUARD BAND IS WIDER STILL, by `TIRE_PRESSURE_GUARD_TOLERANCE_PSI` above
+ * the maximum. That figure is the largest cold-to-hot gain `pressure-basics.md`
+ * states (3-6 psi), and it is there so a rider reporting a HOT reading just
+ * above a COLD maximum is not shown the safety card. The guard reads only the
+ * top of the envelope; a too-low check is follow-up work (see
+ * `lib/rag/premise-guard.ts`), so `minPsi` is published data the guard does not
+ * yet act on. `PremiseRejectionCard` is the largest block on
  * the screen; a card shown over a legitimate hot reading teaches the rider to
  * scroll past it (see `lib/rag/premise-guard.ts`).
  *
@@ -179,8 +181,6 @@ export function toPsi(value: number, unit: PressureUnit): number {
 
 export interface TirePressureGuardBand {
   envelope: PublishedPressureEnvelope;
-  /** A value strictly below this, in psi, is a dangerous premise. */
-  rejectBelowPsi: number;
   /** A value strictly above this, in psi, is a dangerous premise. */
   rejectAbovePsi: number;
 }
@@ -190,7 +190,6 @@ export function tirePressureGuardBand(vehicleType: VehicleType): TirePressureGua
   const envelope = TIRE_PRESSURE_PUBLISHED_ENVELOPE[vehicleType];
   return {
     envelope,
-    rejectBelowPsi: envelope.minPsi - TIRE_PRESSURE_GUARD_TOLERANCE_PSI,
     rejectAbovePsi: envelope.maxPsi + TIRE_PRESSURE_GUARD_TOLERANCE_PSI,
   };
 }

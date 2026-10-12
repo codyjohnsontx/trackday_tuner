@@ -373,57 +373,42 @@ export function classifyDangerousPremise(
  * `docs/knowledge-base/tires/pressure-limits.md` was added to state the
  * outermost figures those manufacturers publish, with a source for each, and
  * `lib/rag/tire-pressure-limits.ts` is the same figures as code, held equal by
- * `tire-pressure-limits.test.ts`. The guard rejects outside that envelope
- * widened by the knowledge base's own cold-to-hot gain, so a hot reading a few
+ * `tire-pressure-limits.test.ts`. The guard rejects above that envelope's
+ * maximum widened by the knowledge base's own cold-to-hot gain, so a hot reading a few
  * psi over a cold maximum is not a premise.
  *
- * TWO DIRECTIONS, TWO DIFFERENT TESTS, and the asymmetry is the whole design:
+ * ONE DIRECTION AND ONE SHAPE, by the owner's ruling of 2026-10-12. A pressure
+ * counts only when it is ABOVE the vehicle's band and a setting verb governs it
+ * in a tire context: `run`, `set` or `inflate` straight before the number
+ * ("run 60 psi"), or those and `go`, `sit` or `pump` through `to` / `at` /
+ * `down to` / `up to`, with at most three words naming the tire before the
+ * particle ("set the rear to 55 psi", "pump the front up to 4 bar") - AND a
+ * tire or axle word in that verb phrase or right after the unit ("run 60 psi
+ * in the front tyre", "go to 50 psi in the front", "run 60 psi front"). That is
+ * the request the recorded case makes, and it is the only one this arm reads.
+ * Earlier rounds tried to read more - any high figure with a vessel exclusion,
+ * and a below-floor half with closed lists of change words - and every round
+ * found a new class of ordinary setup question misfiring inside the boundary
+ * the round before had declared correct, the same non-terminating narrowing the
+ * brake arm went through. Requiring the tire context positively is what lets
+ * the fork, shock, compressor and nitrogen exclusions go: a figure no setting
+ * verb puts in a tire is not read at all.
  *
- * - ABOVE the ceiling, a psi or kPa value is a premise on its own. A CHANGE in
- *   pressure is never 48 psi, so a number that size can only be an absolute.
- *   `bar` is the exception, because it is also a noun in this domain - a 7/8
- *   handlebar, a 27 mm anti-roll bar - so a bar figure counts only when it is a
- *   plausible gauge reading (at most `BAR_GAUGE_MAX`, 10 bar) and a setting
- *   verb governs it or a tire or pressure word does (just before it, or through
- *   a preposition just after it), and it never pairs and is never part of a
- *   fraction. The other thing that puts a large figure in a setup question is
- *   another pressure vessel - fork air, a shock reservoir, a compressor or air
- *   tank - and that is excluded only when the vessel word GOVERNS the number:
- *   reached back through nothing but link words like `air`, `nitrogen`,
- *   `pressure`, `is`, `at`, `set` and `to` ("fork air pressure at 60 psi",
- *   "shock nitrogen is at 150 psi"), or straight after the unit with no tire
- *   word following ("60 psi in the forks"). Nitrogen alone is not a vessel,
- *   because riders fill tires with it, and a fork, shock or oil change
- *   mentioned anywhere else in the question does not switch the ceiling off.
- * - BELOW the floor, the value has to be an ABSOLUTE, and that is decided by
- *   government too. Riders talk about pressure CHANGES constantly - "added a
- *   psi", "try to lower the front 1 psi", "went 1 psi softer", "put 2 psi in
- *   the front", "run 2 psi between front and rear" - and every one of those is
- *   a small number below any floor. So a low value counts only when a setting
- *   verb directly governs it: `run`, `set` or `inflate` straight before the
- *   number (`run 8 psi`), or `run`, `set`, `inflate`, `go` or `sit` through
- *   `to`, `at`, `down to` or `up to`, with at most a few words naming the tire
- *   before the particle (`set the rear down to 8 psi`, `go to 8 psi`, `inflate
- *   to 1 bar`). Any other word between the verb and the number breaks it, and
- *   a change, offset or relation word right after the unit (`1 psi softer`, `2
- *   psi low`, `2 psi between`, `2 psi of stagger`, `2 psi from cold to hot`)
- *   turns it back into a change; `up front` and `out back` say where the tire
- *   is and do not, and neither do a bare `of` or `from` ("8 psi of air", "8 psi
- *   from the start"). Both lists are CLOSED and short, on purpose:
- *   the brake arm's history is three review rounds each finding a new misfire
- *   inside an open-ended list.
+ * `bar` is also a noun in this domain - a 7/8 handlebar, a 27 mm anti-roll bar
+ * - so a bar figure never pairs, is never part of a fraction, and is read only
+ * up to `BAR_GAUGE_MAX` (10 bar), since no tire is inflated anywhere near it
+ * and every anti-roll bar size a rider names is above it.
  *
  * WHAT IT DOES NOT CATCH, recorded rather than chased, and pinned as
  * `KNOWN_UNCOVERED_PRESSURE_VALUES` in the test file:
- * - A low value no setting verb governs: "is 8 psi too low for the rear?",
- *   "what about 8 psi?", "run with 8 psi", "put 8 psi in the rear". The ceiling
- *   catches the mirror ("is 50 psi too much?") because a high number needs no
- *   verb.
- * - A low value whose unit is followed by a word on the change list, even when
- *   the rider is naming an absolute: "set the rear to 8 psi, down from 30".
- * - A high bar figure no setting verb or tire or pressure word governs, or one
- *   above 10 bar: "my mate says 3.5 bar is quicker", "pump the front up to 4
- *   bar".
+ * - ANY low value. The too-low check is follow-up work: riders describe
+ *   pressure CHANGES with small numbers constantly, and every lexical attempt to
+ *   tell an absolute from a change misfired on ordinary questions.
+ * - A high value no setting verb governs: "is 50 psi too much for the front?",
+ *   "my mate says 55 psi in the front is quicker", "fill the tires from the
+ *   compressor with 60 psi", "60 psi of nitrogen in the front tire".
+ * - A high value a setting verb governs with no tire or axle word beside it:
+ *   "should I run nitrogen at 70 psi in the fronts?".
  * - A value with no unit, or in a unit this arm does not read: "run 50 in the
  *   front", "50 pounds", "3.5 kg/cm2". `psi`, `bar` and `kPa` are the units the
  *   session form and the knowledge base speak.
@@ -431,15 +416,10 @@ export function classifyDangerousPremise(
  *   a follow-up with its own cited envelope.
  *
  * WHAT IT GETS WRONG IN THE OTHER DIRECTION, pinned as
- * `KNOWN_PRESSURE_FALSE_POSITIVES`: any sentence in which a setting verb
- * governs a low number that is not the pressure the rider means to run, with
- * no change word after the unit to say so. The pinned instance is a FAULT
- * REPORT of a deflated tire - "the rear went to 8 psi after a slow puncture" -
- * rejected because "went to 8 psi" is exactly how a rider also phrases a
- * deliberate choice, and the two cannot be told apart lexically. The card those
- * riders see says the pressure is outside anything published, which is true,
- * over a question about a puncture. Recorded under the same stop rule as the
- * brake arm's servicing misfires.
+ * `KNOWN_PRESSURE_FALSE_POSITIVES`: another pressure vessel named by its axle -
+ * "I run 60 psi in the front fork", "run 150 psi in the rear shock" - because
+ * "in the front" is exactly how a rider names the tire too. Recorded under the
+ * same stop rule as the brake arm's servicing misfires.
  *
  * THE REJECTION NAMES THE NUMBER AND THE EDGE, and that is the one place this
  * arm departs from the brake arm's "never echo the rider text". What is echoed
@@ -449,47 +429,30 @@ export function classifyDangerousPremise(
  * the sentence has to be true of the tire and not of the tolerance.
  */
 
+const TIRE_CONTEXT_SOURCE = '(?:front|rear|fronts|rears|tires?|tyres?)';
+const TIRE_CONTEXT_WORD = new RegExp(`\\b${TIRE_CONTEXT_SOURCE}\\b`, 'i');
+
 /**
- * Words that make a psi figure they govern a different pressure vessel. Fork
- * air springs run around 60 psi on the off-road bikes that have them, shock
- * reservoirs hold 150 psi of nitrogen, and a paddock compressor or air tank is
- * set well above any tire. Short and closed; `brake` is deliberately absent
- * because "runs 50 psi in the front and brakes later" is a tire sentence, and
- * `nitrogen` is a link word rather than a vessel because riders fill tires with
- * it too. After the unit the vessel may be reached through a fill ("150 psi of
- * nitrogen in the shock"), and does not count when a tire word follows it
- * straight away.
+ * A setting verb directly governing the number, capturing the words naming the
+ * tire between them. `run`, `set` and `inflate` may take the number straight
+ * after them; every verb may take it through a particle, with at most three
+ * words naming the tire before it. `go`, `sit` and `pump` need the particle,
+ * because "go 1 psi" and "pump 2 psi into the rear" are changes.
  */
-const NON_TIRE_VESSEL_SOURCE = '(?:forks?|shocks?|dampers?|compressors?|tanks?|boost|fuel|oil)';
-const NON_TIRE_VESSEL_WORD = new RegExp(`^${NON_TIRE_VESSEL_SOURCE}$`);
-const NON_TIRE_VESSEL_AFTER_UNIT = new RegExp(
-  '^\\s*(?:(?:of\\s+)?(?:air|nitrogen)\\s+(?:in|for)|of|in)\\s+(?:(?:the|my|your)\\s+)?' +
-    `(?:(?:front|rear)\\s+)?${NON_TIRE_VESSEL_SOURCE}\\b(?!\\s+(?:tires?|tyres?)\\b)`,
+const GOVERNED_BY_SETTING_VERB = new RegExp(
+  '\\b(?:(?:run|runs|running|ran|set|sets|setting|inflate|inflated|inflating)' +
+    '|(?:run|runs|running|ran|set|sets|setting|inflate|inflated|inflating' +
+    '|go|goes|going|went|sit|sits|sitting|sat|pump|pumps|pumping|pumped)' +
+    `((?:\\s+(?:it|them|the|my|both|${TIRE_CONTEXT_SOURCE})){0,3})` +
+    '\\s+(?:(?:down|up)\\s+)?(?:to|at))\\s+$',
   'i',
 );
 
-/**
- * The only words that may stand between a vessel word and the number it
- * governs: "fork AIR PRESSURE AT 60 psi", "shock NITROGEN IS AT 150 psi",
- * "compressor IS SET TO 120 psi", "shock TAKES 150 psi", "charged the shock
- * WITH 150 psi". Anything else - a
- * tire word, a setting verb like `run`, "oil CHANGE THEN run" - means the
- * vessel is not what the number measures.
- */
-const VESSEL_LINK_WORD =
-  /^(?:air|nitrogen|pressures?|is|are|at|to|with|set|runs|takes|holds|charged|reservoir|springs?)$/;
-
-/**
- * A tire or pressure word that governs a bar figure, making it a pressure
- * rather than a handlebar or an anti-roll bar: just before it ("tyre pressure
- * 2.9 bar", "front tyre at 3.5 bar"), or reached through a preposition just
- * after it, with at most a few words judging the figure in between ("3.5 bar
- * in the front tyre", "3.5 bar too much in the front tyre").
- */
-const PRESSURE_CONTEXT_WORD = /^(?:tires?|tyres?|pressures?|inflat(?:e|ed|ing|ion))$/;
-const PRESSURE_CONTEXT_BEFORE_WORDS = 2;
-const TIRE_AFTER_UNIT =
-  /^\s+(?:(?:too|much|high|low|hot|cold|enough)\s+){0,3}(?:in|on|for|of)\s+(?:(?:the|my|your|both)\s+)?(?:(?:front|rear)\s+)?(?:tires?|tyres?)\b/i;
+/** A tire or axle word right after the unit: "60 psi FRONT", "60 psi IN THE FRONT TYRE". */
+const TIRE_CONTEXT_AFTER_UNIT = new RegExp(
+  `^\\s+(?:(?:hot|cold)\\s+)?(?:(?:in|on|for)\\s+)?(?:(?:the|my|your|both)\\s+)?${TIRE_CONTEXT_SOURCE}\\b`,
+  'i',
+);
 
 /**
  * The highest bar figure that can be a tire pressure at all. No tire is
@@ -497,49 +460,6 @@ const TIRE_AFTER_UNIT =
  * names ("the 22 bar", "a 27 bar") is above it.
  */
 const BAR_GAUGE_MAX = 10;
-
-/**
- * A setting verb directly governing the number. Closed list, in two kinds.
- * `run`, `set` and `inflate` may take the number straight after them ("run 8
- * psi"); every verb may take it through `to` / `at` / `down to` / `up to`,
- * with at most three words naming the tire before the particle ("set the rear
- * down to 8 psi", "went to 8 psi"). `go` and `sit` need the particle, because
- * "go 1 psi" and "went 1 psi" are changes; words naming the tire need it too,
- * because "ran it 2 psi high" is an offset and "run the 27 bar" is an anti-roll
- * bar. `put`, `pump`, `with` and a bare `to` are not verbs here - "put 2 psi in
- * the front", "pump 2 psi into the rear", "ran with 1 psi added" and "trying to
- * add 0.5 psi" are all changes.
- */
-const GOVERNED_BY_SETTING_VERB = new RegExp(
-  '\\b(?:(?:run|runs|running|ran|set|sets|setting|inflate|inflated|inflating)' +
-    '|(?:run|runs|running|ran|set|sets|setting|inflate|inflated|inflating' +
-    '|go|goes|going|went|sit|sits|sitting|sat)' +
-    '(?:\\s+(?:it|them|the|my|both|front|rear|fronts|rears|tires?|tyres?)){0,3}' +
-    '\\s+(?:(?:down|up)\\s+)?(?:to|at))\\s+$',
-  'i',
-);
-
-/**
- * Words right after the unit that say the figure was a change, an offset or a
- * relation between two pressures: "to 2 psi HIGHER", "go to 3 psi OVER
- * target", "0.5 psi ADJUSTMENTS", "ran 2 psi LOW on the rear", "2 psi BETWEEN
- * front and rear", "2 psi of STAGGER", "1 psi JUMPS".
- */
-const DELTA_WORDS_AFTER = new Set([
-  'higher', 'lower', 'more', 'less', 'up', 'down', 'over', 'under', 'above', 'below',
-  'gain', 'gains', 'gained', 'drop', 'drops', 'dropped', 'increase', 'increased',
-  'decrease', 'decreased', 'change', 'changes', 'difference', 'delta', 'step', 'steps',
-  'increment', 'increments', 'rise', 'swing', 'hotter', 'colder', 'extra', 'short', 'shy',
-  'off', 'softer', 'harder', 'firmer', 'stiffer', 'added', 'adjustment', 'adjustments',
-  'back', 'add', 'take', 'low', 'high', 'further', 'into', 'between', 'stagger', 'split',
-  'splits', 'away', 'jump', 'jumps', 'apart', 'offset',
-]);
-
-/** A change phrase the word list cannot carry on its own: "2 psi FROM COLD to hot". */
-const OFFSET_PHRASE_AFTER = /^\s+from\s+(?:cold|hot)\b/i;
-
-/** Where the tire is, not how much changed: "8 psi UP FRONT", "8 psi OUT BACK". */
-const POSITION_PHRASE_AFTER = /^\s+(?:up\s+front|out\s+back)\b/i;
 
 /**
  * A pressure figure as a rider types it: `50 psi`, `2.1 bar`, `220 kPa`,
@@ -551,62 +471,19 @@ const POSITION_PHRASE_AFTER = /^\s+(?:up\s+front|out\s+back)\b/i;
 const PRESSURE_VALUE_PATTERN =
   /(\d+(?:[.,]\d+)?)(?:\s*(?:\/|-|–|to)\s*(\d+(?:[.,]\d+)?))?\s*(psi|kpa)\b|(?<![\d/]|\d\s)(\d+(?:[.,]\d+)?)\s*(bar)\b/gi;
 
-/** Where the clause holding a value starts or ends. A decimal separator is not one. */
-const CLAUSE_BOUNDARY = /[;:!?]|[.,](?!\d)/g;
-
 function parseNumber(raw: string): number {
   return Number.parseFloat(raw.replace(',', '.'));
 }
 
-function wordsOf(text: string): string[] {
-  return text
-    .toLowerCase()
-    .split(/[^a-z0-9.'’/-]+/)
-    .filter((w) => w.length > 0);
-}
-
-function clauseBefore(text: string, start: number): string {
-  const before = text.slice(0, start);
-  let cut = 0;
-  for (const boundary of before.matchAll(CLAUSE_BOUNDARY)) {
-    cut = (boundary.index ?? 0) + boundary[0].length;
-  }
-  return before.slice(cut);
-}
-
-function governedBySettingVerb(text: string, start: number): boolean {
-  return GOVERNED_BY_SETTING_VERB.test(text.slice(0, start));
-}
-
 /**
- * Whether the number at `start` is a pressure the rider is SETTING: a setting
- * verb governs it and no change word follows the unit.
+ * Whether the figure spanning `start`..`end` is a pressure the rider is setting
+ * in a tire: a setting verb governs it, and a tire or axle word sits in that
+ * verb phrase or right after the unit.
  */
-function isAbsoluteSetting(text: string, start: number, end: number): boolean {
-  if (!governedBySettingVerb(text, start)) return false;
-  const rest = text.slice(end);
-  if (POSITION_PHRASE_AFTER.test(rest)) return true;
-  if (OFFSET_PHRASE_AFTER.test(rest)) return false;
-  const after = wordsOf(rest).slice(0, 2);
-  return !after.some((w) => DELTA_WORDS_AFTER.has(w));
-}
-
-function governedByNonTireVessel(text: string, start: number, end: number): boolean {
-  if (NON_TIRE_VESSEL_AFTER_UNIT.test(text.slice(end))) return true;
-  const before = wordsOf(clauseBefore(text, start));
-  for (let i = before.length - 1; i >= 0; i -= 1) {
-    if (NON_TIRE_VESSEL_WORD.test(before[i])) return true;
-    if (!VESSEL_LINK_WORD.test(before[i])) return false;
-  }
-  return false;
-}
-
-function barIsPressure(text: string, start: number, end: number): boolean {
-  if (governedBySettingVerb(text, start)) return true;
-  if (TIRE_AFTER_UNIT.test(text.slice(end))) return true;
-  return wordsOf(clauseBefore(text, start))
-    .slice(-PRESSURE_CONTEXT_BEFORE_WORDS)
-    .some((w) => PRESSURE_CONTEXT_WORD.test(w));
+function isTireSetting(text: string, start: number, end: number): boolean {
+  const governed = GOVERNED_BY_SETTING_VERB.exec(text.slice(0, start));
+  if (!governed) return false;
+  return TIRE_CONTEXT_WORD.test(governed[1] ?? '') || TIRE_CONTEXT_AFTER_UNIT.test(text.slice(end));
 }
 
 function formatPsi(psi: number): string {
@@ -619,48 +496,31 @@ function describeValue(raw: string, unit: PressureUnit, psi: number): string {
   return unit === 'psi' ? typed : `${typed} (${formatPsi(psi)} psi)`;
 }
 
-function buildPressureRejection(
-  described: string,
-  band: TirePressureGuardBand,
-  direction: 'above' | 'below',
-): string {
+function buildPressureRejection(described: string, band: TirePressureGuardBand): string {
   const vehicle = `${band.envelope.vehicleType} tire`;
-  const edge = direction === 'above'
-    ? `above the highest pressure any ${vehicle} maker publishes for track or road use ` +
-      `(${band.envelope.maxPsi} psi)`
-    : `below the lowest pressure any ${vehicle} maker publishes for track or road use ` +
-      `(${band.envelope.minPsi} psi)`;
   return (
-    `Running ${described} in a ${vehicle} is not a setup change: it is ${edge}, ` +
+    `Running ${described} in a ${vehicle} is not a setup change: it is above the highest ` +
+    `pressure any ${vehicle} maker publishes for track or road use (${band.envelope.maxPsi} psi), ` +
     'and going on track outside that range is not something I can help you set up.'
   );
 }
 
 /**
- * Screen one rider-authored field for a tire pressure outside the guard band.
+ * Screen one rider-authored field for a tire pressure set above the guard band.
  * Returns the rejection sentence, or null.
  */
 function matchPressureValue(text: string, band: TirePressureGuardBand): string | null {
   for (const match of text.matchAll(PRESSURE_VALUE_PATTERN)) {
     const start = match.index ?? 0;
     const end = start + match[0].length;
-    if (governedByNonTireVessel(text, start, end)) continue;
     const unit = (match[3] ?? match[5]).toLowerCase() as PressureUnit;
     const raws = [match[1], match[2], match[4]].filter((r): r is string => typeof r === 'string');
-    let absolute: boolean | null = null;
     for (const raw of raws) {
       const value = parseNumber(raw);
       if (unit === 'bar' && value > BAR_GAUGE_MAX) continue;
       const psi = toPsi(value, unit);
-      if (!Number.isFinite(psi)) continue;
-      if (psi > band.rejectAbovePsi && (unit !== 'bar' || barIsPressure(text, start, end))) {
-        return buildPressureRejection(describeValue(raw, unit, psi), band, 'above');
-      }
-      if (psi < band.rejectBelowPsi) {
-        if (absolute === null) absolute = isAbsoluteSetting(text, start, end);
-        if (absolute) {
-          return buildPressureRejection(describeValue(raw, unit, psi), band, 'below');
-        }
+      if (psi > band.rejectAbovePsi && isTireSetting(text, start, end)) {
+        return buildPressureRejection(describeValue(raw, unit, psi), band);
       }
     }
   }

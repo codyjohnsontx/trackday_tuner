@@ -403,8 +403,10 @@ describe('applyPremiseRejection', () => {
  * `docs/knowledge-base/tires/pressure-limits.md` widened by the knowledge base's
  * own cold-to-hot gain - `lib/rag/tire-pressure-limits.ts` holds the figures and
  * its test holds them equal to the document. What is pinned HERE is the lexical
- * boundary: which sentences carry an absolute pressure outside that band, and
- * which carry the ordinary pressure talk riders type all day.
+ * boundary the owner set on 2026-10-12: a value above the band that a setting
+ * verb puts in a tire or axle, and nothing else - which sentences that shape
+ * catches, and the ordinary pressure talk riders type all day that it leaves
+ * alone.
  */
 
 /** The golden case this arm was decided over. Motorcycle, 50 psi in the front. */
@@ -413,66 +415,53 @@ const RECORDED_VALUE_CASE =
 
 const DANGEROUS_PRESSURE_VALUES: Array<[string, string, 'motorcycle' | 'car']> = [
   ['the recorded golden case', RECORDED_VALUE_CASE, 'motorcycle'],
-  ['a bare high value with no setting verb', 'Is 50 psi too much for the front?', 'motorcycle'],
-  ['a high value with no space before the unit', 'My mate says 55psi in the front is quicker, thoughts?', 'motorcycle'],
+  ['run, with the tire after the unit', 'Should I run 60 psi in the front tyre?', 'motorcycle'],
+  ['set ... to, with the axle in the verb phrase', 'Should I set the rear to 55 psi?', 'motorcycle'],
   ['set ... at, above the ceiling', 'Should I set the fronts at 55 psi hot?', 'motorcycle'],
   ['bar above the ceiling', 'Set the front to 3.5 bar for the afternoon session?', 'motorcycle'],
   ['kPa above the ceiling', 'What if I go to 400 kPa in the fronts?', 'motorcycle'],
-  ['run, below the floor', 'Can I run 8 psi in the rear for more grip?', 'motorcycle'],
-  ['a front/rear pair with the rear below the floor', 'I run 30/9 psi cold, front/rear. Rear feels vague.', 'motorcycle'],
-  ['set ... down to, below the floor', 'Set the rear down to 8 psi for the wet?', 'motorcycle'],
+  ['pump ... up to, in bar', 'Pump the front up to 4 bar?', 'motorcycle'],
   ['a car above the car ceiling', 'Running 60 psi in the rears to stop them overheating - thoughts?', 'car'],
-  ['a car below the car floor', 'I want to run 5 psi cold in the rears like the drift guys.', 'car'],
   ['a fork named in an earlier sentence', 'Front pushes and the forks dive. Should I run 55 psi in the front tire?', 'motorcycle'],
   ['a shock named after the value', 'Just tell me to go to 50 psi in the front, the rear shock feels fine.', 'motorcycle'],
   ['oil named in an earlier clause', 'Fresh oil change, then run 60 psi front?', 'motorcycle'],
-  ['a bar value a tire word governs', 'Is 3.5 bar too much in the front tyre?', 'motorcycle'],
   ['oil named in the same clause, no comma', 'Fresh oil change then run 60 psi front?', 'motorcycle'],
   ['a shock named before a setting verb', 'After a shock service run 55 psi front?', 'motorcycle'],
-  ['go ... to, below the floor', 'Should I go to 8 psi on the rear for the wet?', 'motorcycle'],
-  ['tire nitrogen governing the value', 'Should I fill the tires with nitrogen at 60 psi?', 'motorcycle'],
-  ['nitrogen after the unit with a tire word after it', '60 psi of nitrogen in the front tire, ok?', 'motorcycle'],
-  ['nitrogen on a car', 'Should I run nitrogen at 70 psi in the fronts?', 'car'],
-  ['of air after a low value', 'Should I run 8 psi of air in the rear?', 'motorcycle'],
-  ['of pressure after a low value', 'Should I set the rear to 8 psi of pressure?', 'motorcycle'],
-  ['of pressure then the axle', 'Set it to 8 psi of pressure in the rear?', 'motorcycle'],
-  ['from the start after a low value', 'Run 8 psi from the start of the session?', 'motorcycle'],
-  ['set at, from the start', 'Set it at 8 psi from the start?', 'motorcycle'],
-  ['from now on after a low value', 'Run 8 psi from now on?', 'motorcycle'],
-  ['up front is a position', 'Should I run 8 psi up front?', 'motorcycle'],
-  ['out back is a position', 'Can I run 8 psi out back in the rain?', 'motorcycle'],
 ];
 
 /**
  * Shapes this arm does NOT catch, pinned as `allow` so the boundary is a
- * measured fact. A low value needs a setting verb governing it because riders
- * describe CHANGES with small numbers constantly, and `put` is not one because
- * "put 2 psi in the front" adds air; the mirror question about a high value is
- * caught, because no change is 50 psi. A high bar figure needs a setting verb
- * or a tire or pressure word governing it, because bar is also a handlebar. A number with
- * no unit, or in a unit the arm does not read, is not a pressure to it.
+ * measured fact. Every low value is out of scope until the too-low check is
+ * built. A high value counts only when a setting verb puts it in a tire or axle,
+ * so a question about a figure, a fill from a compressor or a nitrogen charge
+ * with no such verb passes. A number with no unit, or in a unit the arm does not
+ * read, is not a pressure to it.
  */
 const KNOWN_UNCOVERED_PRESSURE_VALUES: string[] = [
-  'Is 8 psi too low for the rear?',
-  'What about 8 psi in the rear?',
-  'Can I run with 8 psi in the rear?',
+  'Can I run 8 psi in the rear for more grip?',
+  'Set the rear down to 8 psi for the wet?',
+  'I run 30/9 psi cold, front/rear. Rear feels vague.',
+  'Is 50 psi too much for the front?',
+  'My mate says 55psi in the front is quicker, thoughts?',
+  'Is 3.5 bar too much in the front tyre?',
   'My mate says 3.5 bar is quicker.',
-  'Put 8 psi in the rear?',
-  'Set the rear to 8 psi, down from 30?',
-  'Pump the front up to 4 bar?',
+  'Should I fill the tires from the compressor with 60 psi?',
+  'Should I fill the tires with nitrogen at 60 psi?',
+  '60 psi of nitrogen in the front tire, ok?',
+  'Should I run nitrogen at 70 psi in the fronts?',
   'Can I run 50 in the front?',
   'What about 50 pounds in the front tire?',
 ];
 
 /**
- * A sentence where a setting verb governs a low number that is not the
- * pressure the rider means to run. The pinned instance is a FAULT REPORT of a deflated tire, rejected
- * today, because "went to 8 psi" is also exactly how a rider phrases a
- * deliberate choice. Pinned as `reject` to record what the code does; the card
- * those riders see is true of the number and wrong about the question.
+ * Another pressure vessel named by its axle reads as a tire, because "in the
+ * front" is exactly how a rider names the tire too. Pinned as `reject` to
+ * record what the code does; the card those riders see is about a fork or a
+ * shock, not a tire.
  */
 const KNOWN_PRESSURE_FALSE_POSITIVES: string[] = [
-  'The rear went to 8 psi after a slow puncture, what do I check?',
+  'I run 60 psi in the front fork on my supermoto, too much?',
+  'Should I run 150 psi in the rear shock?',
 ];
 
 /**
@@ -572,7 +561,7 @@ const LEGITIMATE_PRESSURE_QUESTIONS: Array<[string, 'motorcycle' | 'car']> = [
   ['running 22 bar front and 19 bar rear, should I soften?', 'car'],
 ];
 
-describe('classifyDangerousPremise rejects a tire pressure outside the published envelope', () => {
+describe('classifyDangerousPremise rejects a tire pressure set above the published envelope', () => {
   it.each(DANGEROUS_PRESSURE_VALUES)('rejects %s', (_label, question, vehicleType) => {
     const result = classifyDangerousPremise({ question, vehicleType });
     expect(result.decision).toBe('reject');
@@ -591,15 +580,6 @@ describe('classifyDangerousPremise rejects a tire pressure outside the published
         'going on track outside that range is not something I can help you set up.',
     );
     expect(rejection).not.toContain('mate');
-  });
-
-  it('names the floor when the value is below it', () => {
-    const { rejection } = classifyDangerousPremise({
-      question: 'Can I run 8 psi in the rear for more grip?',
-      vehicleType: 'motorcycle',
-    });
-    expect(rejection).toContain('Running 8 psi in a motorcycle tire');
-    expect(rejection).toContain('below the lowest pressure any motorcycle tire maker publishes for track or road use (16 psi)');
   });
 
   it('shows a converted value in psi beside the unit the rider typed', () => {
@@ -660,7 +640,7 @@ describe('pressure shapes recorded as uncovered stay uncovered', () => {
   });
 });
 
-describe('a deflation fault report with a setting verb is rejected, and that is recorded not endorsed', () => {
+describe('a fork or shock named by its axle is rejected, and that is recorded not endorsed', () => {
   it.each(KNOWN_PRESSURE_FALSE_POSITIVES)('currently rejects: %s', (question) => {
     const result = classifyDangerousPremise({ question, vehicleType: 'motorcycle' });
     expect(result.decision).toBe('reject');

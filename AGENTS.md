@@ -974,34 +974,29 @@ not be a ceiling typed into `lib/rag/`: `docs/knowledge-base/tires/pressure-limi
 states the outermost figure any cited maker publishes per vehicle class, with a
 source for each, `lib/rag/tire-pressure-limits.ts` is the same figures as code,
 and `lib/rag/tire-pressure-limits.test.ts` fails if a figure or URL in one is
-missing from the other. The guard rejects outside that envelope widened by the
-6 psi cold-to-hot gain `pressure-basics.md` states, so a hot reading just over
+missing from the other. The guard rejects above that envelope's maximum widened
+by the 6 psi cold-to-hot gain `pressure-basics.md` states, so a hot reading just over
 a cold maximum is not a premise. **Which envelope depends on the vehicle**: 50
 psi is past every motorcycle figure and inside a car tire's 51 psi sidewall
 maximum, so `classifyDangerousPremise` takes `vehicleType` and the route
 computes the premise once the vehicle row is in hand rather than before any
-I/O, and the type is required. **Above the ceiling a psi or kPa value counts on
-its own, below the floor only an absolute one**: riders describe changes with
-small numbers constantly ("added a psi", "went 1 psi softer", "put 2 psi in the
-front", "run 2 psi between front and rear"), so a low value counts only when a
-closed-list setting verb governs it directly - `run`, `set` or `inflate`
-straight before the number, or those and `go` or `sit` through `to`/`at` - and
-no change, offset or relation word follows the unit (`up front`, `out back` and
-a bare `of` or `from` are not one), while no change is ever 50 psi. `bar` is also a handlebar and an anti-roll bar, so a bar figure counts only
-up to 10 bar, never pairs, is never part of a fraction, and counts above the
-ceiling only when a setting verb or a tire or pressure word governs it. A fork,
-shock, compressor or other vessel word excludes a figure only when it governs
-that number through link words like `air`, `nitrogen`, `is`, `at`, or straight
-after the unit ("150 psi of nitrogen in the shock"), not anywhere in the question; nitrogen alone is a tire fill, not a vessel. `psi`, `bar` and
-`kPa` are the units; the rejection names the parsed number and the published
-edge, not the rider's text. Uncovered on purpose and pinned in the test file: a
-low value no setting verb governs or with a change word after it, a high bar
-figure nothing governs, a value with no unit or in pounds, and every other value
-type (damper clicks, preload, camber, spring rate, ride height), each a
-follow-up with its own cited envelope. Its known false positives are sentences
-where a setting verb governs a low number that is not the pressure the rider
-means to run; the pinned one is a deflation fault report ("the rear went to 8
-psi"). **A knowledge-base edit changes `data/rag-index.json`'s
+I/O, and the type is required. **It reads one shape (owner, 2026-10-12)**: a
+value ABOVE the band that a setting verb puts in a tire - `run`, `set` or
+`inflate` straight before the number, or those and `go`, `sit` or `pump`
+through `to`/`at`, AND a tire or axle word in that verb phrase or right after
+the unit ("run 60 psi in the front tyre", "set the rear to 55 psi"). Nothing else
+triggers it. A bar figure never pairs, is never part of a fraction and is read
+only up to 10 bar, since `bar` is also a handlebar and an anti-roll bar. The
+earlier below-floor half and the fork/shock/compressor/nitrogen exclusions were
+removed after every review round found ordinary questions misfiring inside them;
+**a too-low check is follow-up work**. `psi`, `bar` and `kPa` are the units; the
+rejection names the parsed number and the published edge, not the rider's text.
+Uncovered on purpose and pinned in the test file: any low value, a high value no
+setting verb puts in a tire ("is 50 psi too much?", "fill the tires from the
+compressor with 60 psi"), a value with no unit or in pounds, and every other
+value type (damper clicks, preload, camber, spring rate, ride height), each a
+follow-up with its own cited envelope. Its known false positive is another
+vessel named by its axle ("I run 60 psi in the front fork"). **A knowledge-base edit changes `data/rag-index.json`'s
 source hash**, so `npm run rag:check` and the build refuse until `npm run
 rag:index` is re-run with the OpenAI key, and that re-index is followed by
 `--live` and a deliberate `--update-baseline`. **Expect most of the completion
