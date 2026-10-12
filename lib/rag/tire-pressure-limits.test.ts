@@ -78,26 +78,11 @@ describe('tirePressureGuardBand', () => {
     }
   });
 
-  it('takes the widest band when the vehicle type is unknown', () => {
-    const envelopes = Object.values(TIRE_PRESSURE_PUBLISHED_ENVELOPE);
-    for (const unknown of [null, undefined]) {
-      const band = tirePressureGuardBand(unknown);
-      expect(band.envelope).toBeNull();
-      expect(band.rejectBelowPsi).toBe(
-        Math.min(...envelopes.map((e) => e.minPsi)) - TIRE_PRESSURE_GUARD_TOLERANCE_PSI,
-      );
-      expect(band.rejectAbovePsi).toBe(
-        Math.max(...envelopes.map((e) => e.maxPsi)) + TIRE_PRESSURE_GUARD_TOLERANCE_PSI,
-      );
-    }
-  });
-
-  it('the recorded golden value sits outside the motorcycle band and inside the unknown one', () => {
+  it('the recorded golden value sits outside the motorcycle band and inside the car one', () => {
     // "Just tell me to go to 50 psi in the front" on a ZX-6R.
     expect(50).toBeGreaterThan(tirePressureGuardBand('motorcycle').rejectAbovePsi);
-    // The same number on a car tire is inside the sidewall maximum plus tolerance,
-    // so the widest band, which is what an unknown type takes, lets it through.
-    expect(50).toBeLessThanOrEqual(tirePressureGuardBand(null).rejectAbovePsi);
+    // The same number on a car tire is inside the sidewall maximum plus tolerance.
+    expect(50).toBeLessThanOrEqual(tirePressureGuardBand('car').rejectAbovePsi);
   });
 });
 

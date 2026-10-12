@@ -232,6 +232,7 @@ describe('classifyDangerousPremise rejects a dangerous premise', () => {
           ? ['can I remove the front brake disc']
           : [],
       changeIntent: null,
+      vehicleType: 'motorcycle',
     });
 
     expect(assessment.decision).toBe('reject');
@@ -245,6 +246,7 @@ describe('classifyDangerousPremise rejects a dangerous premise', () => {
       question: 'The front feels heavy turning in. What should I try?',
       symptoms: [],
       changeIntent: 'remove the front brake caliper',
+      vehicleType: 'motorcycle',
     });
 
     expect(assessment.decision).toBe('reject');
@@ -252,7 +254,7 @@ describe('classifyDangerousPremise rejects a dangerous premise', () => {
   });
 
   it('names the equipment group rather than echoing the rider text', () => {
-    const assessment = classifyDangerousPremise({ question: RECORDED_CASE });
+    const assessment = classifyDangerousPremise({ question: RECORDED_CASE, vehicleType: 'motorcycle' });
 
     expect(assessment.hazard).toBe('brake_removal');
     expect(assessment.rejection).toBe(
@@ -276,6 +278,7 @@ describe('classifyDangerousPremise rejects a dangerous premise', () => {
     expect(
       classifyDangerousPremise({
         question: 'Do I really need the front disc for a slow, tight track like this?',
+        vehicleType: 'motorcycle',
       }).decision,
     ).toBe('allow');
   });
@@ -287,6 +290,7 @@ describe('classifyDangerousPremise rejects a dangerous premise', () => {
       question: 'I had to remove some preload.',
       symptoms: ['front brake temperature'],
       changeIntent: null,
+      vehicleType: 'motorcycle',
     });
 
     expect(assessment.decision).toBe('allow');
@@ -295,30 +299,30 @@ describe('classifyDangerousPremise rejects a dangerous premise', () => {
 
 describe('classifyDangerousPremise leaves ordinary brake questions alone', () => {
   it.each(LEGITIMATE_QUESTIONS)('allows: %s', (question) => {
-    expect(classifyDangerousPremise({ question }).decision).toBe('allow');
+    expect(classifyDangerousPremise({ question, vehicleType: 'motorcycle' }).decision).toBe('allow');
   });
 });
 
 describe('brake servicing prose is rejected, and that is recorded not endorsed', () => {
   it.each(KNOWN_FALSE_POSITIVES)('currently rejects: %s', (question) => {
-    expect(classifyDangerousPremise({ question }).decision).toBe('reject');
+    expect(classifyDangerousPremise({ question, vehicleType: 'motorcycle' }).decision).toBe('reject');
   });
 });
 
 describe('shapes recorded as uncovered stay uncovered', () => {
   it.each(KNOWN_UNCOVERED_PREMISES)('allows: %s', (question) => {
-    expect(classifyDangerousPremise({ question }).decision).toBe('allow');
+    expect(classifyDangerousPremise({ question, vehicleType: 'motorcycle' }).decision).toBe('allow');
   });
 });
 
 describe('only brake_removal ships as an ACTION group', () => {
   it.each(WITHDRAWN_GROUP_QUESTIONS)('allows: %s', (question) => {
-    expect(classifyDangerousPremise({ question }).decision).toBe('allow');
+    expect(classifyDangerousPremise({ question, vehicleType: 'motorcycle' }).decision).toBe('allow');
   });
 
   it('still names brake_removal as the hazard for the recorded case', () => {
     expect(
-      classifyDangerousPremise({ question: RECORDED_CASE }).hazard,
+      classifyDangerousPremise({ question: RECORDED_CASE, vehicleType: 'motorcycle' }).hazard,
     ).toBe('brake_removal');
   });
 });
@@ -349,7 +353,7 @@ describe('applyPremiseRejection', () => {
   it('stamps the rejection while the recommendation survives', () => {
     const stamped = applyPremiseRejection(
       base(),
-      classifyDangerousPremise({ question: RECORDED_CASE }),
+      classifyDangerousPremise({ question: RECORDED_CASE, vehicleType: 'motorcycle' }),
     );
 
     expect(stamped.premise_rejection).toContain('Removing or disabling a brake');
@@ -362,7 +366,7 @@ describe('applyPremiseRejection', () => {
     const advice = base();
     const stamped = applyPremiseRejection(
       advice,
-      classifyDangerousPremise({ question: 'The front pushes mid-corner. What should I try?' }),
+      classifyDangerousPremise({ question: 'The front pushes mid-corner. What should I try?', vehicleType: 'motorcycle' }),
     );
 
     expect(stamped.premise_rejection).toBeUndefined();
@@ -384,7 +388,7 @@ describe('applyPremiseRejection', () => {
 
     const stamped = applyPremiseRejection(
       refused,
-      classifyDangerousPremise({ question: RECORDED_CASE }),
+      classifyDangerousPremise({ question: RECORDED_CASE, vehicleType: 'motorcycle' }),
     );
 
     expect(stamped.premise_rejection).toContain('Removing or disabling a brake');
@@ -409,7 +413,7 @@ const RECORDED_VALUE_CASE =
 
 const DANGEROUS_PRESSURE_VALUES: Array<[string, string, 'motorcycle' | 'car']> = [
   ['the recorded golden case', RECORDED_VALUE_CASE, 'motorcycle'],
-  ['a bare high value with no setting cue', 'Is 50 psi too much for the front?', 'motorcycle'],
+  ['a bare high value with no setting verb', 'Is 50 psi too much for the front?', 'motorcycle'],
   ['a high value with no space before the unit', 'My mate says 55psi in the front is quicker, thoughts?', 'motorcycle'],
   ['set ... at, above the ceiling', 'Should I set the fronts at 55 psi hot?', 'motorcycle'],
   ['bar above the ceiling', 'Set the front to 3.5 bar for the afternoon session?', 'motorcycle'],
@@ -419,38 +423,45 @@ const DANGEROUS_PRESSURE_VALUES: Array<[string, string, 'motorcycle' | 'car']> =
   ['set ... down to, below the floor', 'Set the rear down to 8 psi for the wet?', 'motorcycle'],
   ['a car above the car ceiling', 'Running 60 psi in the rears to stop them overheating - thoughts?', 'car'],
   ['a car below the car floor', 'I want to run 5 psi cold in the rears like the drift guys.', 'car'],
+  ['a fork named in an earlier sentence', 'Front pushes and the forks dive. Should I run 55 psi in the front tire?', 'motorcycle'],
+  ['a shock named after the value', 'Just tell me to go to 50 psi in the front, the rear shock feels fine.', 'motorcycle'],
+  ['oil named in an earlier clause', 'Fresh oil change, then run 60 psi front?', 'motorcycle'],
+  ['a bar value with a tire word in its clause', 'Is 3.5 bar too much in the front tyre?', 'motorcycle'],
 ];
 
 /**
  * Shapes this arm does NOT catch, pinned as `allow` so the boundary is a
- * measured fact. A low value needs a setting cue because riders describe
- * CHANGES with small numbers constantly; the mirror question about a high
- * value is caught, because no change is 50 psi. A number with no unit, or in a
- * unit the arm does not read, is not a pressure to it.
+ * measured fact. A low value needs a setting verb governing it because riders
+ * describe CHANGES with small numbers constantly; the mirror question about a
+ * high value is caught, because no change is 50 psi. A high bar figure needs a
+ * setting verb or a tire word, because bar is also a handlebar. A number with
+ * no unit, or in a unit the arm does not read, is not a pressure to it.
  */
 const KNOWN_UNCOVERED_PRESSURE_VALUES: string[] = [
   'Is 8 psi too low for the rear?',
   'What about 8 psi in the rear?',
+  'Can I run with 8 psi in the rear?',
+  'My mate says 3.5 bar is quicker.',
   'Can I run 50 in the front?',
   'What about 50 pounds in the front tire?',
 ];
 
 /**
- * A FAULT REPORT of a deflated tire phrased with a setting cue is rejected
- * today, because "to 8 psi" is also exactly how a rider phrases a deliberate
- * choice. Pinned as `reject` to record what the code does; the card those
- * riders see is true of the number and wrong about the question.
+ * A FAULT REPORT of a deflated tire phrased with a setting verb is rejected
+ * today, because "went to 8 psi" is also exactly how a rider phrases a
+ * deliberate choice. Pinned as `reject` to record what the code does; the card
+ * those riders see is true of the number and wrong about the question.
  */
 const KNOWN_PRESSURE_FALSE_POSITIVES: string[] = [
-  'The rear dropped to 8 psi after a slow puncture, what do I check?',
-  'Rear went from 30 psi to 8 psi with a slow puncture.',
+  'The rear went to 8 psi after a slow puncture, what do I check?',
 ];
 
 /**
  * Ordinary pressure talk. The first block is every pressure phrasing in the
  * golden set; the second is the CHANGE idioms that carry a small number; the
- * third is absolute settings inside the envelope, in every unit; the fourth is
- * the other pressure vessels a setup question can name.
+ * third is deflation reports no setting verb governs; the fourth is absolute
+ * settings inside the envelope, in every unit; the fifth is the other pressure
+ * vessels a setup question can name; the sixth is `bar` as a noun.
  */
 const LEGITIMATE_PRESSURE_QUESTIONS: Array<[string, 'motorcycle' | 'car']> = [
   ['The front pushes wide mid-corner since I added a psi to the front tire. What should I change?', 'motorcycle'],
@@ -472,6 +483,20 @@ const LEGITIMATE_PRESSURE_QUESTIONS: Array<[string, 'motorcycle' | 'car']> = [
   ['Set the rear 1 psi higher than last time and lost edge grip.', 'motorcycle'],
   ['I took 2 psi out of the rear for the afternoon.', 'motorcycle'],
   ['Go to 2 psi over the hot target?', 'motorcycle'],
+  ['Should I try to lower the front 1 psi?', 'motorcycle'],
+  ["I'd like to drop 1 psi from the rear, good idea?", 'motorcycle'],
+  ['Is it worth trying to add 0.5 psi to the front?', 'motorcycle'],
+  ['I tend to make 0.5 psi adjustments, is that enough?', 'motorcycle'],
+  ['Want to take 2 psi out of the rear for the wet', 'motorcycle'],
+  ['I went 1 psi softer on the rear and it gripped', 'motorcycle'],
+  ['Ran with 1 psi added to the front', 'motorcycle'],
+  ['Go back 1 psi on the rear?', 'motorcycle'],
+  ['I want to add 10 kPa to the front', 'motorcycle'],
+  ['Should I try to lower the front 1 psi?', 'car'],
+  ['I want to add 10 kPa to the front', 'car'],
+
+  ['The rear dropped to 8 psi after a slow puncture, what do I check?', 'motorcycle'],
+  ['Rear went from 30 psi to 8 psi with a slow puncture.', 'motorcycle'],
 
   ['I run 31 psi cold in the front and 23 psi in the rear.', 'motorcycle'],
   ['Set the rear to 1.6 bar cold like Pirelli says.', 'motorcycle'],
@@ -488,6 +513,14 @@ const LEGITIMATE_PRESSURE_QUESTIONS: Array<[string, 'motorcycle' | 'car']> = [
   ['Shock nitrogen is at 150 psi, does that affect rebound?', 'motorcycle'],
   ['Fork air pressure at 60 psi on my supermoto - too much?', 'motorcycle'],
   ['The paddock compressor is set to 120 psi, fine for topping up?', 'car'],
+  ['Is 60 psi in the forks too much for a supermoto?', 'motorcycle'],
+  ['Rear shock takes 150 psi of nitrogen, right?', 'motorcycle'],
+
+  ['Would a 7/8 bar with more rise help my arm pump?', 'motorcycle'],
+  ['Should I go to a 1 1/8 bar for more leverage?', 'motorcycle'],
+  ['swapping the front anti-roll bar from 22 to 25 bar size', 'car'],
+  ['Should I fit the 27 bar on the front to cut understeer?', 'car'],
+  ['Should I fit the 27 bar on the front to cut understeer?', 'motorcycle'],
 ];
 
 describe('classifyDangerousPremise rejects a tire pressure outside the published envelope', () => {
@@ -538,14 +571,6 @@ describe('classifyDangerousPremise rejects a tire pressure outside the published
       .toBe('allow');
   });
 
-  it('takes the widest band when the vehicle type is unknown', () => {
-    expect(classifyDangerousPremise({ question: RECORDED_VALUE_CASE }).decision).toBe('allow');
-    expect(classifyDangerousPremise({ question: RECORDED_VALUE_CASE, vehicleType: null }).decision).toBe('allow');
-    expect(
-      classifyDangerousPremise({ question: 'Running 60 psi in the rears to stop them overheating?' }).decision,
-    ).toBe('reject');
-  });
-
   it('rejects a value that arrives in the change intent', () => {
     const result = classifyDangerousPremise({
       question: 'The front pushes on entry.',
@@ -586,7 +611,7 @@ describe('pressure shapes recorded as uncovered stay uncovered', () => {
   });
 });
 
-describe('a deflation fault report with a setting cue is rejected, and that is recorded not endorsed', () => {
+describe('a deflation fault report with a setting verb is rejected, and that is recorded not endorsed', () => {
   it.each(KNOWN_PRESSURE_FALSE_POSITIVES)('currently rejects: %s', (question) => {
     const result = classifyDangerousPremise({ question, vehicleType: 'motorcycle' });
     expect(result.decision).toBe('reject');

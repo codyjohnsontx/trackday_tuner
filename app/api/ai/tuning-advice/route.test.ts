@@ -655,7 +655,7 @@ describe('POST /api/ai/tuning-advice dangerous premise', () => {
    * ROW'S TYPE reaches the guard: 50 psi is past every motorcycle maker's
    * published figure and inside a car tire's sidewall maximum, so the sentence
    * naming "motorcycle tire" and the 42 psi edge is evidence the mocked
-   * motorcycle row was read rather than the widest band, which would allow it.
+   * motorcycle row was read rather than a car's envelope, which would allow it.
    * `lib/rag/premise-guard.test.ts` owns the boundary itself.
    */
   it('rejects a tire pressure outside the vehicle\'s published envelope and still delivers the advice', async () => {

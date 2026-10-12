@@ -126,23 +126,31 @@ const BASELINE_LIMITATIONS = [
       'limitation a-dangerous-value-is-not-a-dangerous-action is closed by it. What the arm does ' +
       'NOT read is recorded here so the number above it is not read as "values are covered".',
     what_the_arm_does_not_catch:
-      'Three shapes, pinned as KNOWN_UNCOVERED_PRESSURE_VALUES in lib/rag/premise-guard.test.ts. ' +
-      '(1) A LOW value with no setting cue ("is 8 psi too low for the rear?"): a low number needs ' +
-      'a cue (run, set, go to, inflate, with ...) because riders describe CHANGES with small ' +
-      'numbers constantly, while a high number needs none since no change is 50 psi, so "is 50 psi ' +
-      'too much?" IS caught. (2) A value with no unit or in a unit the arm does not read ("run 50 ' +
-      'in the front", "50 pounds"): psi, bar and kPa are the units the session form and the ' +
-      'knowledge base speak. (3) Every value type other than tire pressure - damper clicks, ' +
-      'preload turns, camber, spring rate, ride height - each a follow-up with its own cited ' +
-      'envelope, because a ceiling with no published source behind it is a claim the knowledge ' +
-      'base has refused to make.',
+      'Four shapes, pinned as KNOWN_UNCOVERED_PRESSURE_VALUES in lib/rag/premise-guard.test.ts. ' +
+      '(1) A LOW value no setting verb governs ("is 8 psi too low for the rear?", "run with 8 psi"): ' +
+      'a low number counts only when run, set, inflate, pump, go, sit or put governs it directly ' +
+      '("run 8 psi", "set the rear down to 8 psi") and no change word follows the unit, because ' +
+      'riders describe CHANGES with small numbers constantly ("try to lower the front 1 psi", ' +
+      '"went 1 psi softer"), while a high number needs none since no change is 50 psi, so "is 50 ' +
+      'psi too much?" IS caught. (2) A high BAR value with no setting verb and no tire or pressure ' +
+      'word in its clause ("my mate says 3.5 bar is quicker"): bar is also a handlebar and an ' +
+      'anti-roll bar, so a bar figure needs one of the two and never pairs. (3) A value with no ' +
+      'unit or in a unit the arm does not read ("run 50 in the front", "50 pounds"): psi, bar and ' +
+      'kPa are the units the session form and the knowledge base speak. (4) Every value type ' +
+      'other than tire pressure - damper clicks, preload turns, camber, spring rate, ride height - ' +
+      'each a follow-up with its own cited envelope, because a ceiling with no published source ' +
+      'behind it is a claim the knowledge base has refused to make. A fork, shock or other vessel ' +
+      'word excludes a figure only when it governs that number (within four words before it in ' +
+      'the same clause with no tire word closer, or straight after the unit, "150 psi of ' +
+      'nitrogen"), so naming the forks elsewhere in the question does not switch the arm off.',
     known_false_positive:
-      'A FAULT REPORT of a deflated tire phrased with a setting cue - "the rear dropped to 8 psi ' +
-      'after a slow puncture" - is rejected, because "to 8 psi" is also exactly how a rider ' +
+      'A FAULT REPORT of a deflated tire phrased with a setting verb - "the rear went to 8 psi ' +
+      'after a slow puncture" - is rejected, because "went to 8 psi" is also exactly how a rider ' +
       'phrases a deliberate choice and the two cannot be told apart lexically. Pinned as ' +
-      'KNOWN_PRESSURE_FALSE_POSITIVES. The card those riders see is true of the number and wrong ' +
-      'about the question; recorded under the same stop rule as the brake arm\'s servicing ' +
-      'misfires rather than chased with another exclusion.',
+      'KNOWN_PRESSURE_FALSE_POSITIVES. The same report with a verb that sets nothing ("dropped to ' +
+      '8 psi") is allowed. The card those riders see is true of the number and wrong about the ' +
+      'question; recorded under the same stop rule as the brake arm\'s servicing misfires rather ' +
+      'than chased with another exclusion.',
     what_the_harness_can_and_cannot_see:
       'The relabel makes the case FAIL whenever the arm stops firing (the premise check reads both ' +
       'directions), so this is now a gate the way the brake case is. What no number here shows is ' +

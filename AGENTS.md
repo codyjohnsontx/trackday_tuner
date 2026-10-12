@@ -980,17 +980,24 @@ a cold maximum is not a premise. **Which envelope depends on the vehicle**: 50
 psi is past every motorcycle figure and inside a car tire's 51 psi sidewall
 maximum, so `classifyDangerousPremise` takes `vehicleType` and the route
 computes the premise once the vehicle row is in hand rather than before any
-I/O; an unknown type takes the widest band. **Above the ceiling any pressure
-value counts, below the floor only an absolute one**: riders describe changes
-with small numbers constantly ("added a psi", "gained 5 psi"), so a low value
-needs a closed-list setting cue (run, set, go to, inflate, with) and no delta
-word beside it, while no change is ever 50 psi. `psi`, `bar` and `kPa` are the
-units; the rejection names the parsed number and the published edge, not the
-rider's text. Uncovered on purpose and pinned in the test file: a low value with
-no cue, a value with no unit or in pounds, and every other value type (damper
-clicks, preload, camber, spring rate, ride height), each a follow-up with its
-own cited envelope. Its known false positive is a deflation fault report phrased
-"dropped to 8 psi". **A knowledge-base edit changes `data/rag-index.json`'s
+I/O, and the type is required. **Above the ceiling a psi or kPa value counts on
+its own, below the floor only an absolute one**: riders describe changes with
+small numbers constantly ("added a psi", "try to lower the front 1 psi", "went 1
+psi softer"), so a low value counts only when a closed-list setting verb (run,
+set, inflate, pump, go, sit, put) governs it directly - the verb, a few words
+naming the tire, optionally `to`/`at`, the number - and no change word follows
+the unit, while no change is ever 50 psi. `bar` is also a handlebar and an
+anti-roll bar, so a bar figure never pairs and counts above the ceiling only
+when a setting verb or a tire or pressure word in its clause governs it. A fork,
+shock or other vessel word excludes a figure only when it governs that number,
+not anywhere in the question. `psi`, `bar` and `kPa` are the units; the
+rejection names the parsed number and the published edge, not the rider's text.
+Uncovered on purpose and pinned in the test file: a low value no setting verb
+governs, a high bar figure with neither, a value with no unit or in pounds, and
+every other value type (damper clicks, preload, camber, spring rate, ride
+height), each a follow-up with its own cited envelope. Its known false positive
+is a deflation fault report phrased with a setting verb ("the rear went to 8
+psi"). **A knowledge-base edit changes `data/rag-index.json`'s
 source hash**, so `npm run rag:check` and the build refuse until `npm run
 rag:index` is re-run with the OpenAI key, and that re-index is followed by
 `--live` and a deliberate `--update-baseline`. **Expect most of the completion

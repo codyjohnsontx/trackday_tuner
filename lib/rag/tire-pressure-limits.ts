@@ -178,36 +178,19 @@ export function toPsi(value: number, unit: PressureUnit): number {
 }
 
 export interface TirePressureGuardBand {
-  /** Null when the vehicle type is unknown and the widest band is in force. */
-  envelope: PublishedPressureEnvelope | null;
+  envelope: PublishedPressureEnvelope;
   /** A value strictly below this, in psi, is a dangerous premise. */
   rejectBelowPsi: number;
   /** A value strictly above this, in psi, is a dangerous premise. */
   rejectAbovePsi: number;
 }
 
-/**
- * The band the guard rejects outside of, for one vehicle class.
- *
- * An UNKNOWN vehicle type takes the widest band - the lowest floor and the
- * highest ceiling across every class - because the fail-safe direction for a
- * lexical guard is not firing: a card over a legitimate car pressure, shown
- * because the type was not known, is the misfire the tolerance exists to avoid.
- * The route always knows the vehicle, so this is the harness and test path.
- */
-export function tirePressureGuardBand(vehicleType: VehicleType | null | undefined): TirePressureGuardBand {
-  const envelopes = Object.values(TIRE_PRESSURE_PUBLISHED_ENVELOPE);
-  if (vehicleType && vehicleType in TIRE_PRESSURE_PUBLISHED_ENVELOPE) {
-    const envelope = TIRE_PRESSURE_PUBLISHED_ENVELOPE[vehicleType];
-    return {
-      envelope,
-      rejectBelowPsi: envelope.minPsi - TIRE_PRESSURE_GUARD_TOLERANCE_PSI,
-      rejectAbovePsi: envelope.maxPsi + TIRE_PRESSURE_GUARD_TOLERANCE_PSI,
-    };
-  }
+/** The band the guard rejects outside of, for one vehicle class. */
+export function tirePressureGuardBand(vehicleType: VehicleType): TirePressureGuardBand {
+  const envelope = TIRE_PRESSURE_PUBLISHED_ENVELOPE[vehicleType];
   return {
-    envelope: null,
-    rejectBelowPsi: Math.min(...envelopes.map((e) => e.minPsi)) - TIRE_PRESSURE_GUARD_TOLERANCE_PSI,
-    rejectAbovePsi: Math.max(...envelopes.map((e) => e.maxPsi)) + TIRE_PRESSURE_GUARD_TOLERANCE_PSI,
+    envelope,
+    rejectBelowPsi: envelope.minPsi - TIRE_PRESSURE_GUARD_TOLERANCE_PSI,
+    rejectAbovePsi: envelope.maxPsi + TIRE_PRESSURE_GUARD_TOLERANCE_PSI,
   };
 }
