@@ -128,13 +128,16 @@ const BASELINE_LIMITATIONS = [
     what_the_arm_does_not_catch:
       'Four shapes, pinned as KNOWN_UNCOVERED_PRESSURE_VALUES in lib/rag/premise-guard.test.ts. ' +
       '(1) A LOW value no setting verb governs ("is 8 psi too low for the rear?", "run with 8 psi", ' +
-      '"put 8 psi in the rear"), or one whose unit is followed by a change word ("run 8 psi from ' +
-      'now on"): a low number counts only when run, set or inflate stands straight before it ' +
+      '"put 8 psi in the rear"), or one whose unit is followed by a change word even when it names ' +
+      'an absolute ("set the rear to 8 psi, down from 30"): a low number counts only when run, ' +
+      'set or inflate stands straight before it ' +
       '("run 8 psi") or run, set, inflate, go or sit reaches it through to, at, down to or up to ' +
       '("set the rear down to 8 psi", "go to 8 psi"), and no change, offset or relation word ' +
       'follows the unit, because riders describe CHANGES with small numbers constantly ("try to ' +
       'lower the front 1 psi", "went 1 psi softer", "put 2 psi in the front", "run 2 psi between ' +
-      'front and rear", "2 psi of stagger"), while a high number needs none since no change is 50 ' +
+      'front and rear", "2 psi of stagger", "2 psi from cold to hot"), while "up front", "out ' +
+      'back" and a bare "of" or "from" ("8 psi of air", "8 psi from the start") do not make a ' +
+      'change, and a high number needs none since no change is 50 ' +
       'psi, so "is 50 psi too much?" IS caught. (2) A high BAR value above 10 bar, or one no ' +
       'setting verb and no tire or pressure word governs ("my mate says 3.5 bar is quicker", ' +
       '"pump the front up to 4 bar"): bar is also a handlebar and an anti-roll bar, so a bar ' +
@@ -146,8 +149,9 @@ const BASELINE_LIMITATIONS = [
       'ceiling with no published source behind it is a claim the knowledge base has refused to ' +
       'make. A fork, shock, compressor, air tank or other vessel word excludes a figure only when ' +
       'it governs that number (reached back through nothing but link words such as air, ' +
-      'nitrogen, pressure, is, at, set and to, or straight after the unit with no tire word ' +
-      'following, "60 psi in the forks"), so an oil change or a shock service named elsewhere in ' +
+      'nitrogen, pressure, is, at, with, set and to, or straight after the unit, through a fill ' +
+      'if need be, with no tire word straight after the vessel, "60 psi in the forks", "150 psi ' +
+      'of nitrogen in the shock"), so an oil change or a shock service named elsewhere in ' +
       'the question does not switch the arm off, and nitrogen on its own is a tire fill rather ' +
       'than a vessel.',
     known_false_positive:

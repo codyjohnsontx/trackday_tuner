@@ -986,13 +986,13 @@ small numbers constantly ("added a psi", "went 1 psi softer", "put 2 psi in the
 front", "run 2 psi between front and rear"), so a low value counts only when a
 closed-list setting verb governs it directly - `run`, `set` or `inflate`
 straight before the number, or those and `go` or `sit` through `to`/`at` - and
-no change, offset or relation word follows the unit, while no change is ever 50
-psi. `bar` is also a handlebar and an anti-roll bar, so a bar figure counts only
+no change, offset or relation word follows the unit (`up front`, `out back` and
+a bare `of` or `from` are not one), while no change is ever 50 psi. `bar` is also a handlebar and an anti-roll bar, so a bar figure counts only
 up to 10 bar, never pairs, is never part of a fraction, and counts above the
 ceiling only when a setting verb or a tire or pressure word governs it. A fork,
 shock, compressor or other vessel word excludes a figure only when it governs
-that number through link words like `air`, `nitrogen`, `is`, `at`, not anywhere
-in the question; nitrogen alone is a tire fill, not a vessel. `psi`, `bar` and
+that number through link words like `air`, `nitrogen`, `is`, `at`, or straight
+after the unit ("150 psi of nitrogen in the shock"), not anywhere in the question; nitrogen alone is a tire fill, not a vessel. `psi`, `bar` and
 `kPa` are the units; the rejection names the parsed number and the published
 edge, not the rider's text. Uncovered on purpose and pinned in the test file: a
 low value no setting verb governs or with a change word after it, a high bar

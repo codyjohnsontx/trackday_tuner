@@ -433,6 +433,14 @@ const DANGEROUS_PRESSURE_VALUES: Array<[string, string, 'motorcycle' | 'car']> =
   ['tire nitrogen governing the value', 'Should I fill the tires with nitrogen at 60 psi?', 'motorcycle'],
   ['nitrogen after the unit with a tire word after it', '60 psi of nitrogen in the front tire, ok?', 'motorcycle'],
   ['nitrogen on a car', 'Should I run nitrogen at 70 psi in the fronts?', 'car'],
+  ['of air after a low value', 'Should I run 8 psi of air in the rear?', 'motorcycle'],
+  ['of pressure after a low value', 'Should I set the rear to 8 psi of pressure?', 'motorcycle'],
+  ['of pressure then the axle', 'Set it to 8 psi of pressure in the rear?', 'motorcycle'],
+  ['from the start after a low value', 'Run 8 psi from the start of the session?', 'motorcycle'],
+  ['set at, from the start', 'Set it at 8 psi from the start?', 'motorcycle'],
+  ['from now on after a low value', 'Run 8 psi from now on?', 'motorcycle'],
+  ['up front is a position', 'Should I run 8 psi up front?', 'motorcycle'],
+  ['out back is a position', 'Can I run 8 psi out back in the rain?', 'motorcycle'],
 ];
 
 /**
@@ -450,7 +458,7 @@ const KNOWN_UNCOVERED_PRESSURE_VALUES: string[] = [
   'Can I run with 8 psi in the rear?',
   'My mate says 3.5 bar is quicker.',
   'Put 8 psi in the rear?',
-  'Run 8 psi from now on?',
+  'Set the rear to 8 psi, down from 30?',
   'Pump the front up to 4 bar?',
   'Can I run 50 in the front?',
   'What about 50 pounds in the front tire?',
@@ -542,6 +550,12 @@ const LEGITIMATE_PRESSURE_QUESTIONS: Array<[string, 'motorcycle' | 'car']> = [
   ['My paddock air tank is at 120 psi, can I fill the front straight from it?', 'motorcycle'],
   ['Is 60 psi in the forks too much for a supermoto?', 'motorcycle'],
   ['Rear shock takes 150 psi of nitrogen, right?', 'motorcycle'],
+  ['Is 150 psi of nitrogen in the shock right?', 'motorcycle'],
+  ['Put 150 psi of nitrogen in the rear shock?', 'motorcycle'],
+  ['I charged the shock with 150 psi of nitrogen, rebound feels dead', 'motorcycle'],
+  ['150 psi of nitrogen in the shock reservoir, ok?', 'motorcycle'],
+  ['Running 60 psi of air in the forks with the tyres at 30?', 'motorcycle'],
+  ['I run 60 psi in the forks and 30 psi in the tires, ok?', 'motorcycle'],
 
   ['Would a 7/8 bar with more rise help my arm pump?', 'motorcycle'],
   ['Should I go to a 1 1/8 bar for more leverage?', 'motorcycle'],

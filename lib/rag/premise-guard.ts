@@ -407,7 +407,9 @@ export function classifyDangerousPremise(
  *   to 1 bar`). Any other word between the verb and the number breaks it, and
  *   a change, offset or relation word right after the unit (`1 psi softer`, `2
  *   psi low`, `2 psi between`, `2 psi of stagger`, `2 psi from cold to hot`)
- *   turns it back into a change. Both lists are CLOSED and short, on purpose:
+ *   turns it back into a change; `up front` and `out back` say where the tire
+ *   is and do not, and neither do a bare `of` or `from` ("8 psi of air", "8 psi
+ *   from the start"). Both lists are CLOSED and short, on purpose:
  *   the brake arm's history is three review rounds each finding a new misfire
  *   inside an open-ended list.
  *
@@ -417,8 +419,8 @@ export function classifyDangerousPremise(
  *   "what about 8 psi?", "run with 8 psi", "put 8 psi in the rear". The ceiling
  *   catches the mirror ("is 50 psi too much?") because a high number needs no
  *   verb.
- * - A low value whose unit is followed by a word on the change list: "run 8
- *   psi from now on".
+ * - A low value whose unit is followed by a word on the change list, even when
+ *   the rider is naming an absolute: "set the rear to 8 psi, down from 30".
  * - A high bar figure no setting verb or tire or pressure word governs, or one
  *   above 10 bar: "my mate says 3.5 bar is quicker", "pump the front up to 4
  *   bar".
@@ -454,26 +456,28 @@ export function classifyDangerousPremise(
  * set well above any tire. Short and closed; `brake` is deliberately absent
  * because "runs 50 psi in the front and brakes later" is a tire sentence, and
  * `nitrogen` is a link word rather than a vessel because riders fill tires with
- * it too. A vessel named after the unit does not count when a tire word follows
- * it in the clause.
+ * it too. After the unit the vessel may be reached through a fill ("150 psi of
+ * nitrogen in the shock"), and does not count when a tire word follows it
+ * straight away.
  */
 const NON_TIRE_VESSEL_SOURCE = '(?:forks?|shocks?|dampers?|compressors?|tanks?|boost|fuel|oil)';
 const NON_TIRE_VESSEL_WORD = new RegExp(`^${NON_TIRE_VESSEL_SOURCE}$`);
 const NON_TIRE_VESSEL_AFTER_UNIT = new RegExp(
-  `^\\s*(?:of|in)\\s+(?:(?:the|my|your)\\s+)?(?:(?:front|rear)\\s+)?${NON_TIRE_VESSEL_SOURCE}\\b` +
-    '(?![^,;:!?.]*\\b(?:tires?|tyres?)\\b)',
+  '^\\s*(?:(?:of\\s+)?(?:air|nitrogen)\\s+(?:in|for)|of|in)\\s+(?:(?:the|my|your)\\s+)?' +
+    `(?:(?:front|rear)\\s+)?${NON_TIRE_VESSEL_SOURCE}\\b(?!\\s+(?:tires?|tyres?)\\b)`,
   'i',
 );
 
 /**
  * The only words that may stand between a vessel word and the number it
  * governs: "fork AIR PRESSURE AT 60 psi", "shock NITROGEN IS AT 150 psi",
- * "compressor IS SET TO 120 psi", "shock TAKES 150 psi". Anything else - a
+ * "compressor IS SET TO 120 psi", "shock TAKES 150 psi", "charged the shock
+ * WITH 150 psi". Anything else - a
  * tire word, a setting verb like `run`, "oil CHANGE THEN run" - means the
  * vessel is not what the number measures.
  */
 const VESSEL_LINK_WORD =
-  /^(?:air|nitrogen|pressures?|is|are|at|to|set|runs|takes|holds|charged|reservoir|springs?)$/;
+  /^(?:air|nitrogen|pressures?|is|are|at|to|with|set|runs|takes|holds|charged|reservoir|springs?)$/;
 
 /**
  * A tire or pressure word that governs a bar figure, making it a pressure
@@ -519,7 +523,7 @@ const GOVERNED_BY_SETTING_VERB = new RegExp(
  * Words right after the unit that say the figure was a change, an offset or a
  * relation between two pressures: "to 2 psi HIGHER", "go to 3 psi OVER
  * target", "0.5 psi ADJUSTMENTS", "ran 2 psi LOW on the rear", "2 psi BETWEEN
- * front and rear", "2 psi OF stagger", "2 psi FROM cold to hot", "1 psi JUMPS".
+ * front and rear", "2 psi of STAGGER", "1 psi JUMPS".
  */
 const DELTA_WORDS_AFTER = new Set([
   'higher', 'lower', 'more', 'less', 'up', 'down', 'over', 'under', 'above', 'below',
@@ -528,8 +532,14 @@ const DELTA_WORDS_AFTER = new Set([
   'increment', 'increments', 'rise', 'swing', 'hotter', 'colder', 'extra', 'short', 'shy',
   'off', 'softer', 'harder', 'firmer', 'stiffer', 'added', 'adjustment', 'adjustments',
   'back', 'add', 'take', 'low', 'high', 'further', 'into', 'between', 'stagger', 'split',
-  'splits', 'away', 'jump', 'jumps', 'from', 'of', 'apart', 'offset',
+  'splits', 'away', 'jump', 'jumps', 'apart', 'offset',
 ]);
+
+/** A change phrase the word list cannot carry on its own: "2 psi FROM COLD to hot". */
+const OFFSET_PHRASE_AFTER = /^\s+from\s+(?:cold|hot)\b/i;
+
+/** Where the tire is, not how much changed: "8 psi UP FRONT", "8 psi OUT BACK". */
+const POSITION_PHRASE_AFTER = /^\s+(?:up\s+front|out\s+back)\b/i;
 
 /**
  * A pressure figure as a rider types it: `50 psi`, `2.1 bar`, `220 kPa`,
@@ -574,7 +584,10 @@ function governedBySettingVerb(text: string, start: number): boolean {
  */
 function isAbsoluteSetting(text: string, start: number, end: number): boolean {
   if (!governedBySettingVerb(text, start)) return false;
-  const after = wordsOf(text.slice(end)).slice(0, 2);
+  const rest = text.slice(end);
+  if (POSITION_PHRASE_AFTER.test(rest)) return true;
+  if (OFFSET_PHRASE_AFTER.test(rest)) return false;
+  const after = wordsOf(rest).slice(0, 2);
   return !after.some((w) => DELTA_WORDS_AFTER.has(w));
 }
 
