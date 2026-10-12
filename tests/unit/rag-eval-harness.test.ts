@@ -333,21 +333,29 @@ describe('scoreAdviceResponse', () => {
     expect(score(refusal, false).passed).toBe(false);
   });
 
+  const fabricatedCitation = {
+    ...baseline,
+    personal_evidence: [
+      {
+        label: 'Last session',
+        detail: 'Front pushed after the pressure change.',
+        source_session_id: '99999999-9999-4999-8999-999999999999',
+      },
+    ],
+  };
+
   it('fails a response that cites a session the prompt never printed', () => {
-    const scored = score({
-      ...baseline,
-      personal_evidence: [
-        {
-          label: 'Last session',
-          detail: 'Front pushed after the pressure change.',
-          source_session_id: '99999999-9999-4999-8999-999999999999',
-        },
-      ],
-    });
+    const scored = score(fabricatedCitation);
     expect(scored.passed).toBe(false);
-    expect(scored.refused).toBe(true);
     expect(scored.policy.decision).not.toBe('force_refusal');
-    expect(scored.policy.violations).toContain('invalid_personal_evidence');
+    expect(scored.failures).toContain('policy: unverified evidence [invalid_personal_evidence]');
+  });
+
+  it('fails that response on a case that should refuse too, since it is served', () => {
+    const scored = score(fabricatedCitation, true);
+    expect(scored.passed).toBe(false);
+    expect(scored.refused).toBe(false);
+    expect(scored.failures).toContain('policy: expected a refusal and the response recommends a change');
     expect(scored.failures).toContain('policy: unverified evidence [invalid_personal_evidence]');
   });
 
