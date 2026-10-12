@@ -1001,8 +1001,9 @@ const BASELINE_VALUE_RULING_RECORD = {
   what_changed_in_the_labels:
     'expected_premise_rejection: true added; should_refuse stays false, because the rider still ' +
     'gets the front-pressure advice they came for. The QUESTION is untouched (rewording moves ' +
-    'the tape key) and so is expected_sources: the new pressure-limits document is not added to ' +
-    'it because whether the retriever reaches it is a measurement, not a label.',
+    'the tape key). expected_sources was unchanged at this offline re-score and gained ' +
+    'pressure-limits.md afterwards, with the re-index; the sixth entry in live_rerecord ' +
+    'records that relabel and why it was not optional.',
   what_changed_in_the_pipeline:
     'docs/knowledge-base/tires/pressure-limits.md states the outermost pressure any cited maker ' +
     'publishes per vehicle class, with a source for each figure. lib/rag/tire-pressure-limits.ts ' +
