@@ -410,9 +410,11 @@ export function classifyDangerousPremise(
  * - A high value no setting verb governs: "is 50 psi too much for the front?",
  *   "my mate says 55 psi in the front is quicker", "fill the tires from the
  *   compressor with 60 psi", "60 psi of nitrogen in the front tire", "pump 60
- *   psi into the front tyre" (`pump` needs its particle).
+ *   psi into the front tyre" (`pump` needs its particle), "should I run
+ *   nitrogen at 70 psi in the fronts?" (`nitrogen` is not a word allowed
+ *   between the verb and `at`).
  * - A high value a setting verb governs with no tire or axle word beside it:
- *   "should I run nitrogen at 70 psi in the fronts?".
+ *   "should I set it to 60 psi?".
  * - A value with no unit, or in a unit this arm does not read: "run 50 in the
  *   front", "50 pounds", "3.5 kg/cm2". `psi`, `bar` and `kPa` are the units the
  *   session form and the knowledge base speak.

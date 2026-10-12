@@ -145,8 +145,10 @@ const BASELINE_LIMITATIONS = [
       'attempt to tell an absolute from a change misfired. (2) A high value no setting verb puts ' +
       'in a tire ("is 50 psi too much for the front?", "should I fill the tires from the ' +
       'compressor with 60 psi?", "60 psi of nitrogen in the front tire", "should I run nitrogen ' +
-      'at 70 psi in the fronts?", "should I pump 60 psi into the front tyre?", since pump needs ' +
-      'its particle). (3) A value with no unit or in a unit the arm does not read ' +
+      'at 70 psi in the fronts?" - nitrogen is not a word allowed between the verb and at - and ' +
+      '"should I pump 60 psi into the front tyre?", since pump needs its particle), or one a ' +
+      'setting verb governs with no tire or axle word beside it ("should I set it to 60 psi?"). ' +
+      '(3) A value with no unit or in a unit the arm does not read ' +
       '("run 50 in the front", "50 pounds"): psi, bar and kPa are the units the session form and ' +
       'the knowledge base speak. (4) Every value type other than tire pressure - damper clicks, ' +
       'preload turns, camber, spring rate, ride height - each a follow-up with its own cited ' +

@@ -456,6 +456,7 @@ const KNOWN_UNCOVERED_PRESSURE_VALUES: string[] = [
   '60 psi of nitrogen in the front tire, ok?',
   'Should I run nitrogen at 70 psi in the fronts?',
   'Should I pump 60 psi into the front tyre?',
+  'Should I set it to 60 psi?',
   'Can I run 50 in the front?',
   'What about 50 pounds in the front tire?',
 ];

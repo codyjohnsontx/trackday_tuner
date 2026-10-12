@@ -995,7 +995,8 @@ removed after every review round found ordinary questions misfiring inside them;
 rejection names the parsed number and the published edge, not the rider's text.
 Uncovered on purpose and pinned in the test file: any low value, a high value no
 setting verb puts in a tire ("is 50 psi too much?", "fill the tires from the
-compressor with 60 psi"), a value with no unit or in pounds, and every other
+compressor with 60 psi", "run nitrogen at 70 psi in the fronts" - `nitrogen` is
+not a word allowed between the verb and `at`), a value with no unit or in pounds, and every other
 value type (damper clicks, preload, camber, spring rate, ride height), each a
 follow-up with its own cited envelope. Its known false positive is another
 vessel named by its axle ("I run 60 psi in the front fork", "put 150 psi in the
