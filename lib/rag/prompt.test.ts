@@ -1872,17 +1872,20 @@ describe('the ids a prepared prompt prints are the ids it lets the policy accept
     expect(result.advice.refusal).toBeNull();
   });
 
-  it('STILL refuses an id that was never printed', () => {
+  it('STILL never serves an id that was never printed', () => {
     // The guard exists because an AI citing a track day that never happened, to
-    // justify a change to a motorcycle's setup, is how a rider gets hurt.
+    // justify a change to a motorcycle's setup, is how a rider gets hurt. Since
+    // the captain's decision of 2026-10-04 that costs the evidence item rather
+    // than the whole answer: it is removed, and the rider is told so.
     const result = judge(NEVER_SHOWN_SESSION_ID);
 
-    expect(result.decision).toBe('force_refusal');
     expect(result.violations).toContain('invalid_personal_evidence');
-    expect(result.advice.recommended_changes).toEqual([]);
+    expect(result.advice.personal_evidence).toEqual([]);
+    expect(result.advice.unverified_evidence_notice).toBeTruthy();
+    expect(JSON.stringify(result.advice)).not.toContain(NEVER_SHOWN_SESSION_ID);
   });
 
-  it('STILL refuses the literal string "null" when it reaches the policy', () => {
+  it('STILL treats the literal string "null" as unverifiable when it reaches the policy', () => {
     // The recordings have the model writing this into a field typed
     // `string | null`. The POLICY's answer to it is unchanged and pinned here,
     // but production no longer asks the question: under the captain's ruling of
@@ -1891,11 +1894,13 @@ describe('the ids a prepared prompt prints are the ids it lets the policy accept
     // `lib/rag/schema.ts`), because a model declining to give a reference is not
     // a model inventing one - and discarding a correct, cited answer over it
     // cost the rider everything. This assertion is what still holds if that
-    // normalisation is ever removed.
+    // normalisation is ever removed: the evidence item is dropped and flagged
+    // (captain's decision, 2026-10-04) rather than served as a session.
     const result = judge('null');
 
-    expect(result.decision).toBe('force_refusal');
     expect(result.violations).toContain('invalid_personal_evidence');
+    expect(result.advice.personal_evidence).toEqual([]);
+    expect(result.advice.unverified_evidence_notice).toBeTruthy();
   });
 });
 

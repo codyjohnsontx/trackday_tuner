@@ -1,17 +1,17 @@
 {
   "version": 1,
-  "recorded_at": "2026-09-17T19:21:20.397Z",
+  "recorded_at": "2026-10-12T03:49:42.823Z",
   "mode": "offline",
   "model": "gpt-5.4-mini",
   "embedding_model": "text-embedding-3-small",
   "knowledge_index_generated_at": "2026-07-26T07:41:29.658Z",
   "cases": 33,
   "metrics": {
-    "rubric_pass_rate": 0.9090909090909091,
+    "rubric_pass_rate": 0.9393939393939394,
     "recall_at_k": 0.7857142857142857,
     "mrr": 0.7410714285714286,
-    "refusal_accuracy": 0.9090909090909091,
-    "component_accuracy": 0.8666666666666667,
+    "refusal_accuracy": 0.9393939393939394,
+    "component_accuracy": 0.8,
     "direction_accuracy": 0.8666666666666667
   },
   "coverage": {
@@ -311,6 +311,56 @@
           "cause": "ROSE by six answered cases, the largest movement in this file and the reason the upgrade was worth its cost. Reported, never gated. Six of fifteen is well outside the one-case wobble the two gpt-5.4-mini samples showed on component_accuracy."
         }
       ]
+    },
+    {
+      "what_this_is": "The SIXTH movement, and a one-sentence prompt correction that follows a policy change. Captain's decision 2026-10-04: one unverifiable personal_evidence citation now costs that evidence item and not the whole answer - evaluateAdvicePolicy removes it, sets unverified_evidence_notice and runs every other rule on what is left. SYSTEM_PROMPT rule 11 still told the model the entire response is discarded, so it was reworded to say the item is removed and the rider told it could not be verified, keeping the instruction never to invent or guess an id. Changing SYSTEM_PROMPT moves every completion tape key, so the recordings were refreshed with one `npm run rag:eval -- --live`.",
+      "blast_radius": "All 28 completion keys moved. All 28 EMBEDDING keys replayed untouched, so retrieval ran on byte-identical input and recall@k and MRR could not move; they did not.",
+      "what_the_model_now_emits": "Counted off the recordings. Before: 28 of 28 responses carried personal evidence, 33 items citing the exact session id printed in their own prompt and 1 JSON null. After: 28 of 28, 34 exact ids and no null. Zero unverifiable ids on either tape, so the policy change itself decided no case here; the movements below are all re-sampling.",
+      "these_numbers_are_the_baseline_whatever_they_say": "Both gated rates ROSE and the rise is NOT this fix. The one case that went fail -> pass, mc-sag-out-of-range, was force-refused as unknown_component because the old response named \"rear preload\", which is not in the component vocabulary; the re-sampled model answered rear ride height / raise / 2 mm. Neither response cited a session id it was not given. component_accuracy FELL and is committed as measured.",
+      "metrics": [
+        {
+          "metric": "rubric_pass_rate",
+          "before": 0.9090909090909091,
+          "after": 0.9393939393939394,
+          "fraction": "30/33 -> 31/33",
+          "cause": "ONE case, mc-sag-out-of-range, and it is model sampling: unknown_component on the old tape, allowed on the new one. No case went pass -> fail. sparse-empty-setup-fields and sparse-no-history-comparison still fail as before."
+        },
+        {
+          "metric": "refusal_accuracy",
+          "before": 0.9090909090909091,
+          "after": 0.9393939393939394,
+          "fraction": "30/33 -> 31/33",
+          "cause": "The same single case. These two rates share a numerator over the same 33 cases."
+        },
+        {
+          "metric": "recall_at_k",
+          "before": 0.7857142857142857,
+          "after": 0.7857142857142857,
+          "fraction": "22/28 -> 22/28",
+          "cause": "DID NOT MOVE, and could not have: every embedding key replayed."
+        },
+        {
+          "metric": "mrr",
+          "before": 0.7410714285714286,
+          "after": 0.7410714285714286,
+          "fraction": "20.75/28 -> 20.75/28",
+          "cause": "DID NOT MOVE, for the same reason."
+        },
+        {
+          "metric": "component_accuracy",
+          "before": 0.8666666666666667,
+          "after": 0.8,
+          "fraction": "13/15 -> 12/15",
+          "cause": "ONE case, mc-rear-wallow-inflected-phrasing: rear rebound / stiffen before, rear_compression / stiffen now. The one-case wobble the fifth movement recorded for this rate on an unchanged prompt. Reported, never gated."
+        },
+        {
+          "metric": "direction_accuracy",
+          "before": 0.8666666666666667,
+          "after": 0.8666666666666667,
+          "fraction": "13/15 -> 13/15",
+          "cause": "DID NOT MOVE in aggregate. Re-sampled, so equal counts are coincidence rather than a guarantee."
+        }
+      ]
     }
   ],
   "correction_record": {
@@ -424,6 +474,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -439,6 +490,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -454,6 +506,7 @@
       "recall": 0.5,
       "reciprocal_rank": 0.25,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -470,6 +523,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -485,6 +539,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -501,6 +556,7 @@
       "recall": 0.5,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -517,6 +573,9 @@
       "recall": 0,
       "reciprocal_rank": 0,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": true,
         "expected_premise_rejection": false,
@@ -532,6 +591,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -547,6 +607,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -562,6 +623,9 @@
       "recall": null,
       "reciprocal_rank": null,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": true,
         "expected_premise_rejection": false,
@@ -575,6 +639,9 @@
       "recall": null,
       "reciprocal_rank": null,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": true,
         "expected_premise_rejection": false,
@@ -588,6 +655,9 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -603,6 +673,7 @@
       "recall": 1,
       "reciprocal_rank": 0.5,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -618,6 +689,9 @@
       "recall": 1,
       "reciprocal_rank": 0.5,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -633,6 +707,7 @@
       "recall": 0,
       "reciprocal_rank": 0,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -648,6 +723,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -663,6 +739,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -678,6 +755,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -693,6 +771,7 @@
       "recall": 0,
       "reciprocal_rank": 0,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": true,
@@ -708,6 +787,9 @@
       "recall": null,
       "reciprocal_rank": null,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": true,
         "expected_premise_rejection": false,
@@ -721,6 +803,9 @@
       "recall": null,
       "reciprocal_rank": null,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": true,
         "expected_premise_rejection": false,
@@ -734,6 +819,9 @@
       "recall": null,
       "reciprocal_rank": null,
       "policy": "force_refusal",
+      "policy_violations": [
+        "no_recommendation"
+      ],
       "labels": {
         "should_refuse": true,
         "expected_premise_rejection": false,
@@ -743,10 +831,11 @@
       }
     },
     "mc-sag-out-of-range": {
-      "passed": false,
+      "passed": true,
       "recall": 1,
       "reciprocal_rank": 1,
-      "policy": "force_refusal",
+      "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -763,6 +852,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -778,6 +868,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -793,6 +884,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -808,6 +900,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -823,6 +916,7 @@
       "recall": 0,
       "reciprocal_rank": 0,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -838,6 +932,7 @@
       "recall": 1,
       "reciprocal_rank": 0.5,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -853,6 +948,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -869,6 +965,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -884,6 +981,7 @@
       "recall": 1,
       "reciprocal_rank": 1,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
@@ -899,6 +997,7 @@
       "recall": 0,
       "reciprocal_rank": 0,
       "policy": "allow",
+      "policy_violations": [],
       "labels": {
         "should_refuse": false,
         "expected_premise_rejection": false,
