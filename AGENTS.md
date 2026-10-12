@@ -1478,15 +1478,17 @@ rules rather than preferences.
 
 **`evaluateAdvicePolicy` IS PART OF THE RUBRIC.** A response the policy
 force-refuses is a rubric FAILURE, not a pass - unless refusing is the case's
-expected answer (`should_refuse`). That one line is what makes the harness at
-least as strict as production. **Grounding resolves the citation path** against
-the knowledge index rather than checking the string is non-empty, which is the
-other half: `filterCitationsToRetrievedSources` (`lib/rag/advice.ts`) strips an
-invented source before a live answer reaches a scorer, so that class can only be
-caught by scoring a response directly. Both live in `scripts/eval/scoring.mjs`,
-and the three audit responses are `tests/fixtures/rag-eval/adversarial-responses.json`:
-every run scores them as a self-check and exits non-zero if any passes, so a run
-that reports a pass rate has also just proved it can report a failure.
+expected answer (`should_refuse`) - and so is one it serves only after removing
+an unverifiable session citation (`invalid_personal_evidence`). That one line is
+what makes the harness at least as strict as production. **Grounding resolves
+the citation path** against the knowledge index rather than checking the string
+is non-empty, which is the other half: `filterCitationsToRetrievedSources`
+(`lib/rag/advice.ts`) strips an invented source before a live answer reaches a
+scorer, so that class can only be caught by scoring a response directly. Both
+live in `scripts/eval/scoring.mjs`, and the three audit responses are
+`tests/fixtures/rag-eval/adversarial-responses.json`: every run scores them as a
+self-check and exits non-zero if any passes, so a run that reports a pass rate
+has also just proved it can report a failure.
 `tests/unit/rag-eval-harness.test.ts` locks that in the required checks, because
 `rag:eval` failing is not the same as `test:unit` failing.
 
