@@ -147,7 +147,12 @@ const BASELINE_LIMITATIONS = [
       'compressor with 60 psi?", "60 psi of nitrogen in the front tire", "should I run nitrogen ' +
       'at 70 psi in the fronts?" - nitrogen is not a word allowed between the verb and at - and ' +
       '"should I pump 60 psi into the front tyre?", since pump needs its particle), or one a ' +
-      'setting verb governs with no tire or axle word beside it ("should I set it to 60 psi?"). ' +
+      'setting verb governs with no tire or axle word beside it ("should I set it to 60 psi?"), ' +
+      'or one reached by a verb outside the closed list ("raise / bump / increase the front to 50 ' +
+      'psi", "try 50 psi in the front", "go up from 32 to 50 psi in the front") or through a ' +
+      'coordinated tire phrase, since and is not an allowed word and a second clause has no verb ' +
+      'of its own ("set the front and rear to 50 psi", "set the rear to 22 psi and the front to ' +
+      '50 psi"). ' +
       '(3) A value with no unit or in a unit the arm does not read ' +
       '("run 50 in the front", "50 pounds"): psi, bar and kPa are the units the session form and ' +
       'the knowledge base speak. (4) Every value type other than tire pressure - damper clicks, ' +
@@ -157,7 +162,9 @@ const BASELINE_LIMITATIONS = [
     known_false_positive:
       'Another pressure vessel named by its axle - "I run 60 psi in the front fork", "should I run ' +
       '150 psi in the rear shock?", "put 150 psi in the rear shock" - is rejected, because "in the front" is exactly how a rider ' +
-      'names the tire too. Pinned as KNOWN_PRESSURE_FALSE_POSITIVES and recorded under the same ' +
+      'names the tire too; and so is a past-tense go/sit/run reporting a measured hot reading ' +
+      '("hot pressures went to 50 psi in the front", "pressures sat at 50 psi in the front", ' +
+      '"ran 50 psi hot in the front"), because a report and a setting share the verb. Pinned as KNOWN_PRESSURE_FALSE_POSITIVES and recorded under the same ' +
       'stop rule as the brake arm\'s servicing misfires rather than chased with another exclusion.',
     what_the_harness_can_and_cannot_see:
       'The relabel makes the case FAIL whenever the arm stops firing (the premise check reads both ' +

@@ -996,11 +996,15 @@ rejection names the parsed number and the published edge, not the rider's text.
 Uncovered on purpose and pinned in the test file: any low value, a high value no
 setting verb puts in a tire ("is 50 psi too much?", "fill the tires from the
 compressor with 60 psi", "run nitrogen at 70 psi in the fronts" - `nitrogen` is
-not a word allowed between the verb and `at`), a value with no unit or in pounds, and every other
+not a word allowed between the verb and `at`), one reached by a verb outside the
+closed list ("raise the front to 50 psi", "try 50 psi in the front") or through
+a coordinated tire phrase ("set the front and rear to 50 psi" - `and` is not an
+allowed word), a value with no unit or in pounds, and every other
 value type (damper clicks, preload, camber, spring rate, ride height), each a
 follow-up with its own cited envelope. Its known false positive is another
 vessel named by its axle ("I run 60 psi in the front fork", "put 150 psi in the
-rear shock"). **A knowledge-base edit changes `data/rag-index.json`'s
+rear shock"), and a past-tense go/sit/run reporting a measured hot reading
+("hot pressures went to 50 psi in the front"). **A knowledge-base edit changes `data/rag-index.json`'s
 source hash**, so `npm run rag:check` and the build refuse until `npm run
 rag:index` is re-run with the OpenAI key, and that re-index is followed by
 `--live` and a deliberate `--update-baseline`. **Expect most of the completion

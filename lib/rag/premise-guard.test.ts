@@ -457,13 +457,22 @@ const KNOWN_UNCOVERED_PRESSURE_VALUES: string[] = [
   'Should I run nitrogen at 70 psi in the fronts?',
   'Should I pump 60 psi into the front tyre?',
   'Should I set it to 60 psi?',
+  'Should I set the front and rear to 50 psi?',
+  'Set the rear to 22 psi and the front to 50 psi?',
+  'Should I go up from 32 to 50 psi in the front?',
+  'Should I raise the front to 50 psi?',
+  'Should I bump the front to 50 psi?',
+  'Should I increase the front to 50 psi?',
+  'Should I try 50 psi in the front?',
   'Can I run 50 in the front?',
   'What about 50 pounds in the front tire?',
 ];
 
 /**
  * Another pressure vessel named by its axle reads as a tire, because "in the
- * front" is exactly how a rider names the tire too. Pinned as `reject` to
+ * front" is exactly how a rider names the tire too, and a past-tense
+ * go/sit/run reporting a measured hot reading reads as a setting, because a
+ * report and a setting share the verb. Pinned as `reject` to
  * record what the code does; the card those riders see is about a fork or a
  * shock, not a tire.
  */
@@ -473,6 +482,9 @@ const KNOWN_PRESSURE_FALSE_POSITIVES: string[] = [
   'Put 150 psi in the rear shock?',
   'put 55 psi in the front and rear fork legs',
   'They put 60 psi in the front of the shock reservoir',
+  'Hot pressures went to 50 psi in the front after the long race, normal?',
+  'Pressures sat at 50 psi in the front all day, too high?',
+  'Ran 50 psi hot in the front after 20 min, is my gauge off?',
 ];
 
 /**

@@ -415,6 +415,11 @@ export function classifyDangerousPremise(
  *   between the verb and `at`).
  * - A high value a setting verb governs with no tire or axle word beside it:
  *   "should I set it to 60 psi?".
+ * - A verb outside the closed list - "raise / bump / increase the front to 50
+ *   psi", "try 50 psi in the front", "go up from 32 to 50 psi in the front" -
+ *   or a tire phrase with a coordinator in it, since `and` is not one of the
+ *   four words and a second clause carries no verb of its own: "set the front
+ *   and rear to 50 psi", "set the rear to 22 psi and the front to 50 psi".
  * - A value with no unit, or in a unit this arm does not read: "run 50 in the
  *   front", "50 pounds", "3.5 kg/cm2". `psi`, `bar` and `kPa` are the units the
  *   session form and the knowledge base speak.
@@ -425,8 +430,11 @@ export function classifyDangerousPremise(
  * `KNOWN_PRESSURE_FALSE_POSITIVES`: another pressure vessel named by its axle -
  * "I run 60 psi in the front fork", "run 150 psi in the rear shock", "put 150
  * psi in the rear shock" - because "in the front" is exactly how a rider names
- * the tire too. Recorded under the
- * same stop rule as the brake arm's servicing misfires.
+ * the tire too; and a past-tense go/sit/run reporting a measured hot reading -
+ * "hot pressures went to 50 psi in the front", "pressures sat at 50 psi in the
+ * front", "ran 50 psi hot in the front" - because a report and a setting share
+ * the verb. Recorded under the same stop rule as the brake arm's servicing
+ * misfires.
  *
  * THE REJECTION NAMES THE NUMBER AND THE EDGE, and that is the one place this
  * arm departs from the brake arm's "never echo the rider text". What is echoed
