@@ -1914,7 +1914,7 @@ it.
 `scripts/eval/corpus-depth.mjs` counts what an answer was actually grounded in -
 through the prompt builder's own `excerptForPrompt`, so it is the text the model
 saw rather than the raw chunk - and every run prints it beside the aggregate.
-Today: 75 chunks over 15 sources, 3350 words in total, and a mean answer built
+Today: 80 chunks over 16 sources, 4155 words in total, and a mean answer built
 on 206 words from 4 chunks of 2.4 distinct documents. That is the survey's
 finding 9 measured rather than multiplied out; its 45 x 4 = 180 was arithmetic
 over the index, and retrieval favours the longer chunks. The sharper figure is
