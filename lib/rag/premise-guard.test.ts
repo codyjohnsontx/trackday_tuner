@@ -432,6 +432,7 @@ const DANGEROUS_PRESSURE_VALUES: Array<[string, string, 'motorcycle' | 'car']> =
   ['set my front pressure to', 'Should I set my front pressure to 50 psi?', 'motorcycle'],
   ['run ... front tire pressure at', 'Run the front tire pressure at 55 psi?', 'motorcycle'],
   ['put, with the tire after the unit', 'Should I put 50 psi in the front tyre?', 'motorcycle'],
+  ['put ... into the tire', 'Should I put 60 psi into the front tyre?', 'motorcycle'],
 ];
 
 /**
@@ -454,6 +455,7 @@ const KNOWN_UNCOVERED_PRESSURE_VALUES: string[] = [
   'Should I fill the tires with nitrogen at 60 psi?',
   '60 psi of nitrogen in the front tire, ok?',
   'Should I run nitrogen at 70 psi in the fronts?',
+  'Should I pump 60 psi into the front tyre?',
   'Can I run 50 in the front?',
   'What about 50 pounds in the front tire?',
 ];
@@ -467,6 +469,9 @@ const KNOWN_UNCOVERED_PRESSURE_VALUES: string[] = [
 const KNOWN_PRESSURE_FALSE_POSITIVES: string[] = [
   'I run 60 psi in the front fork on my supermoto, too much?',
   'Should I run 150 psi in the rear shock?',
+  'Put 150 psi in the rear shock?',
+  'put 55 psi in the front and rear fork legs',
+  'They put 60 psi in the front of the shock reservoir',
 ];
 
 /**

@@ -998,7 +998,8 @@ setting verb puts in a tire ("is 50 psi too much?", "fill the tires from the
 compressor with 60 psi"), a value with no unit or in pounds, and every other
 value type (damper clicks, preload, camber, spring rate, ride height), each a
 follow-up with its own cited envelope. Its known false positive is another
-vessel named by its axle ("I run 60 psi in the front fork"). **A knowledge-base edit changes `data/rag-index.json`'s
+vessel named by its axle ("I run 60 psi in the front fork", "put 150 psi in the
+rear shock"). **A knowledge-base edit changes `data/rag-index.json`'s
 source hash**, so `npm run rag:check` and the build refuse until `npm run
 rag:index` is re-run with the OpenAI key, and that re-index is followed by
 `--live` and a deliberate `--update-baseline`. **Expect most of the completion

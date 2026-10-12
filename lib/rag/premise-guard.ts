@@ -409,7 +409,8 @@ export function classifyDangerousPremise(
  *   tell an absolute from a change misfired on ordinary questions.
  * - A high value no setting verb governs: "is 50 psi too much for the front?",
  *   "my mate says 55 psi in the front is quicker", "fill the tires from the
- *   compressor with 60 psi", "60 psi of nitrogen in the front tire".
+ *   compressor with 60 psi", "60 psi of nitrogen in the front tire", "pump 60
+ *   psi into the front tyre" (`pump` needs its particle).
  * - A high value a setting verb governs with no tire or axle word beside it:
  *   "should I run nitrogen at 70 psi in the fronts?".
  * - A value with no unit, or in a unit this arm does not read: "run 50 in the
@@ -420,8 +421,9 @@ export function classifyDangerousPremise(
  *
  * WHAT IT GETS WRONG IN THE OTHER DIRECTION, pinned as
  * `KNOWN_PRESSURE_FALSE_POSITIVES`: another pressure vessel named by its axle -
- * "I run 60 psi in the front fork", "run 150 psi in the rear shock" - because
- * "in the front" is exactly how a rider names the tire too. Recorded under the
+ * "I run 60 psi in the front fork", "run 150 psi in the rear shock", "put 150
+ * psi in the rear shock" - because "in the front" is exactly how a rider names
+ * the tire too. Recorded under the
  * same stop rule as the brake arm's servicing misfires.
  *
  * THE REJECTION NAMES THE NUMBER AND THE EDGE, and that is the one place this
@@ -454,7 +456,7 @@ const GOVERNED_BY_SETTING_VERB = new RegExp(
 
 /** A tire or axle word right after the unit: "60 psi FRONT", "60 psi IN THE FRONT TYRE". */
 const TIRE_CONTEXT_AFTER_UNIT = new RegExp(
-  `^\\s+(?:(?:hot|cold)\\s+)?(?:(?:in|on|for)\\s+)?(?:(?:the|my|your|both)\\s+)?${TIRE_CONTEXT_SOURCE}\\b`,
+  `^\\s+(?:(?:hot|cold)\\s+)?(?:(?:in|into|on|for)\\s+)?(?:(?:the|my|your|both)\\s+)?${TIRE_CONTEXT_SOURCE}\\b`,
   'i',
 );
 
