@@ -290,13 +290,26 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                   and not has_function_privilege('anon', p.oid, 'execute')
                   and not has_function_privilege('authenticated', p.oid, 'execute')
                 from pg_proc p where p.oid = to_regprocedure('public.refuse_unverified_identity_link()'))),
+  -- The function, by its body, empty search path and service_role-only execute.
+  -- The relink it ran is data and has no probe; re-running the function reports
+  -- what it still leaves alone, and relinks only what now resolves.
+  (30, '20261004002800_relink_legacy_session_tracks', 'function',
+      'public.relink_legacy_session_tracks(uuid)',
+      to_regprocedure('public.relink_legacy_session_tracks(uuid)') is not null
+           and (select md5(p.prosrc) = '6c0b3c643a5a2fa2185b9ca3f8693bcd'
+                  and not p.prosecdef
+                  and p.proconfig = array['search_path=""']
+                  and has_function_privilege('service_role', p.oid, 'execute')
+                  and not has_function_privilege('authenticated', p.oid, 'execute')
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                from pg_proc p where p.oid = to_regprocedure('public.relink_legacy_session_tracks(uuid)'))),
   -- The eight service book tables, then what makes the history honest: RLS on
   -- the entries, no delete on them for a rider or the service role, no write
   -- to the history for either, no rider grant on logged_at, no update or delete
   -- on a reading for either, and the pin, the history and the reading triggers by
   -- their bodies. The privilege reads sit behind the existence check so a
   -- database without the tables reads false instead of failing the whole audit.
-  (30, '20261010000100_add_service_book', 'tables + triggers',
+  (31, '20261010000100_add_service_book', 'tables + triggers',
       'public.service_books, service_entries, service_entry_revisions, vehicle_readings and their triggers',
       to_regclass('public.service_books') is not null
       and to_regclass('public.service_book_fields') is not null
@@ -325,7 +338,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
       and (select md5(p.prosrc) = 'db3a88e2ea61179ccaefa5bed2007b11' from pg_proc p where p.oid = to_regprocedure('public.touch_service_entry()'))
       and (select md5(p.prosrc) = 'a054c4eeadd645b5206f678f2528796d' from pg_proc p where p.oid = to_regprocedure('public.sync_service_entry_reading()'))
       and (select md5(p.prosrc) = 'db5b07d99d872cfbb26237e4a654c631' from pg_proc p where p.oid = to_regprocedure('public.service_entry_snapshot(jsonb)'))),
-  (31, '20261010000200_add_service_usage_overrides', 'table + table',
+  (32, '20261010000200_add_service_usage_overrides', 'table + table',
       'public.session_usage_weights, public.service_due_overrides',
       to_regclass('public.session_usage_weights') is not null
       and to_regclass('public.service_due_overrides') is not null)
