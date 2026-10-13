@@ -511,11 +511,17 @@ export async function getServiceBookUnitLocked(vehicleId: string): Promise<Actio
   if (!user) return { ok: false, error: NOT_AUTHENTICATED };
 
   const supabase = await createClient();
-  const loaded = await loadBookForWrite(supabase, user.id, vehicleId, 'service-book-read');
-  if (!loaded.ok) return loaded;
-  const held = await bookHoldsDistances(supabase, loaded.book.id);
+  const vehicle = await ownVehicle(supabase, user.id, vehicleId);
+  if (!vehicle) return { ok: false, error: VEHICLE_NOT_FOUND };
+  const read = await ownBook(supabase, vehicleId);
+  if (!read.ok) {
+    report('service-book-read', read.error, { table: 'service_books', userId: user.id, vehicleId });
+    return { ok: false, error: READ_FAILED };
+  }
+  if (!read.book) return { ok: false, error: BOOK_NOT_FOUND };
+  const held = await bookHoldsDistances(supabase, read.book.id);
   if (!held.ok) {
-    report('service-book-read', held.error, { userId: user.id, vehicleId, bookId: loaded.book.id });
+    report('service-book-read', held.error, { userId: user.id, vehicleId, bookId: read.book.id });
     return { ok: false, error: READ_FAILED };
   }
   return { ok: true, data: held.holds };

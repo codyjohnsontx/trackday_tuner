@@ -23,7 +23,7 @@ import { getServiceBookUnitLocked, updateServiceBookSettings } from '@/lib/actio
 
 type Rows = Record<string, unknown[]>;
 
-function clientWith(distanceRows: Rows) {
+function clientWith(distanceRows: Rows, bookError: { message: string } | null = null) {
   const updates: unknown[] = [];
   const from = vi.fn((table: string) => {
     let update: unknown = null;
@@ -35,7 +35,9 @@ function clientWith(distanceRows: Rows) {
     });
     query.maybeSingle = vi.fn(async () => {
       if (table === 'vehicles') return { data: { id: 'veh-1', user_id: 'rider-1' }, error: null };
-      if (table === 'service_books') return { data: { id: 'book-1', vehicle_id: 'veh-1', distance_unit: 'mi' }, error: null };
+      if (table === 'service_books') {
+        return bookError ? { data: null, error: bookError } : { data: { id: 'book-1', vehicle_id: 'veh-1', distance_unit: 'mi' }, error: null };
+      }
       return { data: null, error: null };
     });
     query.then = (onFulfilled: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) => {
@@ -110,5 +112,12 @@ describe('getServiceBookUnitLocked, the lock the settings screen shows', () => {
     vi.mocked(createClient).mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>);
 
     expect(await getServiceBookUnitLocked('veh-1')).toEqual({ ok: true, data: false });
+  });
+
+  it('reports a failed book read as a read failure, not a save failure', async () => {
+    const { client } = clientWith({}, { message: 'connection reset' });
+    vi.mocked(createClient).mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>);
+
+    expect(await getServiceBookUnitLocked('veh-1')).toEqual({ ok: false, error: 'The service book could not be read. Try again.' });
   });
 });
