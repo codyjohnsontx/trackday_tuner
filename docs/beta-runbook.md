@@ -3411,9 +3411,9 @@ Expect `10`, `0`, `30`, then eight `false`, then `5`.
 
 `policies` counts every policy on the ten tables, so a policy added by hand
 beside the migration's reads above `30`. `function_bodies_match` reads below `5`
-when a trigger function or the snapshot helper is not byte for byte the migration's: run the apply
-block's `create or replace function` statements again rather than editing in
-place. Rows 30 and 31 of `scripts/sql/audit-migrations-against-database.sql`
+when a trigger function or the snapshot helper is not byte for byte the
+migration's: run the apply block's `create or replace function` statements again
+rather than editing in place. Rows 30 and 31 of `scripts/sql/audit-migrations-against-database.sql`
 then read `present`.
 
 **4. Rollback.** Drops every table and function above, **with every book,
