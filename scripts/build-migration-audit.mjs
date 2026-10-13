@@ -509,6 +509,29 @@ export const MIGRATION_PROBES = {
       `          from pg_proc p where p.oid = ${DELETE_AUTO_CREATED_TRACK})`,
     ],
   },
+  '20261004002700_refuse_unverified_identity_link': {
+    note: [
+      'The trigger, enabled, and the function it runs by its body, so a hand-edited',
+      'copy that stops checking the claim reads MISSING.',
+    ],
+    kind: 'trigger + function',
+    object: 'refuse_unverified_identity_link on auth.identities',
+    present: [
+      'exists (select 1 from pg_trigger',
+      "        where tgname='refuse_unverified_identity_link'",
+      "          and tgrelid='auth.identities'::regclass",
+      "          and tgenabled <> 'D'",
+      '          and not tgisinternal',
+      "          and tgfoid = to_regprocedure('public.refuse_unverified_identity_link()'))",
+      '     and (select md5(p.prosrc) = ' +
+        `'${functionBodyMd5('20261004002700_refuse_unverified_identity_link')}'`,
+      '            and not p.prosecdef',
+      "            and p.proconfig = array['search_path=\"\"']",
+      "            and not has_function_privilege('anon', p.oid, 'execute')",
+      "            and not has_function_privilege('authenticated', p.oid, 'execute')",
+      "          from pg_proc p where p.oid = to_regprocedure('public.refuse_unverified_identity_link()'))",
+    ],
+  },
   '20261010000100_add_service_book': {
     note: [
       'The eight service book tables, then what makes the history honest: RLS on',

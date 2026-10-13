@@ -51,6 +51,7 @@ vi.mock('@/lib/rag/race-engineer-context', async (importOriginal) => ({
 }));
 
 import { POST } from '@/app/api/ai/tuning-advice/route';
+import { UNVERIFIED_EVIDENCE_NOTICE } from '@/lib/rag/policy';
 import type { AdviceResponse } from '@/lib/rag/schema';
 
 const USER_ID = '11111111-1111-1111-1111-111111111111';
@@ -240,8 +241,6 @@ async function ask(question: string) {
   );
 }
 
-const UNVERIFIED_EVIDENCE_REFUSAL =
-  'I could not verify the historical session evidence referenced in that response';
 
 describe('the race engineer answers the questions it suggests', () => {
   let rows: Row[];
@@ -308,7 +307,7 @@ describe('the race engineer answers the questions it suggests', () => {
     expect(rows.at(-1)?.status).toBe('ok');
   });
 
-  it('refuses the string "null" when it reaches the policy without passing the parser', async () => {
+  it('drops the string "null" evidence when it reaches the policy without passing the parser', async () => {
     // THE BELT TO THE PARSER'S BRACES, and the comment here used to say the
     // opposite. This payload is the shape the model actually returned in the
     // recording for `mc-gearing-slow-corner`: it cites the rider's OWN session
@@ -344,12 +343,17 @@ describe('the race engineer answers the questions it suggests', () => {
 
     const body = await (await ask(CAPTAIN_QUESTION)).json();
 
-    expect(body.advice.refusal).toContain(UNVERIFIED_EVIDENCE_REFUSAL);
-    expect(body.advice.recommended_changes).toEqual([]);
+    expect(body.advice.refusal).toBeNull();
+    expect(body.advice.recommended_changes).toHaveLength(1);
+    expect(body.advice.personal_evidence).toEqual([]);
+    expect(body.advice.unverified_evidence_notice).toBe(UNVERIFIED_EVIDENCE_NOTICE);
+    expect(rows.at(-1)?.status).toBe('ok');
     expect(rows.at(-1)?.policy_violations).toContain('invalid_personal_evidence');
   });
 
-  it('STILL refuses a session id the rider does not own', async () => {
+  // Captain's decision, 2026-10-04: the evidence item citing a session the
+  // rider does not own is removed and flagged; the advice is still served.
+  it('drops evidence citing a session id the rider does not own and keeps the advice', async () => {
     generateAdvice.mockResolvedValue({
       advice: adviceCiting(INVENTED_SESSION_ID),
       retrieved: [],
@@ -360,9 +364,12 @@ describe('the race engineer answers the questions it suggests', () => {
 
     const body = await (await ask(CAPTAIN_QUESTION)).json();
 
-    expect(body.advice.refusal).toContain(UNVERIFIED_EVIDENCE_REFUSAL);
-    expect(body.advice.recommended_changes).toEqual([]);
-    expect(body.recommendation_id).toBeNull();
+    expect(body.advice.refusal).toBeNull();
+    expect(body.advice.recommended_changes).toHaveLength(1);
+    expect(body.advice.personal_evidence).toEqual([]);
+    expect(body.advice.unverified_evidence_notice).toBe(UNVERIFIED_EVIDENCE_NOTICE);
+    expect(JSON.stringify(body.advice)).not.toContain(INVENTED_SESSION_ID);
+    expect(rows.at(-1)?.status).toBe('ok');
     expect(rows.at(-1)?.policy_violations).toContain('invalid_personal_evidence');
   });
 });

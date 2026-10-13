@@ -74,6 +74,55 @@
 Never change `BETA_INVITE_SECRET` while active invitations exist; invitation hashes
 cannot be recovered after rotation.
 
+### Check the hosted schema for drift
+
+The audit (`scripts/sql/audit-migrations-against-database.sql`) answers which
+migrations a database has, one sentinel object each. It cannot see the rest of
+what a migration makes, or anything made by hand that no migration describes -
+a missing column beside a present function, a dashboard-made trigger function,
+a grant that never ran. `scripts/sql/schema-inventory.sql` lists all of it, one
+object per line, so the hosted project can be diffed against a database built
+from `supabase/migrations/`. Run it before and after any hand-apply block below.
+
+It is one read-only `select` over the system catalogues: no DDL, no writes, no
+`set role`, and no row from any application table. The only non-catalogue
+source is `storage.buckets`, configuration columns only.
+
+1. Paste `scripts/sql/schema-inventory.sql` into the hosted SQL editor and run
+   it. Save the result with **Download CSV**, not by copying rows out of the
+   grid.
+2. Build the reference: a local stack from this checkout's migrations and
+   nothing else (`npx supabase db reset`, or a fresh `npx supabase start`).
+   A stack carrying another branch's migrations is a different reference.
+3. `npm run db:drift -- <downloaded.csv>`. It runs the same file against the
+   local stack and prints every line that differs: `-` for what the migrations
+   make and hosted does not have, `+` for what hosted has and the migrations do
+   not make. An object defined differently on the two sides appears once under
+   each. Exit 0 means the two agree, 1 means drift, 2 means a side could not be
+   read - an empty or wrong file is refused, never reported as agreement.
+
+Drift means a difference in what the migrations control, and only that makes
+the command exit 1. Two kinds of line are printed but never counted, so a fully
+caught-up hosted project still exits 0:
+
+- **Platform-managed, informational.** Lines Supabase owns rather than the
+  migrations, which hosted and a local stack each carry their own version of:
+  an `EXTENSION` whose version differs while the extension is on both sides,
+  a `TRIGGER storage.objects` whose function is not in `public` (the storage
+  service's own, which moves with its API version), and a `DEFACL` row for
+  `schema=<all>` or owner `supabase_admin`. An extension missing from one side
+  altogether is still drift, since a migration creates it.
+- **`MIGRATIONS table_exists`**, which differs because the CLI has never
+  recorded a history on hosted.
+
+Everything under the `-` and `+` headings is drift. A `-` line
+names the migration to look at - search `supabase/migrations/` for the object's
+name - and the hand-apply blocks below are how it is closed. A `+` line was made
+outside the migrations and needs a decision rather than a paste: a
+`FUNCGRANT ... <default acl: EXECUTE to PUBLIC>` on a function the migrations
+lock down is a grant that never ran, and a trigger on `auth.users` that no
+migration names fires alongside the one that does.
+
 ### Before applying the profiles trigger: confirm the hosted table takes its insert
 
 `20260816001200` puts a `profiles` insert on the path of **every** signup,
@@ -2243,6 +2292,134 @@ drop function if exists public.auto_created_track_is_referenced(uuid);
 commit;
 ```
 
+### Refuse unverified Google sign-ins, by hand
+
+`20261004002700` stops a Google sign-in - or any external provider's - whose
+email the provider has NOT verified from being linked into the account that
+already holds that address. Without it GoTrue links it whenever "Confirm email"
+is off and hands the sign-in a session on that rider's account: an account
+takeover through a Google Workspace domain whose admin creates the mailbox.
+It is a `before insert` trigger on `auth.identities` that raises when the new
+identity is external and its `email_verified` claim is not true. That includes
+a brand-new account's first identity, because an unverified sign-in that created
+an account for an unregistered address would have the real owner's later
+verified sign-in linked into it. A verified sign-in still signs up and links, and
+email and password signup is untouched. The refused sign-in gets no session,
+no account is created or changed, and GoTrue sends the rider to `/auth/callback` with
+`error_description=Error creating identity` and no code, which the callback turns
+into `/login?error=provider_email_unverified` - copy telling them the provider has
+not verified that email and to sign up or sign in with their email and password.
+Apply it before merging the pull request that adds it.
+
+**The hosted setting that also governs this.** Dashboard → Authentication →
+Sign In / Providers → Email → **Confirm email**. When it is ON, GoTrue itself
+refuses to link an unverified provider email (the sign-in answers
+`provider_email_needs_verification` and no session is issued), so the hole is
+closed with or without this trigger. When it is OFF - which is how
+`supabase/config.toml` runs local development - only this trigger closes it.
+Turning it on also makes every ordinary email signup confirm by mail, so it is a
+product decision of its own; this block does not require it and works either
+way.
+
+**1. Precheck (read-only).**
+
+```sql
+-- hosted-unverified-identity-link-precheck
+select
+  exists (select 1 from pg_trigger
+           where tgname = 'refuse_unverified_identity_link'
+             and tgrelid = 'auth.identities'::regclass) as trigger_exists,
+  has_table_privilege('auth.identities', 'trigger') as can_create_trigger,
+  (select count(*)
+     from auth.identities i
+    where i.provider not in ('email', 'phone')
+      and i.provider not like 'sso:%'
+      and lower(coalesce(i.identity_data ->> 'email_verified', '')) <> 'true') as unverified_identities_already_present;
+```
+
+Expect `false`, `true`, `0`. `trigger_exists = true` means this block already
+ran; read its verify instead. `can_create_trigger = false` means the SQL editor
+role cannot add a trigger to `auth.identities` on this project: stop and report
+it rather than working around it. A non-zero last column is an account that
+already holds an unverified external identity - linked beside its own sign-in,
+possibly an earlier takeover, or the account's only way in. The trigger does
+not remove one; list them with the
+same query selecting `i.user_id, i.provider, i.email, i.created_at` and decide
+each before applying.
+
+**2. Apply.**
+
+```sql
+-- hosted-unverified-identity-link: mirror of supabase/migrations/20261004002700_refuse_unverified_identity_link.sql
+begin;
+create or replace function public.refuse_unverified_identity_link()
+returns trigger
+language plpgsql
+security invoker
+-- It reads only the row being inserted, so it runs as whoever fires it -
+-- supabase_auth_admin, the role GoTrue writes auth tables as. search_path is
+-- pinned empty all the same.
+set search_path = ''
+as $$
+begin
+  if new.provider in ('email', 'phone') or new.provider like 'sso:%' then
+    return new;
+  end if;
+
+  if lower(coalesce(new.identity_data ->> 'email_verified', '')) = 'true' then
+    return new;
+  end if;
+
+  raise exception 'refusing an unverified % email', new.provider
+    using errcode = 'TT403',
+          hint = 'The provider did not verify this email address; sign up or sign in with email and password instead.';
+end;
+$$;
+
+-- Not callable by anyone but the trigger. `public` is named because anon and
+-- authenticated are members of it (CLAUDE.md, "Database Migrations").
+revoke all on function public.refuse_unverified_identity_link() from public, anon, authenticated;
+
+drop trigger if exists refuse_unverified_identity_link on auth.identities;
+create trigger refuse_unverified_identity_link
+  before insert on auth.identities
+  for each row execute function public.refuse_unverified_identity_link();
+commit;
+```
+
+**3. Verify.**
+
+```sql
+-- hosted-unverified-identity-link-verify
+select
+  t.tgenabled <> 'D' as trigger_enabled,
+  p.prosecdef as security_definer,
+  p.proconfig as settings,
+  has_function_privilege('anon', p.oid, 'execute') as anon_can_execute,
+  has_function_privilege('authenticated', p.oid, 'execute') as rider_can_execute,
+  md5(p.prosrc) = '6f93a16bdd3860ce0e82db7faa9cb45b' as definition_is_the_migration
+from pg_trigger t
+join pg_proc p on p.oid = t.tgfoid
+where t.tgname = 'refuse_unverified_identity_link'
+  and t.tgrelid = 'auth.identities'::regclass;
+```
+
+Expect one row: `true`, `false`, `{"search_path=\"\""}`, `false`, `false`, `true`.
+A `false` in the last column means the body is not this migration's: run the
+apply block again rather than editing in place. Row 29 of
+`scripts/sql/audit-migrations-against-database.sql` then reads `present`.
+
+**4. Rollback.** Takes the gate away; GoTrue goes back to linking whatever
+"Confirm email" allows.
+
+```sql
+-- hosted-unverified-identity-link-rollback
+begin;
+drop trigger if exists refuse_unverified_identity_link on auth.identities;
+drop function if exists public.refuse_unverified_identity_link();
+commit;
+```
+
 ### Apply the service book tables by hand
 
 `20261010000100` and `20261010000200` are the schema of the digital service book
@@ -3205,7 +3382,7 @@ Expect `10`, `0`, `30`, then eight `false`, then `4`.
 beside the migration's reads above `30`. `trigger_bodies_match` reads below `4`
 when a trigger function is not byte for byte the migration's: run the apply
 block's `create or replace function` statements again rather than editing in
-place. Rows 29 and 30 of `scripts/sql/audit-migrations-against-database.sql`
+place. Rows 30 and 31 of `scripts/sql/audit-migrations-against-database.sql`
 then read `present`.
 
 **4. Rollback.** Drops every table and function above, **with every book,

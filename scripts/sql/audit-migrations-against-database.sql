@@ -274,13 +274,29 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
            and to_regprocedure('public.delete_auto_created_track_if_unused(uuid)') is not null
            and (select md5(p.prosrc) = '65913c39a7070ab1b68c76b2fa3093fc'
                 from pg_proc p where p.oid = to_regprocedure('public.delete_auto_created_track_if_unused(uuid)'))),
+  -- The trigger, enabled, and the function it runs by its body, so a hand-edited
+  -- copy that stops checking the claim reads MISSING.
+  (29, '20261004002700_refuse_unverified_identity_link', 'trigger + function',
+      'refuse_unverified_identity_link on auth.identities',
+      exists (select 1 from pg_trigger
+              where tgname='refuse_unverified_identity_link'
+                and tgrelid='auth.identities'::regclass
+                and tgenabled <> 'D'
+                and not tgisinternal
+                and tgfoid = to_regprocedure('public.refuse_unverified_identity_link()'))
+           and (select md5(p.prosrc) = '6f93a16bdd3860ce0e82db7faa9cb45b'
+                  and not p.prosecdef
+                  and p.proconfig = array['search_path=""']
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                  and not has_function_privilege('authenticated', p.oid, 'execute')
+                from pg_proc p where p.oid = to_regprocedure('public.refuse_unverified_identity_link()'))),
   -- The eight service book tables, then what makes the history honest: RLS on
   -- the entries, no delete on them for a rider or the service role, no write
   -- to the history for either, no rider grant on logged_at, no update or delete
   -- on a reading for either, and the pin, the history and the reading triggers by
   -- their bodies. The privilege reads sit behind the existence check so a
   -- database without the tables reads false instead of failing the whole audit.
-  (29, '20261010000100_add_service_book', 'tables + triggers',
+  (30, '20261010000100_add_service_book', 'tables + triggers',
       'public.service_books, service_entries, service_entry_revisions, vehicle_readings and their triggers',
       to_regclass('public.service_books') is not null
       and to_regclass('public.service_book_fields') is not null
@@ -308,7 +324,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
       and (select md5(p.prosrc) = '5ace45cb78572b449f7ec7078e61939a' from pg_proc p where p.oid = to_regprocedure('public.record_service_entry_revision()'))
       and (select md5(p.prosrc) = 'db3a88e2ea61179ccaefa5bed2007b11' from pg_proc p where p.oid = to_regprocedure('public.touch_service_entry()'))
       and (select md5(p.prosrc) = 'a054c4eeadd645b5206f678f2528796d' from pg_proc p where p.oid = to_regprocedure('public.sync_service_entry_reading()'))),
-  (30, '20261010000200_add_service_usage_overrides', 'table + table',
+  (31, '20261010000200_add_service_usage_overrides', 'table + table',
       'public.session_usage_weights, public.service_due_overrides',
       to_regclass('public.session_usage_weights') is not null
       and to_regclass('public.service_due_overrides') is not null)

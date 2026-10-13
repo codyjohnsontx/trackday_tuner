@@ -51,3 +51,49 @@ export function normalizeTireCondition(value: unknown): TireCondition | null {
     ? (value as TireCondition)
     : null;
 }
+
+/**
+ * The 1-5 ratings on the outcome panel - rider confidence and how useful the AI
+ * recommendation was - follow the same rule. They used to open on 3 and 4, and
+ * a save sent whatever the select showed, so a rider who never touched either
+ * taught the learning loop a confidence and a usefulness score they had never
+ * given. Both columns are nullable, so an untouched rating is stored as null.
+ */
+export const RATING_VALUES = [1, 2, 3, 4, 5] as const;
+
+/** A rating select's value as an answer: the empty "Not rated" option is null. */
+export function parseRatingAnswer(value: string): number | null {
+  const rating = Number(value);
+  return value !== '' && RATING_VALUES.some((option) => option === rating) ? rating : null;
+}
+
+/** A stored rating as a select value, so an unrated row reopens unrated. */
+export function ratingSelectValue(rating: number | null | undefined): string {
+  return rating == null ? '' : String(rating);
+}
+
+export interface SessionOutcomeAnswers {
+  referenceSessionId: string;
+  recommendationId: string;
+  outcome: FeedbackOutcome;
+  confidence: string;
+  helpfulness: string;
+  symptoms: string[];
+  notes: string;
+}
+
+/**
+ * The body the outcome panel PUTs. Usefulness belongs to a recommendation, so it
+ * is dropped whenever none is linked, whatever the hidden select still holds.
+ */
+export function buildSessionOutcomeBody(answers: SessionOutcomeAnswers) {
+  return {
+    reference_session_id: answers.referenceSessionId,
+    recommendation_id: answers.recommendationId || null,
+    outcome: answers.outcome,
+    rider_confidence: parseRatingAnswer(answers.confidence),
+    symptoms: answers.symptoms,
+    notes: answers.notes.trim() || null,
+    recommendation_helpfulness: answers.recommendationId ? parseRatingAnswer(answers.helpfulness) : null,
+  };
+}

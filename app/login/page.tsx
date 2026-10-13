@@ -26,8 +26,9 @@ export default async function LoginPage({
 
   // `/auth/callback` can only report a failure through the URL. Without this the
   // rider is bounced back to a login form with no idea their link had expired.
-  const { error } = await searchParams;
-  const initialError = authErrorMessage(typeof error === 'string' ? error : null) ?? '';
+  const { error, provider } = await searchParams;
+  const initialError =
+    authErrorMessage(typeof error === 'string' ? error : null, typeof provider === 'string' ? provider : null) ?? '';
 
   return (
     <div className="-mx-4 -mt-5 sm:-mx-5 md:-mx-6">

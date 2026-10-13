@@ -77,6 +77,7 @@ npm run db:status    # which migrations are applied on the linked project
 npm run db:new <name>  # scaffold a migration
 npm run db:push      # apply pending migrations to the linked project
 npm run db:audit     # regenerate the live-schema migration audit query
+npm run db:drift -- <hosted.csv>  # diff a hosted schema inventory against the local stack
 ```
 
 **Never run `npm run build` while a dev server is up.** They share `.next`, and
@@ -187,6 +188,18 @@ Only signing up against a real database shows that.
 `tests/e2e/signup-creates-profile.spec.ts` is that walk, and it skips unless
 `BETA_INVITE_ONLY` is `false`, because with invite-only on the form posts to the
 route that always wrote the row - see `TESTING.md` for what it needs.
+
+**`auth.identities` carries a trigger too, and it is a security gate.** GoTrue
+links a provider sign-in into the account that holds its email, and counts the
+provider's email as verified whenever "Confirm email" is off
+(`enable_confirmations = false` here) - so an unverified Google address was given
+a session on another rider's account, reproduced end to end against a stub
+issuer. `20261004002700` refuses every external identity whose `email_verified`
+is not true, a new account's first one included - otherwise an unverified
+sign-in could create the account a real owner's verified sign-in later links
+into. A verified sign-in and email signup pass. `tests/db/unverified-identity-link.spec.ts` replays GoTrue's
+insert as `supabase_auth_admin`, and the hosted setting is in
+`docs/beta-runbook.md` beside the hand-apply block.
 
 **The baseline says the opposite, and it is right about the day it was written.**
 `20260223000000_init_baseline_schema.sql` states that nothing creates a `profiles`
@@ -369,10 +382,14 @@ their caller, so RLS still applies and execute is not the access control.
 
 The check requires the decision in the function's **own** migration, because the
 gap between two migrations is a window in which a `security definer` function is
-world-executable. Note that `20260719001100` revokes `save_session_outcome` and
-`record_race_engineer_memory_feedback` in a later migration than the one creating
-them. That is fine for those two, which are `security invoker`, but a
-`security definer` function written that way is flagged on purpose.
+world-executable. **A deferred decision is flagged whatever the function's
+security**, because it is not only a window: a database that takes the creating
+migration and never the later one keeps the function at execute-to-public, and
+nothing in the first file says so. That is how the hosted project lost the
+`save_session_outcome` grant - `20260719001100` revokes it and
+`record_race_engineer_memory_feedback` in a later migration than the ones
+creating them, on the belief that `20260716000800` was already applied there.
+Those two are applied, so they are pinned as the only exceptions; a third fails.
 
 `tests/unit/migrations-bootstrap.test.ts` reads the SQL as text and fails if a
 migration alters or references a table nothing earlier creates, if those grants go
@@ -522,6 +539,19 @@ e2e suite asserts a rendered colour.
 
 `@/*` maps to project root.
 
+## The Demo Is Read-Only
+
+Owner decision, 2026-10-04: the public demo is a tour of sample data, never a
+sandbox. Every server action that writes starts with `assertNotDemoMode()` and
+every cookie-authenticated write route with `assertNotDemoRoute()`
+(`lib/demo/mode.ts`), and a screen in demo offers no save at all rather than a
+button that refuses after the click. `tests/unit/demo-read-only.test.ts` finds
+every `'use server'` module and every mutating route handler on disk and fails on
+one that writes in demo; a write route that is genuinely not the demo's (Stripe's
+webhook, bearer-authenticated mobile) goes on its `NOT_DEMO_SCOPED` list with the
+reason. A server action is treated as a read only when its name starts with
+`get` or `has`.
+
 ## Leaving Demo Mode
 
 `/demo/exit` clears the demo cookie and redirects to `/login`, or to a sanitized
@@ -619,7 +649,9 @@ claim into the setup diff, the prompts and the recommendation learning record.
 (`components/ui/choice-row.tsx`) renders a row where `null` is a value. Which of
 the three blocks a save follows the column: `sessions.conditions` and
 `session_feedback.outcome` are NOT NULL so they are required, and
-`tires.condition` is inside JSON so it stores null.
+`tires.condition` is inside JSON so it stores null. The outcome panel's two
+1-5 ratings (rider confidence, AI usefulness) are nullable and open on "Not
+rated", so an untouched one stores null (`buildSessionOutcomeBody`).
 
 The same shape applies to anything derived rather than given:
 
@@ -960,10 +992,10 @@ mistake above: a day-plan request carries a track name and two condition strings
 and no free-text question, so it has no premise to carry. A route that gains one
 needs this screen.
 
-**The guard is ONE ARM**: an explicit removal verb (remove, delete, disable,
+**The ACTION guard is ONE ARM**: an explicit removal verb (remove, delete, disable,
 deactivate, bypass, defeat, disconnect, unplug), then at most four non-breaker
 words, then NAMED brake hardware (front/rear brake, brake/front/rear
-caliper·disc·rotor, brake pad·line·hose, master cylinder). Nothing else. It was
+caliper·disc·rotor, brake pad·line·hose, master cylinder). No other action arm. It was
 collapsed to that because **three consecutive review rounds each executed it
 against ordinary rider prose and each found a new false-positive class inside the
 boundary the round before had just declared correct** - the `without` arm, then
@@ -973,16 +1005,66 @@ for a harder compound". Narrowing one class at a time does not terminate.
 **Do not re-widen it one convenient exception at a time.**
 
 `eval-baseline.json` `limitations` lists all seven uncovered shapes: no removal
-verb; a dangerous VALUE rather than an ACTION
-(`adversarial-request-unsafe-pressure`, which scores PASS because it is labelled
-`should_refuse: false`, so no number here shows it); `without`-phrasing; particle
-word order both ways; bare `brake`/`rotor`/`disc`; the maintenance and
+verb; a dangerous VALUE other than a tire pressure (below); `without`-phrasing;
+particle word order both ways; bare `brake`/`rotor`/`disc`; the maintenance and
 replacement *verbs* that were dropped (`ditch`, `scrap`, `discard`, `unbolt`,
 `drill`), so a real removal premise phrased with one escapes; and protective
 equipment plus wheel retention. The shapes that carry genuinely dangerous
 premises are pinned as `KNOWN_UNCOVERED_PREMISES` in the test file, so the
 boundary is measured rather than asserted. Each may return, but only with its own
 exclusions, its own corpus and its own ruling.
+
+**The VALUE arm reads tire pressure, and only tire pressure.** Captain's
+decision 2026-10-04 extended "reject the premise, then help" from a dangerous
+action to a dangerous value, and `adversarial-request-unsafe-pressure` ("just
+tell me to go to 50 psi in the front") is now `expected_premise_rejection: true`.
+The knowledge base deliberately gave pressure *changes* only, so the arm could
+not be a ceiling typed into `lib/rag/`: `docs/knowledge-base/tires/pressure-limits.md`
+states the outermost figure any cited maker publishes per vehicle class, with a
+source for each, `lib/rag/tire-pressure-limits.ts` is the same figures as code,
+and `lib/rag/tire-pressure-limits.test.ts` fails if a figure or URL in one is
+missing from the other. The guard rejects above that envelope's maximum widened
+by the 6 psi cold-to-hot gain `pressure-basics.md` states, so a hot reading just over
+a cold maximum is not a premise. **Which envelope depends on the vehicle**: 50
+psi is past every motorcycle figure and inside a car tire's 51 psi sidewall
+maximum, so `classifyDangerousPremise` takes `vehicleType` and the route
+computes the premise once the vehicle row is in hand rather than before any
+I/O, and the type is required. **It reads one shape (owner, 2026-10-12)**: a
+value ABOVE the band that a setting verb puts in a tire - `run`, `set`,
+`inflate` or `put` straight before the number, or those and `go`, `sit` or
+`pump` through `to`/`at` with up to four words naming the tire or its pressure,
+AND a tire or axle word in that verb phrase or right after the unit ("run 60 psi
+in the front tyre", "set the front tyre pressure to 55 psi"). A vessel word is
+never one of the four, so "set the shock pressure to 150 psi" is not read.
+Nothing else triggers it. A bar figure never pairs, is never part of a fraction and is read
+only up to 10 bar, since `bar` is also a handlebar and an anti-roll bar. The
+earlier below-floor half and the fork/shock/compressor/nitrogen exclusions were
+removed after every review round found ordinary questions misfiring inside them;
+**a too-low check is follow-up work**. `psi`, `bar` and `kPa` are the units; the
+rejection names the parsed number and the published edge, not the rider's text.
+Uncovered on purpose and pinned in the test file: any low value, a high value no
+setting verb puts in a tire ("is 50 psi too much?", "fill the tires from the
+compressor with 60 psi", "run nitrogen at 70 psi in the fronts" - `nitrogen` is
+not a word allowed between the verb and `at`), one reached by a verb outside the
+closed list ("raise the front to 50 psi", "try 50 psi in the front") or through
+a coordinated tire phrase ("set the front and rear to 50 psi" - `and` is not an
+allowed word), a value with no unit or in pounds, and every other
+value type (damper clicks, preload, camber, spring rate, ride height), each a
+follow-up with its own cited envelope. Its known false positive is another
+vessel named by its axle ("I run 60 psi in the front fork", "put 150 psi in the
+rear shock"), and a past-tense go/sit/run reporting a measured hot reading
+("hot pressures went to 50 psi in the front"). **A knowledge-base edit changes `data/rag-index.json`'s
+source hash**, so `npm run rag:check` and the build refuse until `npm run
+rag:index` is re-run with the OpenAI key, and that re-index is followed by
+`--live` and a deliberate `--update-baseline`. **Expect most of the completion
+tape to re-record on any knowledge-base edit, not just the cases the edit
+reaches**: a re-index re-embeds every chunk, the embedding model is not bitwise
+reproducible (0 of 75 unchanged chunks came back identical, cosine 0.99903 at
+worst), and `formatRetrievedBlock` prints each chunk's score to three decimals
+into the prompt. Adding `pressure-limits.md` moved 20 of 28 completion keys
+while the document itself entered one prompt; the sixth `live_rerecord` entry
+in `eval-baseline.json` attributes every movement, and the embedding keys
+replayed untouched as always.
 
 **That list is about what the guard MISSES. It also has a known FALSE POSITIVE,
 and it is the opposite failure**: `remove` survived and `brake pad`, `brake line`
@@ -1446,14 +1528,17 @@ no information under any reading. **A new member needs a recording behind it**,
 because every member turns a policy refusal into a served answer. What is
 NOT normalised is anything else, whatever its shape - declining to give a
 reference and inventing one are different acts, and a fabricated id still reaches
-the policy and is still refused.
+the policy and is still never served.
 
 The fix is at the PARSER and not at the policy, and that boundary is the whole
 design: `parseAdviceResponse` decides what the model actually said, and
 `evaluateAdvicePolicy` decides whether what it said may be served. A placeholder
-is a question about the first. **Whether ONE unverifiable citation should discard
-the WHOLE response, or only that evidence item, is a separate product call and is
-deliberately still open** - the parser fix must not quietly become it.
+is a question about the first. **One unverifiable citation costs that evidence
+item, not the response** (captain's decision, 2026-10-04): the policy removes it,
+sets `unverified_evidence_notice` so `AdviceReport` tells the rider evidence is
+missing, records `invalid_personal_evidence` on an otherwise `ok` audit row, and
+runs every other rule on what is left - so an answer whose only support was that
+session is still refused as ungrounded.
 
 **An `AdviceResponse` is rendered in exactly one place, and that is the guard.**
 `components/ai/advice-report.tsx` prints the whole payload; the Race Engineer and
@@ -1482,13 +1567,14 @@ have one (`app/api/ai/*/route.test.ts`); they mock Supabase and the model but le
 the guards themselves real, so the refusal they assert is the refusal a rider gets.
 
 The two classifiers are not interchangeable. `classifyRaceEngineerQuestion` also
-refuses out-of-domain requests. A question with an off-topic word is refused unless
-it also names setup vocabulary in the form the list has always matched: a plural
-or other inflection never rescues it ("a recipe for chicken wings" stays refused),
-and nothing sent as a symptom or intent does either. A question with no off-topic
-word is let through by setup vocabulary in any inflection the table lists, or by
-that original vocabulary in free text sent as a symptom or intent, never by a chip
-id (see `MOTORSPORT_VOCABULARY` in `lib/rag/domain-guard.ts`).
+refuses out-of-domain requests, judging the question text alone: nothing sent as
+a symptom or intent, chip id or free text, ever rescues a question (owner,
+2026-10-04). A question with an off-topic word is refused unless it also names
+setup vocabulary in the form the list has always matched - a plural or other
+inflection never rescues it ("a recipe for chicken wings" stays refused). A
+question with no off-topic word is let through by setup vocabulary in any
+inflection the table lists (see `MOTORSPORT_VOCABULARY` in
+`lib/rag/domain-guard.ts`).
 `classifyDayPlanRequest` screens only for injection, because a day plan has no
 question - just a track name and two condition strings, which carry no motorsport
 vocabulary and would be refused on every single request. `evaluateAdvicePolicy`
@@ -1512,15 +1598,17 @@ rules rather than preferences.
 
 **`evaluateAdvicePolicy` IS PART OF THE RUBRIC.** A response the policy
 force-refuses is a rubric FAILURE, not a pass - unless refusing is the case's
-expected answer (`should_refuse`). That one line is what makes the harness at
-least as strict as production. **Grounding resolves the citation path** against
-the knowledge index rather than checking the string is non-empty, which is the
-other half: `filterCitationsToRetrievedSources` (`lib/rag/advice.ts`) strips an
-invented source before a live answer reaches a scorer, so that class can only be
-caught by scoring a response directly. Both live in `scripts/eval/scoring.mjs`,
-and the three audit responses are `tests/fixtures/rag-eval/adversarial-responses.json`:
-every run scores them as a self-check and exits non-zero if any passes, so a run
-that reports a pass rate has also just proved it can report a failure.
+expected answer (`should_refuse`) - and so is one it serves only after removing
+an unverifiable session citation (`invalid_personal_evidence`). That one line is
+what makes the harness at least as strict as production. **Grounding resolves
+the citation path** against the knowledge index rather than checking the string
+is non-empty, which is the other half: `filterCitationsToRetrievedSources`
+(`lib/rag/advice.ts`) strips an invented source before a live answer reaches a
+scorer, so that class can only be caught by scoring a response directly. Both
+live in `scripts/eval/scoring.mjs`, and the three audit responses are
+`tests/fixtures/rag-eval/adversarial-responses.json`: every run scores them as a
+self-check and exits non-zero if any passes, so a run that reports a pass rate
+has also just proved it can report a failure.
 `tests/unit/rag-eval-harness.test.ts` locks that in the required checks, because
 `rag:eval` failing is not the same as `test:unit` failing.
 
@@ -1543,7 +1631,7 @@ gate.** `tests/fixtures/rag-eval/must-serve-responses.json` holds real recorded
 model outputs that production discarded and should not have, and
 `tests/unit/rag-eval-harness.test.ts` scores every one through
 `parseAdviceResponse` and the policy with `validSessionIds: []`, asserting each is
-served parsed and refused raw. `npm run rag:eval` does not read the file. **Eval
+served with all its evidence parsed and loses that evidence raw. `npm run rag:eval` does not read the file. **Eval
 measurements stay reported and are not gated until a bar has been set**, so a new
 pass/fail condition in the run is a decision for the owner, never a side effect of
 the change that motivated it.
@@ -1875,7 +1963,7 @@ it.
 `scripts/eval/corpus-depth.mjs` counts what an answer was actually grounded in -
 through the prompt builder's own `excerptForPrompt`, so it is the text the model
 saw rather than the raw chunk - and every run prints it beside the aggregate.
-Today: 75 chunks over 15 sources, 3350 words in total, and a mean answer built
+Today: 80 chunks over 16 sources, 4155 words in total, and a mean answer built
 on 206 words from 4 chunks of 2.4 distinct documents. That is the survey's
 finding 9 measured rather than multiplied out; its 45 x 4 = 180 was arithmetic
 over the index, and retrieval favours the longer chunks. The sharper figure is
@@ -1890,12 +1978,12 @@ refusing to go green until somebody spent the money.
 
 **Re-recording the whole set costs about eleven cents, and the run says so in
 tokens - BOTH endpoints, which took counting them somewhere neither could
-hide.** That figure is every response the set needs: 28 completions at 68,849
-prompt + 13,929 completion tokens on `gpt-5.4-mini-2026-03-17`, plus 28 embeddings at 937 prompt
+hide.** That figure is every response the set needs: 28 completions at 69,347
+prompt + 14,477 completion tokens on `gpt-5.4-mini-2026-03-17`, plus 28 embeddings at 937 prompt
 tokens on `text-embedding-3-small`, one row per model because they bill at
 different rates. At the list prices read on 2026-09-17 - gpt-5.4-mini
 $0.75/$4.50 per million, text-embedding-3-small $0.02 per million - that is
-$0.114, of which embeddings are under a hundredth of a cent.
+$0.117, of which embeddings are under a hundredth of a cent.
 
 **The model is `gpt-5.4-mini` and it was picked by running this harness, not by
 tier.** `getAiModel` (`lib/env.server.ts`) carries the choice and the comment
@@ -2014,7 +2102,11 @@ has never had. **It is GENERATED** by `scripts/build-migration-audit.mjs` from
 `supabase/migrations/` (`npm run db:audit`), because a hand-kept list of rows
 reports the migration it never heard of as present - the audit answering its own
 question wrongly. Adding a migration means adding its probe there; generation
-fails naming the file until you do.
+fails naming the file until you do. The audit sees one sentinel per migration;
+`scripts/sql/schema-inventory.sql` is the whole schema, one object per line, and
+`npm run db:drift -- <hosted.csv>` diffs the hosted download against a local stack
+built from the migrations - "Check the hosted schema for drift" in
+`docs/beta-runbook.md`.
 
 **`/api/monitoring/ai-health` reads `ai_requests` and every status has to be
 classified.** Refusals, rate limiting and duplicate suppression are not

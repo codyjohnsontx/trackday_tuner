@@ -72,6 +72,17 @@ export interface AdviceResponse {
    * reject the premise, then help.
    */
   premise_rejection?: string | null;
+  /**
+   * Set by `evaluateAdvicePolicy` when it removed personal evidence citing a
+   * session the prompt never named, so the rider is told evidence is missing
+   * rather than reading an answer that silently lost some of it.
+   *
+   * Captain's decision, 2026-10-04: one unverifiable citation drops that
+   * evidence item and is flagged here; it no longer refuses the whole answer.
+   * Like `premise_rejection` it is NOT in `adviceResponseJsonSchema` - only
+   * the policy writes it.
+   */
+  unverified_evidence_notice?: string | null;
 }
 
 export const adviceResponseJsonSchema = {
@@ -188,12 +199,12 @@ export const adviceResponseJsonSchema = {
  * `source_session_id` is typed `string | null`, so the four-character string
  * "null" is a perfectly valid string and reaches `evaluateAdvicePolicy` wearing
  * the costume of a real id. The policy cannot verify it against the session ids
- * the prompt printed, reads it as fabricated evidence, and force-refuses the
- * WHOLE response - the advice, the citations and the rest of the evidence go
- * with it, and the rider is told only that the historical session evidence
- * could not be verified. That is the right answer to a fabricated id and the
- * wrong answer to a placeholder, and telling the two apart is this parser's job
- * rather than the policy's.
+ * the prompt printed and reads it as fabricated evidence. Until 2026-10-04 that
+ * force-refused the WHOLE response; it now removes that evidence item and tells
+ * the rider evidence is missing, which still loses the rider's own observation.
+ * That is the right answer to a fabricated id and the wrong answer to a
+ * placeholder, and telling the two apart is this parser's job rather than the
+ * policy's.
  *
  * THE SET IS MEASURED, NOT GUESSED. Across the four DISTINCT generations of
  * `tests/fixtures/rag-eval/recordings/completions.json` recorded on gpt-4o-mini

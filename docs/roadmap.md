@@ -225,8 +225,9 @@ and execution order may legitimately diverge; the reason is recorded there.
    temperature unit, and the sag history and its mid-delete selection race.
    Those specs drive the real E2E account and skip without its credentials (see
    `TESTING.md`), and E2E is still skipped in CI by default. Demo mode is a
-   deterministic fixture that needs no Supabase and no secrets, and no test uses
-   it, so the remaining coverage is cheap once `R6` lands.
+   deterministic fixture that needs no Supabase and no secrets, and only the
+   demo's own specs (`tests/e2e/demo-*.spec.ts`) use it so far, so the remaining
+   coverage is cheap once `R6` lands.
 
 ### 10 to 17 - real but survivable
 

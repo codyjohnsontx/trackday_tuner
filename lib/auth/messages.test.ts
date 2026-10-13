@@ -12,6 +12,22 @@ describe('authErrorMessage', () => {
     expect(authErrorMessage('auth_callback_failed')).toContain('expire');
   });
 
+  it('names the provider that did not verify the email, and points at email and password', () => {
+    expect(authErrorMessage('provider_email_unverified', 'google')).toBe(
+      "We couldn't sign you in with Google because that email isn't verified with Google. Sign up or sign in with your email and password instead."
+    );
+    expect(authErrorMessage('provider_email_unverified', 'apple')).toContain('verified with Apple');
+  });
+
+  it('stays provider-neutral when the provider is missing or unknown', () => {
+    const neutral =
+      "We couldn't sign you in because that email isn't verified with the provider you chose. Sign up or sign in with your email and password instead.";
+
+    expect(authErrorMessage('provider_email_unverified')).toBe(neutral);
+    expect(authErrorMessage('provider_email_unverified', 'toString')).toBe(neutral);
+    expect(authErrorMessage('provider_email_unverified', '<b>evil</b>')).toBe(neutral);
+  });
+
   it('still returns a sentence for an unknown code', () => {
     const message = authErrorMessage('something_new');
 
