@@ -155,6 +155,46 @@ describe('due state from intervals', () => {
     expect(due.axes[0]).toMatchObject({ anchor: 11, anchorEstimated: true, nextDue: 21, current: 13 });
   });
 
+  it('on a book with no readings, anchors a service done before the first session at zero', () => {
+    const base = input(0);
+    const sessions = Array.from({ length: 11 }, (_, day) => session(`s${day}`, `2026-10-${String(day + 5).padStart(2, '0')}`));
+    const due = only(
+      computeDue({
+        ...base,
+        usage: {
+          ...base.usage,
+          book: { tracks_hours: true, tracks_distance: true, default_session_minutes: 60, default_session_distance: 50 },
+          readings: [],
+          sessions,
+        },
+        items: [item({ interval_hours: 10, interval_distance: 500 })],
+        entries: [entry('e1', '2026-10-01')],
+        today: '2026-10-20',
+      }),
+    );
+    expect(due.axes).toMatchObject([
+      { axis: 'hours', anchor: 0, anchorEstimated: true, nextDue: 10, current: 11, status: 'overdue' },
+      { axis: 'distance', anchor: 0, anchorEstimated: true, nextDue: 500, current: 550, status: 'overdue' },
+    ]);
+    expect(due.status).toBe('overdue');
+  });
+
+  it('anchors a service done before the first reading at that reading, not at a count from zero', () => {
+    const base = input(0);
+    const due = only(
+      computeDue({
+        ...base,
+        usage: {
+          ...base.usage,
+          readings: [reading('r', '2026-09-10', 300), reading('r-now', '2026-10-01', 305)],
+          sessions: [session('before', '2026-08-20')],
+        },
+        entries: [entry('e1', '2026-09-01')],
+      }),
+    );
+    expect(due.axes[0]).toMatchObject({ anchor: 300, anchorEstimated: true, nextDue: 310, current: 305, status: 'ok' });
+  });
+
   it('lets a weight-0 day keep an item from coming due', () => {
     const base = input(0);
     const heavy = {

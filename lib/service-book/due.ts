@@ -15,7 +15,11 @@ import { computeUsage, currentReadings, firstReading, type UsageAxis, type Usage
  * WHEN IT WAS LAST DONE. The newest entry covering the item (not removed) is the
  * last service. Its own reading anchors the hours and distance axes; an entry
  * logged without one is anchored at the bike's usage on its service date
- * (`computeUsage` with `asOf`), and is marked estimated. An older entry that did
+ * (`computeUsage` with `asOf`), and is marked estimated. A service dated before
+ * the book's first reading on an axis is anchored at that reading instead, since
+ * a session count from zero shares no scale with usage now; on a book with no
+ * reading at all it is the session count by that date, zero when none came
+ * before it. An older entry that did
  * carry a reading is NOT used in its place - it would anchor the item before its
  * newest service and call it overdue when it was just done.
  *
@@ -218,7 +222,10 @@ export function computeDue(input: DueInput): ItemDue[] {
           const own = finite(axis === 'hours' ? last.reading_hours : last.reading_distance);
           if (own !== null) return { anchor: own, estimated: false };
           const then = usageAsOf(last.service_date)[axis];
-          return { anchor: then?.current ?? null, estimated: then?.basis !== 'reading' };
+          if (then?.reading) return { anchor: then.current, estimated: then.basis !== 'reading' };
+          const first = firstReading(input.usage.readings, axis);
+          if (first) return { anchor: finite(axis === 'hours' ? first.hours : first.distance), estimated: true };
+          return { anchor: then?.current ?? (now[axis] ? 0 : null), estimated: true };
         }
         const first = firstReading(input.usage.readings, axis);
         if (first) return { anchor: finite(axis === 'hours' ? first.hours : first.distance), estimated: false };
