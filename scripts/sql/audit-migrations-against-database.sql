@@ -323,7 +323,8 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
       and (select md5(p.prosrc) = '45f9566e5babe570149dad981e5d1e6e' from pg_proc p where p.oid = to_regprocedure('public.service_entries_pin()'))
       and (select md5(p.prosrc) = '6d6a5676ad5cdbaedb3b03f923987a2e' from pg_proc p where p.oid = to_regprocedure('public.record_service_entry_revision()'))
       and (select md5(p.prosrc) = 'db3a88e2ea61179ccaefa5bed2007b11' from pg_proc p where p.oid = to_regprocedure('public.touch_service_entry()'))
-      and (select md5(p.prosrc) = 'a054c4eeadd645b5206f678f2528796d' from pg_proc p where p.oid = to_regprocedure('public.sync_service_entry_reading()'))),
+      and (select md5(p.prosrc) = 'a054c4eeadd645b5206f678f2528796d' from pg_proc p where p.oid = to_regprocedure('public.sync_service_entry_reading()'))
+      and (select md5(p.prosrc) = 'db5b07d99d872cfbb26237e4a654c631' from pg_proc p where p.oid = to_regprocedure('public.service_entry_snapshot(jsonb)'))),
   (31, '20261010000200_add_service_usage_overrides', 'table + table',
       'public.session_usage_weights, public.service_due_overrides',
       to_regclass('public.session_usage_weights') is not null

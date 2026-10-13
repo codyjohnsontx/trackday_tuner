@@ -2753,6 +2753,9 @@ as $$
   );
 $$;
 
+revoke all on function public.service_entry_snapshot(jsonb) from public, anon, authenticated;
+grant execute on function public.service_entry_snapshot(jsonb) to authenticated, service_role;
+
 -- THE PINS
 --
 -- On insert from a Data API role, the clock and the rider are the server's. On
@@ -3392,21 +3395,23 @@ select
       to_regprocedure('public.service_entries_pin()'),
       to_regprocedure('public.record_service_entry_revision()'),
       to_regprocedure('public.touch_service_entry()'),
-      to_regprocedure('public.sync_service_entry_reading()')
+      to_regprocedure('public.sync_service_entry_reading()'),
+      to_regprocedure('public.service_entry_snapshot(jsonb)')
     )
       and md5(p.prosrc) in (
         '45f9566e5babe570149dad981e5d1e6e',
         '6d6a5676ad5cdbaedb3b03f923987a2e',
         'db3a88e2ea61179ccaefa5bed2007b11',
-        'a054c4eeadd645b5206f678f2528796d'
-      )) as trigger_bodies_match;
+        'a054c4eeadd645b5206f678f2528796d',
+        'db5b07d99d872cfbb26237e4a654c631'
+      )) as function_bodies_match;
 ```
 
-Expect `10`, `0`, `30`, then eight `false`, then `4`.
+Expect `10`, `0`, `30`, then eight `false`, then `5`.
 
 `policies` counts every policy on the ten tables, so a policy added by hand
-beside the migration's reads above `30`. `trigger_bodies_match` reads below `4`
-when a trigger function is not byte for byte the migration's: run the apply
+beside the migration's reads above `30`. `function_bodies_match` reads below `5`
+when a trigger function or the snapshot helper is not byte for byte the migration's: run the apply
 block's `create or replace function` statements again rather than editing in
 place. Rows 30 and 31 of `scripts/sql/audit-migrations-against-database.sql`
 then read `present`.

@@ -28,11 +28,12 @@ const PRECHECK_MARKER = '-- hosted-service-book-precheck';
 const VERIFY_MARKER = '-- hosted-service-book-verify';
 const ROLLBACK_MARKER = '-- hosted-service-book-rollback';
 
-const TRIGGER_FUNCTIONS = [
-  'service_entries_pin',
-  'record_service_entry_revision',
-  'touch_service_entry',
-  'sync_service_entry_reading',
+const FINGERPRINTED_FUNCTIONS = [
+  'service_entries_pin()',
+  'record_service_entry_revision()',
+  'touch_service_entry()',
+  'sync_service_entry_reading()',
+  'service_entry_snapshot(jsonb)',
 ];
 
 /** Every text between `as $$` and `$$;`, which Postgres stores as `prosrc`. */
@@ -95,14 +96,14 @@ describe('the hosted service book block in docs/beta-runbook.md', () => {
     );
   });
 
-  it('verifies every table the migrations create and the trigger bodies they install', () => {
+  it('verifies every table the migrations create and the function bodies they install', () => {
     const verify = fencedBlock(runbook, VERIFY_MARKER);
     const listed = [...verify.matchAll(/\('(\w+)'\)/g)].map((match) => match[1]);
     expect(listed.sort()).toEqual([...created(book, 'table'), ...created(overrides, 'table')].sort());
 
-    for (const fn of TRIGGER_FUNCTIONS) {
-      expect(verify).toContain(`to_regprocedure('public.${fn}()')`);
-      expect(verify).toContain(`'${functionBodyMd5(BOOK, fn)}'`);
+    for (const signature of FINGERPRINTED_FUNCTIONS) {
+      expect(verify).toContain(`to_regprocedure('public.${signature}')`);
+      expect(verify).toContain(`'${functionBodyMd5(BOOK, signature.split('(')[0])}'`);
     }
   });
 

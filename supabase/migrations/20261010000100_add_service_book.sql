@@ -280,6 +280,9 @@ as $$
   );
 $$;
 
+revoke all on function public.service_entry_snapshot(jsonb) from public, anon, authenticated;
+grant execute on function public.service_entry_snapshot(jsonb) to authenticated, service_role;
+
 -- THE PINS
 --
 -- On insert from a Data API role, the clock and the rider are the server's. On

@@ -137,11 +137,12 @@ const SERVICE_BOOK_TABLES = [
   'vehicle_readings',
 ];
 
-const SERVICE_BOOK_TRIGGER_FUNCTIONS = [
-  'service_entries_pin',
-  'record_service_entry_revision',
-  'touch_service_entry',
-  'sync_service_entry_reading',
+const SERVICE_BOOK_FINGERPRINTED_FUNCTIONS = [
+  'service_entries_pin()',
+  'record_service_entry_revision()',
+  'touch_service_entry()',
+  'sync_service_entry_reading()',
+  'service_entry_snapshot(jsonb)',
 ];
 
 const indent = (lines, by) => lines.map((line) => `${' '.repeat(by)}${line}`);
@@ -559,10 +560,10 @@ export const MIGRATION_PROBES = {
       "              and not has_any_column_privilege('service_role', 'public.vehicle_readings', 'update')",
       "              and not has_table_privilege('service_role', 'public.vehicle_readings', 'delete')",
       '    end',
-      ...SERVICE_BOOK_TRIGGER_FUNCTIONS.map(
-        (fn) =>
-          `and (select md5(p.prosrc) = '${functionBodyMd5('20261010000100_add_service_book', fn)}' ` +
-          `from pg_proc p where p.oid = to_regprocedure('public.${fn}()'))`,
+      ...SERVICE_BOOK_FINGERPRINTED_FUNCTIONS.map(
+        (signature) =>
+          `and (select md5(p.prosrc) = '${functionBodyMd5('20261010000100_add_service_book', signature.split('(')[0])}' ` +
+          `from pg_proc p where p.oid = to_regprocedure('public.${signature}'))`,
       ),
     ],
   },
