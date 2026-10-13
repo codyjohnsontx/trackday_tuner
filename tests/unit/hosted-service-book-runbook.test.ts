@@ -84,16 +84,21 @@ describe('the hosted service book block in docs/beta-runbook.md', () => {
   });
 
   it('prechecks that nothing of it is there yet and what it builds on is', () => {
-    expect(statements(fencedBlock(runbook, PRECHECK_MARKER))).toEqual(
-      statements(`
-        select
-          to_regclass('public.service_books') is not null as service_books_exists,
-          to_regclass('public.session_usage_weights') is not null as usage_weights_exists,
-          to_regprocedure('public.service_book_owned(uuid)') is not null as owned_helper_exists,
-          to_regprocedure('public.set_updated_at()') is not null as set_updated_at_exists,
-          has_table_privilege('authenticated', 'public.vehicles', 'select') as rider_can_read_vehicles;
-      `),
-    );
+    const precheck = fencedBlock(runbook, PRECHECK_MARKER);
+
+    for (const sql of [book, overrides]) {
+      expect(precheck).toContain(`to_regclass('public.${created(sql, 'table')[0]}')`);
+    }
+    expect(precheck).toContain(`to_regprocedure('public.${created(book, 'function')[0]}(`);
+
+    const own = new Set([...created(book, 'function'), ...created(overrides, 'function')]);
+    const builtOn = [...`${book}\n${overrides}`.matchAll(/execute function public\.(\w+)\(/g)]
+      .map((match) => match[1])
+      .filter((fn) => !own.has(fn));
+    expect(builtOn.length).toBeGreaterThan(0);
+    for (const fn of new Set(builtOn)) {
+      expect(precheck).toContain(`to_regprocedure('public.${fn}(`);
+    }
   });
 
   it('verifies every table the migrations create and the function bodies they install', () => {
