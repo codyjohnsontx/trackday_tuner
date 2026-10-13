@@ -283,7 +283,9 @@ begin
   new.origin := old.origin;
   new.copied_from_entry_id := old.copied_from_entry_id;
   new.created_at := old.created_at;
-  if new.deleted_at is distinct from old.deleted_at and new.deleted_at is not null then
+  if old.deleted_at is not null and new.deleted_at is not null then
+    new.deleted_at := old.deleted_at;
+  elsif old.deleted_at is null and new.deleted_at is not null then
     new.deleted_at := now();
   end if;
 

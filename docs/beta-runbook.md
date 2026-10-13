@@ -2756,7 +2756,9 @@ begin
   new.origin := old.origin;
   new.copied_from_entry_id := old.copied_from_entry_id;
   new.created_at := old.created_at;
-  if new.deleted_at is distinct from old.deleted_at and new.deleted_at is not null then
+  if old.deleted_at is not null and new.deleted_at is not null then
+    new.deleted_at := old.deleted_at;
+  elsif old.deleted_at is null and new.deleted_at is not null then
     new.deleted_at := now();
   end if;
 
@@ -3369,7 +3371,7 @@ select
       to_regprocedure('public.sync_service_entry_reading()')
     )
       and md5(p.prosrc) in (
-        'de6aef12682d036a68e1c4a7ebeac5fe',
+        '473f89fc290d19355775780d4d3c0b59',
         '5ace45cb78572b449f7ec7078e61939a',
         'db3a88e2ea61179ccaefa5bed2007b11',
         'a054c4eeadd645b5206f678f2528796d'

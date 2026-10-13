@@ -371,6 +371,24 @@ test.describe('the service book as riders, as nobody and as the service role', (
     expect((await revisions(entryId)).map(({ kind }) => kind)).toEqual(['created', 'deleted', 'restored']);
     const stored = await admin.from('service_entries').select('id').eq('id', entryId);
     expect(stored.data).toHaveLength(1);
+
+    // Removing an entry again does not move when it was removed.
+    const otherId = await createEntry();
+    const first = await aliceClient
+      .from('service_entries')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', otherId)
+      .select('deleted_at')
+      .single();
+    expect(first.error, first.error?.message).toBeNull();
+    const again = await aliceClient
+      .from('service_entries')
+      .update({ deleted_at: new Date(Date.now() + 3_600_000).toISOString() })
+      .eq('id', otherId)
+      .select('deleted_at')
+      .single();
+    expect(again.error, again.error?.message).toBeNull();
+    expect(Date.parse(again.data!.deleted_at!)).toBe(Date.parse(first.data!.deleted_at!));
   });
 
   test('counts a usage weight only for a session on the book’s own vehicle', async () => {
