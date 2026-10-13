@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { DemoBanner } from '@/components/demo/demo-banner';
 
 interface DemoReadOnlyNoticeProps {
-  backHref: '/garage' | '/sessions' | '/tracks';
+  backHref: '/garage' | '/sessions' | '/tracks' | `/garage/${string}/book`;
   backLabel: string;
 }
 

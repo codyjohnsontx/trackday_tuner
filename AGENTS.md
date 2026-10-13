@@ -820,6 +820,19 @@ cannot weaken them and a new writer does not have to remember them:
 
 `tests/db/service-book.spec.ts` proves each of these against a real database.
 
+**The book's screens run the rules on the rider's device, not on the server.**
+`computeDue` needs today's date in the rider's calendar (`todayLocalDate`) and
+`describeEntryProvenance` needs the book OWNER's time zone, and the app stores
+no zone for a rider: on the owner's own screens the owner is the viewer, so
+`useRiderClock` (`components/service-book/rider-clock.ts`) reads both off the
+browser after mount and `buildServiceBookView` (`lib/service-book/book-data.ts`)
+runs every rule once over the rows the server loaded. A screen somebody else
+reads - a share, a PDF - cannot do that and needs the owner's zone stored,
+which is the sharing slice's to add. The server actions in
+`lib/actions/service-book.ts` read and write rows only; the demo book is
+`lib/demo/service-book.ts`, and `tests/unit/service-book-screens.test.ts` holds
+the form to opening with nothing pressed and the demo to offering no save.
+
 The rules that read the book - usage from readings and weighted sessions, due
 state and the rider's overrides, the honest-history labels, the field layout -
 are pure modules in `lib/service-book/` (`usage.ts`, `due.ts`, `provenance.ts`,

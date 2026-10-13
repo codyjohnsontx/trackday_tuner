@@ -59,6 +59,13 @@ export function VehicleCard({
           )}
         </div>
       </div>
+      <Link
+        href={`/garage/${vehicle.id}/book`}
+        className="flex min-h-11 items-center justify-between gap-3 rounded-row bg-surface-2 px-4 text-sm font-medium text-ink transition hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+      >
+        <span>Service book</span>
+        <span aria-hidden="true" className="text-ink-faint">→</span>
+      </Link>
       <div>
         <VehicleBaselineSummary baseline={baseline} locked={baselineLocked} />
         {/* The stored snapshot itself, not just the label of the session it came

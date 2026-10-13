@@ -58,4 +58,30 @@ test.describe('demo is read-only', () => {
     await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue('');
     expect(await page.evaluate((key) => window.localStorage.getItem(key), draftKey)).toBe(riderDraft);
   });
+
+  test('the service book is a tour: every screen reads, none saves', async ({ page, baseURL }) => {
+    await enterDemo(page, baseURL!);
+    await page.goto('/garage/demo-r6/book');
+
+    await expect(page.getByText('You are viewing sample data.', { exact: false })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Service book' })).toBeVisible();
+    await expect(page.getByText('Engine oil and filter').first()).toBeVisible();
+    await expect(page.getByText('Logged the day of service').first()).toBeVisible();
+    await expect(page.getByText('Back-filled 38 days later')).toBeVisible();
+    await expect(page.getByRole('link', { name: '+ Log service' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Log a reading' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Settings' })).toHaveCount(0);
+    await expect(page.locator('form')).toHaveCount(0);
+
+    await page.getByTestId('service-entry-row').first().click();
+    await expect(page.getByRole('heading', { name: /^\d+ revisions?$/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Hold to remove' })).toHaveCount(0);
+    await expect(page.locator('form')).toHaveCount(0);
+
+    for (const path of ['/garage/demo-r6/book/entries/new', '/garage/demo-r6/book/settings']) {
+      await page.goto(path);
+      await expect(page.getByRole('heading', { name: 'Read-only demo' })).toBeVisible();
+      await expect(page.locator('form')).toHaveCount(0);
+    }
+  });
 });
