@@ -17,8 +17,6 @@ import { cn } from '@/lib/utils';
 interface ServiceBookScreenProps {
   data: ServiceBookData;
   demoMode: boolean;
-  /** Whether removed entries are in `data.entries`; the toggle flips it through the URL. */
-  showingRemoved: boolean;
 }
 
 /**
@@ -30,7 +28,7 @@ interface ServiceBookScreenProps {
  * In demo it is a tour: no reading form, no "Log service", no settings link,
  * so a visitor is never offered a save that would only refuse.
  */
-export function ServiceBookScreen({ data, demoMode, showingRemoved }: ServiceBookScreenProps) {
+export function ServiceBookScreen({ data, demoMode }: ServiceBookScreenProps) {
   const clock = useRiderClock();
   const view = useMemo(() => (clock ? buildServiceBookView(data, clock) : null), [data, clock]);
   const vehicleId = data.vehicle.id;
@@ -108,9 +106,6 @@ export function ServiceBookScreen({ data, demoMode, showingRemoved }: ServiceBoo
                       {entry.performed_by === 'shop' && entry.shop_name ? ` · ${entry.shop_name}` : ''}
                     </p>
                   </div>
-                  {entry.deleted_at ? (
-                    <span className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 text-xs font-semibold text-ink-faint">Removed</span>
-                  ) : null}
                 </div>
                 {provenance ? (
                   <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="History">
@@ -125,14 +120,6 @@ export function ServiceBookScreen({ data, demoMode, showingRemoved }: ServiceBoo
             );
           })
         )}
-        <div className="px-3 pb-1 pt-2">
-          <Link
-            href={showingRemoved ? `/garage/${vehicleId}/book` : `/garage/${vehicleId}/book?removed=1`}
-            className="inline-flex min-h-11 items-center text-xs font-medium text-ink-faint hover:text-ink"
-          >
-            {showingRemoved ? 'Hide removed entries' : 'Show removed entries'}
-          </Link>
-        </div>
       </CardGroup>
 
       <ReadingsPanel data={data} />

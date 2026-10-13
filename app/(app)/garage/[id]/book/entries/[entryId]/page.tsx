@@ -21,7 +21,7 @@ interface ServiceEntryPageProps {
  */
 export default async function ServiceEntryPage({ params }: ServiceEntryPageProps) {
   const [{ id, entryId }, demoMode] = await Promise.all([params, isDemoMode()]);
-  const result = await getServiceBook(id, { includeRemoved: true });
+  const result = await getServiceBook(id, { entryId });
   if (!result.ok && result.error === 'Vehicle not found.') notFound();
   if (!result.ok) {
     return (

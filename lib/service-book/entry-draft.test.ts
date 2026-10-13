@@ -130,6 +130,7 @@ describe('checkServiceEntryDraft', () => {
       cost_cents: 6850,
       notes: 'Fresh oil.',
       custom_fields: { 'field-tyre': 31, 'field-compound': 'SC9', 'field-gone': 'kept' },
+      items: [],
       parts: [
         { brand: 'Motul', part_number: '104092', quantity: 1, unit_cost_cents: 1200 },
         { brand: 'Motul', part_number: '104092', quantity: 1, unit_cost_cents: 1200 },
@@ -178,6 +179,7 @@ describe('checkServiceEntryDraft', () => {
       cost_cents: 6850,
       notes: 'Old note.',
       custom_fields: { 'field-tyre': 31, 'field-compound': 'SC9' },
+      items: [],
       parts: [{ brand: 'EBC', part_number: null, quantity: 2, unit_cost_cents: null }],
     };
     const sent = { ...good, cost_cents: null, notes: null, custom_fields: { 'field-compound': 'SC2' }, parts: [] };
@@ -185,6 +187,34 @@ describe('checkServiceEntryDraft', () => {
     expect(result).toMatchObject({ ok: true, draft: { cost_cents: null, notes: null, parts: [] } });
     if (!result.ok) return;
     expect(result.draft.custom_fields).toEqual({ 'field-compound': 'SC2' });
+  });
+
+  it('keeps the label an item was logged with, and names only a newly added item by its current name', () => {
+    const renamed = [
+      { id: 'item-oil', name: 'Engine oil and filter', archived_at: null },
+      { id: 'item-chain', name: 'Chain and sprockets', archived_at: null },
+    ];
+    const stored = {
+      reading_hours: null,
+      reading_distance: null,
+      performed_by: null,
+      shop_name: null,
+      cost_cents: null,
+      notes: null,
+      custom_fields: {},
+      items: [{ item_id: 'item-oil', label: 'Oil' }],
+      parts: [],
+    };
+    const sent = { ...good, items: [{ item_id: 'item-oil', label: '' }, { item_id: 'item-chain', label: '' }] };
+    expect(checkServiceEntryDraft(sent, { fields, items: renamed, ...tracks }, stored)).toMatchObject({
+      ok: true,
+      draft: {
+        items: [
+          { item_id: 'item-oil', label: 'Oil' },
+          { item_id: 'item-chain', label: 'Chain and sprockets' },
+        ],
+      },
+    });
   });
 
   it('reads custom fields in their own kind and refuses the wrong one', () => {

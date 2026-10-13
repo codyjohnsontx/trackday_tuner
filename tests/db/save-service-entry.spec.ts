@@ -138,6 +138,28 @@ test.describe('save_service_entry as a rider, as another rider and as nobody', (
     expect(await revisions(entryId)).toHaveLength(2);
   });
 
+  test('an untouched save after an item is renamed keeps the logged label and adds no revision', async () => {
+    const created = await aliceClient.from('service_items').insert({ book_id: aliceBook, name: 'Oil', source: 'typed' }).select('id').single();
+    expect(created.error, created.error?.message).toBeNull();
+    const oil = created.data!.id;
+    const entry: Entry = { service_date: '2026-10-04' };
+    const items: Item[] = [{ item_id: oil, label: '' }];
+
+    const saved = await save(aliceClient, aliceBook, null, entry, items);
+    expect(saved.error, saved.error?.message).toBeNull();
+    const entryId = saved.data as string;
+    const logged = await admin.from('service_entry_items').select('id, label').eq('entry_id', entryId);
+    expect(logged.data).toEqual([{ id: expect.any(String), label: 'Oil' }]);
+
+    const renamed = await aliceClient.from('service_items').update({ name: 'Engine oil and filter' }).eq('id', oil);
+    expect(renamed.error, renamed.error?.message).toBeNull();
+
+    const again = await save(aliceClient, aliceBook, entryId, entry, items);
+    expect(again.error, again.error?.message).toBeNull();
+    expect((await admin.from('service_entry_items').select('id, label').eq('entry_id', entryId)).data).toEqual(logged.data);
+    expect(await revisions(entryId)).toHaveLength(1);
+  });
+
   test('refuses what a rider cannot do through PostgREST either', async () => {
     const entry: Entry = { service_date: '2026-10-02' };
 

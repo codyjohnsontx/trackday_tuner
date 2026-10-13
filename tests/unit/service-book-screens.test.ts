@@ -62,9 +62,20 @@ describe('the entry form', () => {
   });
 });
 
+describe('the book settings', () => {
+  it('lock the distance unit, saying why, once the book holds distances', () => {
+    const locked = settingsHtml(true);
+    expect(locked).toMatch(/<select[^>]*disabled=""[^>]*>\s*<option value="mi"/);
+    expect(locked).toContain('This book already holds distances in miles, so its unit stays miles.');
+    const open = settingsHtml(false);
+    expect(open).not.toMatch(/<select[^>]*disabled=""[^>]*>\s*<option value="mi"/);
+    expect(open).not.toContain('already holds distances');
+  });
+});
+
 describe('the demo book', () => {
-  const demoHtml = renderToStaticMarkup(createElement(ServiceBookScreen, { data: demo.data, demoMode: true, showingRemoved: false }));
-  const realHtml = renderToStaticMarkup(createElement(ServiceBookScreen, { data: demo.data, demoMode: false, showingRemoved: false }));
+  const demoHtml = renderToStaticMarkup(createElement(ServiceBookScreen, { data: demo.data, demoMode: true }));
+  const realHtml = renderToStaticMarkup(createElement(ServiceBookScreen, { data: demo.data, demoMode: false }));
 
   it('offers no save while a real book offers every one', () => {
     expect(demoHtml).not.toContain('<form');
@@ -88,7 +99,7 @@ describe('the service-book screens as rendered', () => {
   const withTyped = { ...entry, items: [...entry.items, { ...entry.items[0], id: 'typed', item_id: null, label: 'Throttle cable' }] };
   const renders: [string, string][] = [
     ['book', realHtml()],
-    ['demo book', renderToStaticMarkup(createElement(ServiceBookScreen, { data: demo.data, demoMode: true, showingRemoved: false }))],
+    ['demo book', renderToStaticMarkup(createElement(ServiceBookScreen, { data: demo.data, demoMode: true }))],
     ['new entry', renderToStaticMarkup(createElement(ServiceEntryForm, { vehicleId: 'demo-r6', book: demo.data.book, fields: demo.data.fields, items: demo.data.items }))],
     [
       'edited entry',
@@ -109,7 +120,8 @@ describe('the service-book screens as rendered', () => {
         }),
       ),
     ],
-    ['settings', renderToStaticMarkup(createElement(ServiceBookSettings, { vehicleId: 'demo-r6', book: demo.data.book, fields: demo.data.fields, items: demo.data.items }))],
+    ['settings', settingsHtml(false)],
+    ['settings, unit locked', settingsHtml(true)],
     ['setup', renderToStaticMarkup(createElement(ServiceBookSetup, { vehicleId: 'demo-r6', nickname: 'R6', vehicleType: demo.data.vehicle.type }))],
     ['reading form', renderToStaticMarkup(createElement(VehicleReadingForm, { vehicleId: 'demo-r6', book: demo.data.book }))],
   ];
@@ -135,5 +147,12 @@ describe('the service-book screens as rendered', () => {
 });
 
 function realHtml(): string {
-  return renderToStaticMarkup(createElement(ServiceBookScreen, { data: demo.data, demoMode: false, showingRemoved: false }));
+  return renderToStaticMarkup(createElement(ServiceBookScreen, { data: demo.data, demoMode: false }));
+}
+
+function settingsHtml(unitLocked: boolean): string {
+  const book = { ...demo.data.book, tracks_distance: true, distance_unit: 'mi' as const };
+  return renderToStaticMarkup(
+    createElement(ServiceBookSettings, { vehicleId: 'demo-r6', book, fields: demo.data.fields, items: demo.data.items, unitLocked }),
+  );
 }

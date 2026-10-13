@@ -348,7 +348,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   (33, '20261013000300_add_save_service_entry', 'function',
       'public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)',
       to_regprocedure('public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)') is not null
-           and (select md5(p.prosrc) = 'b365abe0e3772a6fba3400b3a82aa855'
+           and (select md5(p.prosrc) = '686bb4ee3ad4d17d3292b6a22b25b30d'
                   and not p.prosecdef
                   and p.proconfig = array['search_path=""']
                   and has_function_privilege('authenticated', p.oid, 'execute')

@@ -11,7 +11,7 @@ import {
   updateServiceBookSettings,
   type ServiceBookFieldInput,
 } from '@/lib/actions/service-book';
-import type { ServiceItemRow } from '@/lib/service-book/book-data';
+import { distanceUnitLockedReason, type ServiceItemRow } from '@/lib/service-book/book-data';
 import { fieldOptions, type ServiceBookField } from '@/lib/service-book/fields';
 import { numberText, parseNumberText } from '@/lib/service-book/format';
 import { cn } from '@/lib/utils';
@@ -22,6 +22,8 @@ interface ServiceBookSettingsProps {
   book: Tables<'service_books'>;
   fields: ServiceBookField[];
   items: ServiceItemRow[];
+  /** The book holds distances, so its unit cannot change (`holdsDistances`). */
+  unitLocked: boolean;
 }
 
 const selectClass =
@@ -30,10 +32,10 @@ const selectClass =
 const checkboxClass = 'h-5 w-5 rounded-plate accent-signal';
 
 /** The book's settings: what a session counts as, the entry layout, and the schedule. */
-export function ServiceBookSettings({ vehicleId, book, fields, items }: ServiceBookSettingsProps) {
+export function ServiceBookSettings({ vehicleId, book, fields, items, unitLocked }: ServiceBookSettingsProps) {
   return (
     <div className="space-y-5">
-      <UsageDefaults vehicleId={vehicleId} book={book} />
+      <UsageDefaults vehicleId={vehicleId} book={book} unitLocked={unitLocked} />
       <FieldLayout vehicleId={vehicleId} fields={fields} />
       <Schedule vehicleId={vehicleId} items={items} unit={book.distance_unit} />
     </div>
@@ -53,7 +55,7 @@ function Toggle({ label, checked, onChange, hint }: { label: string; checked: bo
   );
 }
 
-function UsageDefaults({ vehicleId, book }: { vehicleId: string; book: Tables<'service_books'> }) {
+function UsageDefaults({ vehicleId, book, unitLocked }: { vehicleId: string; book: Tables<'service_books'>; unitLocked: boolean }) {
   const router = useRouter();
   const [tracksHours, setTracksHours] = useState(book.tracks_hours);
   const [tracksDistance, setTracksDistance] = useState(book.tracks_distance);
@@ -115,10 +117,22 @@ function UsageDefaults({ vehicleId, book }: { vehicleId: string; book: Tables<'s
                 <label htmlFor={unitId} className="block text-sm font-medium text-ink-dim">
                   Distance unit
                 </label>
-                <select id={unitId} value={unit} onChange={(e) => setUnit(e.target.value as DistanceUnit)} className={selectClass}>
+                <select
+                  id={unitId}
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value as DistanceUnit)}
+                  disabled={unitLocked}
+                  aria-describedby={unitLocked ? `${unitId}-locked` : undefined}
+                  className={cn(selectClass, 'disabled:cursor-not-allowed disabled:opacity-60')}
+                >
                   <option value="mi">Miles</option>
                   <option value="km">Kilometres</option>
                 </select>
+                {unitLocked ? (
+                  <p id={`${unitId}-locked`} className="text-xs text-ink-faint">
+                    {distanceUnitLockedReason(book.distance_unit)}
+                  </p>
+                ) : null}
               </div>
             </>
           ) : null}

@@ -21,8 +21,10 @@
 -- save still wants is kept, so its id stays and a save that changes nothing
 -- leaves the snapshot byte for byte what it was, which the pin reads as no
 -- edit. Deleting and re-inserting would give every row a new id and turn each
--- untouched Save into an edit. A book item's label is the item's name as it
--- stands now, so the history reads the same after a rename.
+-- untouched Save into an edit. A book item already on the entry is matched by
+-- its item and keeps the label it was logged with; only an item the save adds
+-- takes the item's name as it stands now, so the history reads the same after
+-- a rename.
 --
 -- `p_entry_id` null creates the entry; otherwise it edits that entry of that
 -- book, and a removed or foreign entry raises TT404. `p_items` must name at
@@ -102,15 +104,16 @@ begin
     end if;
   end if;
 
-  -- The items the save wants, each with the label the history will keep.
+  -- The items the save wants: a book item by its current name, which only an
+  -- item new to the entry is stored with, and a typed item by its label.
   select coalesce(jsonb_agg(distinct jsonb_build_object('item_id', x.item_id, 'label', x.label)), '[]'::jsonb)
     into v_items
     from (
       select (e ->> 'item_id')::uuid as item_id,
-             coalesce(
-               (select i.name from public.service_items i where i.id = (e ->> 'item_id')::uuid and i.book_id = p_book_id),
-               nullif(btrim(e ->> 'label'), '')
-             ) as label
+             case
+               when e ->> 'item_id' is null then nullif(btrim(e ->> 'label'), '')
+               else (select i.name from public.service_items i where i.id = (e ->> 'item_id')::uuid and i.book_id = p_book_id)
+             end as label
         from jsonb_array_elements(p_items) e
     ) x;
 
@@ -122,7 +125,8 @@ begin
    where i.entry_id = v_id
      and not exists (
        select 1 from jsonb_array_elements(v_items) w
-        where (w ->> 'item_id')::uuid is not distinct from i.item_id and w ->> 'label' = i.label
+        where (w ->> 'item_id')::uuid is not distinct from i.item_id
+          and (i.item_id is not null or w ->> 'label' = i.label)
      );
 
   insert into public.service_entry_items (entry_id, item_id, label)
@@ -130,7 +134,9 @@ begin
     from jsonb_array_elements(v_items) w
    where not exists (
      select 1 from public.service_entry_items i
-      where i.entry_id = v_id and i.item_id is not distinct from (w ->> 'item_id')::uuid and i.label = w ->> 'label'
+      where i.entry_id = v_id
+        and i.item_id is not distinct from (w ->> 'item_id')::uuid
+        and (i.item_id is not null or i.label = w ->> 'label')
    );
 
   select coalesce(jsonb_agg(jsonb_build_object(

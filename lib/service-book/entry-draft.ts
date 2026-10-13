@@ -202,7 +202,8 @@ export function checkServiceEntryDraft(
       if (!item) return { ok: false, error: 'One of the items is not in this book.' };
       if (items.some((chosen) => chosen.item_id === item.id)) continue;
       // The label is the item's name when logged, so the history reads the same after a rename.
-      items.push({ item_id: item.id, label: item.name });
+      const logged = stored?.items.find((storedItem) => storedItem.item_id === item.id);
+      items.push({ item_id: item.id, label: logged?.label ?? item.name });
       continue;
     }
     const label = textOrNull(rawItem.label);
@@ -281,7 +282,7 @@ export type StoredEntryForDraft = Pick<
 };
 
 /** What an edit keeps of the stored entry wherever the form did not show a value. */
-export type StoredEntryValues = Omit<StoredEntryForDraft, 'service_date' | 'items'>;
+export type StoredEntryValues = Omit<StoredEntryForDraft, 'service_date'>;
 
 /** A stored entry as the draft the edit form opens with, read by the same leaf rules the book's screens use. */
 export function draftFromStoredEntry(entry: StoredEntryForDraft, fields: readonly ServiceBookField[]): ServiceEntryDraft {

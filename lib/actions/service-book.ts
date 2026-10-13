@@ -5,7 +5,10 @@ import { getRealUser } from '@/lib/auth';
 import { getDemoServiceBook, getDemoServiceEntryRevisions } from '@/lib/demo/service-book';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
 import { reportError } from '@/lib/monitoring/report-error';
+import { isUuid } from '@/lib/rag/validation';
 import {
+  distanceUnitLockedReason,
+  holdsDistances,
   sortEntriesDesc,
   type ServiceBookData,
   type ServiceEntryRecord,
@@ -77,13 +80,17 @@ export interface ServiceBookRead {
  * The whole book for one of the rider's bikes. A failed read is an error, not
  * an empty book: an item shown as "never done" over a book holding its service
  * is the misreading the honest history exists to prevent.
+ *
+ * A removed entry is not in the book (owner, PQ6). `entryId` names the one
+ * entry a page opens by its link, which is read even when removed so its
+ * history stays reachable, read-only.
  */
 export async function getServiceBook(
   vehicleId: string,
-  options: { includeRemoved?: boolean } = {},
+  options: { entryId?: string } = {},
 ): Promise<ActionResult<ServiceBookRead>> {
   if (await isDemoMode()) {
-    const demo = getDemoServiceBook(vehicleId, options);
+    const demo = getDemoServiceBook(vehicleId);
     return demo ? { ok: true, data: demo } : { ok: false, error: VEHICLE_NOT_FOUND };
   }
 
@@ -107,7 +114,9 @@ export async function getServiceBook(
   const [fields, items, entries, readings, sessions, weights, overrides] = await Promise.all([
     supabase.from('service_book_fields').select('*').eq('book_id', book.id).order('sort_order'),
     supabase.from('service_items').select('*').eq('book_id', book.id).order('sort_order'),
-    options.includeRemoved ? entriesQuery : entriesQuery.is('deleted_at', null),
+    options.entryId !== undefined && isUuid(options.entryId)
+      ? entriesQuery.or(`deleted_at.is.null,id.eq.${options.entryId}`)
+      : entriesQuery.is('deleted_at', null),
     supabase.from('vehicle_readings').select('*').eq('book_id', book.id).order('reading_date'),
     supabase.from('sessions').select('id, date, created_at').eq('user_id', user.id).eq('vehicle_id', vehicleId),
     supabase.from('session_usage_weights').select('*').eq('book_id', book.id),
@@ -192,7 +201,7 @@ export async function getServiceEntryRevisions(
   entryId: string,
 ): Promise<ActionResult<ServiceEntryRevisionRecord[]>> {
   if (await isDemoMode()) {
-    const demo = getDemoServiceBook(vehicleId, { includeRemoved: true });
+    const demo = getDemoServiceBook(vehicleId);
     const revisions = demo?.data.entries.some((candidate) => candidate.id === entryId)
       ? getDemoServiceEntryRevisions(entryId)
       : null;
@@ -341,7 +350,7 @@ export async function saveServiceEntry(
   if (!loaded.ok) return loaded;
   const book = loaded.book;
 
-  const [fields, items, storedEntry, storedParts] = await Promise.all([
+  const [fields, items, storedEntry, storedItems, storedParts] = await Promise.all([
     supabase.from('service_book_fields').select('*').eq('book_id', book.id),
     supabase.from('service_items').select('id, name, archived_at').eq('book_id', book.id),
     entryId === null
@@ -355,15 +364,18 @@ export async function saveServiceEntry(
           .maybeSingle(),
     entryId === null
       ? Promise.resolve({ data: [], error: null })
+      : supabase.from('service_entry_items').select('item_id, label').eq('entry_id', entryId),
+    entryId === null
+      ? Promise.resolve({ data: [], error: null })
       : supabase.from('service_entry_parts').select('brand, part_number, quantity, unit_cost_cents').eq('entry_id', entryId),
   ]);
-  const readError = fields.error ?? items.error ?? storedEntry.error ?? storedParts.error;
+  const readError = fields.error ?? items.error ?? storedEntry.error ?? storedItems.error ?? storedParts.error;
   if (readError) {
     report('service-entry-save', readError as Failure, { userId: user.id, vehicleId, bookId: book.id, entryId });
     return { ok: false, error: WRITE_FAILED };
   }
   if (entryId !== null && !storedEntry.data) return { ok: false, error: ENTRY_NOT_FOUND };
-  const stored = storedEntry.data ? { ...storedEntry.data, parts: storedParts.data ?? [] } : null;
+  const stored = storedEntry.data ? { ...storedEntry.data, items: storedItems.data ?? [], parts: storedParts.data ?? [] } : null;
 
   const checked = checkServiceEntryDraft(
     draft,
@@ -507,6 +519,35 @@ export async function updateServiceBookSettings(vehicleId: string, input: Servic
   const supabase = await createClient();
   const loaded = await loadBookForWrite(supabase, user.id, vehicleId, 'service-book-settings');
   if (!loaded.ok) return loaded;
+
+  if (input.distance_unit !== loaded.book.distance_unit) {
+    const bookId = loaded.book.id;
+    const [readings, entries, items, overrides, weights] = await Promise.all([
+      supabase.from('vehicle_readings').select('distance').eq('book_id', bookId).not('distance', 'is', null).limit(1),
+      supabase.from('service_entries').select('reading_distance').eq('book_id', bookId).not('reading_distance', 'is', null).limit(1),
+      supabase.from('service_items').select('interval_distance').eq('book_id', bookId).not('interval_distance', 'is', null).limit(1),
+      supabase
+        .from('service_due_overrides')
+        .select('until_distance, anchor_distance')
+        .eq('book_id', bookId)
+        .or('until_distance.not.is.null,anchor_distance.not.is.null')
+        .limit(1),
+      supabase.from('session_usage_weights').select('distance_override').eq('book_id', bookId).not('distance_override', 'is', null).limit(1),
+    ]);
+    const readError = readings.error ?? entries.error ?? items.error ?? overrides.error ?? weights.error;
+    if (readError) {
+      report('service-book-settings', readError, { userId: user.id, vehicleId, bookId });
+      return { ok: false, error: WRITE_FAILED };
+    }
+    const held = holdsDistances({
+      readings: readings.data ?? [],
+      entries: entries.data ?? [],
+      items: items.data ?? [],
+      overrides: overrides.data ?? [],
+      weights: weights.data ?? [],
+    });
+    if (held) return { ok: false, error: distanceUnitLockedReason(loaded.book.distance_unit) };
+  }
 
   const { error } = await supabase
     .from('service_books')

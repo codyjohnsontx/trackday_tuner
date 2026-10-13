@@ -10,13 +10,11 @@ import { cn } from '@/lib/utils';
 
 interface ServiceBookPageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ removed?: string }>;
 }
 
-export default async function ServiceBookPage({ params, searchParams }: ServiceBookPageProps) {
-  const [{ id }, { removed }, demoMode] = await Promise.all([params, searchParams, isDemoMode()]);
-  const showingRemoved = removed === '1';
-  const result = await getServiceBook(id, { includeRemoved: showingRemoved });
+export default async function ServiceBookPage({ params }: ServiceBookPageProps) {
+  const [{ id }, demoMode] = await Promise.all([params, isDemoMode()]);
+  const result = await getServiceBook(id);
 
   if (!result.ok && result.error === 'Vehicle not found.') notFound();
 
@@ -51,7 +49,7 @@ export default async function ServiceBookPage({ params, searchParams }: ServiceB
       ) : result.data.data === null ? (
         <ServiceBookSetup vehicleId={id} nickname={result.data.vehicle.nickname} vehicleType={result.data.vehicle.type} />
       ) : (
-        <ServiceBookScreen data={result.data.data} demoMode={demoMode} showingRemoved={showingRemoved} />
+        <ServiceBookScreen data={result.data.data} demoMode={demoMode} />
       )}
     </div>
   );

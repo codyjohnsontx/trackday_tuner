@@ -177,9 +177,9 @@ test.describe('the service book', () => {
 
     await expect(page).toHaveURL(new RegExp(`/garage/${vehicleId}/book$`), { timeout: 20_000 });
     await expect(page.getByTestId('service-entry-row')).toHaveCount(0);
-    await page.getByRole('link', { name: 'Show removed entries' }).click();
-    await expect(page.getByTestId('service-entry-row')).toHaveCount(1);
-    await expect(page.getByTestId('service-entry-row').first()).toContainText('Removed');
+    await gotoPage(page, `/garage/${vehicleId}/book/entries/${entry.data!.id}`);
+    await expect(page.getByText(/Removed from the book/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save changes' })).toHaveCount(0);
 
     const stored = expectRows(await admin.from('service_entries').select('deleted_at').eq('id', entry.data!.id), 'entry after remove');
     expect(stored[0].deleted_at).not.toBeNull();

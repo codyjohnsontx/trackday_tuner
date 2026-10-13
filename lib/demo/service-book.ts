@@ -249,11 +249,11 @@ export interface DemoServiceBookRead {
   data: ServiceBookData;
 }
 
-export function getDemoServiceBook(vehicleId: string, options: { includeRemoved?: boolean } = {}): DemoServiceBookRead | null {
+export function getDemoServiceBook(vehicleId: string): DemoServiceBookRead | null {
   const vehicle = DEMO_VEHICLES.find((candidate) => candidate.id === vehicleId);
   if (!vehicle || vehicle.id !== DEMO_VEHICLE_ID) return null;
   const summary = { id: vehicle.id, nickname: vehicle.nickname, type: vehicle.type };
-  const entries = DEMO_ENTRIES.map(({ record }) => record).filter((entry) => options.includeRemoved || entry.deleted_at === null);
+  const entries = DEMO_ENTRIES.map(({ record }) => record);
   const sessions = DEMO_SESSIONS.filter((session) => session.vehicle_id === vehicleId).map((session) => ({
     id: session.id,
     date: session.date,
