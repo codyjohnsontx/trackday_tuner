@@ -189,6 +189,18 @@ Only signing up against a real database shows that.
 `BETA_INVITE_ONLY` is `false`, because with invite-only on the form posts to the
 route that always wrote the row - see `TESTING.md` for what it needs.
 
+**`auth.identities` carries a trigger too, and it is a security gate.** GoTrue
+links a provider sign-in into the account that holds its email, and counts the
+provider's email as verified whenever "Confirm email" is off
+(`enable_confirmations = false` here) - so an unverified Google address was given
+a session on another rider's account, reproduced end to end against a stub
+issuer. `20261004002700` refuses every external identity whose `email_verified`
+is not true, a new account's first one included - otherwise an unverified
+sign-in could create the account a real owner's verified sign-in later links
+into. A verified sign-in and email signup pass. `tests/db/unverified-identity-link.spec.ts` replays GoTrue's
+insert as `supabase_auth_admin`, and the hosted setting is in
+`docs/beta-runbook.md` beside the hand-apply block.
+
 **The baseline says the opposite, and it is right about the day it was written.**
 `20260223000000_init_baseline_schema.sql` states that nothing creates a `profiles`
 row automatically and that the beta signup route is the one writer. That was true

@@ -1,3 +1,5 @@
+import { oauthProviderLabel } from '@/lib/auth/providers';
+
 /**
  * `/auth/callback` can only hand a failure back to `/login` through the URL, so
  * it sends a short stable code rather than a sentence. This is where that code
@@ -14,8 +16,20 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
 
 const FALLBACK_AUTH_ERROR = 'We could not finish that step. Please try again.';
 
-export function authErrorMessage(code: string | null | undefined): string | null {
+function unverifiedProviderEmailMessage(provider: string | null | undefined): string {
+  const label = oauthProviderLabel(provider);
+  const reason = label
+    ? `We couldn't sign you in with ${label} because that email isn't verified with ${label}.`
+    : "We couldn't sign you in because that email isn't verified with the provider you chose.";
+  return `${reason} Sign up or sign in with your email and password instead.`;
+}
+
+export function authErrorMessage(
+  code: string | null | undefined,
+  provider?: string | null,
+): string | null {
   if (!code) return null;
+  if (code === 'provider_email_unverified') return unverifiedProviderEmailMessage(provider);
 
   return AUTH_ERROR_MESSAGES[code] ?? FALLBACK_AUTH_ERROR;
 }

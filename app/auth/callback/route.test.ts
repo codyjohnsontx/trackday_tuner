@@ -73,6 +73,39 @@ describe('GET /auth/callback', () => {
     expect(response.headers.get('location')).toBe('http://127.0.0.1:3000/login?error=auth_callback_failed');
   });
 
+  it('tells the rider why when their provider email was refused for linking', async () => {
+    const response = await GET(
+      new Request(
+        'http://127.0.0.1:3000/auth/callback?next=/dashboard&provider=google&error=server_error&error_code=unexpected_failure&error_description=Error+creating+identity'
+      )
+    );
+
+    expect(exchangeCodeForSession).not.toHaveBeenCalled();
+    expect(response.headers.get('location')).toBe(
+      'http://127.0.0.1:3000/login?error=provider_email_unverified&provider=google'
+    );
+  });
+
+  it('drops a provider it does not know from the refused-link redirect', async () => {
+    const response = await GET(
+      new Request(
+        'http://127.0.0.1:3000/auth/callback?provider=evil.example&error=server_error&error_description=Error+creating+identity'
+      )
+    );
+
+    expect(response.headers.get('location')).toBe('http://127.0.0.1:3000/login?error=provider_email_unverified');
+  });
+
+  it('keeps the expired-link error for any other failure that arrives without a code', async () => {
+    const response = await GET(
+      new Request(
+        'http://127.0.0.1:3000/auth/callback?next=/reset-password&error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired'
+      )
+    );
+
+    expect(response.headers.get('location')).toBe('http://127.0.0.1:3000/login?error=auth_callback_failed');
+  });
+
   it('exchanges code and redirects to dashboard by default', async () => {
     exchangeCodeForSession.mockResolvedValue({ error: null });
 
