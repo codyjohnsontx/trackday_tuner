@@ -341,19 +341,40 @@ export async function saveServiceEntry(
   if (!loaded.ok) return loaded;
   const book = loaded.book;
 
-  const [fields, items] = await Promise.all([
+  const [fields, items, storedEntry, storedParts] = await Promise.all([
     supabase.from('service_book_fields').select('*').eq('book_id', book.id),
     supabase.from('service_items').select('id, name, archived_at').eq('book_id', book.id),
+    entryId === null
+      ? Promise.resolve({ data: null, error: null })
+      : supabase
+          .from('service_entries')
+          .select('reading_hours, reading_distance, performed_by, shop_name, cost_cents, notes, custom_fields')
+          .eq('id', entryId)
+          .eq('book_id', book.id)
+          .is('deleted_at', null)
+          .maybeSingle(),
+    entryId === null
+      ? Promise.resolve({ data: [], error: null })
+      : supabase.from('service_entry_parts').select('brand, part_number, quantity, unit_cost_cents').eq('entry_id', entryId),
   ]);
-  if (fields.error || items.error) {
-    report('service-entry-save', (fields.error ?? items.error) as Failure, { userId: user.id, vehicleId, bookId: book.id });
+  const readError = fields.error ?? items.error ?? storedEntry.error ?? storedParts.error;
+  if (readError) {
+    report('service-entry-save', readError as Failure, { userId: user.id, vehicleId, bookId: book.id, entryId });
     return { ok: false, error: WRITE_FAILED };
   }
+  if (entryId !== null && !storedEntry.data) return { ok: false, error: ENTRY_NOT_FOUND };
+  const stored = storedEntry.data ? { ...storedEntry.data, parts: storedParts.data ?? [] } : null;
 
-  const checked = checkServiceEntryDraft(draft, {
-    fields: (fields.data ?? []) as ServiceBookField[],
-    items: items.data ?? [],
-  });
+  const checked = checkServiceEntryDraft(
+    draft,
+    {
+      fields: (fields.data ?? []) as ServiceBookField[],
+      items: items.data ?? [],
+      tracks_hours: book.tracks_hours,
+      tracks_distance: book.tracks_distance,
+    },
+    stored,
+  );
   if (!checked.ok) return checked;
 
   const written = await writeEntry(supabase, book.id, entryId, checked.draft);

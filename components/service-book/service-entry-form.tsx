@@ -124,6 +124,7 @@ export function ServiceEntryForm({ vehicleId, book, fields, items, entry }: Serv
     if (!hours.ok || !distance.ok) return 'The reading has to be a number.';
     const costCents = parseMoneyText(cost);
     if (!costCents.ok) return 'The cost has to be an amount of money, such as 68.50.';
+    const pendingItem = otherItem.trim();
 
     const customValues: Record<string, string | number> = {};
     for (const field of formFields) {
@@ -169,6 +170,7 @@ export function ServiceEntryForm({ vehicleId, book, fields, items, entry }: Serv
       items: [
         ...selectedItemIds.map((itemId) => ({ item_id: itemId, label: '' })),
         ...typedItems.map((label) => ({ item_id: null, label })),
+        ...(pendingItem !== '' && !typedItems.includes(pendingItem) ? [{ item_id: null, label: pendingItem }] : []),
       ],
       parts: enabled('parts') ? draftParts : [],
     };

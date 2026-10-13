@@ -114,6 +114,30 @@ test.describe('save_service_entry as a rider, as another rider and as nobody', (
     expect(partRows.data).toEqual([{ brand: 'K&N' }]);
   });
 
+  test('two identical parts are two parts, and an unchanged re-save keeps both', async () => {
+    const entry: Entry = { service_date: '2026-10-03' };
+    const items: Item[] = [{ item_id: aliceItem, label: '' }];
+    const bottle: Part = { brand: 'Motul', part_number: '104092', quantity: 1, unit_cost_cents: 1200 };
+
+    const created = await save(aliceClient, aliceBook, null, entry, items, [bottle, bottle]);
+    expect(created.error, created.error?.message).toBeNull();
+    const entryId = created.data as string;
+    const partIds = async () =>
+      ((await admin.from('service_entry_parts').select('id').eq('entry_id', entryId)).data ?? []).map(({ id }) => id).sort();
+    const first = await partIds();
+    expect(first).toHaveLength(2);
+
+    const again = await save(aliceClient, aliceBook, entryId, entry, items, [bottle, bottle]);
+    expect(again.error, again.error?.message).toBeNull();
+    expect(await partIds()).toEqual(first);
+    expect(await revisions(entryId)).toHaveLength(1);
+
+    const one = await save(aliceClient, aliceBook, entryId, entry, items, [bottle]);
+    expect(one.error, one.error?.message).toBeNull();
+    expect(await partIds()).toHaveLength(1);
+    expect(await revisions(entryId)).toHaveLength(2);
+  });
+
   test('refuses what a rider cannot do through PostgREST either', async () => {
     const entry: Entry = { service_date: '2026-10-02' };
 

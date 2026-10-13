@@ -133,33 +133,45 @@ begin
       where i.entry_id = v_id and i.item_id is not distinct from (w ->> 'item_id')::uuid and i.label = w ->> 'label'
    );
 
-  select coalesce(jsonb_agg(distinct jsonb_build_object(
-           'brand', x.brand, 'part_number', x.part_number, 'quantity', x.quantity, 'unit_cost_cents', x.unit_cost_cents
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'brand', x.brand, 'part_number', x.part_number, 'quantity', x.quantity,
+           'unit_cost_cents', x.unit_cost_cents, 'n', x.n
          )), '[]'::jsonb)
     into v_parts
     from (
-      select nullif(btrim(e ->> 'brand'), '') as brand,
-             nullif(btrim(e ->> 'part_number'), '') as part_number,
-             (e ->> 'quantity')::numeric as quantity,
-             (e ->> 'unit_cost_cents')::integer as unit_cost_cents
-        from jsonb_array_elements(coalesce(p_parts, '[]'::jsonb)) e
+      select y.*,
+             row_number() over (partition by y.brand, y.part_number, y.quantity, y.unit_cost_cents) as n
+        from (
+          select nullif(btrim(e ->> 'brand'), '') as brand,
+                 nullif(btrim(e ->> 'part_number'), '') as part_number,
+                 (e ->> 'quantity')::numeric as quantity,
+                 (e ->> 'unit_cost_cents')::integer as unit_cost_cents
+            from jsonb_array_elements(coalesce(p_parts, '[]'::jsonb)) e
+        ) y
     ) x;
 
   delete from public.service_entry_parts p
-   where p.entry_id = v_id
+   using (
+     select s.id,
+            row_number() over (partition by s.brand, s.part_number, s.quantity, s.unit_cost_cents order by s.id) as n
+       from public.service_entry_parts s
+      where s.entry_id = v_id
+   ) s
+   where p.id = s.id
      and not exists (
        select 1 from jsonb_array_elements(v_parts) w
         where (w ->> 'brand') is not distinct from p.brand
           and (w ->> 'part_number') is not distinct from p.part_number
           and (w ->> 'quantity')::numeric is not distinct from p.quantity
           and (w ->> 'unit_cost_cents')::integer is not distinct from p.unit_cost_cents
+          and (w ->> 'n')::bigint = s.n
      );
 
   insert into public.service_entry_parts (entry_id, brand, part_number, quantity, unit_cost_cents)
   select v_id, w ->> 'brand', w ->> 'part_number', (w ->> 'quantity')::numeric, (w ->> 'unit_cost_cents')::integer
     from jsonb_array_elements(v_parts) w
-   where not exists (
-     select 1 from public.service_entry_parts p
+   where (w ->> 'n')::bigint > (
+     select count(*) from public.service_entry_parts p
       where p.entry_id = v_id
         and p.brand is not distinct from (w ->> 'brand')
         and p.part_number is not distinct from (w ->> 'part_number')

@@ -1,11 +1,14 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import path from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { ServiceBookScreen } from '@/components/service-book/service-book-screen';
+import { ServiceBookSettings } from '@/components/service-book/service-book-settings';
+import { ServiceBookSetup } from '@/components/service-book/service-book-setup';
+import { ServiceEntryDetails } from '@/components/service-book/service-entry-details';
 import { ServiceEntryForm } from '@/components/service-book/service-entry-form';
-import { getDemoServiceBook } from '@/lib/demo/service-book';
+import { ServiceEntryHistory } from '@/components/service-book/service-entry-history';
+import { VehicleReadingForm } from '@/components/service-book/vehicle-reading-form';
+import { getDemoServiceBook, getDemoServiceEntryRevisions } from '@/lib/demo/service-book';
 
 /**
  * What one render of the service-book screens can prove without a browser:
@@ -80,28 +83,57 @@ describe('the demo book', () => {
   });
 });
 
-const COMPONENTS = path.resolve(__dirname, '../../components/service-book');
-const sources = readdirSync(COMPONENTS).map((name) => [name, readFileSync(path.join(COMPONENTS, name), 'utf8')] as const);
+describe('the service-book screens as rendered', () => {
+  const entry = demo.data.entries[0];
+  const withTyped = { ...entry, items: [...entry.items, { ...entry.items[0], id: 'typed', item_id: null, label: 'Throttle cable' }] };
+  const renders: [string, string][] = [
+    ['book', realHtml()],
+    ['demo book', renderToStaticMarkup(createElement(ServiceBookScreen, { data: demo.data, demoMode: true, showingRemoved: false }))],
+    ['new entry', renderToStaticMarkup(createElement(ServiceEntryForm, { vehicleId: 'demo-r6', book: demo.data.book, fields: demo.data.fields, items: demo.data.items }))],
+    [
+      'edited entry',
+      renderToStaticMarkup(
+        createElement(ServiceEntryForm, { vehicleId: 'demo-r6', book: demo.data.book, fields: demo.data.fields, items: demo.data.items, entry: withTyped }),
+      ),
+    ],
+    ['entry details', renderToStaticMarkup(createElement(ServiceEntryDetails, { entry, fields: demo.data.fields, distanceUnit: demo.data.book.distance_unit }))],
+    [
+      'entry history',
+      renderToStaticMarkup(
+        createElement(ServiceEntryHistory, {
+          vehicleId: 'demo-r6',
+          entry,
+          revisions: getDemoServiceEntryRevisions(entry.id) ?? [],
+          distanceUnit: demo.data.book.distance_unit,
+          demoMode: false,
+        }),
+      ),
+    ],
+    ['settings', renderToStaticMarkup(createElement(ServiceBookSettings, { vehicleId: 'demo-r6', book: demo.data.book, fields: demo.data.fields, items: demo.data.items }))],
+    ['setup', renderToStaticMarkup(createElement(ServiceBookSetup, { vehicleId: 'demo-r6', nickname: 'R6', vehicleType: demo.data.vehicle.type }))],
+    ['reading form', renderToStaticMarkup(createElement(VehicleReadingForm, { vehicleId: 'demo-r6', book: demo.data.book }))],
+  ];
 
-describe('the service-book components', () => {
   it('use design tokens, never raw palette classes', () => {
-    for (const [name, source] of sources) {
-      expect(source, name).not.toMatch(/\b(?:zinc|cyan|amber|gray|slate|neutral|stone|red|green|blue|yellow|orange)-\d{2,3}\b/);
+    for (const [name, html] of renders) {
+      for (const [, className] of html.matchAll(/class="([^"]*)"/g)) {
+        expect(className, name).not.toMatch(/\b(?:zinc|cyan|amber|gray|slate|neutral|stone|red|green|blue|yellow|orange)-\d{2,3}\b/);
+      }
     }
   });
 
   it('give every button a 44 px target', () => {
-    for (const [name, source] of sources) {
-      // Every `<button` in these files carries a className; the lazy match reads
-      // the nearest one, which is the tag's own since nothing nests inside an
-      // opening tag.
-      const opened = source.match(/<button\b/g)?.length ?? 0;
-      const buttons = [...source.matchAll(/<button\b[\s\S]*?className=(?:"([^"]*)"|\{cn\(\s*'([^']*)')/g)];
-      expect(buttons.length, `${name}: every button names its classes`).toBe(opened);
-      for (const match of buttons) {
-        const className = match[1] ?? match[2] ?? '';
-        expect(className, `${name}: ${match[0].slice(0, 80)}`).toMatch(/min-h-1[1-4]\b|\bh-1[1-4]\b/);
+    let checked = 0;
+    for (const [name, html] of renders) {
+      for (const [tag] of html.matchAll(/<button\b[^>]*>/g)) {
+        expect(tag, name).toMatch(/class="[^"]*(?:\bmin-h-1[1-4]\b|\bh-1[1-4]\b)[^"]*"/);
+        checked += 1;
       }
     }
+    expect(checked).toBeGreaterThan(0);
   });
 });
+
+function realHtml(): string {
+  return renderToStaticMarkup(createElement(ServiceBookScreen, { data: demo.data, demoMode: false, showingRemoved: false }));
+}

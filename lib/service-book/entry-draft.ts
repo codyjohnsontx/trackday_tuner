@@ -11,8 +11,11 @@ import {
 /**
  * What the entry form hands the save, and the rule that decides whether it may
  * be saved. The form is built from the book's own field layout (owner, Q3), so
- * the rule reads the layout too: a field switched off is not asked for and not
- * stored, and a field the rider marked required refuses a blank.
+ * the rule reads the layout too: a field switched off is not asked for, and a
+ * field the rider marked required refuses a blank. An edit overwrites only what
+ * the form showed: a value logged in a field switched off since, on a reading
+ * axis the book no longer tracks, or that the field's current definition cannot
+ * show, is carried through as it was stored.
  *
  * Three of the entry's values are answers, and a default is not one
  * (`lib/session-answers.ts`): the form opens with nothing pressed for "Done by"
@@ -91,7 +94,13 @@ const MAX_LABEL = 200;
  */
 export function checkServiceEntryDraft(
   raw: unknown,
-  book: { fields: readonly ServiceBookField[]; items: readonly ItemRow[] },
+  book: {
+    fields: readonly ServiceBookField[];
+    items: readonly ItemRow[];
+    tracks_hours: boolean;
+    tracks_distance: boolean;
+  },
+  stored: StoredEntryValues | null,
 ): DraftCheck {
   if (!isRecord(raw)) return { ok: false, error: 'The entry could not be read.' };
 
@@ -101,8 +110,10 @@ export function checkServiceEntryDraft(
   const enabled = (key: string) => fields.some((field) => field.builtin_key === key);
   const required = (key: string) => fields.some((field) => field.builtin_key === key && field.required);
 
-  const readingHours = enabled('reading') ? finiteOrNull(raw.reading_hours) : null;
-  const readingDistance = enabled('reading') ? finiteOrNull(raw.reading_distance) : null;
+  const readingHours =
+    enabled('reading') && book.tracks_hours ? finiteOrNull(raw.reading_hours) : (stored?.reading_hours ?? null);
+  const readingDistance =
+    enabled('reading') && book.tracks_distance ? finiteOrNull(raw.reading_distance) : (stored?.reading_distance ?? null);
   if (readingHours === undefined || readingDistance === undefined) {
     return { ok: false, error: 'The reading has to be a number.' };
   }
@@ -113,7 +124,7 @@ export function checkServiceEntryDraft(
     return { ok: false, error: 'Enter the hours or mileage reading; this book requires it.' };
   }
 
-  let performedBy: ServicePerformedBy | null = null;
+  let performedBy: ServicePerformedBy | null = stored?.performed_by ?? null;
   if (enabled('performed_by')) {
     if (raw.performed_by !== null && raw.performed_by !== undefined && !isPerformedBy(raw.performed_by)) {
       return { ok: false, error: 'Choose who did the work.' };
@@ -124,7 +135,7 @@ export function checkServiceEntryDraft(
     }
   }
 
-  const shopName = enabled('shop_name') ? textOrNull(raw.shop_name) : null;
+  const shopName = enabled('shop_name') ? textOrNull(raw.shop_name) : (stored?.shop_name ?? null);
   if (shopName === undefined || (shopName !== null && shopName.length > MAX_LABEL)) {
     return { ok: false, error: 'The shop name has to be text of up to 200 characters.' };
   }
@@ -132,7 +143,7 @@ export function checkServiceEntryDraft(
     return { ok: false, error: 'Enter the shop; this book requires it.' };
   }
 
-  const costCents = enabled('cost') ? finiteOrNull(raw.cost_cents) : null;
+  const costCents = enabled('cost') ? finiteOrNull(raw.cost_cents) : (stored?.cost_cents ?? null);
   if (costCents === undefined || (costCents !== null && (!Number.isInteger(costCents) || costCents < 0))) {
     return { ok: false, error: 'The cost has to be an amount of money.' };
   }
@@ -140,7 +151,7 @@ export function checkServiceEntryDraft(
     return { ok: false, error: 'Enter the cost; this book requires it.' };
   }
 
-  const notes = enabled('notes') ? textOrNull(raw.notes) : null;
+  const notes = enabled('notes') ? textOrNull(raw.notes) : (stored?.notes ?? null);
   if (notes === undefined || (notes !== null && notes.length > MAX_TEXT)) {
     return { ok: false, error: 'Notes have to be text of up to 2000 characters.' };
   }
@@ -149,6 +160,12 @@ export function checkServiceEntryDraft(
   }
 
   const customFields: Record<string, string | number> = {};
+  const storedCustom = isRecord(stored?.custom_fields) ? stored.custom_fields : {};
+  for (const [fieldId, value] of Object.entries(storedCustom)) {
+    const shown = fields.find((field) => field.builtin_key === null && field.id === fieldId);
+    if (shown && readCustomFieldValue(shown, value) !== null) continue;
+    if (typeof value === 'string' || typeof value === 'number') customFields[fieldId] = value;
+  }
   const rawCustom = isRecord(raw.custom_fields) ? raw.custom_fields : {};
   for (const field of fields) {
     if (field.builtin_key !== null) continue;
@@ -197,8 +214,14 @@ export function checkServiceEntryDraft(
   }
   if (items.length === 0) return { ok: false, error: 'Choose at least one item that was done.' };
 
-  const parts: ServiceEntryDraftPart[] = [];
+  let parts: ServiceEntryDraftPart[] = (stored?.parts ?? []).map((part) => ({
+    brand: part.brand,
+    part_number: part.part_number,
+    quantity: part.quantity,
+    unit_cost_cents: part.unit_cost_cents,
+  }));
   if (enabled('parts')) {
+    parts = [];
     if (!Array.isArray(raw.parts)) return { ok: false, error: 'The parts could not be read.' };
     for (const rawPart of raw.parts) {
       if (!isRecord(rawPart)) return { ok: false, error: 'A part could not be read.' };
@@ -256,6 +279,9 @@ export type StoredEntryForDraft = Pick<
   items: readonly Pick<Tables<'service_entry_items'>, 'item_id' | 'label'>[];
   parts: readonly Pick<Tables<'service_entry_parts'>, 'brand' | 'part_number' | 'quantity' | 'unit_cost_cents'>[];
 };
+
+/** What an edit keeps of the stored entry wherever the form did not show a value. */
+export type StoredEntryValues = Omit<StoredEntryForDraft, 'service_date' | 'items'>;
 
 /** A stored entry as the draft the edit form opens with, read by the same leaf rules the book's screens use. */
 export function draftFromStoredEntry(entry: StoredEntryForDraft, fields: readonly ServiceBookField[]): ServiceEntryDraft {
