@@ -12,7 +12,7 @@ vi.mock('@/lib/demo/mode', async (importOriginal) => ({
 
 import { getRealUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
-import { updateServiceBookSettings } from '@/lib/actions/service-book';
+import { getServiceBookUnitLocked, updateServiceBookSettings } from '@/lib/actions/service-book';
 
 /**
  * The distance unit of a book that already holds distances cannot change: the
@@ -90,5 +90,25 @@ describe('updateServiceBookSettings and the distance unit', () => {
 
     expect(result).toEqual({ ok: true, data: undefined });
     expect(updates).toEqual([expect.objectContaining({ distance_unit: 'km' })]);
+  });
+});
+
+describe('getServiceBookUnitLocked, the lock the settings screen shows', () => {
+  beforeEach(() => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'rider-1' } as Awaited<ReturnType<typeof getRealUser>>);
+  });
+
+  it('is locked by an entry reading the book still holds, removed entries included', async () => {
+    const { client } = clientWith({ service_entries: [{ id: 'removed-entry' }] });
+    vi.mocked(createClient).mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>);
+
+    expect(await getServiceBookUnitLocked('veh-1')).toEqual({ ok: true, data: true });
+  });
+
+  it('is open on a book that holds no distance', async () => {
+    const { client } = clientWith({});
+    vi.mocked(createClient).mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>);
+
+    expect(await getServiceBookUnitLocked('veh-1')).toEqual({ ok: true, data: false });
   });
 });

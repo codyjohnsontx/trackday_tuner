@@ -3,8 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { DemoReadOnlyNotice } from '@/components/demo/read-only-notice';
 import { ServiceBookSettings } from '@/components/service-book/service-book-settings';
 import { pageTitleClass } from '@/components/ui/page-header';
-import { getServiceBook } from '@/lib/actions/service-book';
-import { holdsDistances } from '@/lib/service-book/book-data';
+import { getServiceBook, getServiceBookUnitLocked } from '@/lib/actions/service-book';
 import { isDemoMode } from '@/lib/demo/mode';
 import { cn } from '@/lib/utils';
 
@@ -30,8 +29,17 @@ export default async function ServiceBookSettingsPage({ params }: ServiceBookSet
     );
   }
   if (result.data.data === null) redirect(`/garage/${id}/book`);
-  const data = result.data.data;
-  const { book, fields, items, vehicle } = data;
+  const { book, fields, items, vehicle } = result.data.data;
+  const unitLocked = await getServiceBookUnitLocked(id);
+  if (!unitLocked.ok) {
+    return (
+      <section className="rounded-card bg-surface p-5">
+        <p className="text-sm text-slower" role="alert">
+          {unitLocked.error}
+        </p>
+      </section>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -42,7 +50,7 @@ export default async function ServiceBookSettingsPage({ params }: ServiceBookSet
         <h1 className={cn('mt-3', pageTitleClass)}>Book settings</h1>
         <p className="mt-1 text-sm text-ink-dim">{vehicle.nickname}</p>
       </div>
-      <ServiceBookSettings vehicleId={id} book={book} fields={fields} items={items} unitLocked={holdsDistances(data)} />
+      <ServiceBookSettings vehicleId={id} book={book} fields={fields} items={items} unitLocked={unitLocked.data} />
     </div>
   );
 }

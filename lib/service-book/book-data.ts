@@ -38,7 +38,7 @@ export interface ServiceBookData {
   book: ServiceBookRow;
   fields: ServiceBookField[];
   items: ServiceItemRow[];
-  /** Live entries, and removed ones only when the caller asked for them. */
+  /** Live entries, plus the one removed entry a caller names by `entryId`. */
   entries: ServiceEntryRecord[];
   readings: VehicleReadingRow[];
   sessions: UsageSession[];
@@ -101,36 +101,12 @@ export function buildServiceBookView(
   };
 }
 
-/** Live items in the rider's order; archived ones stay out of every list. */
-/** The rows of a book that carry a distance, each in the book's unit. */
-export interface BookDistances {
-  readings: readonly Pick<Tables<'vehicle_readings'>, 'distance'>[];
-  entries: readonly Pick<Tables<'service_entries'>, 'reading_distance'>[];
-  items: readonly Pick<Tables<'service_items'>, 'interval_distance'>[];
-  overrides: readonly Pick<Tables<'service_due_overrides'>, 'until_distance' | 'anchor_distance'>[];
-  weights: readonly Pick<Tables<'session_usage_weights'>, 'distance_override'>[];
-}
-
-/**
- * Whether the book holds any distance. Stored distances are numbers in the
- * book's unit and nothing converts them, so once one exists the unit cannot
- * change: 1240 mi would read as 1240 km.
- */
-export function holdsDistances(book: BookDistances): boolean {
-  return (
-    book.readings.some((row) => row.distance !== null) ||
-    book.entries.some((row) => row.reading_distance !== null) ||
-    book.items.some((row) => row.interval_distance !== null) ||
-    book.overrides.some((row) => row.until_distance !== null || row.anchor_distance !== null) ||
-    book.weights.some((row) => row.distance_override !== null)
-  );
-}
-
 export function distanceUnitLockedReason(unit: DistanceUnit): string {
   const name = unit === 'km' ? 'kilometres' : 'miles';
   return `This book already holds distances in ${name}, so its unit stays ${name}. Switching would relabel them without converting.`;
 }
 
+/** Live items in the rider's order; archived ones stay out of every list. */
 export function liveItems(items: readonly ServiceItemRow[]): ServiceItemRow[] {
   return items
     .filter((item) => item.archived_at === null)

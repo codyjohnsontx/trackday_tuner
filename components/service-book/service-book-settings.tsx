@@ -22,7 +22,7 @@ interface ServiceBookSettingsProps {
   book: Tables<'service_books'>;
   fields: ServiceBookField[];
   items: ServiceItemRow[];
-  /** The book holds distances, so its unit cannot change (`holdsDistances`). */
+  /** The book holds distances, so its unit cannot change (`getServiceBookUnitLocked`). */
   unitLocked: boolean;
 }
 

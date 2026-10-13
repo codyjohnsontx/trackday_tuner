@@ -8,7 +8,6 @@ import { reportError } from '@/lib/monitoring/report-error';
 import { isUuid } from '@/lib/rag/validation';
 import {
   distanceUnitLockedReason,
-  holdsDistances,
   sortEntriesDesc,
   type ServiceBookData,
   type ServiceEntryRecord,
@@ -483,6 +482,45 @@ export async function addVehicleReading(vehicleId: string, input: VehicleReading
   return { ok: true, data: { readingId: data.id } };
 }
 
+/**
+ * Whether the book holds any distance - a reading, an entry's reading (a
+ * removed entry's too, since its history still prints it), an item interval,
+ * a due override or a session's distance. Stored distances are numbers in the
+ * book's unit and nothing converts them, so once one exists the unit cannot
+ * change: 1240 mi would read as 1240 km.
+ */
+async function bookHoldsDistances(
+  supabase: SupabaseServerClient,
+  bookId: string,
+): Promise<{ ok: true; holds: boolean } | { ok: false; error: Failure }> {
+  const results = await Promise.all([
+    supabase.from('vehicle_readings').select('id').eq('book_id', bookId).not('distance', 'is', null).limit(1),
+    supabase.from('service_entries').select('id').eq('book_id', bookId).not('reading_distance', 'is', null).limit(1),
+    supabase.from('service_items').select('id').eq('book_id', bookId).not('interval_distance', 'is', null).limit(1),
+    supabase.from('service_due_overrides').select('id').eq('book_id', bookId).or('until_distance.not.is.null,anchor_distance.not.is.null').limit(1),
+    supabase.from('session_usage_weights').select('id').eq('book_id', bookId).not('distance_override', 'is', null).limit(1),
+  ]);
+  const failed = results.find((result) => result.error);
+  if (failed?.error) return { ok: false, error: failed.error };
+  return { ok: true, holds: results.some((result) => (result.data ?? []).length > 0) };
+}
+
+/** Whether the settings may offer a change of distance unit: the lock the save enforces. */
+export async function getServiceBookUnitLocked(vehicleId: string): Promise<ActionResult<boolean>> {
+  const user = await getRealUser();
+  if (!user) return { ok: false, error: NOT_AUTHENTICATED };
+
+  const supabase = await createClient();
+  const loaded = await loadBookForWrite(supabase, user.id, vehicleId, 'service-book-read');
+  if (!loaded.ok) return loaded;
+  const held = await bookHoldsDistances(supabase, loaded.book.id);
+  if (!held.ok) {
+    report('service-book-read', held.error, { userId: user.id, vehicleId, bookId: loaded.book.id });
+    return { ok: false, error: READ_FAILED };
+  }
+  return { ok: true, data: held.holds };
+}
+
 export interface ServiceBookSettingsInput {
   tracks_hours: boolean;
   tracks_distance: boolean;
@@ -521,32 +559,12 @@ export async function updateServiceBookSettings(vehicleId: string, input: Servic
   if (!loaded.ok) return loaded;
 
   if (input.distance_unit !== loaded.book.distance_unit) {
-    const bookId = loaded.book.id;
-    const [readings, entries, items, overrides, weights] = await Promise.all([
-      supabase.from('vehicle_readings').select('distance').eq('book_id', bookId).not('distance', 'is', null).limit(1),
-      supabase.from('service_entries').select('reading_distance').eq('book_id', bookId).not('reading_distance', 'is', null).limit(1),
-      supabase.from('service_items').select('interval_distance').eq('book_id', bookId).not('interval_distance', 'is', null).limit(1),
-      supabase
-        .from('service_due_overrides')
-        .select('until_distance, anchor_distance')
-        .eq('book_id', bookId)
-        .or('until_distance.not.is.null,anchor_distance.not.is.null')
-        .limit(1),
-      supabase.from('session_usage_weights').select('distance_override').eq('book_id', bookId).not('distance_override', 'is', null).limit(1),
-    ]);
-    const readError = readings.error ?? entries.error ?? items.error ?? overrides.error ?? weights.error;
-    if (readError) {
-      report('service-book-settings', readError, { userId: user.id, vehicleId, bookId });
+    const held = await bookHoldsDistances(supabase, loaded.book.id);
+    if (!held.ok) {
+      report('service-book-settings', held.error, { userId: user.id, vehicleId, bookId: loaded.book.id });
       return { ok: false, error: WRITE_FAILED };
     }
-    const held = holdsDistances({
-      readings: readings.data ?? [],
-      entries: entries.data ?? [],
-      items: items.data ?? [],
-      overrides: overrides.data ?? [],
-      weights: weights.data ?? [],
-    });
-    if (held) return { ok: false, error: distanceUnitLockedReason(loaded.book.distance_unit) };
+    if (held.holds) return { ok: false, error: distanceUnitLockedReason(loaded.book.distance_unit) };
   }
 
   const { error } = await supabase
