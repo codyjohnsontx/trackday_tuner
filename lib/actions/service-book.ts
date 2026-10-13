@@ -289,16 +289,12 @@ async function loadBookForWrite(
 }
 
 /**
- * Writes an entry with its items and parts. The database writes the history;
- * this only says what the entry now holds.
- *
- * WHAT THIS DOES NOT YET DO: write the three tables in one transaction.
- * PostgREST takes one table per request, so a new entry with items is two
- * writes and an edit up to five, and the pin counts each committed transaction
- * that changes the snapshot as a revision. One save can therefore read as more
- * than one edit until the write moves into a SQL function. That function is a
- * migration, which this change does not add; the decision is recorded in the
- * pull request.
+ * Writes an entry with its items and parts as ONE transaction, through
+ * `save_service_entry` (20261013000300), so a save is one revision: a fresh
+ * entry reads "Unedited" and a save that changes nothing reads as no edit.
+ * Three PostgREST requests would be three transactions and three revisions,
+ * which is what this replaced. The function runs as the rider, so RLS and the
+ * per-column grants apply exactly as they would to the plain inserts.
  */
 async function writeEntry(
   supabase: SupabaseServerClient,
@@ -306,59 +302,25 @@ async function writeEntry(
   entryId: string | null,
   draft: ServiceEntryDraft,
 ): Promise<{ ok: true; entryId: string } | { ok: false; error: Failure; table: string }> {
-  const columns = {
-    service_date: draft.service_date,
-    reading_hours: draft.reading_hours,
-    reading_distance: draft.reading_distance,
-    performed_by: draft.performed_by,
-    shop_name: draft.shop_name,
-    cost_cents: draft.cost_cents,
-    notes: draft.notes,
-    custom_fields: draft.custom_fields,
-  };
-
-  let id = entryId;
-  if (id === null) {
-    const { data, error } = await supabase
-      .from('service_entries')
-      .insert({ book_id: bookId, ...columns })
-      .select('id')
-      .single();
-    if (error || !data) return { ok: false, error: error ?? { message: 'insert returned no row' }, table: 'service_entries' };
-    id = data.id;
-  } else {
-    const { data, error } = await supabase
-      .from('service_entries')
-      .update(columns satisfies TableUpdate<'service_entries'>)
-      .eq('id', id)
-      .eq('book_id', bookId)
-      .is('deleted_at', null)
-      .select('id')
-      .maybeSingle();
-    if (error) return { ok: false, error, table: 'service_entries' };
-    if (!data) return { ok: false, error: { message: ENTRY_NOT_FOUND, code: 'TT404' }, table: 'service_entries' };
-
-    const removedItems = await supabase.from('service_entry_items').delete().eq('entry_id', id);
-    if (removedItems.error) return { ok: false, error: removedItems.error, table: 'service_entry_items' };
-    const removedParts = await supabase.from('service_entry_parts').delete().eq('entry_id', id);
-    if (removedParts.error) return { ok: false, error: removedParts.error, table: 'service_entry_parts' };
-  }
-
-  const items: TableInsert<'service_entry_items'>[] = draft.items.map((item) => ({
-    entry_id: id as string,
-    item_id: item.item_id,
-    label: item.label,
-  }));
-  const { error: itemsError } = await supabase.from('service_entry_items').insert(items);
-  if (itemsError) return { ok: false, error: itemsError, table: 'service_entry_items' };
-
-  if (draft.parts.length > 0) {
-    const parts: TableInsert<'service_entry_parts'>[] = draft.parts.map((part) => ({ entry_id: id as string, ...part }));
-    const { error: partsError } = await supabase.from('service_entry_parts').insert(parts);
-    if (partsError) return { ok: false, error: partsError, table: 'service_entry_parts' };
-  }
-
-  return { ok: true, entryId: id };
+  const { data, error } = await supabase.rpc('save_service_entry', {
+    p_book_id: bookId,
+    p_entry_id: entryId,
+    p_entry: {
+      service_date: draft.service_date,
+      reading_hours: draft.reading_hours,
+      reading_distance: draft.reading_distance,
+      performed_by: draft.performed_by,
+      shop_name: draft.shop_name,
+      cost_cents: draft.cost_cents,
+      notes: draft.notes,
+      custom_fields: draft.custom_fields,
+    },
+    p_items: draft.items.map((item) => ({ ...item })),
+    p_parts: draft.parts.map((part) => ({ ...part })),
+  });
+  if (error) return { ok: false, error, table: 'save_service_entry' };
+  if (typeof data !== 'string') return { ok: false, error: { message: 'save_service_entry returned no id' }, table: 'save_service_entry' };
+  return { ok: true, entryId: data };
 }
 
 /** Creates an entry, or edits the one `entryId` names. */

@@ -1437,6 +1437,21 @@ export type Database = {
       };
     };
     Functions: {
+      save_service_entry: {
+        Args: {
+          p_book_id: string;
+          /** Null creates the entry; otherwise the entry of that book to edit. */
+          p_entry_id: string | null;
+          /** The `service_entries` columns the rider may write. */
+          p_entry: Json;
+          /** `[{ item_id, label }]`, at least one; a book item's label is read off the item. */
+          p_items: Json;
+          /** `[{ brand, part_number, quantity, unit_cost_cents }]` or null. */
+          p_parts: Json | null;
+        };
+        /** The entry's id. The entry, its items and its parts are written in one transaction (20261013000300), so one save is one revision. */
+        Returns: string;
+      };
       create_session_with_laps: {
         Args: {
           /** The id the phone minted; a session of the caller's with this id is a replay and nothing is written. */

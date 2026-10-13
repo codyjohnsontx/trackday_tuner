@@ -99,8 +99,15 @@ test.describe('the service book', () => {
     // The entry's reading is now the book's usage.
     await expect(page.getByText('Last reading 41.5 h on')).toBeVisible();
 
+    // Scoped to this rider's book: the device projects run in parallel, each
+    // with a throwaway rider of its own, and the service role sees them all.
     const admin = createTestAdminClient();
-    const entries = expectRows(await admin.from('service_entries').select('id, revision, notes, logged_at, service_date').is('deleted_at', null), 'entries after save');
+    const book = expectRows(await admin.from('service_books').select('id').eq('vehicle_id', vehicleId), 'book after start');
+    expect(book).toHaveLength(1);
+    const entries = expectRows(
+      await admin.from('service_entries').select('id, revision, notes, logged_at, service_date').eq('book_id', book[0].id).is('deleted_at', null),
+      'entries after save',
+    );
     expect(entries).toHaveLength(1);
     expect(entries[0].revision).toBe(1);
     expect(entries[0].service_date).toBe(todayHere());

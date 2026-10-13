@@ -341,7 +341,19 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   (32, '20261010000200_add_service_usage_overrides', 'table + table',
       'public.session_usage_weights, public.service_due_overrides',
       to_regclass('public.session_usage_weights') is not null
-      and to_regclass('public.service_due_overrides') is not null)
+      and to_regclass('public.service_due_overrides') is not null),
+  -- The one-transaction entry save, by its body, invoker security, empty search
+  -- path and rider-only execute. Without it a save from the website is three
+  -- requests and a fresh entry reads "Edited 2 times".
+  (33, '20261013000300_add_save_service_entry', 'function',
+      'public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)',
+      to_regprocedure('public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)') is not null
+           and (select md5(p.prosrc) = '55b05e7d1c42d8e1256d61d4813ac907'
+                  and not p.prosecdef
+                  and p.proconfig = array['search_path=""']
+                  and has_function_privilege('authenticated', p.oid, 'execute')
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                from pg_proc p where p.oid = to_regprocedure('public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)')))
 )
 select ordinality as "#",
        migration,

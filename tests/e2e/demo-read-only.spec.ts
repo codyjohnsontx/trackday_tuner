@@ -73,7 +73,10 @@ test.describe('demo is read-only', () => {
     await expect(page.getByRole('link', { name: 'Settings' })).toHaveCount(0);
     await expect(page.locator('form')).toHaveCount(0);
 
-    await page.getByTestId('service-entry-row').first().click();
+    // Opened by its address: on the phone projects the floating nav sits over
+    // the first row at the viewport's bottom edge and swallows the tap.
+    const entryHref = await page.getByTestId('service-entry-row').first().getAttribute('href');
+    await page.goto(entryHref!);
     await expect(page.getByRole('heading', { name: /^\d+ revisions?$/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Hold to remove' })).toHaveCount(0);
     await expect(page.locator('form')).toHaveCount(0);

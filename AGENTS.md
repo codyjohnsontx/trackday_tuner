@@ -833,6 +833,18 @@ which is the sharing slice's to add. The server actions in
 `lib/demo/service-book.ts`, and `tests/unit/service-book-screens.test.ts` holds
 the form to opening with nothing pressed and the demo to offering no save.
 
+**An entry is saved through `save_service_entry` (20261013000300), never as
+separate inserts.** The history records one revision per committed transaction
+and PostgREST writes one table per request, so an entry saved with its items
+and parts as three requests read "Edited 2 times" the moment it was saved
+(measured on a stack built from the migrations). The function writes the three
+in one transaction as the rider (`security invoker`, so RLS and the per-column
+grants still apply) and RECONCILES items and parts rather than replacing them,
+so an untouched Save keeps every row's id and the pin reads no edit.
+`tests/db/save-service-entry.spec.ts` proves one save is one revision and an
+unchanged re-save adds none; the hosted paste is "Save a service entry in one
+transaction, by hand" in `docs/beta-runbook.md`.
+
 The rules that read the book - usage from readings and weighted sessions, due
 state and the rider's overrides, the honest-history labels, the field layout -
 are pure modules in `lib/service-book/` (`usage.ts`, `due.ts`, `provenance.ts`,

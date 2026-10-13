@@ -160,6 +160,13 @@ export const REQUIRED_RPCS: readonly RpcContract[] = [
     p_vehicle_id: UNCOERCIBLE_PROBE_VALUE,
     p_expected_sessions: [],
   }),
+  contract('save_service_entry', {
+    p_book_id: UNCOERCIBLE_PROBE_VALUE,
+    p_entry_id: null,
+    p_entry: {},
+    p_items: [],
+    p_parts: null,
+  }),
   contract('consume_beta_rate_limit', {
     p_key_hash: UNCOERCIBLE_PROBE_VALUE,
     p_limit: UNCOERCIBLE_PROBE_VALUE,

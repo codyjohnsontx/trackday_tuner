@@ -67,6 +67,7 @@ const DELETE_AUTO_CREATED_TRACK = "to_regprocedure('public.delete_auto_created_t
 const AUTO_CREATED_TRACK_IS_REFERENCED = "to_regprocedure('public.auto_created_track_is_referenced(uuid)')";
 const RECORD_DELETED_SESSION = "to_regprocedure('public.record_deleted_session()')";
 const RELINK_LEGACY_SESSION_TRACKS = "to_regprocedure('public.relink_legacy_session_tracks(uuid)')";
+const SAVE_SERVICE_ENTRY = "to_regprocedure('public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)')";
 
 /**
  * The tombstone trigger, proved field by field rather than by name: on
@@ -593,6 +594,24 @@ export const MIGRATION_PROBES = {
     present: [
       "to_regclass('public.session_usage_weights') is not null",
       "and to_regclass('public.service_due_overrides') is not null",
+    ],
+  },
+  '20261013000300_add_save_service_entry': {
+    note: [
+      'The one-transaction entry save, by its body, invoker security, empty search',
+      'path and rider-only execute. Without it a save from the website is three',
+      'requests and a fresh entry reads "Edited 2 times".',
+    ],
+    kind: 'function',
+    object: 'public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)',
+    present: [
+      `${SAVE_SERVICE_ENTRY} is not null`,
+      `     and (select md5(p.prosrc) = '${functionBodyMd5('20261013000300_add_save_service_entry')}'`,
+      '            and not p.prosecdef',
+      "            and p.proconfig = array['search_path=\"\"']",
+      "            and has_function_privilege('authenticated', p.oid, 'execute')",
+      "            and not has_function_privilege('anon', p.oid, 'execute')",
+      `          from pg_proc p where p.oid = ${SAVE_SERVICE_ENTRY})`,
     ],
   },
 };
