@@ -185,6 +185,17 @@ test.describe('the service book as riders, as nobody and as the service role', (
     expect(history[1].snapshot).toMatchObject({ notes: 'Oil, filter and crush washer.', items: [] });
     expect(history[2].snapshot).toMatchObject({ items: [{ item_id: aliceItem, label: 'Engine oil and filter' }] });
 
+    // A save that changes nothing is not an edit.
+    const unchanged = await aliceClient
+      .from('service_entries')
+      .update({ notes: 'Oil, filter and crush washer.', service_date: '2026-10-01' })
+      .eq('id', entryId)
+      .select('revision')
+      .single();
+    expect(unchanged.error, unchanged.error?.message).toBeNull();
+    expect(unchanged.data!.revision).toBe(3);
+    expect(await revisions(entryId)).toHaveLength(3);
+
     // The rider reads their history and cannot add to, rewrite or remove it.
     const read = await aliceClient.from('service_entry_revisions').select('revision').eq('entry_id', entryId);
     expect(read.data).toHaveLength(3);
@@ -372,23 +383,25 @@ test.describe('the service book as riders, as nobody and as the service role', (
     const stored = await admin.from('service_entries').select('id').eq('id', entryId);
     expect(stored.data).toHaveLength(1);
 
-    // Removing an entry again does not move when it was removed.
+    // Removing an entry again does not move when it was removed, and is not an edit.
     const otherId = await createEntry();
     const first = await aliceClient
       .from('service_entries')
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', otherId)
-      .select('deleted_at')
+      .select('deleted_at, revision')
       .single();
     expect(first.error, first.error?.message).toBeNull();
     const again = await aliceClient
       .from('service_entries')
       .update({ deleted_at: new Date(Date.now() + 3_600_000).toISOString() })
       .eq('id', otherId)
-      .select('deleted_at')
+      .select('deleted_at, revision')
       .single();
     expect(again.error, again.error?.message).toBeNull();
     expect(Date.parse(again.data!.deleted_at!)).toBe(Date.parse(first.data!.deleted_at!));
+    expect(again.data!.revision).toBe(first.data!.revision);
+    expect((await revisions(otherId)).map(({ kind }) => kind)).toEqual(['created', 'deleted']);
   });
 
   test('counts a usage weight only for a session on the book’s own vehicle', async () => {

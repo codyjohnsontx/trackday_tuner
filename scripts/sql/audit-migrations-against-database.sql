@@ -320,8 +320,8 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                     and not has_any_column_privilege('service_role', 'public.vehicle_readings', 'update')
                     and not has_table_privilege('service_role', 'public.vehicle_readings', 'delete')
           end
-      and (select md5(p.prosrc) = '473f89fc290d19355775780d4d3c0b59' from pg_proc p where p.oid = to_regprocedure('public.service_entries_pin()'))
-      and (select md5(p.prosrc) = '5ace45cb78572b449f7ec7078e61939a' from pg_proc p where p.oid = to_regprocedure('public.record_service_entry_revision()'))
+      and (select md5(p.prosrc) = '45f9566e5babe570149dad981e5d1e6e' from pg_proc p where p.oid = to_regprocedure('public.service_entries_pin()'))
+      and (select md5(p.prosrc) = '6d6a5676ad5cdbaedb3b03f923987a2e' from pg_proc p where p.oid = to_regprocedure('public.record_service_entry_revision()'))
       and (select md5(p.prosrc) = 'db3a88e2ea61179ccaefa5bed2007b11' from pg_proc p where p.oid = to_regprocedure('public.touch_service_entry()'))
       and (select md5(p.prosrc) = 'a054c4eeadd645b5206f678f2528796d' from pg_proc p where p.oid = to_regprocedure('public.sync_service_entry_reading()'))),
   (31, '20261010000200_add_service_usage_overrides', 'table + table',

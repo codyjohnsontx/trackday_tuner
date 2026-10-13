@@ -792,9 +792,10 @@ cannot weaken them and a new writer does not have to remember them:
   the service role supplies `logged_by` on insert and nothing pins a book's
   transfer origin against it. The rider types `service_date`; the gap between
   the two is what labels an entry back-filled.
-- **Every write to an entry, its items or its parts writes a revision**, from a
+- **Every change to an entry, its items or its parts writes a revision**, from a
   trigger, and one transaction is one revision - so save an entry with its items
-  in one call (an RPC) if it should read "unedited". No API role, the service
+  in one call (an RPC) if it should read "unedited". A save that changes nothing
+  in the snapshot writes none and leaves `revision` alone. No API role, the service
   role included, can write, change or delete `service_entry_revisions`.
 - **Entries are never deleted by a rider.** `delete` is granted to no API role;
   removing one sets `deleted_at` (the server dates it), which writes a `deleted`

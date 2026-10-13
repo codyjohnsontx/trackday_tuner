@@ -2492,7 +2492,8 @@ begin;
 --   PostgREST cannot skip the record. A rider reads their history and writes
 --   none of it; not even the service role may change or remove a revision.
 --   One transaction is one revision: an entry saved together with its items is
---   revision 1, not three, so "edited N times" counts edits a rider made.
+--   revision 1, not three, and a save that changes nothing is none, so "edited
+--   N times" counts edits a rider made.
 -- - DELETE IS SOFT. A rider removes an entry by setting `deleted_at`, which
 --   writes a `deleted` revision; `delete` is granted to no API role, the service
 --   role included, so an entry is hard-deleted only by a cascade: its vehicle's,
@@ -2722,12 +2723,43 @@ grant execute on function public.service_book_owned(uuid) to authenticated, serv
 revoke all on function public.service_entry_owned(uuid) from public, anon, authenticated;
 grant execute on function public.service_entry_owned(uuid) to authenticated, service_role;
 
+-- An entry as its history records it: the row less its bookkeeping, with its
+-- items and parts. The history stores it, and the pin compares against it to
+-- tell an edit from a save that changed nothing. security invoker: it reads
+-- only what its caller may.
+create or replace function public.service_entry_snapshot(p_entry jsonb)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select (p_entry - 'revision' - 'updated_at') || jsonb_build_object(
+    'items', coalesce((
+      select jsonb_agg(jsonb_build_object('id', i.id, 'item_id', i.item_id, 'label', i.label)
+                       order by i.created_at, i.id)
+        from public.service_entry_items i
+       where i.entry_id = (p_entry ->> 'id')::uuid
+    ), '[]'::jsonb),
+    'parts', coalesce((
+      select jsonb_agg(jsonb_build_object(
+                         'id', p.id, 'entry_item_id', p.entry_item_id, 'brand', p.brand,
+                         'part_number', p.part_number, 'quantity', p.quantity,
+                         'unit_cost_cents', p.unit_cost_cents)
+                       order by p.created_at, p.id)
+        from public.service_entry_parts p
+       where p.entry_id = (p_entry ->> 'id')::uuid
+    ), '[]'::jsonb)
+  );
+$$;
+
 -- THE PINS
 --
 -- On insert from a Data API role, the clock and the rider are the server's. On
 -- every update, by anyone, what says who logged the entry, when, into which
 -- book and from where cannot change, and the revision counter moves once per
--- transaction. security invoker on purpose: `current_user` is what tells a
+-- transaction, and not at all for a save that changes nothing in the entry's
+-- snapshot. security invoker on purpose: `current_user` is what tells a
 -- rider's write from the owner-run transfer copy, and a definer function would
 -- always read its owner.
 create or replace function public.service_entries_pin()
@@ -2767,6 +2799,12 @@ begin
       from public.service_entry_revisions r
      where r.entry_id = old.id
        and r.transaction_id = txid_current()
+  ) or public.service_entry_snapshot(to_jsonb(new)) = (
+    select r.snapshot
+      from public.service_entry_revisions r
+     where r.entry_id = old.id
+     order by r.revision desc
+     limit 1
   ) then
     new.revision := old.revision;
   else
@@ -2836,7 +2874,9 @@ create or replace trigger service_items_set_updated_at
 -- transaction committed. A transaction that created the entry stays `created`.
 -- Its kind is the transaction's net change, read against the revision before it
 -- rather than the row event: a delete followed by an item edit is `deleted`, and
--- a delete undone in the same transaction is `edited`.
+-- a delete undone in the same transaction is `edited`. An update the pin left
+-- at the same revision without one in this transaction changed nothing, and
+-- writes none.
 --
 -- security definer because it writes a table no API role may write. It cannot
 -- be called directly - it returns `trigger` - but the execute decision is
@@ -2872,23 +2912,7 @@ begin
     end if;
   end if;
 
-  v_snapshot := (to_jsonb(new) - 'revision' - 'updated_at') || jsonb_build_object(
-    'items', coalesce((
-      select jsonb_agg(jsonb_build_object('id', i.id, 'item_id', i.item_id, 'label', i.label)
-                       order by i.created_at, i.id)
-        from public.service_entry_items i
-       where i.entry_id = new.id
-    ), '[]'::jsonb),
-    'parts', coalesce((
-      select jsonb_agg(jsonb_build_object(
-                         'id', p.id, 'entry_item_id', p.entry_item_id, 'brand', p.brand,
-                         'part_number', p.part_number, 'quantity', p.quantity,
-                         'unit_cost_cents', p.unit_cost_cents)
-                       order by p.created_at, p.id)
-        from public.service_entry_parts p
-       where p.entry_id = new.id
-    ), '[]'::jsonb)
-  );
+  v_snapshot := public.service_entry_snapshot(to_jsonb(new));
 
   update public.service_entry_revisions r
      set snapshot = v_snapshot,
@@ -2896,7 +2920,7 @@ begin
    where r.entry_id = new.id
      and r.transaction_id = txid_current();
 
-  if not found then
+  if not found and (tg_op = 'INSERT' or new.revision <> old.revision) then
     insert into public.service_entry_revisions (entry_id, revision, kind, snapshot, changed_by, transaction_id)
     values (new.id, new.revision, v_kind, v_snapshot, auth.uid(), txid_current());
   end if;
@@ -3371,8 +3395,8 @@ select
       to_regprocedure('public.sync_service_entry_reading()')
     )
       and md5(p.prosrc) in (
-        '473f89fc290d19355775780d4d3c0b59',
-        '5ace45cb78572b449f7ec7078e61939a',
+        '45f9566e5babe570149dad981e5d1e6e',
+        '6d6a5676ad5cdbaedb3b03f923987a2e',
         'db3a88e2ea61179ccaefa5bed2007b11',
         'a054c4eeadd645b5206f678f2528796d'
       )) as trigger_bodies_match;
@@ -3408,6 +3432,7 @@ drop function if exists public.touch_service_entry();
 drop function if exists public.record_service_entry_revision();
 drop function if exists public.vehicle_readings_pin();
 drop function if exists public.service_entries_pin();
+drop function if exists public.service_entry_snapshot(jsonb);
 drop function if exists public.service_entry_owned(uuid);
 drop function if exists public.service_book_owned(uuid);
 commit;
