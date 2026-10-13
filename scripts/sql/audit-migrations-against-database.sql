@@ -289,7 +289,20 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                   and p.proconfig = array['search_path=""']
                   and not has_function_privilege('anon', p.oid, 'execute')
                   and not has_function_privilege('authenticated', p.oid, 'execute')
-                from pg_proc p where p.oid = to_regprocedure('public.refuse_unverified_identity_link()')))
+                from pg_proc p where p.oid = to_regprocedure('public.refuse_unverified_identity_link()'))),
+  -- The function, by its body, empty search path and service_role-only execute.
+  -- The relink it ran is data and has no probe; re-running the function reports
+  -- what it still leaves alone, and relinks only what now resolves.
+  (30, '20261004002800_relink_legacy_session_tracks', 'function',
+      'public.relink_legacy_session_tracks(uuid)',
+      to_regprocedure('public.relink_legacy_session_tracks(uuid)') is not null
+           and (select md5(p.prosrc) = '6c0b3c643a5a2fa2185b9ca3f8693bcd'
+                  and not p.prosecdef
+                  and p.proconfig = array['search_path=""']
+                  and has_function_privilege('service_role', p.oid, 'execute')
+                  and not has_function_privilege('authenticated', p.oid, 'execute')
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                from pg_proc p where p.oid = to_regprocedure('public.relink_legacy_session_tracks(uuid)')))
 )
 select ordinality as "#",
        migration,

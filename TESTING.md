@@ -218,6 +218,14 @@ assert fails them.
   the identity row the way GoTrue does - as `supabase_auth_admin`, through `psql`
   inside the stack's database container (`tests/db/helpers/auth-database.ts`),
   which needs Docker and the container `supabase_db_<project_id>`.
+- `relink-legacy-session-tracks.spec.ts` calls `relink_legacy_session_tracks`
+  (`20261004002800`) with the service role over legacy rows it writes straight
+  to `sessions`: a name or alias linked to its circuit, a name over an alias, a
+  name matching both an own track and a seeded circuit (by name or alias), an
+  ambiguous name and an unmatched one left alone and reported, an
+  already-linked session untouched, a second run changing nothing, and no Data
+  API role able to call it. Every call is scoped to the spec's own rider, since
+  an unscoped run would relink other specs' sessions.
 
 ## Auth redirect setup checklist (Supabase)
 
