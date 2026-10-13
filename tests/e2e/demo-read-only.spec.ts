@@ -50,12 +50,19 @@ test.describe('demo is read-only', () => {
 
     const front = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Front' }) });
     await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue('');
-    await front.getByLabel('Fully Extended (L0)').fill('600');
-    await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue('600');
-    expect(await page.evaluate((key) => window.localStorage.getItem(key), draftKey)).toBe(riderDraft);
+    // Text filled before React hydrates sits in the DOM but never reaches state,
+    // so Reset has nothing to clear; retry the pair until hydration has caught up.
+    // React's value tracker adopts that stale DOM text at hydration, so filling
+    // the same text again fires no change - clear it first so each retry does.
+    await expect(async () => {
+      await front.getByLabel('Fully Extended (L0)').fill('');
+      await front.getByLabel('Fully Extended (L0)').fill('600');
+      await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue('600');
+      expect(await page.evaluate((key) => window.localStorage.getItem(key), draftKey)).toBe(riderDraft);
 
-    await page.getByRole('button', { name: 'Reset' }).click();
-    await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue('');
+      await page.getByRole('button', { name: 'Reset' }).click();
+      await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue('', { timeout: 1_000 });
+    }).toPass({ timeout: 10_000 });
     expect(await page.evaluate((key) => window.localStorage.getItem(key), draftKey)).toBe(riderDraft);
   });
 
