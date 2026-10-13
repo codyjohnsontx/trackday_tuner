@@ -820,6 +820,14 @@ cannot weaken them and a new writer does not have to remember them:
 
 `tests/db/service-book.spec.ts` proves each of these against a real database.
 
+The rules that read the book - usage from readings and weighted sessions, due
+state and the rider's overrides, the honest-history labels, the field layout -
+are pure modules in `lib/service-book/` (`usage.ts`, `due.ts`, `provenance.ts`,
+`fields.ts`) that the phone app is to share, so `lib/service-book/imports.test.ts`
+pins their whole import list. **"Edited" is counted from
+`service_entry_revisions`, never from `updated_at`**: a save that changes nothing
+writes no revision but still moves `updated_at`.
+
 ## Units
 
 Temperature is stored in Celsius in every column, prompt and export.
