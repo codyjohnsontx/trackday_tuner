@@ -37,6 +37,7 @@ vi.mock('@/lib/rag/advice', () => ({
 
 import { POST } from '@/app/api/ai/day-plan/route';
 import { DayPlanAdviceResult } from '@/components/ai/day-plan-panel';
+import { UNVERIFIED_EVIDENCE_NOTICE } from '@/lib/rag/policy';
 import type { PreparedAdvicePrompt } from '@/lib/rag/prompt';
 import type { AdviceResponse } from '@/lib/rag/schema';
 import { createTrackNameQuery } from '@/tests/unit/helpers/track-name-query';
@@ -548,7 +549,8 @@ describe('POST /api/ai/day-plan safety layer', () => {
     expect(row?.policy_violations).toContain('unsafe_magnitude');
   });
 
-  it('forces a refusal when personal evidence cites a session the rider does not have', async () => {
+  // Captain's decision, 2026-10-04: drop only the bad citation, keep the plan.
+  it('drops personal evidence citing a session the rider does not have and keeps the plan', async () => {
     generateAdvice.mockResolvedValue({
       advice: validAdvice({
         personal_evidence: [
@@ -568,8 +570,11 @@ describe('POST /api/ai/day-plan safety layer', () => {
     const response = await post({ vehicle_id: VEHICLE_ID });
     const body = await response.json();
 
-    expect(body.advice.refusal).toContain('could not verify the historical session evidence');
+    expect(body.advice.refusal).toBeNull();
+    expect(body.advice.personal_evidence).toEqual([]);
+    expect(body.advice.unverified_evidence_notice).toBe(UNVERIFIED_EVIDENCE_NOTICE);
     const row = aiRequests.find((entry) => entry.request_id === body.request_id);
+    expect(row?.status).toBe('ok');
     expect(row?.policy_violations).toContain('invalid_personal_evidence');
   });
 

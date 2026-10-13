@@ -19,6 +19,21 @@ export function todayLocalDate(now: Date = new Date()): string {
 }
 
 /**
+ * The rider's wall-clock time as `HH:MM`, the value a `type="time"` input holds.
+ *
+ * The session form seeds Start Time with this when a rider opens it, so a
+ * session is timed to when it was logged unless the rider says otherwise. A
+ * blank start time sorts as midnight (`lib/session-compare.ts`), which put a
+ * session logged without one ahead of every timed session that day. Like
+ * `todayLocalDate`, it has to be read in the rider's browser, not during SSR.
+ */
+export function localTimeOfDay(now: Date = new Date()): string {
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+/**
  * The calendar date of `instant` in the IANA `timeZone`, or `null` when the
  * zone is one this runtime does not recognise.
  *

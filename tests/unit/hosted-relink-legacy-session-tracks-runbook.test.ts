@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error - see above.
 import { functionBodyMd5 } from '@/scripts/build-migration-audit.mjs';
 
-// docs/beta-runbook.md carries a copy of 20261004002600 for the hosted project,
+// docs/beta-runbook.md carries a copy of 20261004002800 for the hosted project,
 // which is patched in the SQL editor by hand - the arrangement
 // hosted-track-reference-check-runbook.test.ts guards for the migration before it.
 // The copy is split in two: the apply block installs the function, and the run
@@ -15,7 +15,7 @@ import { functionBodyMd5 } from '@/scripts/build-migration-audit.mjs';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(testDir, '../..');
-const MIGRATION = '20261004002600_relink_legacy_session_tracks';
+const MIGRATION = '20261004002800_relink_legacy_session_tracks';
 const migration = readFileSync(path.join(root, `supabase/migrations/${MIGRATION}.sql`), 'utf8');
 const runbook = readFileSync(path.join(root, 'docs/beta-runbook.md'), 'utf8');
 

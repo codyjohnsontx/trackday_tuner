@@ -10,7 +10,7 @@ import { anonClient, signIn, type Client } from '@/tests/db/helpers/rider';
 import type { Suspension, Tires } from '@/types/supabase';
 
 /**
- * `relink_legacy_session_tracks` (20261004002600) against a real database: a
+ * `relink_legacy_session_tracks` (20261004002800) against a real database: a
  * session that names a circuit and points at no track is linked to the one track
  * that name resolves to by lib/track-lookup.ts's rules, and anything matching
  * both an own and a seeded track, ambiguous or unmatched is reported and left

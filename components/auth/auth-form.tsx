@@ -50,7 +50,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
     setInfoMessage('');
 
     const supabase = createClient();
-    const redirectTo = `${window.location.origin}/auth/callback?next=/dashboard`;
+    const redirectTo = `${window.location.origin}/auth/callback?next=/dashboard&provider=${provider}`;
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,

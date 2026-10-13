@@ -56,6 +56,7 @@ export function AdviceReport({ advice, summaryHeading, refusal, emptyChangesMess
   const isRefusal = Boolean(refusalMessage);
   const hasRecommendations = advice.recommended_changes.length > 0;
   const premiseRejection = advice.premise_rejection?.trim();
+  const unverifiedEvidenceNotice = advice.unverified_evidence_notice?.trim();
 
   return (
     <div className="space-y-4">
@@ -130,17 +131,27 @@ export function AdviceReport({ advice, summaryHeading, refusal, emptyChangesMess
             </div>
           ) : null}
 
-          {advice.personal_evidence.length > 0 ? (
+          {advice.personal_evidence.length > 0 || unverifiedEvidenceNotice ? (
             <div>
               <h3 className="text-sm font-semibold text-ink">Personal evidence</h3>
-              <ul className="mt-2 space-y-2 text-sm text-ink-dim">
-                {advice.personal_evidence.map((evidence, idx) => (
-                  <li key={idx} className="rounded-row bg-surface-2 p-3">
-                    <p className="font-medium text-ink">{evidence.label}</p>
-                    <p className="mt-1 text-ink-dim">{evidence.detail}</p>
-                  </li>
-                ))}
-              </ul>
+              {/* The policy removed evidence it could not verify and kept the
+                  answer; the rider is told so rather than left to assume the
+                  list is complete. */}
+              {unverifiedEvidenceNotice ? (
+                <p className="mt-2 rounded-row border border-signal/40 bg-surface-2 p-3 text-sm text-ink-dim">
+                  {unverifiedEvidenceNotice}
+                </p>
+              ) : null}
+              {advice.personal_evidence.length > 0 ? (
+                <ul className="mt-2 space-y-2 text-sm text-ink-dim">
+                  {advice.personal_evidence.map((evidence, idx) => (
+                    <li key={idx} className="rounded-row bg-surface-2 p-3">
+                      <p className="font-medium text-ink">{evidence.label}</p>
+                      <p className="mt-1 text-ink-dim">{evidence.detail}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
           ) : null}
 

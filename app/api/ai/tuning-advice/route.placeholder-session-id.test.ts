@@ -67,6 +67,7 @@ vi.mock('@/lib/rag/race-engineer-context', async (importOriginal) => ({
 }));
 
 import { POST } from '@/app/api/ai/tuning-advice/route';
+import { UNVERIFIED_EVIDENCE_NOTICE } from '@/lib/rag/policy';
 
 const USER_ID = '11111111-1111-1111-1111-111111111111';
 const VEHICLE_ID = '22222222-2222-2222-2222-222222222222';
@@ -76,8 +77,6 @@ const FABRICATED_SESSION_ID = '99999999-9999-4999-8999-999999999999';
 const GEARING_QUESTION =
   'I keep dropping out of the powerband exiting a second-gear corner. What gearing change should I try?';
 
-const UNVERIFIED_EVIDENCE_REFUSAL =
-  'I could not verify the historical session evidence referenced in that response';
 
 const SESSION_ROW = {
   id: SESSION_ID,
@@ -350,16 +349,22 @@ describe('a placeholder session reference does not cost the rider the answer', (
     // The evidence itself survives and reads as what it is: an observation with
     // no session behind it.
     expect(body.advice.personal_evidence[0].source_session_id).toBeNull();
+    expect(body.advice.unverified_evidence_notice).toBeUndefined();
     expect(rows.at(-1)?.policy_violations ?? []).not.toContain('invalid_personal_evidence');
   });
 
-  it('still refuses a reference the prompt never printed', async () => {
+  it('drops a reference the prompt never printed, flags it, and keeps the answer', async () => {
+    // Captain's decision, 2026-10-04: a fabricated reference is still never
+    // served as evidence, but it costs only that evidence item, not the answer.
     stubModel(FABRICATED_SESSION_ID);
 
     const body = await (await ask()).json();
 
-    expect(body.advice.refusal).toContain(UNVERIFIED_EVIDENCE_REFUSAL);
-    expect(body.advice.recommended_changes).toHaveLength(0);
+    expect(body.advice.refusal).toBeNull();
+    expect(body.advice.recommended_changes).toHaveLength(1);
+    expect(body.advice.personal_evidence).toEqual([]);
+    expect(body.advice.unverified_evidence_notice).toBe(UNVERIFIED_EVIDENCE_NOTICE);
+    expect(JSON.stringify(body.advice)).not.toContain(FABRICATED_SESSION_ID);
     expect(rows.at(-1)?.policy_violations).toContain('invalid_personal_evidence');
   });
 });

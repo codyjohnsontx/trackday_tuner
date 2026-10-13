@@ -1163,7 +1163,7 @@ export type Database = {
          * One row per session that names a circuit and has no track: linked to
          * the one track its name resolves to, or left alone as `own_and_seeded`
          * or `ambiguous` (with the candidates) or `unmatched`. service_role only
-         * (20261004002600).
+         * (20261004002800).
          */
         Returns: {
           session_id: string;

@@ -492,7 +492,30 @@ export const MIGRATION_PROBES = {
       `          from pg_proc p where p.oid = ${DELETE_AUTO_CREATED_TRACK})`,
     ],
   },
-  '20261004002600_relink_legacy_session_tracks': {
+  '20261004002700_refuse_unverified_identity_link': {
+    note: [
+      'The trigger, enabled, and the function it runs by its body, so a hand-edited',
+      'copy that stops checking the claim reads MISSING.',
+    ],
+    kind: 'trigger + function',
+    object: 'refuse_unverified_identity_link on auth.identities',
+    present: [
+      'exists (select 1 from pg_trigger',
+      "        where tgname='refuse_unverified_identity_link'",
+      "          and tgrelid='auth.identities'::regclass",
+      "          and tgenabled <> 'D'",
+      '          and not tgisinternal',
+      "          and tgfoid = to_regprocedure('public.refuse_unverified_identity_link()'))",
+      '     and (select md5(p.prosrc) = ' +
+        `'${functionBodyMd5('20261004002700_refuse_unverified_identity_link')}'`,
+      '            and not p.prosecdef',
+      "            and p.proconfig = array['search_path=\"\"']",
+      "            and not has_function_privilege('anon', p.oid, 'execute')",
+      "            and not has_function_privilege('authenticated', p.oid, 'execute')",
+      "          from pg_proc p where p.oid = to_regprocedure('public.refuse_unverified_identity_link()'))",
+    ],
+  },
+  '20261004002800_relink_legacy_session_tracks': {
     note: [
       'The function, by its body, empty search path and service_role-only execute.',
       'The relink it ran is data and has no probe; re-running the function reports',
@@ -502,7 +525,7 @@ export const MIGRATION_PROBES = {
     object: 'public.relink_legacy_session_tracks(uuid)',
     present: [
       `${RELINK_LEGACY_SESSION_TRACKS} is not null`,
-      `     and (select md5(p.prosrc) = '${functionBodyMd5('20261004002600_relink_legacy_session_tracks')}'`,
+      `     and (select md5(p.prosrc) = '${functionBodyMd5('20261004002800_relink_legacy_session_tracks')}'`,
       '            and not p.prosecdef',
       "            and p.proconfig = array['search_path=\"\"']",
       "            and has_function_privilege('service_role', p.oid, 'execute')",

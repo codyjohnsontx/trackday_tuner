@@ -441,6 +441,11 @@ Refusals, rate limiting and duplicate suppression are *not* failures. Each is a
 guard working, and counting them would make the alert fire hardest when the
 product is behaving best.
 
+The healthy `message` says so in its own words, leading with the failure count:
+`Trackday Tuner AI is healthy: 0 failures in the last 60 minutes, 7 requests.`
+It deliberately prints no success fraction - "4/7 requests succeeded" was
+accurate when the other three were guard outcomes, and read like three failures.
+
 ### Sentry
 
 `@sentry/nextjs`, initialised from `lib/sentry-options.ts` in three places:

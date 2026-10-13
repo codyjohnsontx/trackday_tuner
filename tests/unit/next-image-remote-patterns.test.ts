@@ -214,7 +214,11 @@ describe('supabaseStorageRemotePatterns', () => {
   });
 });
 
-describe('next.config.ts', () => {
+// The first import of next.config.ts is cold - it pulls in Next's config types
+// and every module the config imports - and under the full suite's parallel load
+// it intermittently ran past vitest's 5s default and failed the first case here
+// on a timeout rather than on anything it asserts.
+describe('next.config.ts', { timeout: 30_000 }, () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.resetModules();

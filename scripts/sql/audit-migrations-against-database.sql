@@ -274,10 +274,26 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
            and to_regprocedure('public.delete_auto_created_track_if_unused(uuid)') is not null
            and (select md5(p.prosrc) = '65913c39a7070ab1b68c76b2fa3093fc'
                 from pg_proc p where p.oid = to_regprocedure('public.delete_auto_created_track_if_unused(uuid)'))),
+  -- The trigger, enabled, and the function it runs by its body, so a hand-edited
+  -- copy that stops checking the claim reads MISSING.
+  (29, '20261004002700_refuse_unverified_identity_link', 'trigger + function',
+      'refuse_unverified_identity_link on auth.identities',
+      exists (select 1 from pg_trigger
+              where tgname='refuse_unverified_identity_link'
+                and tgrelid='auth.identities'::regclass
+                and tgenabled <> 'D'
+                and not tgisinternal
+                and tgfoid = to_regprocedure('public.refuse_unverified_identity_link()'))
+           and (select md5(p.prosrc) = '6f93a16bdd3860ce0e82db7faa9cb45b'
+                  and not p.prosecdef
+                  and p.proconfig = array['search_path=""']
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                  and not has_function_privilege('authenticated', p.oid, 'execute')
+                from pg_proc p where p.oid = to_regprocedure('public.refuse_unverified_identity_link()'))),
   -- The function, by its body, empty search path and service_role-only execute.
   -- The relink it ran is data and has no probe; re-running the function reports
   -- what it still leaves alone, and relinks only what now resolves.
-  (29, '20261004002600_relink_legacy_session_tracks', 'function',
+  (30, '20261004002800_relink_legacy_session_tracks', 'function',
       'public.relink_legacy_session_tracks(uuid)',
       to_regprocedure('public.relink_legacy_session_tracks(uuid)') is not null
            and (select md5(p.prosrc) = '6c0b3c643a5a2fa2185b9ca3f8693bcd'
