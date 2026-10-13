@@ -51,6 +51,7 @@ function input(hoursNow: number, extra: Partial<DueInput> = {}): DueInput {
     entryItems: [{ entry_id: 'e1', item_id: OIL }],
     overrides: [],
     today: '2026-10-01',
+    timeZone: 'UTC',
     ...extra,
   };
 }
@@ -179,20 +180,45 @@ describe('due state from intervals', () => {
     expect(due.status).toBe('overdue');
   });
 
-  it('anchors a service done before the first reading at that reading, not at a count from zero', () => {
+  it('anchors a service done before the first reading at that reading less the sessions ridden since', () => {
+    const base = input(0);
+    // Oil done on 30 Jul with no reading; twelve 1 h / 50 mi days after it; the
+    // book's first reading on 1 Sep. The day before the service is not taken off.
+    const between = Array.from({ length: 12 }, (_, day) => session(`s${day}`, `2026-08-${String(day + 1).padStart(2, '0')}`));
+    const due = only(
+      computeDue({
+        ...base,
+        usage: {
+          ...base.usage,
+          book: { tracks_hours: true, tracks_distance: true, default_session_minutes: 60, default_session_distance: 50 },
+          readings: [reading('r', '2026-09-01', 300, 5000)],
+          sessions: [session('before', '2026-07-29'), ...between],
+        },
+        items: [item({ interval_hours: 10, interval_distance: 500 })],
+        entries: [entry('e1', '2026-07-30')],
+        today: '2026-09-02',
+      }),
+    );
+    expect(due.axes).toMatchObject([
+      { axis: 'hours', anchor: 288, anchorEstimated: true, nextDue: 298, current: 300, status: 'overdue' },
+      { axis: 'distance', anchor: 4400, anchorEstimated: true, nextDue: 4900, current: 5000, status: 'overdue' },
+    ]);
+  });
+
+  it('never works a pre-reading anchor back below zero', () => {
     const base = input(0);
     const due = only(
       computeDue({
         ...base,
         usage: {
           ...base.usage,
-          readings: [reading('r', '2026-09-10', 300), reading('r-now', '2026-10-01', 305)],
-          sessions: [session('before', '2026-08-20')],
+          readings: [reading('r', '2026-09-01', 2)],
+          sessions: [session('a', '2026-08-01'), session('b', '2026-08-02'), session('c', '2026-08-03')],
         },
-        entries: [entry('e1', '2026-09-01')],
+        entries: [entry('e1', '2026-07-30')],
       }),
     );
-    expect(due.axes[0]).toMatchObject({ anchor: 300, anchorEstimated: true, nextDue: 310, current: 305, status: 'ok' });
+    expect(due.axes[0]).toMatchObject({ anchor: 0, anchorEstimated: true, nextDue: 10, current: 2 });
   });
 
   it('lets a weight-0 day keep an item from coming due', () => {
@@ -337,6 +363,29 @@ describe('the rider overrides', () => {
     const snooze = override('snooze', '2026-08-15T00:00:00Z');
     const due = only(computeDue(input(25, { overrides: [snooze] })));
     expect(due).toMatchObject({ status: 'overdue', override: null });
+  });
+
+  it('is not ended by back-filling an older service, even when that is the only one', () => {
+    const set = override('set_next_due', '2026-10-10T15:00:00Z', { until_hours: 40 });
+    const backFilled = entry('paper', '2025-06-01', { reading_hours: 2, logged_at: '2026-10-12T18:00:00Z' });
+    const due = only(
+      computeDue(input(25, { entries: [backFilled], entryItems: [{ entry_id: 'paper', item_id: OIL }], overrides: [set] })),
+    );
+    expect(due).toMatchObject({ status: 'ok', override: { kind: 'set_next_due' }, lastDone: { entryId: 'paper' } });
+  });
+
+  it('is ended by a service dated on or after the rider day it was made', () => {
+    const set = override('set_next_due', '2026-10-10T15:00:00Z', { until_hours: 40 });
+    const done = entry('done', '2026-10-10', { reading_hours: 10, logged_at: '2026-10-12T18:00:00Z' });
+    const due = only(
+      computeDue(input(25, { entries: [done], entryItems: [{ entry_id: 'done', item_id: OIL }], overrides: [set] })),
+    );
+    expect(due).toMatchObject({ status: 'overdue', override: null });
+  });
+
+  it('is not ended by a same-day service logged before it was made', () => {
+    const snooze = override('snooze', '2026-09-01T20:00:00Z');
+    expect(only(computeDue(input(25, { overrides: [snooze] }))).status).toBe('snoozed');
   });
 
   it('only touches its own item', () => {

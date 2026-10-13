@@ -22,7 +22,7 @@ function receipt(uploadedAt: string | null, kind: ProvenanceAttachment['kind'] =
 
 describe('when the entry was logged', () => {
   it('logged on the service date: Logged the day of service', () => {
-    expect(describeEntryProvenance({ entry: entry(), revisions: [created] }).timing).toEqual({
+    expect(describeEntryProvenance({ timeZone: 'UTC', entry: entry(), revisions: [created] }).timing).toEqual({
       kind: 'logged_same_day',
       text: 'Logged the day of service',
     });
@@ -34,22 +34,22 @@ describe('when the entry was logged', () => {
     expect(describeEntryProvenance({ entry: late, revisions: [created], timeZone: 'America/Chicago' }).timing.kind).toBe(
       'logged_same_day',
     );
-    expect(describeEntryProvenance({ entry: late, revisions: [created] }).timing.kind).toBe('logged_after');
+    expect(describeEntryProvenance({ timeZone: 'UTC', entry: late, revisions: [created] }).timing.kind).toBe('logged_after');
   });
 
   it('within 7 days: Logged N days after service', () => {
-    expect(describeEntryProvenance({ entry: entry({ logged_at: '2026-09-21T09:00:00Z' }), revisions: [created] }).timing).toEqual({
+    expect(describeEntryProvenance({ timeZone: 'UTC', entry: entry({ logged_at: '2026-09-21T09:00:00Z' }), revisions: [created] }).timing).toEqual({
       kind: 'logged_after',
       days: 1,
       text: 'Logged 1 day after service',
     });
     expect(
-      describeEntryProvenance({ entry: entry({ logged_at: '2026-09-27T09:00:00Z' }), revisions: [created] }).timing.text,
+      describeEntryProvenance({ timeZone: 'UTC', entry: entry({ logged_at: '2026-09-27T09:00:00Z' }), revisions: [created] }).timing.text,
     ).toBe('Logged 7 days after service');
   });
 
   it('later than that: Back-filled N days later', () => {
-    expect(describeEntryProvenance({ entry: entry({ logged_at: '2026-09-28T09:00:00Z' }), revisions: [created] }).timing).toEqual({
+    expect(describeEntryProvenance({ timeZone: 'UTC', entry: entry({ logged_at: '2026-09-28T09:00:00Z' }), revisions: [created] }).timing).toEqual({
       kind: 'back_filled',
       days: 8,
       months: 0,
@@ -59,7 +59,7 @@ describe('when the entry was logged', () => {
 
   it('two months or more later: Back-filled N months later', () => {
     const old = entry({ service_date: '2025-03-14', logged_at: '2026-09-20T09:00:00Z' });
-    expect(describeEntryProvenance({ entry: old, revisions: [created] }).timing).toMatchObject({
+    expect(describeEntryProvenance({ timeZone: 'UTC', entry: old, revisions: [created] }).timing).toMatchObject({
       kind: 'back_filled',
       months: 18,
       text: 'Back-filled 18 months later',
@@ -68,7 +68,7 @@ describe('when the entry was logged', () => {
 
   it('before the service date it names that too, rather than calling it same-day', () => {
     const ahead = entry({ service_date: '2026-09-25' });
-    expect(describeEntryProvenance({ entry: ahead, revisions: [created] }).timing).toEqual({
+    expect(describeEntryProvenance({ timeZone: 'UTC', entry: ahead, revisions: [created] }).timing).toEqual({
       kind: 'logged_before',
       days: 5,
       text: 'Logged 5 days before the service date',
@@ -79,6 +79,7 @@ describe('when the entry was logged', () => {
 describe('receipts', () => {
   it('uploaded within 24 h of logging: Receipt attached when logged', () => {
     const result = describeEntryProvenance({
+      timeZone: 'UTC',
       entry: entry(),
       revisions: [created],
       attachments: [receipt('2026-09-21T17:00:00Z')],
@@ -88,6 +89,7 @@ describe('receipts', () => {
 
   it('an invoice counts as a receipt', () => {
     const result = describeEntryProvenance({
+      timeZone: 'UTC',
       entry: entry(),
       revisions: [created],
       attachments: [receipt('2026-09-20T18:05:00Z', 'invoice')],
@@ -97,6 +99,7 @@ describe('receipts', () => {
 
   it('first uploaded later: Receipt added N days later', () => {
     const result = describeEntryProvenance({
+      timeZone: 'UTC',
       entry: entry(),
       revisions: [created],
       attachments: [receipt('2026-09-25T10:00:00Z'), receipt('2026-10-02T10:00:00Z')],
@@ -106,6 +109,7 @@ describe('receipts', () => {
 
   it('says nothing without one: a photo, a manual page or a pending upload is not a receipt', () => {
     const result = describeEntryProvenance({
+      timeZone: 'UTC',
       entry: entry(),
       revisions: [created],
       attachments: [receipt('2026-09-20T18:05:00Z', 'photo'), receipt('2026-09-20T18:05:00Z', 'manual_page'), receipt(null)],
@@ -116,11 +120,12 @@ describe('receipts', () => {
 
 describe('edits', () => {
   it('revision 1: Unedited', () => {
-    expect(describeEntryProvenance({ entry: entry(), revisions: [created] }).edits).toEqual({ kind: 'unedited', text: 'Unedited' });
+    expect(describeEntryProvenance({ timeZone: 'UTC', entry: entry(), revisions: [created] }).edits).toEqual({ kind: 'unedited', text: 'Unedited' });
   });
 
   it('edited: Edited N times, last on <date>', () => {
     const result = describeEntryProvenance({
+      timeZone: 'UTC',
       entry: entry({ revision: 3 }),
       revisions: [created, edited(2, '2026-09-22T10:00:00Z'), edited(3, '2026-10-04T10:00:00Z')],
     });
@@ -128,7 +133,7 @@ describe('edits', () => {
   });
 
   it('edited once reads as once', () => {
-    const result = describeEntryProvenance({ entry: entry({ revision: 2 }), revisions: [created, edited(2, '2026-09-22T10:00:00Z')] });
+    const result = describeEntryProvenance({ timeZone: 'UTC', entry: entry({ revision: 2 }), revisions: [created, edited(2, '2026-09-22T10:00:00Z')] });
     expect(result.edits.text).toBe('Edited once, last on 22 Sep 2026');
   });
 
@@ -137,11 +142,12 @@ describe('edits', () => {
   // the revisions, so the entry stays unedited.
   it('a save that changed nothing is not an edit', () => {
     const resaved = { ...entry(), updated_at: '2026-10-01T09:00:00Z' };
-    expect(describeEntryProvenance({ entry: resaved, revisions: [created] }).edits.kind).toBe('unedited');
+    expect(describeEntryProvenance({ timeZone: 'UTC', entry: resaved, revisions: [created] }).edits.kind).toBe('unedited');
   });
 
   it('removing and restoring the same content is not an edit', () => {
     const result = describeEntryProvenance({
+      timeZone: 'UTC',
       entry: entry({ revision: 3 }),
       revisions: [
         created,
@@ -153,10 +159,10 @@ describe('edits', () => {
   });
 
   it('counts a revision the caller did not pass as an edit, so a gap never reads cleaner', () => {
-    const result = describeEntryProvenance({ entry: entry({ revision: 3 }), revisions: [created, edited(2, '2026-09-22T10:00:00Z')] });
+    const result = describeEntryProvenance({ timeZone: 'UTC', entry: entry({ revision: 3 }), revisions: [created, edited(2, '2026-09-22T10:00:00Z')] });
     expect(result.edits).toMatchObject({ kind: 'edited', count: 2, lastEditedOn: '2026-09-22' });
 
-    const none = describeEntryProvenance({ entry: entry({ revision: 2 }), revisions: [] });
+    const none = describeEntryProvenance({ timeZone: 'UTC', entry: entry({ revision: 2 }), revisions: [] });
     expect(none.edits).toEqual({ kind: 'edited', count: 1, lastEditedOn: null, text: 'Edited once' });
   });
 });
@@ -164,6 +170,7 @@ describe('edits', () => {
 describe('an entry read from a photographed page', () => {
   it('says so, with the day the owner confirmed it, and is always back-filled', () => {
     const result = describeEntryProvenance({
+      timeZone: 'UTC',
       entry: entry({ origin: 'photo_draft', service_date: '2026-09-18' }),
       revisions: [created],
     });
@@ -176,13 +183,14 @@ describe('an entry read from a photographed page', () => {
   });
 
   it('is back-filled even when the page carries the day it was confirmed', () => {
-    const result = describeEntryProvenance({ entry: entry({ origin: 'photo_draft' }), revisions: [created] });
+    const result = describeEntryProvenance({ timeZone: 'UTC', entry: entry({ origin: 'photo_draft' }), revisions: [created] });
     expect(result.timing).toMatchObject({ kind: 'back_filled', text: 'Back-filled the day of service' });
   });
 });
 
 it('lists the labels in reading order: when, where from, receipt, edits', () => {
   const result = describeEntryProvenance({
+    timeZone: 'UTC',
     entry: entry({ origin: 'photo_draft', revision: 2 }),
     revisions: [created, edited(2, '2026-09-22T10:00:00Z')],
     attachments: [receipt('2026-09-20T18:01:00Z')],

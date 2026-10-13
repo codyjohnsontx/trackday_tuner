@@ -1,7 +1,14 @@
 import type { DistanceUnit, ServiceDueOverrideKind, Tables } from '@/types/supabase';
 import { riderDateOfTimestamp } from '@/lib/local-date';
 import { addDays, daysBetween, instantOf, isIsoDate } from '@/lib/service-book/calendar';
-import { computeUsage, currentReadings, firstReading, type UsageAxis, type UsageInput } from '@/lib/service-book/usage';
+import {
+  computeUsage,
+  currentReadings,
+  firstReading,
+  usageBeforeReading,
+  type UsageAxis,
+  type UsageInput,
+} from '@/lib/service-book/usage';
 
 /**
  * What is due on a bike, item by item.
@@ -16,11 +23,11 @@ import { computeUsage, currentReadings, firstReading, type UsageAxis, type Usage
  * last service. Its own reading anchors the hours and distance axes; an entry
  * logged without one is anchored at the bike's usage on its service date
  * (`computeUsage` with `asOf`), and is marked estimated. A service dated before
- * the book's first reading on an axis is anchored at that reading instead, since
- * a session count from zero shares no scale with usage now; on a book with no
- * reading at all it is the session count by that date, zero when none came
- * before it. An older entry that did
- * carry a reading is NOT used in its place - it would anchor the item before its
+ * the book's first reading on an axis is anchored at that reading less what the
+ * sessions since the service add (`usageBeforeReading`), since a session count
+ * from zero shares no scale with usage now; on a book with no reading at all it
+ * is the session count by that date, zero when none came before it. An older
+ * entry that did carry a reading is NOT used in its place - it would anchor the item before its
  * newest service and call it overdue when it was just done.
  *
  * NEVER DONE. Anchored at the book's first reading on that axis, or zero at the
@@ -30,8 +37,10 @@ import { computeUsage, currentReadings, firstReading, type UsageAxis, type Usage
  * done cannot say it is fine.
  *
  * THE RIDER OVERRIDES (owner, 2026-10-08). Reminders are suggestions; the rider
- * decides. The newest `service_due_overrides` row per item wins, and logging the
- * item after it ends it, since a service is the rider's newer word on that item:
+ * decides. The newest `service_due_overrides` row per item wins. A service logged
+ * after it and dated on or after the rider day it was made ends it, since that
+ * is the rider's newer word on that item; back-filling older history never does,
+ * whatever else the book holds:
  *
  * - `snooze`: the item reads `snoozed` until `until_date` is reached or the bike
  *   reaches `until_hours` / `until_distance`, whichever comes first. A snooze
@@ -89,8 +98,8 @@ export interface DueInput {
   overrides: readonly DueOverride[];
   /** The rider's calendar date (`todayLocalDate`), never the server's. */
   today: string;
-  /** The rider's IANA zone, for the day an override was made. */
-  timeZone?: string;
+  /** The book owner's IANA zone, for the day an override was made. */
+  timeZone: string;
 }
 
 export interface AxisDue {
@@ -206,8 +215,12 @@ export function computeDue(input: DueInput): ItemDue[] {
       const last = entries[0] ?? null;
 
       let override = newestOverride(input.overrides, item.id);
-      if (override && last && (instantOf(last.logged_at) ?? 0) > (instantOf(override.created_at) ?? 0)) {
-        override = null;
+      if (override) {
+        const madeAt = instantOf(override.created_at) ?? 0;
+        const madeOn = riderDateOfTimestamp(override.created_at, input.timeZone);
+        if (entries.some((entry) => (instantOf(entry.logged_at) ?? 0) > madeAt && entry.service_date >= madeOn)) {
+          override = null;
+        }
       }
       if (override && !overrideSaysSomething(override)) override = null;
 
@@ -224,8 +237,8 @@ export function computeDue(input: DueInput): ItemDue[] {
           const then = usageAsOf(last.service_date)[axis];
           if (then?.reading) return { anchor: then.current, estimated: then.basis !== 'reading' };
           const first = firstReading(input.usage.readings, axis);
-          if (first) return { anchor: finite(axis === 'hours' ? first.hours : first.distance), estimated: true };
-          return { anchor: then?.current ?? (now[axis] ? 0 : null), estimated: true };
+          if (first) return { anchor: usageBeforeReading(input.usage, axis, last.service_date, first), estimated: true };
+          return { anchor: then ? (then.current ?? 0) : null, estimated: true };
         }
         const first = firstReading(input.usage.readings, axis);
         if (first) return { anchor: finite(axis === 'hours' ? first.hours : first.distance), estimated: false };

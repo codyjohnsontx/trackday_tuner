@@ -235,8 +235,8 @@ function compareSessionsAsc(a: UsageSession, b: UsageSession): number {
   return (instantOf(a.created_at) ?? 0) - (instantOf(b.created_at) ?? 0);
 }
 
-function axisUsage(input: UsageInput, axis: UsageAxis, asOf: string | undefined): AxisUsage {
-  const reading = latestReading(input.readings, axis, asOf);
+/** What each session `include` keeps adds, oldest first. */
+function sessionUsages(input: UsageInput, include: (session: UsageSession) => boolean): SessionUsage[] {
   const lapsBySession = new Map<string, UsageLap[]>();
   for (const lap of input.laps) {
     const list = lapsBySession.get(lap.session_id) ?? [];
@@ -245,13 +245,41 @@ function axisUsage(input: UsageInput, axis: UsageAxis, asOf: string | undefined)
   }
   const weightBySession = new Map(input.weights.map((row) => [row.session_id, row]));
 
-  const sessions = input.sessions
-    .filter((session) => asOf === undefined || session.date < asOf)
-    .filter((session) => reading === null || isAfterReading(session, reading))
+  return input.sessions
+    .filter(include)
     .sort(compareSessionsAsc)
     .map((session) =>
       estimateSessionUsage(input.book, session, lapsBySession.get(session.id) ?? [], weightBySession.get(session.id)),
     );
+}
+
+/**
+ * Usage on `date` worked back from a later `reading`: the reading less what the
+ * sessions from that date until the reading add, never below zero. A session on
+ * the day itself is taken off too, so the figure errs low and whatever is counted
+ * from it comes due sooner rather than later.
+ */
+export function usageBeforeReading(
+  input: UsageInput,
+  axis: UsageAxis,
+  date: string,
+  reading: UsageReading,
+): number | null {
+  const value = axisValue(reading, axis);
+  if (value === null) return null;
+  let estimate = 0;
+  for (const session of sessionUsages(input, (s) => s.date >= date && !isAfterReading(s, reading))) {
+    estimate += (axis === 'hours' ? session.hours : session.distance) ?? 0;
+  }
+  return Math.max(value - estimate, 0);
+}
+
+function axisUsage(input: UsageInput, axis: UsageAxis, asOf: string | undefined): AxisUsage {
+  const reading = latestReading(input.readings, axis, asOf);
+  const sessions = sessionUsages(
+    input,
+    (session) => (asOf === undefined || session.date < asOf) && (reading === null || isAfterReading(session, reading)),
+  );
 
   let estimate = 0;
   let measured = 0;

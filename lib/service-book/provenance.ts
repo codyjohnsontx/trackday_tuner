@@ -11,7 +11,7 @@ import { daysBetween, formatDay, instantOf, monthsBetween } from '@/lib/service-
  *
  * | Condition                                              | Label                                          |
  * | ------------------------------------------------------ | ---------------------------------------------- |
- * | logged on the service date, in the rider's zone        | Logged the day of service                      |
+ * | logged on the service date, in the owner's zone        | Logged the day of service                      |
  * | logged 1 to 7 days after it                            | Logged N days after service                    |
  * | logged later than that                                 | Back-filled N days / months later              |
  * | logged before the service date                         | Logged N days before the service date          |
@@ -78,8 +78,12 @@ export interface ProvenanceInput {
   entry: ProvenanceEntry;
   revisions: readonly ProvenanceRevision[];
   attachments?: readonly ProvenanceAttachment[];
-  /** The rider's IANA zone, so "the day of service" is their day. */
-  timeZone?: string;
+  /**
+   * The book owner's IANA zone, so "the day of service" is the day of whoever
+   * logged it. Always the owner's, never the viewer's or the server's: a buyer, a
+   * PDF or a server render passing its own zone would relabel the same entry.
+   */
+  timeZone: string;
 }
 
 const LOGGED_AFTER_LIMIT_DAYS = 7;
@@ -120,7 +124,7 @@ function receiptLabel(
   attachments: readonly ProvenanceAttachment[],
   loggedAt: string,
   loggedOn: string,
-  timeZone: string | undefined,
+  timeZone: string,
 ): ReceiptLabel | null {
   const uploads = attachments
     .filter((attachment) => attachment.kind === 'receipt' || attachment.kind === 'invoice')
@@ -141,7 +145,7 @@ function receiptLabel(
 function editLabel(
   entry: ProvenanceEntry,
   revisions: readonly ProvenanceRevision[],
-  timeZone: string | undefined,
+  timeZone: string,
 ): EditLabel {
   const byNumber = new Map<number, ProvenanceRevision>();
   for (const revision of revisions) byNumber.set(revision.revision, revision);
