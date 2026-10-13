@@ -82,8 +82,22 @@ export interface ProvenanceInput {
    * The book owner's IANA zone, so "the day of service" is the day of whoever
    * logged it. Always the owner's, never the viewer's or the server's: a buyer, a
    * PDF or a server render passing its own zone would relabel the same entry.
+   * A missing, empty or unknown zone throws rather than falling back to UTC,
+   * which would relabel the entry just the same.
    */
   timeZone: string;
+}
+
+function assertTimeZone(timeZone: unknown): asserts timeZone is string {
+  if (typeof timeZone === 'string' && timeZone !== '') {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone });
+      return;
+    } catch {
+      // Falls through to the error below.
+    }
+  }
+  throw new RangeError(`Service entry provenance needs the book owner's time zone, got ${JSON.stringify(timeZone)}`);
 }
 
 const LOGGED_AFTER_LIMIT_DAYS = 7;
@@ -172,6 +186,7 @@ function editLabel(
 
 export function describeEntryProvenance(input: ProvenanceInput): EntryProvenance {
   const { entry, timeZone } = input;
+  assertTimeZone(timeZone);
   const loggedOn = riderDateOfTimestamp(entry.logged_at, timeZone);
 
   const timing = timingLabel(entry, loggedOn);

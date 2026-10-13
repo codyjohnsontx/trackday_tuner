@@ -76,6 +76,21 @@ describe('when the entry was logged', () => {
   });
 });
 
+describe("the owner's time zone", () => {
+  // Logged 20:00 CDT on the service day: a UTC fallback would call it a day late.
+  const evening = entry({ logged_at: '2026-09-21T01:00:00Z' });
+
+  it.each([
+    ['an empty zone', ''],
+    ['no zone', undefined],
+    ['a zone Intl does not accept', 'Not/AZone'],
+  ])('refuses %s rather than labelling in UTC', (_name, timeZone) => {
+    expect(() =>
+      describeEntryProvenance({ entry: evening, revisions: [created], timeZone: timeZone as string }),
+    ).toThrow(/time zone/);
+  });
+});
+
 describe('receipts', () => {
   it('uploaded within 24 h of logging: Receipt attached when logged', () => {
     const result = describeEntryProvenance({
