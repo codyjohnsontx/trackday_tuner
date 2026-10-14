@@ -24,7 +24,7 @@ external account at all**, and two need an account you have to create.
 | Piece | Live on merge? | What it needs from you |
 | --- | --- | --- |
 | `/api/health` | **Yes.** Public, no monitoring-specific variable, no account | Nothing new. It does use the app's existing `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, and needs `data/rag-index.json` in the bundle. Step 1 below lists the checks those feed |
-| `/api/monitoring/ai-health` | No - answers `503 Monitoring is not configured.` | `MONITORING_CRON_SECRET` in Vercel |
+| `/api/monitoring/ai-health` and `/api/monitoring/service-attachment-sweep` | No - both answer `503 Monitoring is not configured.` | `MONITORING_CRON_SECRET` in Vercel |
 | The 15-minute probe + alert | No - the workflow runs but exits clean with a warning | Two GitHub settings plus the Vercel secret and a redeploy. **No external account** |
 | Sentry | No - the SDK is not initialised at all | A sentry.io account (free tier) you create |
 | Log drain | No - there is no code for it | A Better Stack or Axiom account you create |
@@ -73,14 +73,15 @@ After the next production deploy:
 curl -i https://<your-app>/api/health
 ```
 
-Expect `HTTP/2 200` and a body naming four checks:
+Expect `HTTP/2 200` and a body naming five checks:
 
 ```json
 {"status":"ok","checked_at":"...","checks":[
   {"name":"supabase","status":"ok","duration_ms":10},
   {"name":"rag_index","status":"ok","duration_ms":8,"detail":"75 chunks"},
   {"name":"schema_contract","status":"ok","duration_ms":12,"detail":"3 rpcs"},
-  {"name":"ai_text_retention","status":"ok","duration_ms":9,"detail":"0 overdue"}]}
+  {"name":"ai_text_retention","status":"ok","duration_ms":9,"detail":"0 overdue"},
+  {"name":"attachment_sweep","status":"ok","duration_ms":11,"detail":"0 stale"}]}
 ```
 
 Anything failing answers `503` and names the check, and **which check it is
@@ -113,6 +114,15 @@ decides what to do**:
   the same job should have cleared. See "The `ai_text_retention`
   check" below.
   `SupabaseError:PGRST205` instead means `20260924001700` was never applied.
+- `attachment_sweep` - a service book attachment reservation nobody confirmed is
+  more than 48 hours old, so the daily sweep is not running and free riders'
+  abandoned uploads are holding slots of their 25
+  (`StaleAttachmentReservationError:<n>`); or a file in the `service-book`
+  bucket that no confirmed attachment names is more than 48 hours old, so the
+  object sweep is not running and abandoned files are filling the 1 GB of
+  storage (`OrphanedAttachmentObjectError`). See "The `attachment_sweep` check"
+  below. `SupabaseError:PGRST205` or `SupabaseError:PGRST202` means
+  `20261014000400` was never applied.
 
 ### Step 2 - the 15-minute alert (no external account)
 
@@ -170,7 +180,8 @@ unset SECRET
 ```
 
 Then GitHub → Actions → **Monitoring** → Run workflow. A configured run shows
-two probe steps that both print `HTTP 200` while nothing is wrong. If the AI
+two probe steps and the attachment sweep step, all printing `HTTP 200` while
+nothing is wrong. If the AI
 alert is genuinely firing, that step prints `HTTP 503` and fails the run on
 purpose - that is the alert working, not the setup failing, and the curl above
 says what failed. An unconfigured one shows a yellow `::warning::` saying
@@ -283,7 +294,7 @@ their absence is good news rather than a broken drain.
 | Variable | Where it goes | Required? | What breaks without it |
 | --- | --- | --- | --- |
 | `MONITORING_APP_URL` | GitHub repo **variable** (Actions) | For the alert | The workflow exits clean with a warning. No probe ever runs, and nothing tells you that except the warning |
-| `MONITORING_CRON_SECRET` | GitHub repo **secret** (Actions) **and** Vercel env (Production) - identical in both | For the alert | Missing in GitHub: same clean-exit warning. Missing in Vercel: the route answers `503` to everyone, so the workflow fails every 15 minutes. Mismatched: `401` every 15 minutes |
+| `MONITORING_CRON_SECRET` | GitHub repo **secret** (Actions) **and** Vercel env (Production) - identical in both | For the alert | Missing in GitHub: same clean-exit warning. Missing in Vercel: both bearer-gated routes answer `503` to everyone, so the workflow fails every 15 minutes. Mismatched: `401` every 15 minutes |
 | `NEXT_PUBLIC_SENTRY_DSN` | Vercel env, Production + Preview | No | The Sentry SDK is never initialised. A caught failure still reaches `console.error` in the Vercel log, because `reportError` writes that line first - which is already more than R3 produced |
 | `MONITORING_ALERT_WEBHOOK_URL` | Vercel env, Production | No | Alerts reach you through the failed workflow run instead. The route reports `notified: "none"`, which is not a failure |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` | Vercel **build** env | No | The build skips the source map upload. Sentry stack traces point at minified code |
@@ -296,9 +307,9 @@ is deliberately not among them: nothing in the app reads it, only
 
 | Piece | Answers | Catches R3? |
 | --- | --- | --- |
-| `/api/health` | Is Postgres reachable, does the RAG index load *in this bundle*, does the Data API still expose the RPCs this code calls, and has any retained rider question text, or any `ai_requests` preview, outlived its 90 days? | Yes, on the first deploy |
+| `/api/health` | Is Postgres reachable, does the RAG index load *in this bundle*, does the Data API still expose the RPCs this code calls, has any retained rider question text, or any `ai_requests` preview, outlived its 90 days, and are both attachment sweeps running? | Yes, on the first deploy |
 | `/api/monitoring/ai-health` | Has anything failed in the last hour? Error rate, p95 latency | Yes, on the first rider call |
-| `.github/workflows/monitoring.yml` | Runs both every 15 minutes and fails the run when either says no | This is what makes them alerts |
+| `.github/workflows/monitoring.yml` | Runs both, plus the attachment object sweep, every 15 minutes and fails the run when any says no | This is what makes them alerts |
 | Sentry | The stack trace behind an individual failure | Yes - but only because handled errors are reported explicitly, see below |
 
 ### `/api/health`
@@ -355,6 +366,57 @@ No rows means the job was never scheduled on this project - apply the block in
 `docs/beta-runbook.md` ("Apply the AI question-text table by hand"). A `failed`
 row carries the error. Either way `select public.purge_expired_ai_request_text();`
 run by hand clears what is overdue while the cause is fixed.
+
+#### The `attachment_sweep` check
+
+An upload to a service book entry is reserved first, under a per-book lock that
+counts the free plan's 25 attachments per bike, and confirmed once the file is
+in storage (`20261014000400`). A reservation nobody confirms - a tab closed
+mid-upload - would hold its slot for good, so a `pg_cron` job,
+`purge-stale-service-attachments` (04:41 UTC daily), deletes `pending` rows more
+than a day old. This check asks whether any `pending` row is more than 48 hours
+old: one waits up to two days at worst, so past that a run was missed. It reads
+a count and never a row.
+
+The job cannot delete the stored object (Storage refuses a direct delete from
+SQL), so the files go through the Storage API instead. The app removes the
+objects of an upload it sees fail, and deleting a bike removes every file its
+service book's attachments name before the bike goes. Everything else - a file
+whose reservation was swept, one uploaded to a signed URL after its reservation
+was discarded (a signed upload token cannot be revoked), one that landed while
+its bike was being deleted - is removed by
+`/api/monitoring/service-attachment-sweep`, which the scheduled workflow calls
+every 15 minutes with the same bearer secret as `/api/monitoring/ai-health`. It
+removes every `service-book` object more than a day old that no `ready` row
+names, as `service_attachment_orphan_objects` lists them, at most 1000 a run.
+The check also asks that function for the oldest such object and fails when it
+is more than 48 hours old.
+
+On a `StaleAttachmentReservationError`:
+
+```sql
+select status, return_message, start_time
+from cron.job_run_details
+where jobid = (select jobid from cron.job where jobname = 'purge-stale-service-attachments')
+order by start_time desc
+limit 5;
+```
+
+No rows means the job was never scheduled - apply "Apply service book
+attachments by hand" in `docs/beta-runbook.md`. `select
+public.purge_stale_service_attachments();` run by hand clears what is stale
+while the cause is fixed.
+
+On an `OrphanedAttachmentObjectError`, look at the workflow's "Sweep -
+abandoned service book uploads" step: a 401 or 503 before the sweep ran is the
+secret (step 2 above), and a 503 after it is a failed read or Storage removal,
+named in the deployment's log under `service-attachment-sweep`. Calling the
+route by hand runs one batch:
+
+```bash
+curl --header "Authorization: Bearer $MONITORING_CRON_SECRET" \
+  "$MONITORING_APP_URL/api/monitoring/service-attachment-sweep"
+```
 
 #### The `schema_contract` check
 
@@ -562,7 +624,7 @@ add the `crons` entry to `vercel.json`, set `MONITORING_CRON_SECRET` in Vercel
   one Sentry event. So while a dependency is down, the volume is set by how
   often the endpoint is *called* rather than by the outage: the documented
   callers alone (the 15-minute workflow plus a 5-minute external monitor)
-  produce roughly 64 events an hour with all four checks failing, and anyone can
+  produce roughly 80 events an hour with all five checks failing, and anyone can
   raise that by looping the URL - during exactly the window Sentry's free tier
   needs to still be accepting events. Accepted because a health check that
   reports nothing defeats its own purpose, and it has to stay reachable by an

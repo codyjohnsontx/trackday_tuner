@@ -1,7 +1,12 @@
 import type { DistanceUnit, Tables } from '@/types/supabase';
 import type { DueOverride, ItemDue } from '@/lib/service-book/due';
 import type { ServiceBookField } from '@/lib/service-book/fields';
-import { describeEntryProvenance, type EntryProvenance, type ProvenanceRevision } from '@/lib/service-book/provenance';
+import {
+  describeEntryProvenance,
+  type EntryProvenance,
+  type ProvenanceAttachment,
+  type ProvenanceRevision,
+} from '@/lib/service-book/provenance';
 import { computeBookDue } from '@/lib/service-book/reminders';
 import { computeUsage, type BookUsage, type UsageInput, type UsageLap, type UsageSession, type UsageWeight } from '@/lib/service-book/usage';
 
@@ -26,7 +31,16 @@ export type ServiceEntryRecord = Tables<'service_entries'> & {
   parts: Tables<'service_entry_parts'>[];
   /** Its history, newest last; `snapshot` is left out of the list read. */
   revisions: ProvenanceRevision[];
+  /** Its confirmed receipts, invoices and photos; a pending upload is not one yet. */
+  attachments: ServiceEntryAttachment[];
 };
+
+/** An attachment as the book reads it. Its object is reached only through a signed URL. */
+export type ServiceEntryAttachment = Pick<
+  Tables<'service_attachments'>,
+  'id' | 'entry_id' | 'kind' | 'mime' | 'bytes' | 'uploaded_at' | 'created_at'
+> &
+  ProvenanceAttachment;
 
 /** One row of an entry's history, snapshot included, as the entry page lists it. */
 export type ServiceEntryRevisionRecord = Pick<
@@ -46,6 +60,12 @@ export interface ServiceBookData {
   laps: UsageLap[];
   weights: UsageWeight[];
   overrides: DueOverride[];
+  /**
+   * How many attachments the book's allowance counts: every confirmed one, and
+   * every reservation younger than a day, the count reserve_service_attachment
+   * makes (20261014000400).
+   */
+  attachmentCount: number;
 }
 
 export function usageInputOf(data: ServiceBookData): UsageInput {
@@ -83,7 +103,12 @@ export function buildServiceBookView(
   for (const entry of data.entries) {
     provenanceByEntryId.set(
       entry.id,
-      describeEntryProvenance({ entry, revisions: entry.revisions, timeZone: clock.timeZone }),
+      describeEntryProvenance({
+        entry,
+        revisions: entry.revisions,
+        attachments: entry.attachments,
+        timeZone: clock.timeZone,
+      }),
     );
   }
   return {

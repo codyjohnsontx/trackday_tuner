@@ -42,6 +42,18 @@ import { bucketsDeclaredIn, type DeclaredBucket } from './helpers/storage-bucket
 //     app/, components/ or lib/ uploads to, which is session-photos: the mobile
 //     app writes it, from outside the roots this file scans
 //
+// A SECOND SHAPE IS ACCEPTED, and only for a bucket named in SERVER_ONLY_BUCKETS
+// with its reason: a PRIVATE bucket no rider reaches at all. `service-book` holds
+// receipts and photos; the server mints a signed upload URL for a path the
+// database reserved and a signed read URL after the rider's own select of the
+// row (20261014000400), so a storage.objects policy for `authenticated` would
+// only open a second door. Such a bucket must be declared `public = false`, must
+// never be read through `getPublicUrl`, and must have NO policy on
+// storage.objects naming it - any policy is the violation, owner-scoped or not.
+// Zero policies on a private bucket is stricter than the first shape, not
+// weaker; what this list stops is the first shape's requirement being dropped
+// for a bucket by accident.
+//
 // WHAT IT DOES NOT CATCH: whether the bucket is actually seeded, which depends on
 // the CLI reading the block; whether the predicate is *right* - a policy naming
 // the bucket and `auth.uid()` in a comparison that admits everyone still passes
@@ -68,6 +80,12 @@ function sourceFiles(dir: string): string[] {
     return [full];
   });
 }
+
+/** Buckets only the server touches, through signed URLs, each with why. */
+export const SERVER_ONLY_BUCKETS: Record<string, string> = {
+  'service-book':
+    'Receipts and photos on service book entries. Uploads use signed URLs for paths reserve_service_attachment minted, reads use signed URLs minted after the rider selects the row (20261014000400).',
+};
 
 interface BucketUse {
   name: string;
@@ -143,8 +161,10 @@ export function provisioningViolations(
   uses: BucketUse[],
   declared: DeclaredBucket[],
   policies: StoragePolicy[],
+  serverOnly: Record<string, string> = SERVER_ONLY_BUCKETS,
 ): string[] {
   const violations: string[] = [];
+  const isServerOnly = (name: string) => Object.hasOwn(serverOnly, name);
 
   for (const use of uses) {
     const bucket = declared.find((candidate) => candidate.name === use.name);
@@ -160,7 +180,9 @@ export function provisioningViolations(
       );
     }
 
-    violations.push(...ownerPolicyViolations(use.name, policies));
+    violations.push(
+      ...(isServerOnly(use.name) ? serverOnlyViolations(bucket, policies) : ownerPolicyViolations(use.name, policies)),
+    );
   }
 
   // A bucket declared for a client outside app/, components/ and lib/ - the
@@ -169,9 +191,24 @@ export function provisioningViolations(
   // a bucket is the commitment, so it carries the same policies.
   for (const bucket of declared) {
     if (uses.some((use) => use.name === bucket.name)) continue;
-    violations.push(...ownerPolicyViolations(bucket.name, policies));
+    violations.push(
+      ...(isServerOnly(bucket.name) ? serverOnlyViolations(bucket, policies) : ownerPolicyViolations(bucket.name, policies)),
+    );
   }
 
+  return violations;
+}
+
+function serverOnlyViolations(bucket: DeclaredBucket, policies: StoragePolicy[]): string[] {
+  const violations: string[] = [];
+  if (bucket.public) {
+    violations.push(`bucket ${bucket.name} is server-only and must be declared public = false`);
+  }
+  for (const policy of policies.filter((candidate) => candidate.bucket === bucket.name)) {
+    violations.push(
+      `${policy.file}: bucket ${bucket.name} is server-only, so no ${policy.command} policy on storage.objects may name it`,
+    );
+  }
   return violations;
 }
 
@@ -218,6 +255,16 @@ describe('every storage bucket the application uploads to is provisioned by the 
     // to escape STORAGE_FROM would silently take the whole invariant with it.
     expect(uses).toEqual([
       {
+        name: 'service-book',
+        readPublicly: false,
+        files: [
+          'app/api/monitoring/service-attachment-sweep/route.ts',
+          'app/api/service-book/attachments/[attachmentId]/route.ts',
+          'components/service-book/service-entry-attachments.tsx',
+          'lib/actions/service-attachments.ts',
+        ],
+      },
+      {
         name: 'vehicle-photos',
         readPublicly: true,
         files: ['components/garage/vehicle-form.tsx'],
@@ -229,10 +276,20 @@ describe('every storage bucket the application uploads to is provisioned by the 
     expect(provisioningViolations(uses, declared, policies)).toEqual([]);
   });
 
+  it('declares the service book bucket private, JPEG and PDF only, with no rider policy', () => {
+    expect(declared).toContainEqual({
+      name: 'service-book',
+      public: false,
+      allowedMimeTypes: ['image/jpeg', 'application/pdf'],
+      fileSizeLimit: 25 * 1024 * 1024,
+    });
+    expect(policies.filter((policy) => policy.bucket === 'service-book')).toEqual([]);
+  });
+
   it('declares the session photo bucket the mobile app uploads to, public like the bike photo', () => {
     // No website code uploads here, so the scan above cannot see it; the check
     // above still holds it to owner-scoped policies because it is declared.
-    expect(declared).toContainEqual({ name: 'session-photos', public: true, allowedMimeTypes: ['image/*'] });
+    expect(declared).toContainEqual({ name: 'session-photos', public: true, allowedMimeTypes: ['image/*'], fileSizeLimit: null });
   });
 });
 
@@ -344,8 +401,8 @@ file_size_limit = "10MiB"
 public = true
 `);
     expect(neighbour).toEqual([
-      { name: 'vehicle-photos', public: false, allowedMimeTypes: null },
-      { name: 'avatars', public: true, allowedMimeTypes: null },
+      { name: 'vehicle-photos', public: false, allowedMimeTypes: null, fileSizeLimit: 10 * 1024 * 1024 },
+      { name: 'avatars', public: true, allowedMimeTypes: null, fileSizeLimit: null },
     ]);
   });
 
@@ -455,6 +512,64 @@ public = true
       },
     ]);
     expect(commented).toEqual([]);
+  });
+
+  describe('a server-only private bucket', () => {
+    const serverOnly = { receipts: 'signed URLs only' };
+    const action = {
+      file: 'lib/actions/receipts.ts',
+      source: `await admin.storage.from('receipts').createSignedUploadUrl(path);`,
+    };
+    const actionUses = bucketsUsedBy([action]);
+    const declaredPrivate = bucketsDeclaredIn(`
+[storage.buckets.receipts]
+public = false
+`);
+
+    it('accepts it declared private with no policy', () => {
+      expect(provisioningViolations(actionUses, declaredPrivate, [], serverOnly)).toEqual([]);
+    });
+
+    it('holds a private bucket not on the list to the owner policies', () => {
+      // The list is what grants the exemption; being private is not.
+      expect(provisioningViolations(actionUses, declaredPrivate, [], {})).toEqual([
+        'no migration writes a select policy on storage.objects for bucket receipts',
+        'no migration writes a insert policy on storage.objects for bucket receipts',
+        'no migration writes a update policy on storage.objects for bucket receipts',
+      ]);
+    });
+
+    it('catches it declared public', () => {
+      const declaredPublicReceipts = bucketsDeclaredIn(`
+[storage.buckets.receipts]
+public = true
+`);
+      expect(provisioningViolations(actionUses, declaredPublicReceipts, [], serverOnly)).toEqual([
+        'bucket receipts is server-only and must be declared public = false',
+      ]);
+    });
+
+    it('catches any policy that names it, owner-scoped or not', () => {
+      const opened = storagePoliciesIn([
+        {
+          file: 'policies.sql',
+          sql: `
+            create policy "receipts: select own"
+              on storage.objects for select to authenticated
+              using (bucket_id = 'receipts' and (storage.foldername(name))[1] = auth.uid()::text);
+          `,
+        },
+      ]);
+      expect(provisioningViolations(actionUses, declaredPrivate, opened, serverOnly)).toEqual([
+        'policies.sql: bucket receipts is server-only, so no select policy on storage.objects may name it',
+      ]);
+    });
+
+    it('catches it undeclared', () => {
+      expect(provisioningViolations(actionUses, [], [], serverOnly)).toEqual([
+        'lib/actions/receipts.ts uploads to bucket receipts, which supabase/config.toml never declares',
+      ]);
+    });
   });
 
   it('does not read a spec that names the bucket as an upload to it', () => {

@@ -30,6 +30,18 @@ function databaseContainer(): string {
 
 /** Runs `sql` in one transaction, so a statement that raises leaves nothing behind. */
 export function runAsAuthAdmin(sql: string): SqlResult {
+  return runAs('supabase_auth_admin', sql);
+}
+
+/**
+ * The same, as `postgres`, for a fact the Data API cannot set - a stored
+ * object's `created_at`, which only time moves.
+ */
+export function runAsPostgres(sql: string): SqlResult {
+  return runAs('postgres', sql);
+}
+
+function runAs(role: string, sql: string): SqlResult {
   const result = spawnSync(
     'docker',
     [
@@ -37,7 +49,7 @@ export function runAsAuthAdmin(sql: string): SqlResult {
       '-i',
       databaseContainer(),
       'psql',
-      'postgresql://supabase_auth_admin:postgres@127.0.0.1:5432/postgres',
+      `postgresql://${role}:postgres@127.0.0.1:5432/postgres`,
       '--no-psqlrc',
       '--tuples-only',
       '--no-align',

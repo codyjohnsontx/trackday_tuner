@@ -30,6 +30,7 @@ const RULES = [
   'lib/service-book/entry-draft.ts',
   'lib/service-book/reminders.ts',
   'lib/service-book/book-data.ts',
+  'lib/service-book/attachments.ts',
 ];
 
 /** Every file the rules may reach when they run. */

@@ -14,8 +14,10 @@ vi.mock('@/lib/rag/retriever', () => ({ loadKnowledgeIndex, isKnowledgeIndexLoad
 
 import {
   AI_TEXT_RETENTION_GRACE_MS,
+  ATTACHMENT_SWEEP_GRACE_MS,
   HEALTH_CHECK_TIMEOUT_MS,
   checkAiTextRetention,
+  checkAttachmentSweep,
   checkRagIndex,
   checkSupabase,
 } from '@/lib/monitoring/health';
@@ -332,6 +334,125 @@ describe('checkAiTextRetention', () => {
 
     expect(check.status).toBe('fail');
     expect(check.detail).toBe('MissingCountError');
+  });
+});
+
+describe('checkAttachmentSweep', () => {
+  const now = new Date('2026-12-01T12:00:00.000Z');
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('passes when no reservation is older than two days, asking only about pending rows', async () => {
+    const requests = stubCountingPostgrest({});
+
+    const check = await checkAttachmentSweep(now);
+
+    expect(check.status).toBe('ok');
+    expect(check.detail).toBe('0 stale');
+    const sweep = requestTo(requests, 'service_attachments');
+    expect(sweep.method).toBe('GET');
+    expect(sweep.prefer).toContain('count=exact');
+    expect(sweep.url.searchParams.get('status')).toBe('eq.pending');
+    const cutoff = new Date(now.getTime() - ATTACHMENT_SWEEP_GRACE_MS).toISOString();
+    expect(sweep.url.searchParams.get('created_at')).toBe(`lt.${cutoff}`);
+    expect(cutoff).toBe('2026-11-29T12:00:00.000Z');
+  });
+
+  // The sweep not running is the failure this exists to report: every stale
+  // reservation is a slot a free rider cannot use.
+  it('fails naming the count when reservations have outlived the sweep', async () => {
+    stubCountingPostgrest({
+      service_attachments: { status: 200, payload: [{ id: 'att-1' }], contentRange: '0-0/4' },
+    });
+
+    const check = await checkAttachmentSweep(now);
+
+    expect(check.status).toBe('fail');
+    expect(check.detail).toBe('StaleAttachmentReservationError:4');
+    expect(JSON.stringify(check)).not.toContain('att-1');
+  });
+
+  it('fails with the PostgREST code when the table is missing', async () => {
+    stubCountingPostgrest({
+      service_attachments: {
+        status: 404,
+        payload: { code: 'PGRST205', details: null, hint: null, message: "Could not find the table 'public.service_attachments' in the schema cache" },
+        contentRange: null,
+      },
+    });
+
+    const check = await checkAttachmentSweep(now);
+
+    expect(check.status).toBe('fail');
+    expect(check.detail).toBe('SupabaseError:PGRST205');
+  });
+
+  it('fails when the answer carries no count', async () => {
+    stubCountingPostgrest({ service_attachments: { status: 200, payload: [], contentRange: null } });
+
+    const check = await checkAttachmentSweep(now);
+
+    expect(check.status).toBe('fail');
+    expect(check.detail).toBe('MissingCountError');
+  });
+
+  it('asks for the oldest object no ready attachment names', async () => {
+    const requests = stubCountingPostgrest({});
+
+    await checkAttachmentSweep(now);
+
+    const orphans = requestTo(requests, 'rpc/service_attachment_orphan_objects');
+    expect(orphans.method).toBe('POST');
+  });
+
+  // The object sweep not running is the other failure: abandoned files fill the
+  // free plan's 1 GB while every row count reads healthy.
+  it('fails when an orphaned object has outlived the object sweep', async () => {
+    stubCountingPostgrest({
+      'rpc/service_attachment_orphan_objects': {
+        status: 200,
+        payload: [{ name: 'book-1/att-1.jpg', created_at: '2026-11-29T11:59:59.000Z' }],
+        contentRange: null,
+      },
+    });
+
+    const check = await checkAttachmentSweep(now);
+
+    expect(check.status).toBe('fail');
+    expect(check.detail).toBe('OrphanedAttachmentObjectError');
+    expect(JSON.stringify(check)).not.toContain('book-1');
+  });
+
+  it('passes while the oldest orphaned object is still inside the sweep window', async () => {
+    stubCountingPostgrest({
+      'rpc/service_attachment_orphan_objects': {
+        status: 200,
+        payload: [{ name: 'book-1/att-1.jpg', created_at: '2026-11-30T12:00:00.000Z' }],
+        contentRange: null,
+      },
+    });
+
+    const check = await checkAttachmentSweep(now);
+
+    expect(check.status).toBe('ok');
+  });
+
+  it('fails with the PostgREST code when the orphan listing is missing', async () => {
+    stubCountingPostgrest({
+      'rpc/service_attachment_orphan_objects': {
+        status: 404,
+        payload: { code: 'PGRST202', details: null, hint: null, message: 'Could not find the function public.service_attachment_orphan_objects(p_limit) in the schema cache' },
+        contentRange: null,
+      },
+    });
+
+    const check = await checkAttachmentSweep(now);
+
+    expect(check.status).toBe('fail');
+    expect(check.detail).toBe('SupabaseError:PGRST202');
   });
 });
 

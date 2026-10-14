@@ -65,7 +65,7 @@ export const STORAGE_REMOVE_BATCH_LIMIT = 1000;
  * session a rider was told is gone. Session photos are removed BEFORE their rows
  * (owner's decision, 2026-09-26): the answer is `true` only when every batch came
  * back without an error, and a caller keeps the row on `false` so the rider can
- * try again with nothing orphaned; `removeObjectsAfterDelete` then sweeps their
+ * try again with nothing orphaned; `removeKnownObjects` then sweeps their
  * fixed paths once the rows are gone. The bike's own photo is still removed
  * after its row, and that caller ignores the answer.
  *
@@ -125,18 +125,21 @@ export async function removeOwnedPhotos(
 }
 
 /**
- * Remove objects at known paths once their rows are already gone, and say
- * whether Storage confirmed it.
+ * Remove objects at paths the caller already knows, and say whether Storage
+ * confirmed it.
  *
  * A session photo lives at the one path `sessionPhotoObjectPath` derives, and a
  * phone can upload to it between the removal before a delete and the delete
  * itself - with the same URL, or onto a session whose `photo_url` was still null
- * when it was read - so the delete's own check cannot see it. This second pass
- * removes that path again after the delete. It is best effort: an object that
- * is not there is the ordinary case and is not reported, a failure is reported,
- * and nothing here can undo the delete, so the caller only passes the answer on.
+ * when it was read - so the delete's own check cannot see it. This removes that
+ * path again after the delete, where nothing can undo the delete and the caller
+ * only passes the answer on. A service book attachment's paths are the ones its
+ * row names, removed before the bike is deleted, where the caller keeps the bike
+ * on `false`. Either way an object that is not there is the ordinary case and is
+ * not reported - a reservation whose upload never arrived, a photo slot never
+ * used - and a failure is.
  */
-export async function removeObjectsAfterDelete(
+export async function removeKnownObjects(
   supabase: Pick<SupabaseClient, 'storage'>,
   {
     bucket,

@@ -39,15 +39,10 @@ export type ProvenanceEntry = Pick<Tables<'service_entries'>, 'service_date' | '
 export type ProvenanceRevision = Pick<Tables<'service_entry_revisions'>, 'revision' | 'kind' | 'changed_at'>;
 
 /**
- * An attachment as provenance needs it. The `service_attachments` table arrives
- * with the attachments change; these are the columns that plan gives it, and
- * this type is to be pointed at the table's own row once it exists.
+ * An attachment as provenance needs it: its kind, and when its upload was
+ * confirmed (`null` while it is still pending).
  */
-export interface ProvenanceAttachment {
-  kind: 'receipt' | 'invoice' | 'photo' | 'manual_page' | 'book_page';
-  /** When the upload was confirmed; `null` while it is still pending. */
-  uploaded_at: string | null;
-}
+export type ProvenanceAttachment = Pick<Tables<'service_attachments'>, 'kind' | 'uploaded_at'>;
 
 export type TimingLabel =
   | { kind: 'logged_same_day'; text: string }

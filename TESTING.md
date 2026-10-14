@@ -134,6 +134,11 @@ service book migrations through `20261013000300` (`save_service_entry`) applied.
 through the real form: a bike whose oil is one short session from overdue,
 the notice on the session page, the chips on the garage card and the
 dashboard, the rider weighting the day to nothing, and a snooze from the book.
+`tests/e2e/service-book-attachments.spec.ts` has the same shape and also needs
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`, `20261014000400` applied and the private
+`service-book` bucket from `[storage.buckets.service-book]`, which `supabase
+start` or `db reset` seeds; without the bucket every upload fails rather than
+skipping.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a

@@ -203,6 +203,9 @@ function buildEntry(seed: DemoEntrySeed): { record: ServiceEntryRecord; revision
       items,
       parts,
       revisions: revisions.map(({ revision, kind, changed_at }) => ({ revision, kind, changed_at })),
+      // The demo has no stored objects to sign, so its entries carry no
+      // receipts: a tile that could never open would advertise a broken page.
+      attachments: [],
     },
     revisions,
   };
@@ -280,6 +283,7 @@ export function getDemoServiceBook(vehicleId: string): DemoServiceBookRead | nul
       laps,
       weights: [],
       overrides: [],
+      attachmentCount: 0,
     },
   });
 }

@@ -3904,6 +3904,500 @@ drop function if exists public.save_service_entry(uuid, uuid, jsonb, jsonb, json
 commit;
 ```
 
+### Apply service book attachments by hand
+
+`20261014000400` adds receipts, invoices and photos to service book entries
+(owner, 2026-10-08: Q3, Q7 and PQ3). It creates `service_attachments`, the
+`reserve_service_attachment` and `confirm_service_attachment` functions the
+entry page calls, `service_attachment_allowance` (25 per bike and 10 MB per file
+on the free plan, unlimited and 25 MB on Pro), and a daily `pg_cron` job,
+`purge-stale-service-attachments`, that deletes reservations nobody confirmed
+within a day, and `service_attachment_orphan_objects`, which lists the files
+`/api/monitoring/service-attachment-sweep` then removes through the Storage API. The files live in a **private** `service-book` bucket that no
+storage policy opens to a rider: the server signs every upload and every read.
+The bucket comes from `[storage.buckets.service-book]` in
+`supabase/config.toml`, which the SQL editor cannot read, so step 2 creates it
+with the same settings; on a linked project `npx supabase seed buckets --linked`
+does the same. **Apply after "Save a service entry in one transaction, by hand"
+and before merging the pull request that adds attachments**: the entry page
+reads `service_attachments` on every load, so a deploy ahead of this paste
+fails every book page with `PGRST205`, and `/api/health` reports
+`attachment_sweep` and `schema_contract` red.
+
+**1. Precheck (read-only).**
+
+```sql
+-- hosted-service-attachments-precheck
+select
+  to_regclass('public.service_attachments') is not null as table_exists,
+  to_regclass('public.service_entries') is not null as service_book_exists,
+  to_regprocedure('public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)') is not null as entry_save_exists,
+  exists (select 1 from pg_available_extensions where name = 'pg_cron') as pg_cron_available,
+  (select count(*) from storage.buckets where id = 'service-book') as bucket_rows,
+  (select count(*) from pg_policies
+    where schemaname = 'storage' and tablename = 'objects'
+      and coalesce(qual, '') || coalesce(with_check, '') like '%service-book%') as service_book_policies;
+```
+
+Expect `false`, `true`, `true`, `true`, then `0` or `1` (the bucket may already
+have been seeded with `npx supabase seed buckets --linked`), then `0`.
+
+- `table_exists` `true` means it is already there: run the verify query instead,
+  and re-run only the `create or replace function` statements if a body no
+  longer matches. `create policy` is not idempotent, so the whole block would
+  roll back on the duplicate.
+- `service_book_exists` or `entry_save_exists` `false` means an earlier block is
+  missing: apply "Apply the service book tables by hand" and "Save a service
+  entry in one transaction, by hand" first.
+- `pg_cron_available` `false` means the sweep cannot live in the database on this
+  project. Stop and say so rather than applying the table without its sweep: a
+  free rider's abandoned uploads would hold their slots for good.
+- `service_book_policies` above `0` means somebody opened the bucket to riders
+  by hand. Stop: the design is that no policy names it, and the verify query
+  will read it as a failure.
+
+**2. Apply.** The migration, whole, then the bucket, in one transaction.
+`tests/unit/hosted-service-attachments-runbook.test.ts` fails if this block and
+the migration ever differ, or if the bucket's settings differ from
+`supabase/config.toml`.
+
+```sql
+-- hosted-service-attachments: mirror of supabase/migrations/20261014000400_add_service_attachments.sql
+-- plus the bucket that supabase/config.toml declares
+begin;
+-- Receipts, invoices and photos on a service book entry.
+--
+-- Owner decisions, 2026-10-08: an entry can carry attachments for receipts,
+-- invoices and photos (Q3); the core book is free with a reasonable attachment
+-- allowance and Pro gets unlimited attachments (Q7); and on the Supabase free
+-- plan (1 GB storage, 5 GB egress) the free allowance is 25 attachments per bike
+-- at 10 MB each (PQ3). Pro is held only to the bucket's 25 MB per file.
+--
+-- THE BUCKET IS PRIVATE AND NO RIDER POLICY TOUCHES IT. `service-book` is
+-- declared `public = false` in supabase/config.toml, and this file writes no
+-- policy on storage.objects for it, so neither `anon` nor `authenticated` can
+-- read, list or write an object there through the Storage API. Every write is
+-- a signed upload URL the server mints for a path this file chose, and every
+-- read is a signed URL the server mints after the rider's own select of the
+-- row - so who may see a receipt is decided by the row's RLS, once.
+--
+-- A WRITE IS RESERVED, UPLOADED, THEN CONFIRMED:
+--
+-- 1. `reserve_service_attachment` takes a per-book lock, checks the rider owns
+--    the book and the entry, counts the book's attachments against the
+--    allowance, and inserts a `pending` row whose object path it mints:
+--    `<book id>/<attachment id>.jpg` (with `.thumb.jpg` beside it) or `.pdf`.
+--    Over the count is TT402 and over the per-file size TT413. The count holds
+--    every `ready` row and every `pending` row younger than a day, so two
+--    reserves racing for the last slot cannot both get it: the second waits on
+--    the lock and then counts the first.
+-- 2. The server mints a signed upload URL for each path and the browser uploads
+--    straight to storage, resized first, so no photo passes through a function.
+-- 3. `confirm_service_attachment` flips the row to `ready` only once the object
+--    is really there: it reads storage.objects for the path, and refuses an
+--    object missing, of another type, or over the rider's per-file size, a
+--    thumbnail missing or not a JPEG of at most 1 MB, and a reservation a day
+--    old, which the count no longer holds. The
+--    size kept on the row is the stored object's, not the one the browser
+--    declared. `uploaded_at` is set here and nowhere else, and it is what the
+--    "Receipt attached when logged" label reads.
+--
+-- A reservation nobody confirms - a closed tab, a failed upload - is swept: a
+-- daily pg_cron job deletes `pending` rows older than a day, and /api/health's
+-- `attachment_sweep` check fails when one is more than two days old, which is
+-- what proves the job runs. A signed upload URL lives two hours, so nothing can
+-- arrive for a row once it is old enough to sweep. SQL cannot delete the object
+-- itself (storage.objects refuses a direct delete), so the objects go through
+-- the Storage API instead: the app removes those of an upload it sees fail, and
+-- a scheduled route (/api/monitoring/service-attachment-sweep) removes every
+-- object more than a day old that no `ready` row names, which
+-- `service_attachment_orphan_objects` lists. That object sweep is what catches
+-- an upload abandoned before confirm, the files of a deleted bike, and an
+-- upload sent to a signed URL after its reservation was discarded - a signed
+-- upload token cannot be revoked. /api/health's `attachment_sweep` fails when
+-- such an object is more than two days old.
+--
+-- An attachment is not part of the entry's snapshot, so adding one writes no
+-- revision and an entry stays "Unedited". `entry_id` is required for the kinds
+-- this file accepts; `manual_page` and `book_page` are in the check for the
+-- photo-reading slice, which writes them through a function of its own.
+
+create table if not exists public.service_attachments (
+  id uuid primary key default gen_random_uuid(),
+  book_id uuid not null references public.service_books(id) on delete cascade,
+  entry_id uuid references public.service_entries(id) on delete cascade,
+  kind text not null check (kind in ('receipt', 'invoice', 'photo', 'manual_page', 'book_page')),
+  object_path text not null unique,
+  thumb_path text unique,
+  mime text not null check (mime in ('image/jpeg', 'application/pdf')),
+  bytes integer not null check (bytes > 0),
+  status text not null default 'pending' check (status in ('pending', 'ready')),
+  uploaded_at timestamptz,
+  created_by uuid not null,
+  created_at timestamptz not null default now(),
+  constraint service_attachments_ready_is_uploaded check ((status = 'ready') = (uploaded_at is not null))
+);
+
+create index if not exists service_attachments_book_idx on public.service_attachments(book_id, status);
+create index if not exists service_attachments_entry_idx on public.service_attachments(entry_id);
+create index if not exists service_attachments_pending_idx
+  on public.service_attachments(created_at)
+  where status = 'pending';
+
+alter table public.service_attachments enable row level security;
+
+create policy "service_attachments: select own"
+  on public.service_attachments for select
+  using (public.service_book_owned(book_id));
+
+-- Reads only: every write goes through the functions below.
+revoke all on public.service_attachments from public, anon, authenticated;
+grant select on public.service_attachments to authenticated;
+
+-- What the calling rider may attach: how many per bike (null is unlimited) and
+-- how large one file may be. Pro is the rule `resolveUserAccess` (lib/access.ts)
+-- applies and create_session_with_laps (20260928002300) mirrors; 25 and the two
+-- sizes are the numbers lib/plans.ts prints. tests/db/service-attachments.spec.ts
+-- holds this to both, on a real database. security invoker: it reads only the
+-- rider's own profile.
+create or replace function public.service_attachment_allowance(out max_count integer, out max_bytes integer)
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select case when a.unlimited then null else 25 end,
+         case when a.unlimited then 26214400 else 10485760 end
+    from (
+      select coalesce((
+        select p.tier = 'pro'
+               or (p.beta_access_expires_at > now()
+                   and (p.beta_access_started_at is null or p.beta_access_started_at <= now()))
+          from public.profiles p
+         where p.id = auth.uid()
+      ), false) as unlimited
+    ) a;
+$$;
+
+revoke all on function public.service_attachment_allowance() from public, anon, authenticated, service_role;
+grant execute on function public.service_attachment_allowance() to authenticated;
+
+-- security definer because a rider holds no insert on the table, so the cap
+-- cannot be skipped by inserting directly. It acts only for `auth.uid()`, on a
+-- book and a live entry that rider owns. Returns the row's id and paths.
+create or replace function public.reserve_service_attachment(
+  p_book_id uuid,
+  p_entry_id uuid,
+  p_kind text,
+  p_mime text,
+  p_bytes integer
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_allowance record;
+  v_id uuid := gen_random_uuid();
+  v_object_path text;
+  v_thumb_path text;
+begin
+  if auth.uid() is null then
+    raise exception 'reserve_service_attachment needs a signed-in rider' using errcode = '42501';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended('reserve_service_attachment:' || p_book_id::text, 0));
+
+  if not public.service_book_owned(p_book_id) then
+    raise exception 'this service book is not one of this rider''s' using errcode = 'TT404';
+  end if;
+  if not exists (
+    select 1
+      from public.service_entries e
+     where e.id = p_entry_id
+       and e.book_id = p_book_id
+       and e.deleted_at is null
+  ) then
+    raise exception 'entry not found in this service book' using errcode = 'TT404';
+  end if;
+
+  if p_kind is null or p_kind not in ('receipt', 'invoice', 'photo') then
+    raise exception 'an entry attachment is a receipt, an invoice or a photo' using errcode = '22023';
+  end if;
+  if p_mime is null or p_mime not in ('image/jpeg', 'application/pdf') then
+    raise exception 'an attachment is a JPEG image or a PDF' using errcode = '22023';
+  end if;
+  if p_bytes is null or p_bytes <= 0 then
+    raise exception 'an attachment has a size' using errcode = '22023';
+  end if;
+
+  select * into v_allowance from public.service_attachment_allowance();
+
+  if p_bytes > v_allowance.max_bytes then
+    raise exception 'one attachment may be at most % bytes', v_allowance.max_bytes using errcode = 'TT413';
+  end if;
+
+  if v_allowance.max_count is not null and (
+    select count(*)
+      from public.service_attachments a
+     where a.book_id = p_book_id
+       and (a.status = 'ready' or a.created_at > now() - interval '1 day')
+  ) >= v_allowance.max_count then
+    raise exception 'the free plan holds % attachments per bike', v_allowance.max_count using errcode = 'TT402';
+  end if;
+
+  if p_mime = 'image/jpeg' then
+    v_object_path := p_book_id::text || '/' || v_id::text || '.jpg';
+    v_thumb_path := p_book_id::text || '/' || v_id::text || '.thumb.jpg';
+  else
+    v_object_path := p_book_id::text || '/' || v_id::text || '.pdf';
+  end if;
+
+  insert into public.service_attachments (id, book_id, entry_id, kind, object_path, thumb_path, mime, bytes, created_by)
+  values (v_id, p_book_id, p_entry_id, p_kind, v_object_path, v_thumb_path, p_mime, p_bytes, auth.uid());
+
+  return jsonb_build_object('id', v_id, 'object_path', v_object_path, 'thumb_path', v_thumb_path);
+end;
+$$;
+
+-- A rider calls it; nobody else may. Revoked from service_role by name, because
+-- the hosted project hands execute on every new public function to it.
+revoke all on function public.reserve_service_attachment(uuid, uuid, text, text, integer) from public, anon, authenticated, service_role;
+grant execute on function public.reserve_service_attachment(uuid, uuid, text, text, integer) to authenticated;
+
+-- security definer because it writes a row a rider holds no update on, and
+-- reads storage.objects, which no rider policy reaches in this bucket. It
+-- confirms only a pending row of a book the caller owns that still counts
+-- toward the allowance, and only what storage actually holds. Returns the
+-- confirmed row.
+create or replace function public.confirm_service_attachment(p_attachment_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_row public.service_attachments;
+  v_size bigint;
+  v_mime text;
+  v_thumb_size bigint;
+  v_thumb_mime text;
+  v_max_bytes integer;
+begin
+  if auth.uid() is null then
+    raise exception 'confirm_service_attachment needs a signed-in rider' using errcode = '42501';
+  end if;
+
+  select a.* into v_row
+    from public.service_attachments a
+   where a.id = p_attachment_id
+     and public.service_book_owned(a.book_id)
+   for update;
+
+  if not found then
+    raise exception 'attachment not found' using errcode = 'TT404';
+  end if;
+  if v_row.status = 'ready' then
+    return to_jsonb(v_row);
+  end if;
+  if v_row.created_at <= now() - interval '1 day' then
+    raise exception 'the reservation has expired' using errcode = 'TT404';
+  end if;
+
+  select (o.metadata ->> 'size')::bigint, o.metadata ->> 'mimetype'
+    into v_size, v_mime
+    from storage.objects o
+   where o.bucket_id = 'service-book'
+     and o.name = v_row.object_path;
+
+  if v_size is null then
+    raise exception 'the upload has not arrived' using errcode = 'TT404';
+  end if;
+  if v_row.thumb_path is not null then
+    select (o.metadata ->> 'size')::bigint, o.metadata ->> 'mimetype'
+      into v_thumb_size, v_thumb_mime
+      from storage.objects o
+     where o.bucket_id = 'service-book'
+       and o.name = v_row.thumb_path;
+
+    if v_thumb_size is null then
+      raise exception 'the thumbnail has not arrived' using errcode = 'TT404';
+    end if;
+  end if;
+  if v_mime is distinct from v_row.mime then
+    raise exception 'the upload is not the type that was reserved' using errcode = '22023';
+  end if;
+  if v_row.thumb_path is not null and (v_thumb_mime is distinct from 'image/jpeg' or v_thumb_size > 1048576) then
+    raise exception 'the thumbnail is not a JPEG of at most 1 MB' using errcode = '22023';
+  end if;
+
+  select a.max_bytes into v_max_bytes from public.service_attachment_allowance() a;
+  if v_size > v_max_bytes then
+    raise exception 'one attachment may be at most % bytes', v_max_bytes using errcode = 'TT413';
+  end if;
+
+  update public.service_attachments a
+     set status = 'ready',
+         uploaded_at = now(),
+         bytes = v_size
+   where a.id = v_row.id
+  returning a.* into v_row;
+
+  return to_jsonb(v_row);
+end;
+$$;
+
+revoke all on function public.confirm_service_attachment(uuid) from public, anon, authenticated, service_role;
+grant execute on function public.confirm_service_attachment(uuid) to authenticated;
+
+-- Deletes every reservation nobody confirmed within a day. security definer so
+-- the cron job needs no grant on the table. Returns how many rows it removed.
+create or replace function public.purge_stale_service_attachments()
+returns integer
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  removed integer;
+begin
+  delete from public.service_attachments
+   where status = 'pending'
+     and created_at < now() - interval '1 day';
+  get diagnostics removed = row_count;
+  return removed;
+end;
+$$;
+
+revoke all on function public.purge_stale_service_attachments() from public, anon, authenticated, service_role;
+grant execute on function public.purge_stale_service_attachments() to service_role;
+
+-- The objects the scheduled route removes through the Storage API: every
+-- `service-book` object more than a day old that no `ready` attachment names,
+-- oldest first, at most `p_limit` of them (the route asks for what one Storage
+-- `remove` call takes). A day is the reservation window, and an object is never
+-- older than its row, so nothing listed can still be confirmed. security
+-- definer so the route needs no grant on storage.objects.
+create or replace function public.service_attachment_orphan_objects(p_limit integer)
+returns table (name text, created_at timestamptz)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select o.name, o.created_at
+    from storage.objects o
+   where o.bucket_id = 'service-book'
+     and o.created_at < now() - interval '1 day'
+     and not exists (
+       select 1
+         from public.service_attachments a
+        where a.status = 'ready'
+          and (a.object_path = o.name or a.thumb_path = o.name)
+     )
+   order by o.created_at
+   limit p_limit;
+$$;
+
+revoke all on function public.service_attachment_orphan_objects(integer) from public, anon, authenticated, service_role;
+grant execute on function public.service_attachment_orphan_objects(integer) to service_role;
+
+-- cron.schedule with a job name replaces a job of that name, so re-running this
+-- file leaves one job rather than two.
+create extension if not exists pg_cron with schema pg_catalog;
+
+grant usage on schema cron to postgres;
+
+select cron.schedule(
+  'purge-stale-service-attachments',
+  '41 4 * * *',
+  $$select public.purge_stale_service_attachments()$$
+);
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('service-book', 'service-book', false, 26214400, array['image/jpeg', 'application/pdf'])
+on conflict (id) do update
+  set public = excluded.public,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+commit;
+```
+
+If the SQL editor refuses the `storage.buckets` insert, create the bucket in
+the dashboard instead: **Storage → New bucket**, name `service-book`, **Public
+bucket off**, **Restrict file size** on at `25 MB`, **Restrict MIME types** on
+with `image/jpeg, application/pdf`, then **Save**. Add no policy to it. The
+verify query below reads the same four settings either way.
+
+**3. Verify.**
+
+```sql
+-- hosted-service-attachments-verify
+select
+  (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.service_attachments')) as rls_on,
+  has_table_privilege('authenticated', 'public.service_attachments', 'select') as rider_reads,
+  has_any_column_privilege('authenticated', 'public.service_attachments', 'insert, update')
+    or has_table_privilege('authenticated', 'public.service_attachments', 'delete') as rider_writes,
+  has_table_privilege('anon', 'public.service_attachments', 'select') as anon_reads,
+  (select md5(p.prosrc) = 'df08a489fe80ce5fb364a5aa8dc3844c' and p.prosecdef
+     from pg_proc p where p.oid = to_regprocedure('public.reserve_service_attachment(uuid,uuid,text,text,integer)')) as reserve_matches,
+  (select md5(p.prosrc) = '1cb3514415cafd0d9a09a357be7e3558' and p.prosecdef
+     from pg_proc p where p.oid = to_regprocedure('public.confirm_service_attachment(uuid)')) as confirm_matches,
+  (select md5(p.prosrc) = 'c60c406ee407e8cef198e650525e0301' and not p.prosecdef
+     from pg_proc p where p.oid = to_regprocedure('public.service_attachment_allowance()')) as allowance_matches,
+  (select md5(p.prosrc) = '30e3f287f11bcb962a4b40cf8f6cd7e5' and p.prosecdef
+     from pg_proc p where p.oid = to_regprocedure('public.purge_stale_service_attachments()')) as sweep_matches,
+  (select md5(p.prosrc) = 'e35e8630e5645e613af9b03a2ae7fb00' and p.prosecdef
+     from pg_proc p where p.oid = to_regprocedure('public.service_attachment_orphan_objects(integer)')) as orphan_list_matches,
+  has_function_privilege('authenticated', 'public.reserve_service_attachment(uuid,uuid,text,text,integer)', 'execute')
+    and has_function_privilege('authenticated', 'public.confirm_service_attachment(uuid)', 'execute') as rider_can_call,
+  has_function_privilege('anon', 'public.reserve_service_attachment(uuid,uuid,text,text,integer)', 'execute')
+    or has_function_privilege('anon', 'public.confirm_service_attachment(uuid)', 'execute')
+    or has_function_privilege('service_role', 'public.reserve_service_attachment(uuid,uuid,text,text,integer)', 'execute')
+    or has_function_privilege('service_role', 'public.confirm_service_attachment(uuid)', 'execute') as others_can_call,
+  has_function_privilege('service_role', 'public.purge_stale_service_attachments()', 'execute')
+    and has_function_privilege('service_role', 'public.service_attachment_orphan_objects(integer)', 'execute')
+    and not has_function_privilege('authenticated', 'public.purge_stale_service_attachments()', 'execute')
+    and not has_function_privilege('authenticated', 'public.service_attachment_orphan_objects(integer)', 'execute')
+    and not has_function_privilege('anon', 'public.service_attachment_orphan_objects(integer)', 'execute') as only_service_role_sweeps,
+  (select b.public from storage.buckets b where b.id = 'service-book') as bucket_public,
+  (select b.file_size_limit from storage.buckets b where b.id = 'service-book') as bucket_size_limit,
+  (select b.allowed_mime_types from storage.buckets b where b.id = 'service-book') as bucket_mime_types,
+  (select count(*) from pg_policies
+    where schemaname = 'storage' and tablename = 'objects'
+      and coalesce(qual, '') || coalesce(with_check, '') like '%service-book%') as service_book_policies,
+  (select count(*) from cron.job where jobname = 'purge-stale-service-attachments') as sweep_jobs;
+```
+
+Expect `true`, `true`, `false`, `false`, `true`, `true`, `true`, `true`,
+`true`, `true`, `false`, `true`, `false`, `26214400`,
+`{image/jpeg,application/pdf}`, `0`, `1`. A `*_matches` `false` means a body on hosted is not byte for byte the
+migration's: run that `create or replace function` again rather than editing
+in place. `others_can_call` `true` is the hosted default handing execute to
+`service_role`; re-run the function's `revoke`. Row 34 of
+`scripts/sql/audit-migrations-against-database.sql` then reads `present`.
+Whether both sweeps have actually run is `/api/health`'s `attachment_sweep`.
+
+**4. Rollback.** Before any receipt is stored: dropping the table discards every
+attachment row, and the objects stay in the bucket with nothing pointing at
+them. Storage refuses a delete from `storage.buckets` in SQL, so after this
+block delete the `service-book` bucket from the dashboard's Storage page,
+emptying it first if it holds anything.
+
+```sql
+-- hosted-service-attachments-rollback
+begin;
+select cron.unschedule('purge-stale-service-attachments');
+drop function if exists public.service_attachment_orphan_objects(integer);
+drop function if exists public.purge_stale_service_attachments();
+drop function if exists public.confirm_service_attachment(uuid);
+drop function if exists public.reserve_service_attachment(uuid, uuid, text, text, integer);
+drop function if exists public.service_attachment_allowance();
+drop table if exists public.service_attachments;
+commit;
+```
+
 ## Invite a Rider
 
 ```bash

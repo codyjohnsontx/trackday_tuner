@@ -68,6 +68,10 @@ const AUTO_CREATED_TRACK_IS_REFERENCED = "to_regprocedure('public.auto_created_t
 const RECORD_DELETED_SESSION = "to_regprocedure('public.record_deleted_session()')";
 const RELINK_LEGACY_SESSION_TRACKS = "to_regprocedure('public.relink_legacy_session_tracks(uuid)')";
 const SAVE_SERVICE_ENTRY = "to_regprocedure('public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)')";
+const RESERVE_SERVICE_ATTACHMENT = "to_regprocedure('public.reserve_service_attachment(uuid,uuid,text,text,integer)')";
+const CONFIRM_SERVICE_ATTACHMENT = "to_regprocedure('public.confirm_service_attachment(uuid)')";
+const SERVICE_ATTACHMENT_ORPHAN_OBJECTS = "to_regprocedure('public.service_attachment_orphan_objects(integer)')";
+const SERVICE_ATTACHMENTS_MIGRATION = '20261014000400_add_service_attachments';
 
 /**
  * The tombstone trigger, proved field by field rather than by name: on
@@ -613,6 +617,46 @@ export const MIGRATION_PROBES = {
       "            and not has_function_privilege('anon', p.oid, 'execute')",
       "            and not has_function_privilege('service_role', p.oid, 'execute')",
       `          from pg_proc p where p.oid = ${SAVE_SERVICE_ENTRY})`,
+    ],
+  },
+  [SERVICE_ATTACHMENTS_MIGRATION]: {
+    note: [
+      'The table, the reserve and confirm functions by their bodies with rider-only',
+      'execute, the private service-book bucket, and the sweep job. The bucket is',
+      'seeded from supabase/config.toml, not the migration, so a hosted project',
+      'can take the SQL and still answer every upload with "Bucket not found".',
+      'cron.job is read through query_to_xml for the reason the ai_request_text',
+      'row gives. Whether the sweeps have RUN: /api/health fails attachment_sweep on',
+      'a pending row, or an object no ready row names, more than 48 hours old.',
+    ],
+    kind: 'table + functions + bucket + cron job',
+    object: 'public.service_attachments, reserve/confirm_service_attachment, service_attachment_orphan_objects, bucket service-book, cron job purge-stale-service-attachments',
+    present: [
+      "to_regclass('public.service_attachments') is not null",
+      `and (select md5(p.prosrc) = '${functionBodyMd5(SERVICE_ATTACHMENTS_MIGRATION, 'reserve_service_attachment')}'`,
+      "            and p.prosecdef and p.proconfig = array['search_path=\"\"']",
+      "            and has_function_privilege('authenticated', p.oid, 'execute')",
+      "            and not has_function_privilege('anon', p.oid, 'execute')",
+      "            and not has_function_privilege('service_role', p.oid, 'execute')",
+      `       from pg_proc p where p.oid = ${RESERVE_SERVICE_ATTACHMENT})`,
+      `and (select md5(p.prosrc) = '${functionBodyMd5(SERVICE_ATTACHMENTS_MIGRATION, 'confirm_service_attachment')}'`,
+      "            and p.prosecdef and p.proconfig = array['search_path=\"\"']",
+      "            and has_function_privilege('authenticated', p.oid, 'execute')",
+      "            and not has_function_privilege('anon', p.oid, 'execute')",
+      "            and not has_function_privilege('service_role', p.oid, 'execute')",
+      `       from pg_proc p where p.oid = ${CONFIRM_SERVICE_ATTACHMENT})`,
+      `and (select md5(p.prosrc) = '${functionBodyMd5(SERVICE_ATTACHMENTS_MIGRATION, 'service_attachment_orphan_objects')}'`,
+      "            and p.prosecdef and p.proconfig = array['search_path=\"\"']",
+      "            and has_function_privilege('service_role', p.oid, 'execute')",
+      "            and not has_function_privilege('anon', p.oid, 'execute')",
+      "            and not has_function_privilege('authenticated', p.oid, 'execute')",
+      `       from pg_proc p where p.oid = ${SERVICE_ATTACHMENT_ORPHAN_OBJECTS})`,
+      "and exists (select 1 from storage.buckets b where b.id = 'service-book' and not b.public)",
+      "and case when to_regclass('cron.job') is null then false",
+      "         else (xpath('count(/table/row)', query_to_xml(",
+      "                 'select jobname from cron.job where jobname = ''purge-stale-service-attachments''',",
+      "                 false, false, '')))[1]::text::int > 0",
+      '    end',
     ],
   },
 };

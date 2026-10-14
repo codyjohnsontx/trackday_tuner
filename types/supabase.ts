@@ -32,6 +32,9 @@ export type ServiceEntryOrigin = 'typed' | 'photo_draft';
 export type ServiceEntryRevisionKind = 'created' | 'edited' | 'deleted' | 'restored' | 'transferred';
 export type VehicleReadingSource = 'rider' | 'entry' | 'transfer';
 export type ServiceDueOverrideKind = 'snooze' | 'skip_cycle' | 'set_next_due';
+export type ServiceAttachmentKind = 'receipt' | 'invoice' | 'photo' | 'manual_page' | 'book_page';
+export type ServiceAttachmentMime = 'image/jpeg' | 'application/pdf';
+export type ServiceAttachmentStatus = 'pending' | 'ready';
 export type ProductEventName =
   | 'beta_signup_completed'
   | 'vehicle_created'
@@ -666,6 +669,51 @@ export type Database = {
         };
         Insert: Record<string, never>;
         Update: Record<string, never>;
+        Relationships: [];
+      };
+      /**
+       * Receipts, invoices and photos on an entry (20261014000400). A rider reads
+       * it; `reserve_service_attachment` and `confirm_service_attachment` write it.
+       */
+      service_attachments: {
+        Row: {
+          id: string;
+          book_id: string;
+          entry_id: string | null;
+          kind: ServiceAttachmentKind;
+          /** `<book id>/<id>.jpg` or `.pdf` in the private `service-book` bucket, minted by the server. */
+          object_path: string;
+          /** The 400px thumbnail beside a JPEG; null for a PDF. */
+          thumb_path: string | null;
+          mime: ServiceAttachmentMime;
+          /** The stored object's size once confirmed; the declared size while pending. */
+          bytes: number;
+          status: ServiceAttachmentStatus;
+          /** When the upload was confirmed; null while pending. */
+          uploaded_at: string | null;
+          created_by: string;
+          created_at: string;
+        };
+        /** The service role only; a rider reserves through the function. */
+        Insert: {
+          id?: string;
+          book_id: string;
+          entry_id?: string | null;
+          kind: ServiceAttachmentKind;
+          object_path: string;
+          thumb_path?: string | null;
+          mime: ServiceAttachmentMime;
+          bytes: number;
+          status?: ServiceAttachmentStatus;
+          uploaded_at?: string | null;
+          created_by: string;
+          created_at?: string;
+        };
+        Update: {
+          status?: ServiceAttachmentStatus;
+          uploaded_at?: string | null;
+          created_at?: string;
+        };
         Relationships: [];
       };
       vehicle_readings: {
@@ -1437,6 +1485,28 @@ export type Database = {
       };
     };
     Functions: {
+      reserve_service_attachment: {
+        Args: {
+          p_book_id: string;
+          /** A live entry of that book. */
+          p_entry_id: string;
+          p_kind: 'receipt' | 'invoice' | 'photo';
+          p_mime: ServiceAttachmentMime;
+          p_bytes: number;
+        };
+        /** `{ id, object_path, thumb_path }`. Over the free plan's count is TT402, over the per-file size TT413. */
+        Returns: Json;
+      };
+      /** What the calling rider may attach: per bike (null is unlimited) and per file, in bytes. */
+      service_attachment_allowance: {
+        Args: Record<string, never>;
+        Returns: { max_count: number | null; max_bytes: number }[];
+      };
+      confirm_service_attachment: {
+        Args: { p_attachment_id: string };
+        /** The confirmed row. TT404 until the upload is in storage; TT413 when it is larger than the rider may keep. */
+        Returns: Json;
+      };
       save_service_entry: {
         Args: {
           p_book_id: string;
@@ -1551,6 +1621,16 @@ export type Database = {
       purge_expired_ai_request_text: {
         Args: Record<string, never>;
         Returns: number;
+      };
+      /** Deletes attachment reservations nobody confirmed within a day; the service role only. */
+      purge_stale_service_attachments: {
+        Args: Record<string, never>;
+        Returns: number;
+      };
+      service_attachment_orphan_objects: {
+        Args: { p_limit: number };
+        /** `service-book` objects more than a day old that no `ready` attachment names, oldest first, at most `p_limit`. */
+        Returns: { name: string; created_at: string }[];
       };
       record_race_engineer_memory_feedback: {
         Args: {
