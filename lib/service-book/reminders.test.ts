@@ -173,6 +173,42 @@ describe('what a session pushed past due', () => {
     expect(describeSessionDuePush(history, early, CLOCK)).toEqual([]);
   });
 
+  it('is raised only on the day that crossed the line, in date order', () => {
+    // Oil at 10 h on a 3 h interval is due at 13 h, due soon from 12 h. Three
+    // 1.5 h days take it to 11.5, 13.0 and 14.5 h.
+    const days = data({
+      book: { tracks_hours: true, tracks_distance: false, distance_unit: 'mi', default_session_minutes: 90, default_session_distance: null },
+      items: [{ id: OIL, name: 'Engine oil and filter', interval_hours: 3, interval_distance: null, interval_days: null, archived_at: null }],
+      entries: [
+        {
+          id: 'e-oil',
+          service_date: '2026-10-01',
+          reading_hours: 10,
+          reading_distance: null,
+          logged_at: '2026-10-01T18:00:00Z',
+          deleted_at: null,
+          items: [{ entry_id: 'e-oil', item_id: OIL }],
+        },
+      ],
+      readings: [{ id: 'r-oil', reading_date: '2026-10-01', read_at: '2026-10-01T18:00:00Z', hours: 10, distance: null, supersedes_id: null }],
+      sessions: [
+        { id: 'oct-2', date: '2026-10-02', created_at: '2026-10-02T15:00:00Z' },
+        { id: 'oct-5', date: '2026-10-05', created_at: '2026-10-05T15:00:00Z' },
+        { id: 'oct-8', date: '2026-10-08', created_at: '2026-10-08T15:00:00Z' },
+      ],
+    });
+    const clock = { today: '2026-10-09', timeZone: 'UTC' };
+    expect(statusOf(computeBookDue(days, clock), OIL)).toBe('overdue');
+
+    expect(describeSessionDuePush(days, 'oct-2', clock)).toEqual([]);
+    expect(describeSessionDuePushText(describeSessionDuePush(days, 'oct-5', clock))).toBe('This day brought Engine oil and filter due soon.');
+    expect(describeSessionDuePushText(describeSessionDuePush(days, 'oct-8', clock))).toBe('This day pushed Engine oil and filter past due.');
+
+    const uncounted = { ...days, weights: [{ session_id: 'oct-8', weight: 0, minutes_override: null, distance_override: null }] };
+    expect(describeSessionDuePush(uncounted, 'oct-8', clock)).toEqual([]);
+    expect(describeSessionDuePushText(describeSessionDuePush(uncounted, 'oct-5', clock))).toBe('This day brought Engine oil and filter due soon.');
+  });
+
   it('is nothing for a session the book does not know', () => {
     expect(describeSessionDuePush(data(), 'elsewhere', CLOCK)).toEqual([]);
   });

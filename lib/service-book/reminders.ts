@@ -11,7 +11,14 @@ import {
   type ItemDueStatus,
 } from '@/lib/service-book/due';
 import { formatDistance, formatHours } from '@/lib/service-book/format';
-import type { UsageBook, UsageLap, UsageReading, UsageSession, UsageWeight } from '@/lib/service-book/usage';
+import {
+  compareSessionsAsc,
+  type UsageBook,
+  type UsageLap,
+  type UsageReading,
+  type UsageSession,
+  type UsageWeight,
+} from '@/lib/service-book/usage';
 
 /**
  * The in-app reminders (owner, Q8 and PQ1: badges on the dashboard and each
@@ -125,28 +132,35 @@ export interface SessionDuePush {
   to: 'due_soon' | 'overdue';
 }
 
+/** The same rows with these sessions weighted 0: still there, so no anchor moves, but adding nothing. */
+function withSessionsUncounted(data: ServiceDueData, sessionIds: readonly string[]): ServiceDueData {
+  const uncounted = new Set(sessionIds);
+  return {
+    ...data,
+    weights: [
+      ...data.weights.filter((weight) => !uncounted.has(weight.session_id)),
+      ...sessionIds.map((sessionId) => ({ session_id: sessionId, weight: 0, minutes_override: null, distance_override: null })),
+    ],
+  };
+}
+
 /**
- * The items this one session carried across `due_soon` or `overdue`: due with
- * the session counted as the rider weighted it, against due with the same
- * session weighted 0, every other row the same. A session the rider weighted 0
- * gives both sides the same rows, so it pushed nothing, which is what lets the
- * rider say "this day did not count" and watch the notice clear. A snoozed item is not pushed - the
- * rider has already answered it - and an item with no interval or no usage to
- * measure cannot be.
+ * The items this one session carried across `due_soon` or `overdue`, in date
+ * order: due with the sessions up to and including this one, as the rider
+ * weighted them, against due with the sessions strictly before it, so only the
+ * day that crossed the line says so. Neither side drops a row - a session left
+ * out is weighted 0 - so the never-done and days anchors are the same on both. A
+ * session the rider weighted 0 gives both sides the same rows, so it pushed
+ * nothing, which is what lets the rider say "this day did not count" and watch
+ * the notice clear. A snoozed item is not pushed - the rider has already
+ * answered it - and an item with no interval or no usage to measure cannot be.
  */
 export function describeSessionDuePush(data: ServiceDueData, sessionId: string, clock: RiderClock): SessionDuePush[] {
-  if (!data.sessions.some((session) => session.id === sessionId)) return [];
-  const withSession = computeBookDue(data, clock);
-  const withoutSession = computeBookDue(
-    {
-      ...data,
-      weights: [
-        ...data.weights.filter((weight) => weight.session_id !== sessionId),
-        { session_id: sessionId, weight: 0, minutes_override: null, distance_override: null },
-      ],
-    },
-    clock,
-  );
+  const session = data.sessions.find((candidate) => candidate.id === sessionId);
+  if (!session) return [];
+  const later = data.sessions.filter((other) => compareSessionsAsc(other, session) > 0).map((other) => other.id);
+  const withSession = computeBookDue(withSessionsUncounted(data, later), clock);
+  const withoutSession = computeBookDue(withSessionsUncounted(data, [...later, sessionId]), clock);
   const before = new Map(withoutSession.map((item) => [item.itemId, item]));
 
   const pushed: SessionDuePush[] = [];
