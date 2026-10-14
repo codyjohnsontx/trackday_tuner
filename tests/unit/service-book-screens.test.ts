@@ -1,7 +1,11 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { DueOverrideForm } from '@/components/service-book/due-override-form';
+import { ServiceDueChip, ServiceDueNotices } from '@/components/service-book/due-badges';
 import { ServiceBookScreen } from '@/components/service-book/service-book-screen';
+import { SessionServicePanel } from '@/components/service-book/session-service-panel';
+import { SessionWeightChoiceRow, SessionWeightSelect } from '@/components/service-book/session-weight';
 import { ServiceBookSettings } from '@/components/service-book/service-book-settings';
 import { ServiceBookSetup } from '@/components/service-book/service-book-setup';
 import { ServiceEntryDetails } from '@/components/service-book/service-entry-details';
@@ -17,7 +21,12 @@ import { getDemoServiceBook, getDemoServiceEntryRevisions } from '@/lib/demo/ser
  *   a default is not an answer (`lib/session-answers.ts`) and the rider's day is
  *   seeded after mount, where it is known;
  * - the demo book offers no save: no form, no "Log service", no settings link,
- *   no reading form (owner, 2026-10-04: the demo is a tour);
+ *   no reading form, no override form and no session weight control (owner,
+ *   2026-10-04: the demo is a tour);
+ * - the override form opens with no kind pressed, and the session weight row
+ *   with nothing pressed until the rider has said, for the same reason;
+ * - the reminders render nothing before the rider's clock is read, so a server
+ *   render never carries a badge worked out from the server's day;
  * - every pressable thing is at least 44 px tall, and the screens use the design
  *   tokens rather than raw palette classes.
  *
@@ -92,6 +101,50 @@ describe('the demo book', () => {
     expect(demoHtml).toContain('Cresson Moto Works');
     expect(demoHtml).toContain('3 entries');
   });
+
+  it('offers no override and no session weight while a real book offers both', () => {
+    expect(demoHtml).not.toContain('Adjust');
+    expect(demoHtml).not.toContain('<select');
+    expect(realHtml).toMatch(/aria-label="Adjust Engine oil and filter"/);
+  });
+});
+
+describe('the reminders', () => {
+  const sessionId = demo.data.sessions[0].id;
+
+  it('render nothing before the rider\'s clock is read', () => {
+    expect(renderToStaticMarkup(createElement(ServiceDueChip, { data: demo.data }))).toBe('');
+    expect(
+      renderToStaticMarkup(createElement(ServiceDueNotices, { vehicles: [{ id: 'demo-r6', nickname: 'R6' }], books: { 'demo-r6': demo.data } })),
+    ).toBe('');
+    const panel = renderToStaticMarkup(createElement(SessionServicePanel, { sessionId, vehicleId: 'demo-r6', data: demo.data, demoMode: false }));
+    expect(panel).not.toContain('service-due-banner');
+  });
+
+  it('open the override form with no kind pressed', () => {
+    const closed = renderToStaticMarkup(
+      createElement(DueOverrideForm, { vehicleId: 'demo-r6', item: { id: 'demo-item-1', name: 'Engine oil and filter' }, book: demo.data.book, usage: null, due: null }),
+    );
+    expect(closed).toContain('Adjust');
+    expect(closed).not.toContain('<form');
+  });
+
+  it('show the session weight row with nothing pressed until the rider has said', () => {
+    const unsaid = renderToStaticMarkup(createElement(SessionWeightChoiceRow, { vehicleId: 'demo-r6', sessionId, weight: null }));
+    expect(unsaid).not.toContain('aria-pressed="true"');
+    expect(unsaid).toContain('Counts as a normal day until you say otherwise.');
+    const said = renderToStaticMarkup(createElement(SessionWeightChoiceRow, { vehicleId: 'demo-r6', sessionId, weight: 0 }));
+    expect(said).toMatch(/aria-pressed="true"[^>]*>Doesn’t count</);
+  });
+
+  it('give the session page no control in demo and the choice row on a real account', () => {
+    const demoPanel = renderToStaticMarkup(createElement(SessionServicePanel, { sessionId, vehicleId: 'demo-r6', data: demo.data, demoMode: true }));
+    expect(demoPanel).not.toContain('<button');
+    expect(demoPanel).toContain('Counts toward service as a normal day.');
+    const realPanel = renderToStaticMarkup(createElement(SessionServicePanel, { sessionId, vehicleId: 'demo-r6', data: demo.data, demoMode: false }));
+    expect(realPanel).toContain('Count this day toward service');
+    expect(renderToStaticMarkup(createElement(SessionServicePanel, { sessionId, vehicleId: 'demo-r6', data: null, demoMode: false }))).toBe('');
+  });
 });
 
 describe('the service-book screens as rendered', () => {
@@ -124,6 +177,15 @@ describe('the service-book screens as rendered', () => {
     ['settings, unit locked', settingsHtml(true)],
     ['setup', renderToStaticMarkup(createElement(ServiceBookSetup, { vehicleId: 'demo-r6', nickname: 'R6', vehicleType: demo.data.vehicle.type }))],
     ['reading form', renderToStaticMarkup(createElement(VehicleReadingForm, { vehicleId: 'demo-r6', book: demo.data.book }))],
+    [
+      'override form, closed',
+      renderToStaticMarkup(
+        createElement(DueOverrideForm, { vehicleId: 'demo-r6', item: { id: 'demo-item-1', name: 'Engine oil and filter' }, book: demo.data.book, usage: null, due: null }),
+      ),
+    ],
+    ['session service panel', renderToStaticMarkup(createElement(SessionServicePanel, { sessionId: demo.data.sessions[0].id, vehicleId: 'demo-r6', data: demo.data, demoMode: false }))],
+    ['session weight row', renderToStaticMarkup(createElement(SessionWeightChoiceRow, { vehicleId: 'demo-r6', sessionId: demo.data.sessions[0].id, weight: 2 }))],
+    ['session weight select', renderToStaticMarkup(createElement(SessionWeightSelect, { vehicleId: 'demo-r6', sessionId: demo.data.sessions[0].id, weight: null, label: '18 May 2026' }))],
   ];
 
   it('use design tokens, never raw palette classes', () => {
@@ -134,10 +196,10 @@ describe('the service-book screens as rendered', () => {
     }
   });
 
-  it('give every button a 44 px target', () => {
+  it('give every button and select a 44 px target', () => {
     let checked = 0;
     for (const [name, html] of renders) {
-      for (const [tag] of html.matchAll(/<button\b[^>]*>/g)) {
+      for (const [tag] of html.matchAll(/<(?:button|select)\b[^>]*>/g)) {
         expect(tag, name).toMatch(/class="[^"]*(?:\bmin-h-1[1-4]\b|\bh-1[1-4]\b)[^"]*"/);
         checked += 1;
       }

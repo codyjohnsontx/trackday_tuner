@@ -28,6 +28,7 @@ const RULES = [
   'lib/service-book/fields.ts',
   'lib/service-book/format.ts',
   'lib/service-book/entry-draft.ts',
+  'lib/service-book/reminders.ts',
   'lib/service-book/book-data.ts',
 ];
 

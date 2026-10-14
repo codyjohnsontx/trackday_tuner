@@ -3,6 +3,8 @@ import { Timer } from 'lucide-react';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { DemoBanner } from '@/components/demo/demo-banner';
+import { ServiceDueNotices } from '@/components/service-book/due-badges';
+import { getServiceDueBooks } from '@/lib/actions/service-book';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
 import { getSessions, getSessionCount, getTelemetrySummaries } from '@/lib/actions/sessions';
 import { buildLapSummaryLabel } from '@/lib/session-compare';
@@ -35,7 +37,10 @@ export default async function DashboardPage() {
 
   const vehicleMap = new Map(vehicles.map((v) => [v.id, v.nickname]));
   // Only the three rows on screen, so this stays one small extra read.
-  const telemetry = await getTelemetrySummaries(sessions.map((s) => s.id));
+  const [telemetry, serviceDue] = await Promise.all([
+    getTelemetrySummaries(sessions.map((s) => s.id)),
+    getServiceDueBooks(vehicles.map((vehicle) => vehicle.id)),
+  ]);
   const telemetryMap = new Map(telemetry.map((summary) => [summary.session_id, summary]));
 
   // The name and the line under it describe one vehicle, so they are resolved
@@ -109,6 +114,10 @@ export default async function DashboardPage() {
           </ul>
         </CardGroup>
       ) : null}
+
+      {/* One line per bike with anything due, derived on the rider's device
+          from the book's rows; absent when nothing is due. */}
+      <ServiceDueNotices vehicles={vehicles.map((vehicle) => ({ id: vehicle.id, nickname: vehicle.nickname }))} books={serviceDue} />
 
       {access.source === 'beta' && hasTwoTrackDays && !betaFeedback ? <BetaSurvey /> : null}
     </div>

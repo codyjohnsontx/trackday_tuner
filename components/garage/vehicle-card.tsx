@@ -2,6 +2,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { VehicleBaselineSetup } from '@/components/garage/vehicle-baseline-setup';
 import { VehicleBaselineSummary } from '@/components/garage/vehicle-baseline-summary';
+import { ServiceDueChip } from '@/components/service-book/due-badges';
+import type { ServiceDueData } from '@/lib/service-book/reminders';
 import type { Vehicle, VehicleBaseline } from '@/types';
 
 interface VehicleCardProps {
@@ -9,6 +11,8 @@ interface VehicleCardProps {
   baseline?: VehicleBaseline | null;
   baselineLocked?: boolean;
   demoMode?: boolean;
+  /** The bike's service-book rows for the due chip; `null` when it has no book. */
+  serviceDue?: ServiceDueData | null;
 }
 
 export function VehicleCard({
@@ -16,6 +20,7 @@ export function VehicleCard({
   baseline = null,
   baselineLocked = false,
   demoMode = false,
+  serviceDue = null,
 }: VehicleCardProps) {
   const subtitle = [vehicle.year, vehicle.make, vehicle.model]
     .filter(Boolean)
@@ -61,10 +66,16 @@ export function VehicleCard({
       </div>
       <Link
         href={`/garage/${vehicle.id}/book`}
-        className="flex min-h-11 items-center justify-between gap-3 rounded-row bg-surface-2 px-4 text-sm font-medium text-ink transition hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+        className="flex min-h-11 flex-col justify-center gap-1.5 rounded-row bg-surface-2 px-4 py-3 text-sm font-medium text-ink transition hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
       >
-        <span>Service book</span>
-        <span aria-hidden="true" className="text-ink-faint">→</span>
+        <span className="flex items-center justify-between gap-3">
+          <span>Service book</span>
+          <span aria-hidden="true" className="text-ink-faint">→</span>
+        </span>
+        {/* Derived on the rider's device from the book's rows; absent when nothing
+            is due. On its own line, because an item's name plus its state does not
+            fit beside the label at phone width. */}
+        <ServiceDueChip data={serviceDue} className="max-w-full self-start truncate" />
       </Link>
       <div>
         <VehicleBaselineSummary baseline={baseline} locked={baselineLocked} />
