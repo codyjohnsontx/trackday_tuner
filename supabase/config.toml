@@ -149,6 +149,19 @@ allowed_mime_types = ["image/*"]
 public = true
 allowed_mime_types = ["image/*"]
 
+# Receipts, invoices and photos on service book entries, under
+# `<book id>/<attachment id>.jpg` (a `.thumb.jpg` beside it) or `.pdf`. PRIVATE,
+# and no migration writes a storage.objects policy for it on purpose: every
+# upload is a signed URL the server mints for a path
+# `reserve_service_attachment` chose, and every read a signed URL minted after
+# the rider's own select of the row (20261014000400). The browser re-encodes a
+# photo to JPEG before upload, so a JPEG or a PDF is all it accepts. 25MiB is
+# Pro's per-file limit; the free plan's 10 MB is the function's.
+[storage.buckets.service-book]
+public = false
+file_size_limit = "25MiB"
+allowed_mime_types = ["image/jpeg", "application/pdf"]
+
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]
 enabled = true

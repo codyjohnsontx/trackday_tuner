@@ -113,6 +113,11 @@ decides what to do**:
   the same job should have cleared. See "The `ai_text_retention`
   check" below.
   `SupabaseError:PGRST205` instead means `20260924001700` was never applied.
+- `attachment_sweep` - a service book attachment reservation nobody confirmed is
+  more than 48 hours old, so the daily sweep is not running and free riders'
+  abandoned uploads are holding slots of their 25. The detail is
+  `StaleAttachmentReservationError:<n>`. See "The `attachment_sweep` check"
+  below. `SupabaseError:PGRST205` means `20261014000400` was never applied.
 
 ### Step 2 - the 15-minute alert (no external account)
 
@@ -355,6 +360,34 @@ No rows means the job was never scheduled on this project - apply the block in
 `docs/beta-runbook.md` ("Apply the AI question-text table by hand"). A `failed`
 row carries the error. Either way `select public.purge_expired_ai_request_text();`
 run by hand clears what is overdue while the cause is fixed.
+
+#### The `attachment_sweep` check
+
+An upload to a service book entry is reserved first, under a per-book lock that
+counts the free plan's 25 attachments per bike, and confirmed once the file is
+in storage (`20261014000400`). A reservation nobody confirms - a tab closed
+mid-upload - would hold its slot for good, so a `pg_cron` job,
+`purge-stale-service-attachments` (04:41 UTC daily), deletes `pending` rows more
+than a day old. This check asks whether any `pending` row is more than 48 hours
+old: one waits up to two days at worst, so past that a run was missed. It reads
+a count and never a row. The job cannot delete the stored object (Storage
+refuses a direct delete from SQL), so a reservation whose file did arrive leaves
+that object in the bucket; the app removes the objects of an upload it sees fail.
+
+On a failure:
+
+```sql
+select status, return_message, start_time
+from cron.job_run_details
+where jobid = (select jobid from cron.job where jobname = 'purge-stale-service-attachments')
+order by start_time desc
+limit 5;
+```
+
+No rows means the job was never scheduled - apply "Apply service book
+attachments by hand" in `docs/beta-runbook.md`. `select
+public.purge_stale_service_attachments();` run by hand clears what is stale
+while the cause is fixed.
 
 #### The `schema_contract` check
 

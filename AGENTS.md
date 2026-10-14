@@ -845,6 +845,21 @@ so an untouched Save keeps every row's id and the pin reads no edit.
 unchanged re-save adds none; the hosted paste is "Save a service entry in one
 transaction, by hand" in `docs/beta-runbook.md`.
 
+**Attachments live in a private bucket no rider policy opens** (20261014000400).
+`service-book` is `public = false` with no `storage.objects` policy naming it, on
+purpose: `reserve_service_attachment` counts the allowance (25 per bike free,
+`lib/plans.ts`) under a per-book lock and mints the object path, the server signs
+an upload URL for it, the browser resizes and uploads, and
+`confirm_service_attachment` flips the row to `ready` only once it reads the
+object back from `storage.objects`. Reads are signed URLs minted after the
+rider's own select of the row (`lib/actions/service-attachments.ts`).
+`tests/unit/storage-bucket-provisioning.test.ts` accepts that shape only for a
+bucket on its `SERVER_ONLY_BUCKETS` list. Load the browser Supabase client
+lazily (`await import`) in a client component on a page reached by client
+navigation: a static import on the entry page hung most navigations into it
+under `next start`. `tests/db/service-attachments.spec.ts` proves the cap, the
+sweep and the private bucket.
+
 The rules that read the book - usage from readings and weighted sessions, due
 state and the rider's overrides, the honest-history labels, the field layout -
 are pure modules in `lib/service-book/` (`usage.ts`, `due.ts`, `provenance.ts`,

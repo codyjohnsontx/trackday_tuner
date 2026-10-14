@@ -160,6 +160,16 @@ export const REQUIRED_RPCS: readonly RpcContract[] = [
     p_vehicle_id: UNCOERCIBLE_PROBE_VALUE,
     p_expected_sessions: [],
   }),
+  contract('reserve_service_attachment', {
+    p_book_id: UNCOERCIBLE_PROBE_VALUE,
+    p_entry_id: null,
+    p_kind: 'receipt',
+    p_mime: 'image/jpeg',
+    p_bytes: 1,
+  }),
+  contract('confirm_service_attachment', {
+    p_attachment_id: UNCOERCIBLE_PROBE_VALUE,
+  }),
   contract('save_service_entry', {
     p_book_id: UNCOERCIBLE_PROBE_VALUE,
     p_entry_id: null,

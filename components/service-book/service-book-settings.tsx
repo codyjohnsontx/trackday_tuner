@@ -272,7 +272,7 @@ function FieldLayout({ vehicleId, fields }: { vehicleId: string; fields: Service
                 Your field · {row.fieldType ? FIELD_TYPE_LABEL[row.fieldType] : ''}
               </p>
             ) : row.builtinKey === 'attachments' ? (
-              <p className="text-xs text-ink-faint">Receipts and photos arrive in a later update.</p>
+              <p className="text-xs text-ink-faint">Added from a saved entry&apos;s page.</p>
             ) : null}
             {row.fieldType === 'choice' ? (
               <Input label={`Choices for ${row.label}, separated by commas`} type="text" value={row.options} onChange={(e) => update(row.key, { options: e.target.value })} className="bg-surface-3" />

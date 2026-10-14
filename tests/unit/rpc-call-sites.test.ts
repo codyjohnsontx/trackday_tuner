@@ -150,6 +150,8 @@ describe('supabase.rpc() call sites', () => {
         'save_session_outcome',
         'replace_session_laps',
         'save_service_entry',
+        'reserve_service_attachment',
+        'confirm_service_attachment',
         'consume_beta_rate_limit',
         'delete_vehicle_if_sessions_unchanged',
         'create_session_with_laps',

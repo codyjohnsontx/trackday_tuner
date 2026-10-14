@@ -316,9 +316,13 @@ export function ServiceEntryForm({ vehicleId, book, fields, items, entry }: Serv
         );
       }
       case 'attachments':
-        // Receipts and photos arrive with the attachments change; the field
-        // stays in the layout so the rider's order is kept.
-        return null;
+        // An upload is its own write, not part of Save (it writes no revision),
+        // so it lives on the saved entry's page rather than in this form.
+        return isEditing ? null : (
+          <p key={field.id} className="text-sm text-ink-faint">
+            {field.label}: add them from the entry once it is saved.
+          </p>
+        );
       case null:
         return renderCustomField(field);
       default:

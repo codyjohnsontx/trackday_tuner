@@ -45,7 +45,9 @@ function supabaseReturning(
   const limit = vi.fn().mockResolvedValue({ count: 0, ...result });
   const lt = vi.fn(() => ({ limit }));
   const not = vi.fn(() => ({ lt }));
-  const select = vi.fn(() => ({ limit, lt, not }));
+  // `eq` answers the `attachment_sweep` check, which filters on `status` first.
+  const eq = vi.fn(() => ({ lt }));
+  const select = vi.fn(() => ({ limit, lt, not, eq }));
   const from = vi.fn(() => ({ select }));
   const rpc = vi.fn().mockResolvedValue(rpcResult);
   return { from, select, limit, rpc };
@@ -100,6 +102,8 @@ describe('GET /api/health', () => {
     expect(check(body, 'schema_contract').status).toBe('ok');
     expect(check(body, 'ai_text_retention').status).toBe('ok');
     expect(check(body, 'ai_text_retention').detail).toBe('0 overdue');
+    expect(check(body, 'attachment_sweep').status).toBe('ok');
+    expect(check(body, 'attachment_sweep').detail).toBe('0 stale');
     expect(Number.isNaN(Date.parse(body.checked_at))).toBe(false);
   });
 

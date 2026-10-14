@@ -130,6 +130,11 @@ plus a stack built with the `[storage.buckets.session-photos]` block and
 since they were added. It fails rather than skips without them.
 `tests/e2e/service-book-entry.spec.ts` has the same shape too, and needs the
 service book migrations through `20261013000300` (`save_service_entry`) applied.
+`tests/e2e/service-book-attachments.spec.ts` has the same shape and also needs
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`, `20261014000400` applied and the private
+`service-book` bucket from `[storage.buckets.service-book]`, which `supabase
+start` or `db reset` seeds; without the bucket every upload fails rather than
+skipping.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a

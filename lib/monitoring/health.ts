@@ -21,6 +21,8 @@
  *   that needs the missing function says so - to the rider, as a lost save
  * - no retained rider question text, and no `ai_requests` preview, has outlived
  *   its 90 days (`ai_text_retention`), which is the only proof the purge job runs
+ * - no service book attachment reservation has outlived two days
+ *   (`attachment_sweep`), the only proof the sweep job runs
  *
  * `runHealthChecks` never throws. A health endpoint that 500s tells you only
  * that it 500'd; one that answers `503` with a named failing check tells you
@@ -298,6 +300,42 @@ export async function checkAiTextRetention(now: Date = new Date()): Promise<Heal
   });
 }
 
+/**
+ * How old an unconfirmed attachment reservation may be before the sweep is
+ * called broken. The job deletes reservations older than a day, once a day, so
+ * one waits up to two days at worst; past that a run was missed.
+ */
+export const ATTACHMENT_SWEEP_GRACE_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * The attachment sweep, checked by its effect (20261014000400). A reservation
+ * nobody confirms - a tab closed mid-upload - holds one of a free rider's 25
+ * slots until a daily `pg_cron` job, `purge-stale-service-attachments`, deletes
+ * it. Nothing in the app sees that job, so a hosted project where it was never
+ * scheduled looks healthy until riders find their allowance full of uploads
+ * that never arrived. This asks whether any `pending` row is older than the
+ * sweep allows, which holds whatever does the deleting.
+ */
+export async function checkAttachmentSweep(now: Date = new Date()): Promise<HealthCheck> {
+  return timed('attachment_sweep', async () => {
+    const cutoff = new Date(now.getTime() - ATTACHMENT_SWEEP_GRACE_MS).toISOString();
+    // A GET, so a missing table fails rather than reading as an empty answer.
+    const stale = await createAdminClient()
+      .from('service_attachments')
+      .select('id', { count: 'exact' })
+      .eq('status', 'pending')
+      .lt('created_at', cutoff)
+      .limit(1);
+    const count = exactCount('service_attachments', stale);
+    if (count > 0) {
+      const err = new Error(`${count} service_attachments reservations are pending more than 48 hours.`);
+      err.name = `StaleAttachmentReservationError:${count}`;
+      throw err;
+    }
+    return '0 stale';
+  });
+}
+
 function exactCount(
   table: string,
   { count, error }: { count: number | null; error: { message: string; code?: string } | null },
@@ -332,6 +370,7 @@ export async function runHealthChecks(now: Date = new Date()): Promise<HealthRep
     checkRagIndex(),
     checkSchemaContract(),
     checkAiTextRetention(now),
+    checkAttachmentSweep(now),
   ]);
   return summarizeHealth(checks, now);
 }

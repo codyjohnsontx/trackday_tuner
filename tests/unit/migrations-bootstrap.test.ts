@@ -963,12 +963,15 @@ describe('supabase migrations bootstrap a database from nothing', () => {
 
     expect([...definers].sort()).toEqual([
       'auto_created_track_is_referenced',
+      'confirm_service_attachment',
       'consume_beta_rate_limit',
       'create_beta_invite',
       'handle_new_auth_user',
       'purge_expired_ai_request_text',
+      'purge_stale_service_attachments',
       'record_deleted_session',
       'record_service_entry_revision',
+      'reserve_service_attachment',
       'sync_service_entry_reading',
       'touch_service_entry',
     ]);

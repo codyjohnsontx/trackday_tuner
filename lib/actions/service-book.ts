@@ -13,6 +13,7 @@ import {
   type ServiceEntryRecord,
   type ServiceEntryRevisionRecord,
 } from '@/lib/service-book/book-data';
+import { countTowardAllowance } from '@/lib/service-book/attachments';
 import { isIsoDate } from '@/lib/service-book/calendar';
 import { checkServiceEntryDraft, type ServiceEntryDraft } from '@/lib/service-book/entry-draft';
 import { defaultFieldLayout, fieldOptions, type ServiceBookField } from '@/lib/service-book/fields';
@@ -110,7 +111,7 @@ export async function getServiceBook(
   const book = bookRead.book;
 
   const entriesQuery = supabase.from('service_entries').select('*').eq('book_id', book.id);
-  const [fields, items, entries, readings, sessions, weights, overrides] = await Promise.all([
+  const [fields, items, entries, readings, sessions, weights, overrides, attachments] = await Promise.all([
     supabase.from('service_book_fields').select('*').eq('book_id', book.id).order('sort_order'),
     supabase.from('service_items').select('*').eq('book_id', book.id).order('sort_order'),
     options.entryId !== undefined && isUuid(options.entryId)
@@ -120,6 +121,11 @@ export async function getServiceBook(
     supabase.from('sessions').select('id, date, created_at').eq('user_id', user.id).eq('vehicle_id', vehicleId),
     supabase.from('session_usage_weights').select('*').eq('book_id', book.id),
     supabase.from('service_due_overrides').select('*').eq('book_id', book.id),
+    supabase
+      .from('service_attachments')
+      .select('id, entry_id, kind, mime, bytes, status, uploaded_at, created_at')
+      .eq('book_id', book.id)
+      .order('created_at'),
   ]);
   for (const [table, result] of [
     ['service_book_fields', fields],
@@ -129,6 +135,7 @@ export async function getServiceBook(
     ['sessions', sessions],
     ['session_usage_weights', weights],
     ['service_due_overrides', overrides],
+    ['service_attachments', attachments],
   ] as const) {
     if (result.error) {
       report('service-book-read', result.error, { table, userId: user.id, vehicleId, bookId: book.id });
@@ -165,6 +172,10 @@ export async function getServiceBook(
     }
   }
 
+  const attachmentRows = (attachments.data ?? []) as Pick<
+    Tables<'service_attachments'>,
+    'id' | 'entry_id' | 'kind' | 'mime' | 'bytes' | 'status' | 'uploaded_at' | 'created_at'
+  >[];
   const records: ServiceEntryRecord[] = entryRows.map((entry) => ({
     ...entry,
     items: (entryItems.data ?? []).filter((item) => item.entry_id === entry.id),
@@ -172,6 +183,9 @@ export async function getServiceBook(
     revisions: (revisions.data ?? [])
       .filter((revision) => revision.entry_id === entry.id)
       .map(({ revision, kind, changed_at }) => ({ revision, kind, changed_at })),
+    attachments: attachmentRows
+      .filter((attachment) => attachment.entry_id === entry.id && attachment.status === 'ready')
+      .map(({ id, entry_id, kind, mime, bytes, uploaded_at, created_at }) => ({ id, entry_id, kind, mime, bytes, uploaded_at, created_at })),
   }));
 
   return {
@@ -189,6 +203,7 @@ export async function getServiceBook(
         laps: laps.data ?? [],
         weights: (weights.data ?? []) as Tables<'session_usage_weights'>[],
         overrides: (overrides.data ?? []) as Tables<'service_due_overrides'>[],
+        attachmentCount: countTowardAllowance(attachmentRows, new Date()),
       },
     },
   };

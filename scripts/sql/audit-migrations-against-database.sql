@@ -354,7 +354,35 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                   and has_function_privilege('authenticated', p.oid, 'execute')
                   and not has_function_privilege('anon', p.oid, 'execute')
                   and not has_function_privilege('service_role', p.oid, 'execute')
-                from pg_proc p where p.oid = to_regprocedure('public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)')))
+                from pg_proc p where p.oid = to_regprocedure('public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)'))),
+  -- The table, the reserve and confirm functions by their bodies with rider-only
+  -- execute, the private service-book bucket, and the sweep job. The bucket is
+  -- seeded from supabase/config.toml, not the migration, so a hosted project
+  -- can take the SQL and still answer every upload with "Bucket not found".
+  -- cron.job is read through query_to_xml for the reason the ai_request_text
+  -- row gives. Whether the sweep has RUN: /api/health fails attachment_sweep on
+  -- a pending row more than 48 hours old.
+  (34, '20261014000400_add_service_attachments', 'table + functions + bucket + cron job',
+      'public.service_attachments, reserve/confirm_service_attachment, bucket service-book, cron job purge-stale-service-attachments',
+      to_regclass('public.service_attachments') is not null
+      and (select md5(p.prosrc) = 'df08a489fe80ce5fb364a5aa8dc3844c'
+                  and p.prosecdef and p.proconfig = array['search_path=""']
+                  and has_function_privilege('authenticated', p.oid, 'execute')
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                  and not has_function_privilege('service_role', p.oid, 'execute')
+             from pg_proc p where p.oid = to_regprocedure('public.reserve_service_attachment(uuid,uuid,text,text,integer)'))
+      and (select md5(p.prosrc) = '26f073844d8516216b5d396addec3df6'
+                  and p.prosecdef and p.proconfig = array['search_path=""']
+                  and has_function_privilege('authenticated', p.oid, 'execute')
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                  and not has_function_privilege('service_role', p.oid, 'execute')
+             from pg_proc p where p.oid = to_regprocedure('public.confirm_service_attachment(uuid)'))
+      and exists (select 1 from storage.buckets b where b.id = 'service-book' and not b.public)
+      and case when to_regclass('cron.job') is null then false
+               else (xpath('count(/table/row)', query_to_xml(
+                       'select jobname from cron.job where jobname = ''purge-stale-service-attachments''',
+                       false, false, '')))[1]::text::int > 0
+          end)
 )
 select ordinality as "#",
        migration,
