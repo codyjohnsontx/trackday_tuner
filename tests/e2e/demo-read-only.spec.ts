@@ -50,12 +50,48 @@ test.describe('demo is read-only', () => {
 
     const front = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Front' }) });
     await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue('');
-    await front.getByLabel('Fully Extended (L0)').fill('600');
-    await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue('600');
-    expect(await page.evaluate((key) => window.localStorage.getItem(key), draftKey)).toBe(riderDraft);
+    // Text filled before React hydrates sits in the DOM but never reaches state,
+    // so Reset has nothing to clear; retry the pair until hydration has caught up.
+    // React's value tracker adopts that stale DOM text at hydration, so filling
+    // the same text again fires no change - clear it first so each retry does.
+    await expect(async () => {
+      await front.getByLabel('Fully Extended (L0)').fill('');
+      await front.getByLabel('Fully Extended (L0)').fill('600');
+      await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue('600');
+      expect(await page.evaluate((key) => window.localStorage.getItem(key), draftKey)).toBe(riderDraft);
 
-    await page.getByRole('button', { name: 'Reset' }).click();
-    await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue('');
+      await page.getByRole('button', { name: 'Reset' }).click();
+      await expect(front.getByLabel('Fully Extended (L0)')).toHaveValue('', { timeout: 1_000 });
+    }).toPass({ timeout: 10_000 });
     expect(await page.evaluate((key) => window.localStorage.getItem(key), draftKey)).toBe(riderDraft);
+  });
+
+  test('the service book is a tour: every screen reads, none saves', async ({ page, baseURL }) => {
+    await enterDemo(page, baseURL!);
+    await page.goto('/garage/demo-r6/book');
+
+    await expect(page.getByText('You are viewing sample data.', { exact: false })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Service book' })).toBeVisible();
+    await expect(page.getByText('Engine oil and filter').first()).toBeVisible();
+    await expect(page.getByText('Logged the day of service').first()).toBeVisible();
+    await expect(page.getByText('Back-filled 38 days later')).toBeVisible();
+    await expect(page.getByRole('link', { name: '+ Log service' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Log a reading' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Settings' })).toHaveCount(0);
+    await expect(page.locator('form')).toHaveCount(0);
+
+    // Opened by its address: on the phone projects the floating nav sits over
+    // the first row at the viewport's bottom edge and swallows the tap.
+    const entryHref = await page.getByTestId('service-entry-row').first().getAttribute('href');
+    await page.goto(entryHref!);
+    await expect(page.getByRole('heading', { name: /^\d+ revisions?$/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Hold to remove' })).toHaveCount(0);
+    await expect(page.locator('form')).toHaveCount(0);
+
+    for (const path of ['/garage/demo-r6/book/entries/new', '/garage/demo-r6/book/settings']) {
+      await page.goto(path);
+      await expect(page.getByRole('heading', { name: 'Read-only demo' })).toBeVisible();
+      await expect(page.locator('form')).toHaveCount(0);
+    }
   });
 });

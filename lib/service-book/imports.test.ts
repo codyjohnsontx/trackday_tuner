@@ -26,6 +26,9 @@ const RULES = [
   'lib/service-book/due.ts',
   'lib/service-book/provenance.ts',
   'lib/service-book/fields.ts',
+  'lib/service-book/format.ts',
+  'lib/service-book/entry-draft.ts',
+  'lib/service-book/book-data.ts',
 ];
 
 /** Every file the rules may reach when they run. */

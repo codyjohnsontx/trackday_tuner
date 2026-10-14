@@ -128,6 +128,8 @@ once. They need the service-role key and a running app, no `E2E_EMAIL`,
 plus a stack built with the `[storage.buckets.session-photos]` block and
 `20260926002000` and `20260926002100` applied - `supabase start` or `db reset`
 since they were added. It fails rather than skips without them.
+`tests/e2e/service-book-entry.spec.ts` has the same shape too, and needs the
+service book migrations through `20261013000300` (`save_service_entry`) applied.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a
