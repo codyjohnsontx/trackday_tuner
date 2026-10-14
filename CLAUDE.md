@@ -860,7 +860,8 @@ day pushed X past due" is due with the sessions up to and including that one
 against due with the sessions strictly before it, in date order, so only the
 day that crossed the line says so; a session left out is weighted 0 rather than
 dropped, so no anchor moves, a day the rider weights 0 pushed nothing and the
-notice clears; a snoozed item is never pushed. The weight and the overrides are
+notice clears; a snoozed item is never pushed, and a day that only brings an
+item due soon raises no notice, since the chips already say so. The weight and the overrides are
 the rider's word and nothing else writes them: a weight is one row per book and
 session (no upsert - PostgREST would write the fixed columns the grant withholds),
 an override is always a new row the server dates, and "Clear" is a snooze ending

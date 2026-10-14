@@ -113,23 +113,11 @@ export function describeDueSummary(summary: DueSummary): string | null {
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
-/** How far a status is from fine; a status the push rule does not read ranks 0. */
-const PUSH_RANK: Record<ItemDueStatus, number> = {
-  no_interval: 0,
-  unknown: 0,
-  snoozed: 0,
-  ok: 1,
-  due_soon: 2,
-  overdue: 3,
-};
-
 export interface SessionDuePush {
   itemId: string;
   name: string;
   /** Where the item stood without this session. */
   from: ItemDueStatus;
-  /** Where this session's usage put it. */
-  to: 'due_soon' | 'overdue';
 }
 
 /** The same rows with these sessions weighted 0: still there, so no anchor moves, but adding nothing. */
@@ -145,8 +133,7 @@ function withSessionsUncounted(data: ServiceDueData, sessionIds: readonly string
 }
 
 /**
- * The items this one session carried across `due_soon` or `overdue`, in date
- * order: due with the sessions up to and including this one, as the rider
+ * The items this one session pushed past due, in date order: due with the sessions up to and including this one, as the rider
  * weighted them, against due with the sessions strictly before it, so only the
  * day that crossed the line says so. Neither side drops a row - a session left
  * out is weighted 0 - so the never-done and days anchors are the same on both. A
@@ -154,6 +141,7 @@ function withSessionsUncounted(data: ServiceDueData, sessionIds: readonly string
  * nothing, which is what lets the rider say "this day did not count" and watch
  * the notice clear. A snoozed item is not pushed - the rider has already
  * answered it - and an item with no interval or no usage to measure cannot be.
+ * Due soon is the chips' to say, not the session's.
  */
 export function describeSessionDuePush(data: ServiceDueData, sessionId: string, clock: RiderClock): SessionDuePush[] {
   const session = data.sessions.find((candidate) => candidate.id === sessionId);
@@ -165,12 +153,10 @@ export function describeSessionDuePush(data: ServiceDueData, sessionId: string, 
 
   const pushed: SessionDuePush[] = [];
   for (const item of withSession) {
-    if (item.status !== 'due_soon' && item.status !== 'overdue') continue;
+    if (item.status !== 'overdue') continue;
     const was = before.get(item.itemId);
-    if (!was) continue;
-    if (PUSH_RANK[item.status] > PUSH_RANK[was.status]) {
-      pushed.push({ itemId: item.itemId, name: item.name, from: was.status, to: item.status });
-    }
+    if (!was || was.status === 'overdue') continue;
+    pushed.push({ itemId: item.itemId, name: item.name, from: was.status });
   }
   return pushed;
 }
@@ -182,17 +168,11 @@ function joinNames(names: readonly string[]): string {
 
 /**
  * The banner's sentence: `This day pushed Engine oil and filter past due.`,
- * `This day brought Tires due soon.`, or both joined; `null` when nothing was
- * pushed.
+ * several names joined; `null` when nothing was pushed.
  */
 export function describeSessionDuePushText(pushed: readonly SessionDuePush[]): string | null {
-  const overdue = pushed.filter((push) => push.to === 'overdue').map((push) => push.name);
-  const soon = pushed.filter((push) => push.to === 'due_soon').map((push) => push.name);
-  const clauses: string[] = [];
-  if (overdue.length > 0) clauses.push(`pushed ${joinNames(overdue)} past due`);
-  if (soon.length > 0) clauses.push(`brought ${joinNames(soon)} due soon`);
-  if (clauses.length === 0) return null;
-  return `This day ${clauses.join(' and ')}.`;
+  if (pushed.length === 0) return null;
+  return `This day pushed ${joinNames(pushed.map((push) => push.name))} past due.`;
 }
 
 /**

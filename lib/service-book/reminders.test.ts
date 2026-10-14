@@ -106,7 +106,7 @@ describe('the due summary behind a chip', () => {
 describe('what a session pushed past due', () => {
   it('names the item the session carried from due soon to overdue', () => {
     const pushed = describeSessionDuePush(data(), SESSION, CLOCK);
-    expect(pushed).toEqual([{ itemId: OIL, name: 'Engine oil and filter', from: 'due_soon', to: 'overdue' }]);
+    expect(pushed).toEqual([{ itemId: OIL, name: 'Engine oil and filter', from: 'due_soon' }]);
     expect(describeSessionDuePushText(pushed)).toBe('This day pushed Engine oil and filter past due.');
   });
 
@@ -123,19 +123,21 @@ describe('what a session pushed past due', () => {
     expect(describeSessionDuePush(early, SESSION, CLOCK)).toEqual([]);
   });
 
-  it('reads a day that brought an item due soon as its own sentence', () => {
+  it('is not raised by a day that only brought an item due soon, which the chips already say', () => {
     // 54.9 h plus a third of an hour crosses the 1.5 h margin below 56.5 h.
     const near = data({ readings: [data().readings[0], { ...data().readings[1], hours: 54.9 }] });
-    const pushed = describeSessionDuePush(near, SESSION, CLOCK);
-    expect(pushed).toEqual([{ itemId: OIL, name: 'Engine oil and filter', from: 'ok', to: 'due_soon' }]);
-    expect(describeSessionDuePushText(pushed)).toBe('This day brought Engine oil and filter due soon.');
+    expect(statusOf(computeBookDue(near, CLOCK), OIL)).toBe('due_soon');
+    expect(describeSessionDuePush(near, SESSION, CLOCK)).toEqual([]);
+  });
+
+  it('names every item a day pushed past due in one sentence', () => {
     expect(
       describeSessionDuePushText([
-        ...pushed,
-        { itemId: 'a', name: 'Brake pads', from: 'due_soon', to: 'overdue' },
-        { itemId: 'b', name: 'Chain', from: 'due_soon', to: 'overdue' },
+        { itemId: 'a', name: 'Brake pads', from: 'due_soon' },
+        { itemId: 'b', name: 'Chain', from: 'ok' },
+        { itemId: 'c', name: 'Engine oil and filter', from: 'due_soon' },
       ]),
-    ).toBe('This day pushed Brake pads and Chain past due and brought Engine oil and filter due soon.');
+    ).toBe('This day pushed Brake pads, Chain and Engine oil and filter past due.');
   });
 
   it('is not raised on a snoozed item, which the rider has already answered', () => {
@@ -201,12 +203,11 @@ describe('what a session pushed past due', () => {
     expect(statusOf(computeBookDue(days, clock), OIL)).toBe('overdue');
 
     expect(describeSessionDuePush(days, 'oct-2', clock)).toEqual([]);
-    expect(describeSessionDuePushText(describeSessionDuePush(days, 'oct-5', clock))).toBe('This day brought Engine oil and filter due soon.');
+    expect(describeSessionDuePush(days, 'oct-5', clock)).toEqual([]);
     expect(describeSessionDuePushText(describeSessionDuePush(days, 'oct-8', clock))).toBe('This day pushed Engine oil and filter past due.');
 
     const uncounted = { ...days, weights: [{ session_id: 'oct-8', weight: 0, minutes_override: null, distance_override: null }] };
-    expect(describeSessionDuePush(uncounted, 'oct-8', clock)).toEqual([]);
-    expect(describeSessionDuePushText(describeSessionDuePush(uncounted, 'oct-5', clock))).toBe('This day brought Engine oil and filter due soon.');
+    for (const id of ['oct-2', 'oct-5', 'oct-8']) expect(describeSessionDuePush(uncounted, id, clock)).toEqual([]);
   });
 
   it('is nothing for a session the book does not know', () => {
