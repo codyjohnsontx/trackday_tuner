@@ -611,6 +611,7 @@ export const MIGRATION_PROBES = {
       "            and p.proconfig = array['search_path=\"\"']",
       "            and has_function_privilege('authenticated', p.oid, 'execute')",
       "            and not has_function_privilege('anon', p.oid, 'execute')",
+      "            and not has_function_privilege('service_role', p.oid, 'execute')",
       `          from pg_proc p where p.oid = ${SAVE_SERVICE_ENTRY})`,
     ],
   },
