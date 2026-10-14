@@ -5,6 +5,7 @@ import { getVehicleBaseline } from '@/lib/actions/baselines';
 import { getSessionChangeRecords } from '@/lib/actions/session-changes';
 import { getComparableSessions, getPreviousSession, getSession, getSessionEnvironment, getSessionLaps } from '@/lib/actions/sessions';
 import { getOutstandingRecommendations, getSessionOutcome, getVehicleOutcomeHistory } from '@/lib/actions/outcomes';
+import { getServiceDueBooks } from '@/lib/actions/service-book';
 import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
 import { resolveQuestionRetention } from '@/lib/ai-question-retention';
 import { getTracks } from '@/lib/actions/tracks';
@@ -20,6 +21,7 @@ import { SessionChangesPanel } from '@/components/sessions/session-changes-panel
 import { SessionDeleteForm } from '@/components/sessions/session-delete-form';
 import { TuningAdvicePanel } from '@/components/ai/tuning-advice-panel';
 import { SessionLapsPanel } from '@/components/sessions/session-laps-panel';
+import { SessionServicePanel } from '@/components/service-book/session-service-panel';
 import { TrackLimitNotice } from '@/components/sessions/track-limit-notice';
 import { SessionOutcomePanel } from '@/components/sessions/session-outcome-panel';
 import { VehicleOutcomeHistory } from '@/components/sessions/vehicle-outcome-history';
@@ -100,7 +102,7 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
   const mayBeAtTrackLimit =
     !demoMode && !hasProAccess && !session.track_id && hasTrackName(session.track_name);
 
-  const [previousSession, environmentRead, baseline, changeRecordsRead, sessionLaps, comparableSessions, existingOutcomeRead, outcomeHistory, recommendations, savedTracks] = await Promise.all([
+  const [previousSession, environmentRead, baseline, changeRecordsRead, sessionLaps, comparableSessions, existingOutcomeRead, outcomeHistory, recommendations, savedTracks, serviceDue] = await Promise.all([
     getPreviousSession(session),
     getSessionEnvironment(session.id),
     getVehicleBaseline(session.vehicle_id),
@@ -116,6 +118,7 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
           return null;
         })
       : Promise.resolve(null),
+    getServiceDueBooks([session.vehicle_id]),
   ]);
   // The panels below keep reading a failed read as "nothing there", as they
   // always have. The delete confirmation does not: it has to name everything
@@ -164,6 +167,11 @@ export default async function SessionDetailPage({ params }: SessionDetailPagePro
         <h1 className={pageTitleClass}>{session.track_name ?? 'Unknown Track'}</h1>
         <p className="mt-0.5 text-sm text-ink-dim">{formattedDate} · {vehicleNickname}</p>
       </div>
+
+      {/* The service nudge (owner, Q8): did this day push an item past due, and
+          how hard was the day. Derived on render from the book's rows; nothing
+          is written on the session write path. Absent when the bike has no book. */}
+      <SessionServicePanel sessionId={session.id} vehicleId={session.vehicle_id} data={serviceDue[session.vehicle_id] ?? null} demoMode={demoMode} />
 
       <div className="space-y-3">
         {previousSession ? (

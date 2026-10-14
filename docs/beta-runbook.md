@@ -61,9 +61,9 @@
    bike delete fails with `PGRST202` and `/api/health`'s `schema_contract`
    check names it - see "Guard bike deletes by hand" below.
    `20261010000100` and `20261010000200` (the service book) go in by hand
-   together, in one paste. Nothing reads them until the service book screens
-   ship, so they carry no deploy-ordering requirement - see "Apply the service
-   book tables by hand" below.
+   together, in one paste, before the release that ships the service book
+   deploys: the dashboard, the garage and every session page read them - see
+   "Apply the service book tables by hand" below.
 2. Set `BETA_INVITE_ONLY=true`, a long random `BETA_INVITE_SECRET`, and a distinct
    `BETA_FORM_RATE_LIMIT_SECRET` in the deployment environment.
 3. Deploy and verify the public home page, waitlist, invitation signup, session
@@ -2620,10 +2620,11 @@ commit;
 (owner's go-ahead 2026-10-08): one book per bike, its maintenance items, the
 entries a rider logs, every entry's edit history, the hour-meter and odometer
 readings, and the rider's per-session usage weights and due-date overrides. They
-are applied together, in one transaction. Nothing in the app reads or writes
-these tables yet - the screens are a later pull request - so there is no deploy
-ordering to meet: apply and verify before merging the pull request that adds
-them, so the next one can rely on them.
+are applied together, in one transaction. Apply and verify them before the
+release that ships the service book deploys: besides the book's own screens,
+the service reminders read them on the dashboard, the garage and every session
+page. Without them those pages still render, with no reminders, but every load
+reports a `service-due-read` error.
 
 What the paste puts in place, beyond the tables: an entry's `logged_at` is the
 server's (no rider grant reaches it, and a trigger pins it for the service role

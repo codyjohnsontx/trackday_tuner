@@ -1,5 +1,5 @@
 import type { DistanceUnit, Tables } from '@/types/supabase';
-import { computeDue, type DueInput, type DueOverride, type ItemDue } from '@/lib/service-book/due';
+import type { DueOverride, ItemDue } from '@/lib/service-book/due';
 import type { ServiceBookField } from '@/lib/service-book/fields';
 import {
   describeEntryProvenance,
@@ -7,6 +7,7 @@ import {
   type ProvenanceAttachment,
   type ProvenanceRevision,
 } from '@/lib/service-book/provenance';
+import { computeBookDue } from '@/lib/service-book/reminders';
 import { computeUsage, type BookUsage, type UsageInput, type UsageLap, type UsageSession, type UsageWeight } from '@/lib/service-book/usage';
 
 /**
@@ -95,17 +96,9 @@ export function buildServiceBookView(
   clock: { today: string; timeZone: string },
 ): ServiceBookView {
   const usageInput = usageInputOf(data);
-  const dueInput: DueInput = {
-    usage: usageInput,
-    distanceUnit: data.book.distance_unit,
-    items: data.items,
-    entries: data.entries,
-    entryItems: data.entries.flatMap((entry) => entry.items),
-    overrides: data.overrides,
-    today: clock.today,
-    timeZone: clock.timeZone,
-  };
-  const due = computeDue(dueInput);
+  // The same call the dashboard chips and the session banner make
+  // (`lib/service-book/reminders.ts`), so a chip and the schedule agree.
+  const due = computeBookDue(data, clock);
   const provenanceByEntryId = new Map<string, EntryProvenance>();
   for (const entry of data.entries) {
     provenanceByEntryId.set(

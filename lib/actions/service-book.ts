@@ -17,9 +17,10 @@ import { countTowardAllowance } from '@/lib/service-book/attachments';
 import { isIsoDate } from '@/lib/service-book/calendar';
 import { checkServiceEntryDraft, type ServiceEntryDraft } from '@/lib/service-book/entry-draft';
 import { defaultFieldLayout, fieldOptions, type ServiceBookField } from '@/lib/service-book/fields';
+import type { ServiceDueData } from '@/lib/service-book/reminders';
 import { starterItemsFor } from '@/lib/service-book/starter-items';
 import { createClient } from '@/lib/supabase/server';
-import type { DistanceUnit, ServiceBookFieldType, TableInsert, TableUpdate, Tables } from '@/types/supabase';
+import type { DistanceUnit, ServiceBookFieldType, ServiceDueOverrideKind, TableInsert, TableUpdate, Tables } from '@/types/supabase';
 import type { ActionResult, Vehicle } from '@/types';
 
 /**
@@ -47,6 +48,34 @@ function report(event: string, error: Failure, context: Record<string, unknown>)
   reportError(event, new Error(error.message), { reason: error.code, details: error.details, hint: error.hint, ...context });
 }
 
+/** The Data API's `max_rows`: a request returns at most this many rows, and says nothing when it stops. */
+const PAGE_SIZE = 1000;
+
+/** Every row a query matches, a page at a time, so a long history is not cut off at `PAGE_SIZE`. */
+async function readAllRows<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: Failure | null }>,
+): Promise<{ data: T[]; error: Failure | null }> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1);
+    if (error) return { data: [], error };
+    rows.push(...(data ?? []));
+    if ((data ?? []).length < PAGE_SIZE) return { data: rows, error: null };
+  }
+}
+
+/** The laps of these bikes' sessions, filtered through the session rather than a session list that grows the URL. */
+function readVehicleLaps(supabase: SupabaseServerClient, vehicleIds: string[]) {
+  return readAllRows((from, to) =>
+    supabase
+      .from('session_laps')
+      .select('session_id, lap_time_ms, included, sessions!inner()')
+      .in('sessions.vehicle_id', vehicleIds)
+      .order('id')
+      .range(from, to),
+  );
+}
+
 function bookPath(vehicleId: string): string {
   return `/garage/${vehicleId}/book`;
 }
@@ -54,6 +83,8 @@ function bookPath(vehicleId: string): string {
 function revalidateBook(vehicleId: string) {
   revalidatePath(bookPath(vehicleId));
   revalidatePath('/garage');
+  // The dashboard and garage chips are derived from the same rows.
+  revalidatePath('/dashboard');
 }
 
 async function ownVehicle(supabase: SupabaseServerClient, userId: string, vehicleId: string): Promise<Vehicle | null> {
@@ -110,29 +141,68 @@ export async function getServiceBook(
   if (!bookRead.book) return { ok: true, data: { vehicle: summary, data: null } };
   const book = bookRead.book;
 
-  const entriesQuery = supabase.from('service_entries').select('*').eq('book_id', book.id);
-  const [fields, items, entries, readings, sessions, weights, overrides, attachments] = await Promise.all([
+  const withEntry = options.entryId !== undefined && isUuid(options.entryId) ? options.entryId : null;
+  const [fields, items, entries, entryItems, entryParts, revisions, readings, sessions, laps, weights, overrides, attachments] = await Promise.all([
     supabase.from('service_book_fields').select('*').eq('book_id', book.id).order('sort_order'),
     supabase.from('service_items').select('*').eq('book_id', book.id).order('sort_order'),
-    options.entryId !== undefined && isUuid(options.entryId)
-      ? entriesQuery.or(`deleted_at.is.null,id.eq.${options.entryId}`)
-      : entriesQuery.is('deleted_at', null),
-    supabase.from('vehicle_readings').select('*').eq('book_id', book.id).order('reading_date'),
-    supabase.from('sessions').select('id, date, created_at').eq('user_id', user.id).eq('vehicle_id', vehicleId),
-    supabase.from('session_usage_weights').select('*').eq('book_id', book.id),
-    supabase.from('service_due_overrides').select('*').eq('book_id', book.id),
-    supabase
-      .from('service_attachments')
-      .select('id, entry_id, kind, mime, bytes, status, uploaded_at, created_at')
-      .eq('book_id', book.id)
-      .order('created_at'),
+    readAllRows((from, to) => {
+      const query = supabase.from('service_entries').select('*').eq('book_id', book.id);
+      return (withEntry ? query.or(`deleted_at.is.null,id.eq.${withEntry}`) : query.is('deleted_at', null)).order('id').range(from, to);
+    }),
+    readAllRows((from, to) =>
+      supabase
+        .from('service_entry_items')
+        .select('*, service_entries!inner()')
+        .eq('service_entries.book_id', book.id)
+        .order('created_at')
+        .order('id')
+        .range(from, to),
+    ),
+    readAllRows((from, to) =>
+      supabase
+        .from('service_entry_parts')
+        .select('*, service_entries!inner()')
+        .eq('service_entries.book_id', book.id)
+        .order('created_at')
+        .order('id')
+        .range(from, to),
+    ),
+    readAllRows((from, to) =>
+      supabase
+        .from('service_entry_revisions')
+        .select('entry_id, revision, kind, changed_at, service_entries!inner()')
+        .eq('service_entries.book_id', book.id)
+        .order('revision')
+        .order('id')
+        .range(from, to),
+    ),
+    readAllRows((from, to) => supabase.from('vehicle_readings').select('*').eq('book_id', book.id).order('reading_date').order('id').range(from, to)),
+    readAllRows((from, to) =>
+      supabase.from('sessions').select('id, date, created_at').eq('user_id', user.id).eq('vehicle_id', vehicleId).order('id').range(from, to),
+    ),
+    readVehicleLaps(supabase, [vehicleId]),
+    readAllRows((from, to) => supabase.from('session_usage_weights').select('*').eq('book_id', book.id).order('id').range(from, to)),
+    readAllRows((from, to) => supabase.from('service_due_overrides').select('*').eq('book_id', book.id).order('id').range(from, to)),
+    readAllRows((from, to) =>
+      supabase
+        .from('service_attachments')
+        .select('id, entry_id, kind, mime, bytes, status, uploaded_at, created_at')
+        .eq('book_id', book.id)
+        .order('created_at')
+        .order('id')
+        .range(from, to),
+    ),
   ]);
   for (const [table, result] of [
     ['service_book_fields', fields],
     ['service_items', items],
     ['service_entries', entries],
+    ['service_entry_items', entryItems],
+    ['service_entry_parts', entryParts],
+    ['service_entry_revisions', revisions],
     ['vehicle_readings', readings],
     ['sessions', sessions],
+    ['session_laps', laps],
     ['session_usage_weights', weights],
     ['service_due_overrides', overrides],
     ['service_attachments', attachments],
@@ -143,44 +213,16 @@ export async function getServiceBook(
     }
   }
 
-  const entryRows = (entries.data ?? []) as Tables<'service_entries'>[];
-  const entryIds = entryRows.map((entry) => entry.id);
-  const sessionIds = (sessions.data ?? []).map((session) => session.id);
-  const [entryItems, entryParts, revisions, laps] = await Promise.all([
-    entryIds.length
-      ? supabase.from('service_entry_items').select('*').in('entry_id', entryIds).order('created_at')
-      : Promise.resolve({ data: [] as Tables<'service_entry_items'>[], error: null }),
-    entryIds.length
-      ? supabase.from('service_entry_parts').select('*').in('entry_id', entryIds).order('created_at')
-      : Promise.resolve({ data: [] as Tables<'service_entry_parts'>[], error: null }),
-    entryIds.length
-      ? supabase.from('service_entry_revisions').select('entry_id, revision, kind, changed_at').in('entry_id', entryIds).order('revision')
-      : Promise.resolve({ data: [] as Pick<Tables<'service_entry_revisions'>, 'entry_id' | 'revision' | 'kind' | 'changed_at'>[], error: null }),
-    sessionIds.length
-      ? supabase.from('session_laps').select('session_id, lap_time_ms, included').in('session_id', sessionIds)
-      : Promise.resolve({ data: [] as Pick<Tables<'session_laps'>, 'session_id' | 'lap_time_ms' | 'included'>[], error: null }),
-  ]);
-  for (const [table, result] of [
-    ['service_entry_items', entryItems],
-    ['service_entry_parts', entryParts],
-    ['service_entry_revisions', revisions],
-    ['session_laps', laps],
-  ] as const) {
-    if (result.error) {
-      report('service-book-read', result.error, { table, userId: user.id, vehicleId, bookId: book.id });
-      return { ok: false, error: READ_FAILED };
-    }
-  }
-
-  const attachmentRows = (attachments.data ?? []) as Pick<
+  const entryRows = entries.data as Tables<'service_entries'>[];
+  const attachmentRows = attachments.data as Pick<
     Tables<'service_attachments'>,
     'id' | 'entry_id' | 'kind' | 'mime' | 'bytes' | 'status' | 'uploaded_at' | 'created_at'
   >[];
   const records: ServiceEntryRecord[] = entryRows.map((entry) => ({
     ...entry,
-    items: (entryItems.data ?? []).filter((item) => item.entry_id === entry.id),
-    parts: (entryParts.data ?? []).filter((part) => part.entry_id === entry.id),
-    revisions: (revisions.data ?? [])
+    items: entryItems.data.filter((item) => item.entry_id === entry.id),
+    parts: entryParts.data.filter((part) => part.entry_id === entry.id),
+    revisions: revisions.data
       .filter((revision) => revision.entry_id === entry.id)
       .map(({ revision, kind, changed_at }) => ({ revision, kind, changed_at })),
     attachments: attachmentRows
@@ -198,11 +240,11 @@ export async function getServiceBook(
         fields: (fields.data ?? []) as ServiceBookField[],
         items: (items.data ?? []) as Tables<'service_items'>[],
         entries: sortEntriesDesc(records),
-        readings: (readings.data ?? []) as Tables<'vehicle_readings'>[],
-        sessions: sessions.data ?? [],
-        laps: laps.data ?? [],
-        weights: (weights.data ?? []) as Tables<'session_usage_weights'>[],
-        overrides: (overrides.data ?? []) as Tables<'service_due_overrides'>[],
+        readings: readings.data as Tables<'vehicle_readings'>[],
+        sessions: sessions.data,
+        laps: laps.data,
+        weights: weights.data as Tables<'session_usage_weights'>[],
+        overrides: overrides.data as Tables<'service_due_overrides'>[],
         attachmentCount: countTowardAllowance(attachmentRows, new Date()),
       },
     },
@@ -830,4 +872,295 @@ export async function saveServiceItem(vehicleId: string, input: ServiceItemInput
   revalidateBook(vehicleId);
   revalidatePath(`${bookPath(vehicleId)}/settings`);
   return { ok: true, data: { itemId: current.id } };
+}
+
+/**
+ * The rows the reminders need, for several bikes in one read: what the
+ * dashboard, the garage cards and the session page hand to
+ * `lib/service-book/reminders.ts`. A bike with no book is left out, as is one
+ * whose read failed - that is reported, and the chip for it is simply absent,
+ * because nothing here decides a write. The session page's weight control
+ * reads the stored row again before it writes.
+ */
+export async function getServiceDueBooks(vehicleIds: string[]): Promise<Record<string, ServiceDueData>> {
+  const ids = Array.isArray(vehicleIds) ? vehicleIds.filter((id): id is string => typeof id === 'string') : [];
+  if (ids.length === 0) return {};
+
+  if (await isDemoMode()) {
+    const books: Record<string, ServiceDueData> = {};
+    for (const id of ids) {
+      const demo = getDemoServiceBook(id);
+      if (demo) books[id] = demo.data;
+    }
+    return books;
+  }
+
+  const user = await getRealUser();
+  if (!user) return {};
+
+  const supabase = await createClient();
+  const booksRead = await supabase.from('service_books').select('*').in('vehicle_id', ids);
+  if (booksRead.error) {
+    report('service-due-read', booksRead.error, { table: 'service_books', userId: user.id, vehicleIds: ids });
+    return {};
+  }
+  const books = (booksRead.data ?? []) as Tables<'service_books'>[];
+  if (books.length === 0) return {};
+  const bookIds = books.map((book) => book.id);
+  const vehicleIdsWithBooks = books.map((book) => book.vehicle_id);
+
+  const [items, entries, entryItems, readings, sessions, laps, weights, overrides] = await Promise.all([
+    supabase.from('service_items').select('id, book_id, name, interval_hours, interval_distance, interval_days, archived_at').in('book_id', bookIds),
+    readAllRows((from, to) =>
+      supabase
+        .from('service_entries')
+        .select('id, book_id, service_date, reading_hours, reading_distance, logged_at, deleted_at')
+        .in('book_id', bookIds)
+        .is('deleted_at', null)
+        .order('id')
+        .range(from, to),
+    ),
+    readAllRows((from, to) =>
+      supabase
+        .from('service_entry_items')
+        .select('entry_id, item_id, service_entries!inner()')
+        .in('service_entries.book_id', bookIds)
+        .is('service_entries.deleted_at', null)
+        .order('id')
+        .range(from, to),
+    ),
+    readAllRows((from, to) =>
+      supabase
+        .from('vehicle_readings')
+        .select('id, book_id, reading_date, read_at, hours, distance, supersedes_id')
+        .in('book_id', bookIds)
+        .order('id')
+        .range(from, to),
+    ),
+    readAllRows((from, to) =>
+      supabase
+        .from('sessions')
+        .select('id, vehicle_id, date, created_at')
+        .eq('user_id', user.id)
+        .in('vehicle_id', vehicleIdsWithBooks)
+        .order('id')
+        .range(from, to),
+    ),
+    readVehicleLaps(supabase, vehicleIdsWithBooks),
+    readAllRows((from, to) =>
+      supabase
+        .from('session_usage_weights')
+        .select('book_id, session_id, weight, minutes_override, distance_override')
+        .in('book_id', bookIds)
+        .order('id')
+        .range(from, to),
+    ),
+    readAllRows((from, to) =>
+      supabase
+        .from('service_due_overrides')
+        .select('id, book_id, item_id, kind, until_date, until_hours, until_distance, anchor_hours, anchor_distance, created_at')
+        .in('book_id', bookIds)
+        .order('id')
+        .range(from, to),
+    ),
+  ]);
+  for (const [table, result] of [
+    ['service_items', items],
+    ['service_entries', entries],
+    ['service_entry_items', entryItems],
+    ['vehicle_readings', readings],
+    ['sessions', sessions],
+    ['session_laps', laps],
+    ['session_usage_weights', weights],
+    ['service_due_overrides', overrides],
+  ] as const) {
+    if (result.error) {
+      report('service-due-read', result.error, { table, userId: user.id, vehicleIds: ids });
+      return {};
+    }
+  }
+
+  const result: Record<string, ServiceDueData> = {};
+  for (const book of books) {
+    const bookEntries = entries.data.filter((entry) => entry.book_id === book.id);
+    const bookSessions = sessions.data.filter((session) => session.vehicle_id === book.vehicle_id);
+    const bookSessionIds = new Set(bookSessions.map((session) => session.id));
+    result[book.vehicle_id] = {
+      book,
+      items: (items.data ?? []).filter((item) => item.book_id === book.id),
+      entries: bookEntries.map((entry) => ({
+        ...entry,
+        items: entryItems.data.filter((row) => row.entry_id === entry.id),
+      })),
+      readings: readings.data.filter((reading) => reading.book_id === book.id),
+      sessions: bookSessions.map(({ id, date, created_at }) => ({ id, date, created_at })),
+      laps: laps.data.filter((lap) => bookSessionIds.has(lap.session_id)),
+      weights: weights.data.filter((weight) => weight.book_id === book.id),
+      overrides: overrides.data.filter((override) => override.book_id === book.id),
+    };
+  }
+  return result;
+}
+
+const SESSION_NOT_FOUND = 'Session not found.';
+const MAX_SESSION_WEIGHT = 3;
+
+/**
+ * How much one session counts toward the bike's usage (owner, 2026-10-08: the
+ * rider decides whether a day warrants the service). One row per book and
+ * session; the row's book and session are fixed once written, so a change is
+ * an update of the weight alone. There is no upsert: PostgREST would write
+ * every column in the `on conflict` update and the grant names only the
+ * weight and overrides.
+ */
+export async function setSessionUsageWeight(
+  vehicleId: string,
+  sessionId: string,
+  input: { weight: number },
+): Promise<ActionResult<{ weight: number }>> {
+  const demoError = await assertNotDemoMode<{ weight: number }>();
+  if (demoError) return demoError;
+
+  const user = await getRealUser();
+  if (!user) return { ok: false, error: NOT_AUTHENTICATED };
+  if (typeof sessionId !== 'string' || !isUuid(sessionId)) return { ok: false, error: SESSION_NOT_FOUND };
+  const weight = input && typeof input === 'object' ? input.weight : undefined;
+  if (typeof weight !== 'number' || !Number.isFinite(weight) || weight < 0 || weight > MAX_SESSION_WEIGHT) {
+    return { ok: false, error: `A session counts between 0 and ${MAX_SESSION_WEIGHT} times.` };
+  }
+
+  const supabase = await createClient();
+  const loaded = await loadBookForWrite(supabase, user.id, vehicleId, 'session-weight-save');
+  if (!loaded.ok) return loaded;
+  const book = loaded.book;
+
+  const session = await supabase
+    .from('sessions')
+    .select('id')
+    .eq('id', sessionId)
+    .eq('user_id', user.id)
+    .eq('vehicle_id', vehicleId)
+    .maybeSingle();
+  if (session.error) {
+    report('session-weight-save', session.error, { table: 'sessions', userId: user.id, vehicleId, sessionId });
+    return { ok: false, error: WRITE_FAILED };
+  }
+  if (!session.data) return { ok: false, error: SESSION_NOT_FOUND };
+
+  const existing = await supabase
+    .from('session_usage_weights')
+    .select('id')
+    .eq('book_id', book.id)
+    .eq('session_id', sessionId)
+    .maybeSingle();
+  if (existing.error) {
+    report('session-weight-save', existing.error, { table: 'session_usage_weights', userId: user.id, vehicleId, sessionId });
+    return { ok: false, error: WRITE_FAILED };
+  }
+
+  const { error } = existing.data
+    ? await supabase.from('session_usage_weights').update({ weight }).eq('id', existing.data.id)
+    : await supabase.from('session_usage_weights').insert({ book_id: book.id, session_id: sessionId, weight });
+  if (error) {
+    report('session-weight-save', error, { table: 'session_usage_weights', userId: user.id, vehicleId, sessionId });
+    return { ok: false, error: WRITE_FAILED };
+  }
+
+  revalidateBook(vehicleId);
+  revalidatePath(`/sessions/${sessionId}`);
+  return { ok: true, data: { weight } };
+}
+
+export interface ServiceDueOverrideInput {
+  item_id: string;
+  kind: ServiceDueOverrideKind;
+  until_date: string | null;
+  until_hours: number | null;
+  until_distance: number | null;
+  anchor_hours: number | null;
+  anchor_distance: number | null;
+  note: string | null;
+}
+
+const OVERRIDE_KINDS: readonly ServiceDueOverrideKind[] = ['snooze', 'skip_cycle', 'set_next_due'];
+
+function nonNegativeOrNull(value: unknown): number | null | undefined {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return undefined;
+  return value;
+}
+
+/**
+ * The rider's word on one item's reminder (owner, 2026-10-08): a snooze, a
+ * skipped cycle, or the next due point typed outright. Every override is a new
+ * row and the newest wins, dated by the server, so an old one is never edited
+ * and the history of what the rider decided stays. `lib/service-book/due.ts`
+ * is the rule that reads them; this only checks that the row says something
+ * that rule can read.
+ */
+export async function addServiceDueOverride(vehicleId: string, input: ServiceDueOverrideInput): Promise<ActionResult<{ overrideId: string }>> {
+  const demoError = await assertNotDemoMode<{ overrideId: string }>();
+  if (demoError) return demoError;
+
+  const user = await getRealUser();
+  if (!user) return { ok: false, error: NOT_AUTHENTICATED };
+  if (!input || typeof input !== 'object') return { ok: false, error: 'The override could not be read.' };
+  if (typeof input.item_id !== 'string' || !isUuid(input.item_id)) return { ok: false, error: 'Item not found.' };
+  if (!OVERRIDE_KINDS.includes(input.kind)) return { ok: false, error: 'Choose to snooze, skip a cycle, or set the next due point.' };
+
+  const untilDate = input.until_date === null || input.until_date === undefined ? null : input.until_date;
+  if (untilDate !== null && !isIsoDate(untilDate)) return { ok: false, error: 'The date could not be read.' };
+  const untilHours = nonNegativeOrNull(input.until_hours);
+  const untilDistance = nonNegativeOrNull(input.until_distance);
+  const anchorHours = nonNegativeOrNull(input.anchor_hours);
+  const anchorDistance = nonNegativeOrNull(input.anchor_distance);
+  if (untilHours === undefined || untilDistance === undefined || anchorHours === undefined || anchorDistance === undefined) {
+    return { ok: false, error: 'Hours and distance have to be numbers of zero or more.' };
+  }
+  const note = typeof input.note === 'string' && input.note.trim() !== '' ? input.note.trim().slice(0, 500) : null;
+
+  if (input.kind === 'set_next_due' && untilDate === null && untilHours === null && untilDistance === null) {
+    return { ok: false, error: 'Say when it is next due: a date, hours, or distance.' };
+  }
+  if (input.kind !== 'skip_cycle' && (anchorHours !== null || anchorDistance !== null)) {
+    return { ok: false, error: 'Only a skipped cycle moves the count.' };
+  }
+  if (input.kind === 'skip_cycle' && (untilDate !== null || untilHours !== null || untilDistance !== null)) {
+    return { ok: false, error: 'A skipped cycle sets no limit; snooze instead.' };
+  }
+
+  const supabase = await createClient();
+  const loaded = await loadBookForWrite(supabase, user.id, vehicleId, 'service-due-override');
+  if (!loaded.ok) return loaded;
+  const book = loaded.book;
+
+  const item = await supabase.from('service_items').select('id').eq('id', input.item_id).eq('book_id', book.id).maybeSingle();
+  if (item.error) {
+    report('service-due-override', item.error, { table: 'service_items', userId: user.id, vehicleId, itemId: input.item_id });
+    return { ok: false, error: WRITE_FAILED };
+  }
+  if (!item.data) return { ok: false, error: 'Item not found.' };
+
+  const { data, error } = await supabase
+    .from('service_due_overrides')
+    .insert({
+      book_id: book.id,
+      item_id: item.data.id,
+      kind: input.kind,
+      until_date: untilDate,
+      until_hours: untilHours,
+      until_distance: untilDistance,
+      anchor_hours: anchorHours,
+      anchor_distance: anchorDistance,
+      note,
+    })
+    .select('id')
+    .single();
+  if (error || !data) {
+    report('service-due-override', error ?? { message: 'insert returned no row' }, { table: 'service_due_overrides', userId: user.id, vehicleId, itemId: item.data.id });
+    return { ok: false, error: WRITE_FAILED };
+  }
+
+  revalidateBook(vehicleId);
+  return { ok: true, data: { overrideId: data.id } };
 }

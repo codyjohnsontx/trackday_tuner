@@ -866,10 +866,35 @@ names. `tests/db/service-attachments.spec.ts` proves the cap, both sweeps'
 SQL and the private bucket.
 
 The rules that read the book - usage from readings and weighted sessions, due
-state and the rider's overrides, the honest-history labels, the field layout -
-are pure modules in `lib/service-book/` (`usage.ts`, `due.ts`, `provenance.ts`,
-`fields.ts`) that the phone app is to share, so `lib/service-book/imports.test.ts`
-pins their whole import list. **"Edited" is counted from
+state and the rider's overrides, the honest-history labels, the field layout,
+the reminders - are pure modules in `lib/service-book/` (`usage.ts`, `due.ts`,
+`provenance.ts`, `fields.ts`, `reminders.ts`) that the phone app is to share,
+so `lib/service-book/imports.test.ts` pins their whole import list.
+
+**The reminders are derived on the rider's device from the same rows, never
+stored** (owner, Q8 and PQ1: in-app only until there is a domain). The garage
+chip, the dashboard line and the session page's notice all go through
+`lib/service-book/reminders.ts` over `getServiceDueBooks`, and the book screen's
+chip through the same `computeBookDue`, so no two screens can disagree. "This
+day pushed X past due" is due with the sessions up to and including that one
+against due with the sessions strictly before it, in date order, so only the
+day that crossed the line says so; a session left out is weighted 0 rather than
+dropped, so no anchor moves, a day the rider weights 0 pushed nothing and the
+notice clears; a snoozed item is never pushed, and a day that only brings an
+item due soon raises no notice, since the chips already say so. The weight and the overrides are
+the rider's word and nothing else writes them: a weight is one row per book and
+session (no upsert - PostgREST would write the fixed columns the grant withholds),
+an override is always a new row the server dates, and "Clear" is a snooze ending
+today, which is what the rule reads as the schedule's own answer again. A
+`session_usage_weights` row with weight 1 and no row are the same day to the
+math and different to the screen, which shows nothing pressed until the rider
+has said. **A weight the server confirmed is shown from the control's own state
+ahead of the next server render** (`useStoredWeight`): on a production build the
+client router was measured dropping a server action's revalidated re-render of
+the session page in roughly half of saves (2026-10-14, no console error, the
+same action and `router.refresh()` pattern lands every time on the book page),
+so a control that waited for it read the rows from before the click. A new
+control on that page does the same. **"Edited" is counted from
 `service_entry_revisions`, never from `updated_at`**: a save that changes nothing
 writes no revision but still moves `updated_at`.
 

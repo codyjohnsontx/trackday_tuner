@@ -273,9 +273,9 @@ describe('the rider overrides', () => {
       expect(due).toMatchObject({ status: 'snoozed', underlyingStatus: 'overdue', override: { kind: 'snooze' } });
     });
 
-    it('ends on its date', () => {
+    it('ends on its date, and is no longer the override in force', () => {
       const snooze = override('snooze', '2026-09-30T00:00:00Z', { until_date: '2026-10-01' });
-      expect(only(computeDue(input(25, { overrides: [snooze] }))).status).toBe('overdue');
+      expect(only(computeDue(input(25, { overrides: [snooze] })))).toMatchObject({ status: 'overdue', override: null });
     });
 
     it('ends once the bike reaches its hours or distance, whichever comes first', () => {

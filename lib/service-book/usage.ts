@@ -230,7 +230,8 @@ function isAfterReading(session: UsageSession, reading: UsageReading): boolean {
   return sessionAt !== null && readAt !== null && sessionAt > readAt;
 }
 
-function compareSessionsAsc(a: UsageSession, b: UsageSession): number {
+/** Oldest first: by date, then by when it was logged. */
+export function compareSessionsAsc(a: UsageSession, b: UsageSession): number {
   if (a.date !== b.date) return a.date < b.date ? -1 : 1;
   return (instantOf(a.created_at) ?? 0) - (instantOf(b.created_at) ?? 0);
 }

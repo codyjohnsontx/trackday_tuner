@@ -130,6 +130,10 @@ plus a stack built with the `[storage.buckets.session-photos]` block and
 since they were added. It fails rather than skips without them.
 `tests/e2e/service-book-entry.spec.ts` has the same shape too, and needs the
 service book migrations through `20261013000300` (`save_service_entry`) applied.
+`tests/e2e/service-book-due.spec.ts` needs the same, and logs its session
+through the real form: a bike whose oil is one short session from overdue,
+the notice on the session page, the chips on the garage card and the
+dashboard, the rider weighting the day to nothing, and a snooze from the book.
 `tests/e2e/service-book-attachments.spec.ts` has the same shape and also needs
 `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `20261014000400` applied and the private
 `service-book` bucket from `[storage.buckets.service-book]`, which `supabase
