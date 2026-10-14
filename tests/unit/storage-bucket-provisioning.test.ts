@@ -395,8 +395,8 @@ file_size_limit = "10MiB"
 public = true
 `);
     expect(neighbour).toEqual([
-      { name: 'vehicle-photos', public: false, allowedMimeTypes: null },
-      { name: 'avatars', public: true, allowedMimeTypes: null },
+      { name: 'vehicle-photos', public: false, allowedMimeTypes: null, fileSizeLimit: 10 * 1024 * 1024 },
+      { name: 'avatars', public: true, allowedMimeTypes: null, fileSizeLimit: null },
     ]);
   });
 

@@ -56,12 +56,16 @@ describe('the hosted service attachments block in docs/beta-runbook.md', () => {
 
   it('creates the bucket private, with the size and types supabase/config.toml declares', () => {
     const declared = bucketsDeclaredIn(config).find((bucket) => bucket.name === 'service-book');
-    expect(declared).toEqual({ name: 'service-book', public: false, allowedMimeTypes: ['image/jpeg', 'application/pdf'] });
-    expect(config).toMatch(/\[storage\.buckets\.service-book\]\npublic = false\nfile_size_limit = "25MiB"\n/);
+    expect(declared).toEqual({
+      name: 'service-book',
+      public: false,
+      allowedMimeTypes: ['image/jpeg', 'application/pdf'],
+      fileSizeLimit: 25 * 1024 * 1024,
+    });
 
     const mimeTypes = declared!.allowedMimeTypes!.map((type) => `'${type}'`).join(', ');
     expect(block[block.length - 2]).toBe(
-      `insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('service-book', 'service-book', false, ${25 * 1024 * 1024}, array[${mimeTypes}]) on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types`,
+      `insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('service-book', 'service-book', false, ${declared!.fileSizeLimit}, array[${mimeTypes}]) on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types`,
     );
   });
 

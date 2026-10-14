@@ -48,6 +48,7 @@ const READ_FAILED = 'The attachments could not be read. Try again.';
 const UPLOAD_FAILED = 'The upload could not be saved. Try again.';
 const NOT_ARRIVED = 'The upload did not finish. Try again.';
 const WRONG_TYPE = 'Choose a photo or a PDF.';
+const TOO_LARGE = 'That file is larger than one attachment can be.';
 
 function report(event: string, error: Failure, context: Record<string, unknown>) {
   reportError(event, new Error(error.message), { reason: error.code, details: error.details, hint: error.hint, ...context });
@@ -81,9 +82,15 @@ async function ownBookId(
   return { ok: true, bookId: book.id };
 }
 
-async function hasProAccess(supabase: SupabaseServerClient, userId: string): Promise<boolean> {
-  const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-  return resolveUserAccess(data as Profile | null).hasProAccess;
+/** The size refusal in the rider's own plan's words, or plain words when the plan cannot be read. */
+async function tooLargeMessage(supabase: SupabaseServerClient, userId: string): Promise<string> {
+  const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+  if (error) {
+    report('service-attachment-plan', error, { userId });
+    return TOO_LARGE;
+  }
+  const pro = resolveUserAccess(data as Profile | null).hasProAccess;
+  return attachmentTooLargeMessage(attachmentMaxBytes(pro), pro);
 }
 
 export interface AttachmentUploadTarget {
@@ -139,8 +146,7 @@ export async function reserveServiceAttachment(
   if (error) {
     if (error.code === 'TT402') return { ok: false, error: getFreePlanLimitMessage('attachments'), atLimit: true };
     if (error.code === 'TT413') {
-      const pro = await hasProAccess(supabase, user.id);
-      return { ok: false, error: attachmentTooLargeMessage(attachmentMaxBytes(pro), pro) };
+      return { ok: false, error: await tooLargeMessage(supabase, user.id) };
     }
     if (error.code === 'TT404') return { ok: false, error: ENTRY_NOT_FOUND };
     report('service-attachment-reserve', error, { userId: user.id, vehicleId, entryId });
@@ -199,8 +205,7 @@ export async function confirmServiceAttachment(vehicleId: string, attachmentId: 
       report('service-attachment-confirm', { message: refused.error }, { userId: user.id, vehicleId, attachmentId });
     }
     if (error.code === 'TT413') {
-      const pro = await hasProAccess(supabase, user.id);
-      return { ok: false, error: attachmentTooLargeMessage(attachmentMaxBytes(pro), pro) };
+      return { ok: false, error: await tooLargeMessage(supabase, user.id) };
     }
     if (error.code === 'TT404') return { ok: false, error: NOT_ARRIVED };
     if (error.code === '22023') return { ok: false, error: WRONG_TYPE };

@@ -58,7 +58,7 @@ describe('the hosted session photos block in docs/beta-runbook.md', () => {
 
   it('creates the bucket with the settings supabase/config.toml declares', () => {
     const declared = bucketsDeclaredIn(config).find((bucket) => bucket.name === 'session-photos');
-    expect(declared).toEqual({ name: 'session-photos', public: true, allowedMimeTypes: ['image/*'] });
+    expect(declared).toEqual({ name: 'session-photos', public: true, allowedMimeTypes: ['image/*'], fileSizeLimit: null });
 
     const mimeTypes = declared!.allowedMimeTypes!.map((type) => `'${type}'`).join(', ');
     expect(block[block.length - 2]).toBe(
