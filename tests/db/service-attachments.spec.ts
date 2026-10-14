@@ -17,7 +17,8 @@ import type { Profile } from '@/types';
  * - Pro is exactly `resolveUserAccess`;
  * - another rider, nobody and the service role cannot reserve or confirm, and a
  *   rider cannot write the table directly;
- * - a reservation nobody confirms is swept after a day;
+ * - a reservation a day old can no longer be confirmed, and one nobody
+ *   confirms is swept after a day;
  * - the bucket is private: nobody reads an object without a signed URL.
  *
  * Part of `npm run test:db`, which CI runs on every pull request against a
@@ -255,6 +256,21 @@ test.describe('service book attachments', () => {
 
     const states = await admin.from('service_attachments').select('status').in('id', [pdf.id, big.id]);
     expect(states.data!.map((state) => state.status)).toEqual(['pending', 'pending']);
+  });
+
+  test('refuses to confirm a reservation the allowance no longer counts', async () => {
+    const { client, book, entry } = await newRider('confirm-expired');
+    const row = (await reserve(client, book, entry)).data as unknown as Reserved;
+    await upload(row.object_path, JPEG, 'image/jpeg');
+    await upload(row.thumb_path!, JPEG, 'image/jpeg');
+
+    const dayAndAnHourAgo = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    const aged = await admin.from('service_attachments').update({ created_at: dayAndAnHourAgo }).eq('id', row.id).select('id');
+    expect(aged.data).toHaveLength(1);
+
+    expect((await client.rpc('confirm_service_attachment', { p_attachment_id: row.id })).error?.code).toBe('TT404');
+    const stored = await admin.from('service_attachments').select('status').eq('id', row.id).single();
+    expect(stored.data!.status).toBe('pending');
   });
 
   test('the sweep deletes reservations nobody confirmed within a day, and nothing else', async () => {

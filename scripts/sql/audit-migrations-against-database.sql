@@ -371,7 +371,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                   and not has_function_privilege('anon', p.oid, 'execute')
                   and not has_function_privilege('service_role', p.oid, 'execute')
              from pg_proc p where p.oid = to_regprocedure('public.reserve_service_attachment(uuid,uuid,text,text,integer)'))
-      and (select md5(p.prosrc) = '26f073844d8516216b5d396addec3df6'
+      and (select md5(p.prosrc) = '33bac9985b3165e60948ee02a9e67e8b'
                   and p.prosecdef and p.proconfig = array['search_path=""']
                   and has_function_privilege('authenticated', p.oid, 'execute')
                   and not has_function_privilege('anon', p.oid, 'execute')

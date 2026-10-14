@@ -276,6 +276,7 @@ describe('every storage bucket the application uploads to is provisioned by the 
       name: 'service-book',
       public: false,
       allowedMimeTypes: ['image/jpeg', 'application/pdf'],
+      fileSizeLimit: 25 * 1024 * 1024,
     });
     expect(policies.filter((policy) => policy.bucket === 'service-book')).toEqual([]);
   });
@@ -283,7 +284,7 @@ describe('every storage bucket the application uploads to is provisioned by the 
   it('declares the session photo bucket the mobile app uploads to, public like the bike photo', () => {
     // No website code uploads here, so the scan above cannot see it; the check
     // above still holds it to owner-scoped policies because it is declared.
-    expect(declared).toContainEqual({ name: 'session-photos', public: true, allowedMimeTypes: ['image/*'] });
+    expect(declared).toContainEqual({ name: 'session-photos', public: true, allowedMimeTypes: ['image/*'], fileSizeLimit: null });
   });
 });
 

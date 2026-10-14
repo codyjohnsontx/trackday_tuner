@@ -3993,7 +3993,8 @@ begin;
 --    straight to storage, resized first, so no photo passes through a function.
 -- 3. `confirm_service_attachment` flips the row to `ready` only once the object
 --    is really there: it reads storage.objects for the path, and refuses an
---    object missing, of another type, or over the rider's per-file size. The
+--    object missing, of another type, or over the rider's per-file size, and a
+--    reservation a day old, which the count no longer holds. The
 --    size kept on the row is the stored object's, not the one the browser
 --    declared. `uploaded_at` is set here and nowhere else, and it is what the
 --    "Receipt attached when logged" label reads.
@@ -4158,8 +4159,9 @@ grant execute on function public.reserve_service_attachment(uuid, uuid, text, te
 
 -- security definer because it writes a row a rider holds no update on, and
 -- reads storage.objects, which no rider policy reaches in this bucket. It
--- confirms only a pending row of a book the caller owns, and only what storage
--- actually holds. Returns the confirmed row.
+-- confirms only a pending row of a book the caller owns that still counts
+-- toward the allowance, and only what storage actually holds. Returns the
+-- confirmed row.
 create or replace function public.confirm_service_attachment(p_attachment_id uuid)
 returns jsonb
 language plpgsql
@@ -4187,6 +4189,9 @@ begin
   end if;
   if v_row.status = 'ready' then
     return to_jsonb(v_row);
+  end if;
+  if v_row.created_at <= now() - interval '1 day' then
+    raise exception 'the reservation has expired' using errcode = 'TT404';
   end if;
 
   select (o.metadata ->> 'size')::bigint, o.metadata ->> 'mimetype'
@@ -4287,7 +4292,7 @@ select
   has_table_privilege('anon', 'public.service_attachments', 'select') as anon_reads,
   (select md5(p.prosrc) = 'df08a489fe80ce5fb364a5aa8dc3844c' and p.prosecdef
      from pg_proc p where p.oid = to_regprocedure('public.reserve_service_attachment(uuid,uuid,text,text,integer)')) as reserve_matches,
-  (select md5(p.prosrc) = '26f073844d8516216b5d396addec3df6' and p.prosecdef
+  (select md5(p.prosrc) = '33bac9985b3165e60948ee02a9e67e8b' and p.prosecdef
      from pg_proc p where p.oid = to_regprocedure('public.confirm_service_attachment(uuid)')) as confirm_matches,
   (select md5(p.prosrc) = 'c60c406ee407e8cef198e650525e0301' and not p.prosecdef
      from pg_proc p where p.oid = to_regprocedure('public.service_attachment_allowance()')) as allowance_matches,
