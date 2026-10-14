@@ -15,9 +15,10 @@ import type { Database } from '@/types/supabase';
  *
  * - the photo was resized in the browser and stored as a JPEG with a
  *   thumbnail, in the private `service-book` bucket;
- * - the page links it through the app's attachment route, which signs a URL
- *   for the rider on each open and answers nobody without a session, while
- *   the object's own storage path answers nobody without a signed URL;
+ * - the page shows its thumbnail through a signed URL, and opens the photo
+ *   through the app's attachment route, which signs a URL for the rider on
+ *   each open and answers nobody without a session, while the object's own
+ *   storage path answers nobody without a signed URL;
  * - the entry reads "Receipt attached when logged" and is still "Unedited",
  *   because an attachment is not an edit;
  * - at the free plan's 25 per bike the uploader is replaced by the notice, and
@@ -142,19 +143,12 @@ test.describe('service book attachments', () => {
     expect(bytes.subarray(0, 2).toString('hex')).toBe('ffd8');
     expect(bytes.length).toBe(receipt.bytes);
 
-    // The page links the app's route, which signs a URL for the rider on each open
-    // and answers nobody without a session; the object itself answers nobody without a signed URL.
-    const src = await receiptTile.locator('img').getAttribute('src');
-    expect(src).toBe(`/api/service-book/attachments/${receipt.id}?variant=thumb`);
-    const opened = await page.request.get(src!, { maxRedirects: 0 });
-    expect(opened.status()).toBe(302);
-    const location = opened.headers()['location'];
-    expect(location).toContain('/storage/v1/object/sign/service-book/');
-    const signed = await fetch(location);
-    expect(signed.status).toBe(200);
-    expect(signed.headers.get('content-type')).toBe('image/jpeg');
-    const sessionless = await fetch(new URL(src!, page.url()), { redirect: 'manual' });
-    expect(sessionless.status).toBe(401);
+    // The thumbnail is a signed URL, which opens; the object itself answers nobody without one.
+    const thumbSrc = await receiptTile.locator('img').getAttribute('src');
+    expect(thumbSrc).toContain(`/storage/v1/object/sign/service-book/${receipt.thumb_path}`);
+    const thumb = await fetch(thumbSrc!);
+    expect(thumb.status).toBe(200);
+    expect(thumb.headers.get('content-type')).toBe('image/jpeg');
     const base = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
     const publicPath = await fetch(`${base}/storage/v1/object/public/service-book/${receipt.object_path}`);
@@ -164,10 +158,22 @@ test.describe('service book attachments', () => {
     });
     expect(anonPath.ok).toBe(false);
 
-    // The viewer shows the full photo, and closes.
+    // The viewer shows the full photo through the app's route, which signs a URL for the
+    // rider on each open and answers nobody without a session; then it closes.
     await receiptTile.click();
     const viewer = page.getByRole('dialog', { name: 'Receipt' });
     await expect(viewer.getByRole('img', { name: 'Receipt' })).toBeVisible();
+    const href = await viewer.getByRole('link', { name: 'Full size' }).getAttribute('href');
+    expect(href).toBe(`/api/service-book/attachments/${receipt.id}`);
+    const opened = await page.request.get(href!, { maxRedirects: 0 });
+    expect(opened.status()).toBe(302);
+    const location = opened.headers()['location'];
+    expect(location).toContain(`/storage/v1/object/sign/service-book/${receipt.object_path}`);
+    const signed = await fetch(location);
+    expect(signed.status).toBe(200);
+    expect(signed.headers.get('content-type')).toBe('image/jpeg');
+    const sessionless = await fetch(new URL(href!, page.url()), { redirect: 'manual' });
+    expect(sessionless.status).toBe(401);
     await viewer.getByRole('button', { name: 'Close' }).click();
     await expect(viewer).toBeHidden();
 

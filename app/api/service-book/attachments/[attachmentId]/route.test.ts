@@ -21,6 +21,7 @@ import { ATTACHMENT_READ_URL_SECONDS } from '@/lib/service-book/attachments';
 const ENTRY_ID = '11111111-1111-4111-8111-111111111111';
 const PHOTO_ID = '22222222-2222-4222-8222-222222222222';
 const PDF_ID = '33333333-3333-4333-8333-333333333333';
+const PART_ID = '44444444-4444-4444-8444-444444444444';
 
 const PHOTO = {
   id: PHOTO_ID,
@@ -31,6 +32,14 @@ const PHOTO = {
   uploaded_at: '2026-10-14T10:00:00Z',
   object_path: `book-1/${PHOTO_ID}.jpg`,
   thumb_path: `book-1/${PHOTO_ID}.thumb.jpg`,
+};
+const PART = {
+  ...PHOTO,
+  id: PART_ID,
+  kind: 'photo',
+  uploaded_at: '2026-10-14T10:10:00Z',
+  object_path: `book-1/${PART_ID}.jpg`,
+  thumb_path: `book-1/${PART_ID}.thumb.jpg`,
 };
 const PDF = {
   id: PDF_ID,
@@ -46,7 +55,7 @@ const PDF = {
 type Answer = { data: unknown; error: { message: string; code?: string } | null };
 
 /** The rider's client: `rows` are what RLS admits, filtered by the `.eq()` calls the code makes. */
-function riderSees(rows: (typeof PHOTO | typeof PDF)[], failure: Answer['error'] = null) {
+function riderSees(rows: (typeof PHOTO | typeof PART | typeof PDF)[], failure: Answer['error'] = null) {
   createClient.mockResolvedValue({
     from: () => {
       const filters: [string, unknown][] = [];
@@ -71,8 +80,12 @@ function storageSigns() {
     minted += 1;
     return { data: { signedUrl: `https://storage.test/sign/${path}?token=t${minted}&expires=${seconds}` }, error: null };
   });
-  createAdminClient.mockReturnValue({ storage: { from: () => ({ createSignedUrl }) } });
-  return createSignedUrl;
+  const createSignedUrls = vi.fn(async (paths: string[], seconds: number) => ({
+    data: paths.map((path) => ({ path, signedUrl: `https://storage.test/sign/${path}?batch&expires=${seconds}`, error: null })),
+    error: null,
+  }));
+  createAdminClient.mockReturnValue({ storage: { from: () => ({ createSignedUrl, createSignedUrls }) } });
+  return { createSignedUrl, createSignedUrls };
 }
 
 function open(href: string): Promise<Response> {
@@ -96,10 +109,27 @@ describe('opening a service book attachment from the entry page', () => {
     consoleError.mockRestore();
   });
 
-  it('signs a fresh URL on each open, so a page left open past the read TTL still opens every link', async () => {
+  it('signs every thumbnail in one batch as the page renders, without the route', async () => {
+    riderSees([PHOTO, PART, PDF]);
+    const { createSignedUrl, createSignedUrls } = storageSigns();
+
+    const links = await getServiceAttachmentLinks('vehicle-1', ENTRY_ID);
+    if (!links.ok) throw new Error(links.error);
+
+    expect(createSignedUrls).toHaveBeenCalledTimes(1);
+    expect(createSignedUrls).toHaveBeenCalledWith([PHOTO.thumb_path, PART.thumb_path], ATTACHMENT_READ_URL_SECONDS);
+    expect(createSignedUrl).not.toHaveBeenCalled();
+    expect(links.data.map((link) => link.thumbUrl)).toEqual([
+      `https://storage.test/sign/${PHOTO.thumb_path}?batch&expires=${ATTACHMENT_READ_URL_SECONDS}`,
+      `https://storage.test/sign/${PART.thumb_path}?batch&expires=${ATTACHMENT_READ_URL_SECONDS}`,
+      null,
+    ]);
+  });
+
+  it('signs a fresh URL on each tap, so a page left open past the read TTL still opens every file', async () => {
     vi.useFakeTimers();
     riderSees([PHOTO, PDF]);
-    const createSignedUrl = storageSigns();
+    const { createSignedUrl } = storageSigns();
 
     const links = await getServiceAttachmentLinks('vehicle-1', ENTRY_ID);
     if (!links.ok) throw new Error(links.error);
@@ -109,39 +139,35 @@ describe('opening a service book attachment from the entry page', () => {
     vi.advanceTimersByTime((ATTACHMENT_READ_URL_SECONDS + 60) * 1000);
 
     const full = await open(photo.url);
-    const thumb = await open(photo.thumbUrl as string);
     const document = await open(pdf.url);
 
-    expect([full.status, thumb.status, document.status]).toEqual([302, 302, 302]);
+    expect([full.status, document.status]).toEqual([302, 302]);
     expect(full.headers.get('location')).toBe(`https://storage.test/sign/${PHOTO.object_path}?token=t1&expires=${ATTACHMENT_READ_URL_SECONDS}`);
-    expect(thumb.headers.get('location')).toBe(`https://storage.test/sign/${PHOTO.thumb_path}?token=t2&expires=${ATTACHMENT_READ_URL_SECONDS}`);
-    expect(document.headers.get('location')).toBe(`https://storage.test/sign/${PDF.object_path}?token=t3&expires=${ATTACHMENT_READ_URL_SECONDS}`);
+    expect(document.headers.get('location')).toBe(`https://storage.test/sign/${PDF.object_path}?token=t2&expires=${ATTACHMENT_READ_URL_SECONDS}`);
     expect(full.headers.get('cache-control')).toBe('private, no-store');
-    expect(pdf.thumbUrl).toBeNull();
   });
 
   it('signs nothing for a signed-out caller', async () => {
     getRealUser.mockResolvedValue(null);
     riderSees([PHOTO]);
-    const createSignedUrl = storageSigns();
+    const { createSignedUrl } = storageSigns();
 
     expect((await open(`/api/service-book/attachments/${PHOTO_ID}`)).status).toBe(401);
     expect(createSignedUrl).not.toHaveBeenCalled();
   });
 
-  it('signs nothing for an attachment the rider cannot select, or a thumbnail a PDF does not have', async () => {
+  it('signs nothing for an attachment the rider cannot select', async () => {
     riderSees([PDF]);
-    const createSignedUrl = storageSigns();
+    const { createSignedUrl } = storageSigns();
 
     expect((await open(`/api/service-book/attachments/${PHOTO_ID}`)).status).toBe(404);
-    expect((await open(`/api/service-book/attachments/${PDF_ID}?variant=thumb`)).status).toBe(404);
     expect((await open('/api/service-book/attachments/not-a-uuid')).status).toBe(404);
     expect(createSignedUrl).not.toHaveBeenCalled();
   });
 
   it('answers 503 and signs nothing when the row cannot be read', async () => {
     riderSees([PHOTO], { message: 'connection reset', code: '08006' });
-    const createSignedUrl = storageSigns();
+    const { createSignedUrl } = storageSigns();
 
     expect((await open(`/api/service-book/attachments/${PHOTO_ID}`)).status).toBe(503);
     expect(createSignedUrl).not.toHaveBeenCalled();

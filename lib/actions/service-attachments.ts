@@ -8,6 +8,7 @@ import { reportError } from '@/lib/monitoring/report-error';
 import { attachmentMaxBytes, getFreePlanLimitMessage } from '@/lib/plans';
 import { isUuid } from '@/lib/rag/validation';
 import {
+  ATTACHMENT_READ_URL_SECONDS,
   attachmentTooLargeMessage,
   isAttachmentMime,
   isEntryAttachmentKind,
@@ -280,20 +281,17 @@ export interface ServiceAttachmentLink {
   uploaded_at: string;
   /** Opens the file itself through a URL signed when it is opened. */
   url: string;
-  /** Opens the thumbnail the same way; null for a PDF. */
+  /** The thumbnail, signed for ten minutes as the page renders; null for a PDF. */
   thumbUrl: string | null;
-}
-
-function attachmentHref(attachmentId: string, variant: 'file' | 'thumb'): string {
-  const path = `/api/service-book/attachments/${attachmentId}`;
-  return variant === 'thumb' ? `${path}?variant=thumb` : path;
 }
 
 /**
  * One entry's confirmed attachments. Which rows come back is the rider's own
- * select under RLS. Each link names the attachment rather than carrying a
- * signed URL, so it still opens however long the page has been open: the route
- * it points at signs one on every open. `vehicleId` is only for error reports.
+ * select under RLS; only then does the service role sign the thumbnails those
+ * rows name, in one call, since the page loads them as it renders. A file is
+ * opened by a tap that may come long after that, so its link names the
+ * attachment instead of carrying a signed URL, and the route it points at
+ * signs one on every open. `vehicleId` is only for error reports.
  */
 export async function getServiceAttachmentLinks(
   vehicleId: string,
@@ -318,22 +316,33 @@ export async function getServiceAttachmentLinks(
     report('service-attachment-read', error, { userId: user.id, vehicleId, entryId });
     return { ok: false, error: READ_FAILED };
   }
+  const rows = (data ?? []).filter((row) => row.uploaded_at !== null);
+  const thumbPaths = rows.flatMap((row) => (row.thumb_path ? [row.thumb_path] : []));
+
+  const thumbUrlByPath = new Map<string, string>();
+  if (thumbPaths.length > 0) {
+    const signed = await createAdminClient()
+      .storage.from('service-book')
+      .createSignedUrls(thumbPaths, ATTACHMENT_READ_URL_SECONDS);
+    if (signed.error) {
+      report('service-attachment-read', signed.error, { userId: user.id, vehicleId, entryId });
+      return { ok: false, error: READ_FAILED };
+    }
+    for (const entry of signed.data) {
+      if (entry.path !== null && entry.error === null) thumbUrlByPath.set(entry.path, entry.signedUrl);
+    }
+  }
 
   return {
     ok: true,
-    data: (data ?? []).flatMap((row) => {
-      if (row.uploaded_at === null) return [];
-      return [
-        {
-          id: row.id,
-          kind: row.kind,
-          mime: row.mime,
-          bytes: row.bytes,
-          uploaded_at: row.uploaded_at,
-          url: attachmentHref(row.id, 'file'),
-          thumbUrl: row.thumb_path ? attachmentHref(row.id, 'thumb') : null,
-        },
-      ];
-    }),
+    data: rows.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      mime: row.mime,
+      bytes: row.bytes,
+      uploaded_at: row.uploaded_at as string,
+      url: `/api/service-book/attachments/${row.id}`,
+      thumbUrl: row.thumb_path ? (thumbUrlByPath.get(row.thumb_path) ?? null) : null,
+    })),
   };
 }

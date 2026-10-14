@@ -851,7 +851,8 @@ purpose: `reserve_service_attachment` counts the allowance (25 per bike free,
 `lib/plans.ts`) under a per-book lock and mints the object path, the server signs
 an upload URL for it, the browser resizes and uploads, and
 `confirm_service_attachment` flips the row to `ready` only once it reads the
-object back from `storage.objects`. A read is a link to
+object back from `storage.objects`. Thumbnails are signed in one batch as the
+entry page renders; a file opens through
 `/api/service-book/attachments/[attachmentId]`, which signs a URL on every open
 after the rider's own select of the row, so a page left open never holds an
 expired one.
