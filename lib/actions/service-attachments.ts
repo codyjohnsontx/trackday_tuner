@@ -8,7 +8,6 @@ import { reportError } from '@/lib/monitoring/report-error';
 import { attachmentMaxBytes, getFreePlanLimitMessage } from '@/lib/plans';
 import { isUuid } from '@/lib/rag/validation';
 import {
-  ATTACHMENT_READ_URL_SECONDS,
   attachmentTooLargeMessage,
   isAttachmentMime,
   isEntryAttachmentKind,
@@ -24,10 +23,10 @@ import type { ActionResult, Profile } from '@/types';
  *
  * The bucket is private and no rider policy reaches it, so the server is the
  * only way in and out: it mints a signed upload URL for a path the database
- * reserved, and a signed read URL once the rider's own select of the row says
- * the attachment is theirs. The service role is used for exactly those two
- * storage calls and for taking back an upload that failed - never to decide
- * whose an attachment is.
+ * reserved, and `/api/service-book/attachments/[attachmentId]` mints a signed
+ * read URL once the rider's own select of the row says the attachment is
+ * theirs. The service role is used for exactly those two storage calls and for
+ * taking back an upload that failed - never to decide whose an attachment is.
  *
  * An upload is three steps and the browser drives them: `reserveServiceAttachment`
  * (the allowance is counted under a per-book lock in SQL), the upload straight
@@ -279,16 +278,22 @@ export interface ServiceAttachmentLink {
   mime: ServiceAttachmentMime;
   bytes: number;
   uploaded_at: string;
-  /** The file itself, signed for ten minutes. */
+  /** Opens the file itself through a URL signed when it is opened. */
   url: string;
-  /** The thumbnail, signed for ten minutes; null for a PDF. */
+  /** Opens the thumbnail the same way; null for a PDF. */
   thumbUrl: string | null;
 }
 
+function attachmentHref(attachmentId: string, variant: 'file' | 'thumb'): string {
+  const path = `/api/service-book/attachments/${attachmentId}`;
+  return variant === 'thumb' ? `${path}?variant=thumb` : path;
+}
+
 /**
- * One entry's confirmed attachments with short-lived signed URLs. Which rows
- * come back is the rider's own select under RLS; only then does the service
- * role sign the paths those rows name. `vehicleId` is only for error reports.
+ * One entry's confirmed attachments. Which rows come back is the rider's own
+ * select under RLS. Each link names the attachment rather than carrying a
+ * signed URL, so it still opens however long the page has been open: the route
+ * it points at signs one on every open. `vehicleId` is only for error reports.
  */
 export async function getServiceAttachmentLinks(
   vehicleId: string,
@@ -305,7 +310,7 @@ export async function getServiceAttachmentLinks(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('service_attachments')
-    .select('id, kind, mime, bytes, uploaded_at, object_path, thumb_path')
+    .select('id, kind, mime, bytes, uploaded_at, thumb_path')
     .eq('entry_id', entryId)
     .eq('status', 'ready')
     .order('uploaded_at');
@@ -313,26 +318,11 @@ export async function getServiceAttachmentLinks(
     report('service-attachment-read', error, { userId: user.id, vehicleId, entryId });
     return { ok: false, error: READ_FAILED };
   }
-  const rows = data ?? [];
-  if (rows.length === 0) return { ok: true, data: [] };
-
-  const paths = rows.flatMap((row) => (row.thumb_path ? [row.object_path, row.thumb_path] : [row.object_path]));
-  const signed = await createAdminClient()
-    .storage.from('service-book')
-    .createSignedUrls(paths, ATTACHMENT_READ_URL_SECONDS);
-  if (signed.error) {
-    report('service-attachment-read', signed.error, { userId: user.id, vehicleId, entryId });
-    return { ok: false, error: READ_FAILED };
-  }
-  const urlByPath = new Map(
-    signed.data.filter((entry) => entry.path !== null && entry.error === null).map((entry) => [entry.path as string, entry.signedUrl]),
-  );
 
   return {
     ok: true,
-    data: rows.flatMap((row) => {
-      const url = urlByPath.get(row.object_path);
-      if (!url || row.uploaded_at === null) return [];
+    data: (data ?? []).flatMap((row) => {
+      if (row.uploaded_at === null) return [];
       return [
         {
           id: row.id,
@@ -340,8 +330,8 @@ export async function getServiceAttachmentLinks(
           mime: row.mime,
           bytes: row.bytes,
           uploaded_at: row.uploaded_at,
-          url,
-          thumbUrl: row.thumb_path ? (urlByPath.get(row.thumb_path) ?? null) : null,
+          url: attachmentHref(row.id, 'file'),
+          thumbUrl: row.thumb_path ? attachmentHref(row.id, 'thumb') : null,
         },
       ];
     }),

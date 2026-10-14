@@ -26,7 +26,7 @@ import {
 interface ServiceEntryAttachmentsProps {
   vehicleId: string;
   entryId: string;
-  /** Confirmed attachments with signed URLs; `null` when they could not be read. */
+  /** Confirmed attachments with links that sign on open; `null` when they could not be read. */
   links: ServiceAttachmentLink[] | null;
   /** False on a removed entry, in the demo, and when the rider switched the field off. */
   canUpload: boolean;
@@ -168,7 +168,7 @@ export function ServiceEntryAttachments({
                     onClick={() => setViewing(attachment)}
                     className="block aspect-square w-full overflow-hidden rounded-row bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
                   >
-                    {/* A signed URL expires in ten minutes and names a private object, so it
+                    {/* The link redirects to a short-lived signed URL for a private object, so it
                         is not handed to next/image, whose optimizer would cache and re-serve it. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={attachment.thumbUrl ?? attachment.url} alt="" className="h-full w-full object-cover" />

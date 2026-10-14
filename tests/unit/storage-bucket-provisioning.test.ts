@@ -259,6 +259,7 @@ describe('every storage bucket the application uploads to is provisioned by the 
         readPublicly: false,
         files: [
           'app/api/monitoring/service-attachment-sweep/route.ts',
+          'app/api/service-book/attachments/[attachmentId]/route.ts',
           'components/service-book/service-entry-attachments.tsx',
           'lib/actions/service-attachments.ts',
         ],

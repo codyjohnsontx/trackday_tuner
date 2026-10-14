@@ -851,8 +851,10 @@ purpose: `reserve_service_attachment` counts the allowance (25 per bike free,
 `lib/plans.ts`) under a per-book lock and mints the object path, the server signs
 an upload URL for it, the browser resizes and uploads, and
 `confirm_service_attachment` flips the row to `ready` only once it reads the
-object back from `storage.objects`. Reads are signed URLs minted after the
-rider's own select of the row (`lib/actions/service-attachments.ts`).
+object back from `storage.objects`. A read is a link to
+`/api/service-book/attachments/[attachmentId]`, which signs a URL on every open
+after the rider's own select of the row, so a page left open never holds an
+expired one.
 `tests/unit/storage-bucket-provisioning.test.ts` accepts that shape only for a
 bucket on its `SERVER_ONLY_BUCKETS` list. Load the browser Supabase client
 lazily (`await import`) in a client component on a page reached by client
