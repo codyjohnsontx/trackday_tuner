@@ -157,6 +157,22 @@ describe('what a session pushed past due', () => {
     expect(describeSessionDuePush(snoozed, SESSION, CLOCK)).toEqual([]);
   });
 
+  it('is not raised by a day whose date alone starts a never-done item counting', () => {
+    // A year-old first session anchors a never-done 365-day item, so the item
+    // reads overdue with or without that day's usage; weighting it 0 changes nothing.
+    const early = 'session-0';
+    const history = data({
+      items: [{ id: 'fluid', name: 'Brake fluid', interval_hours: null, interval_distance: null, interval_days: 365, archived_at: null }],
+      entries: [],
+      sessions: [
+        { id: early, date: '2025-09-01', created_at: '2025-09-01T15:00:00Z' },
+        { id: SESSION, date: '2026-05-01', created_at: '2026-05-01T15:00:00Z' },
+      ],
+    });
+    expect(statusOf(computeBookDue(history, CLOCK), 'fluid')).toBe('overdue');
+    expect(describeSessionDuePush(history, early, CLOCK)).toEqual([]);
+  });
+
   it('is nothing for a session the book does not know', () => {
     expect(describeSessionDuePush(data(), 'elsewhere', CLOCK)).toEqual([]);
   });
@@ -178,18 +194,14 @@ describe('the override in force, in words', () => {
   const base = { until_date: null, until_hours: null, until_distance: null };
 
   it('says what a snooze waits for, or that it waits for the next service', () => {
-    const state = { holds: true, madeOn: '2026-09-28' };
+    const state = { madeOn: '2026-09-28' };
     expect(describeOverride({ ...base, kind: 'snooze', until_date: '2026-10-20' }, 'mi', state)).toBe('Snoozed until 20 Oct 2026');
     expect(describeOverride({ ...base, kind: 'snooze', until_hours: 60, until_distance: 1300 }, 'mi', state)).toBe('Snoozed until 60 h or 1,300 mi');
     expect(describeOverride({ ...base, kind: 'snooze' }, 'mi', state)).toBe('Snoozed until logged again');
   });
 
-  it('says nothing for a snooze that has run out', () => {
-    expect(describeOverride({ ...base, kind: 'snooze', until_date: '2026-09-30' }, 'mi', { holds: false, madeOn: '2026-09-28' })).toBeNull();
-  });
-
   it('dates a skipped cycle and credits a typed next due', () => {
-    expect(describeOverride({ ...base, kind: 'skip_cycle' }, 'mi', { holds: false, madeOn: '2026-09-28' })).toBe('Skipped a cycle on 28 Sep 2026');
-    expect(describeOverride({ ...base, kind: 'set_next_due', until_hours: 70 }, 'mi', { holds: false, madeOn: '2026-09-28' })).toBe('Next due set by you');
+    expect(describeOverride({ ...base, kind: 'skip_cycle' }, 'mi', { madeOn: '2026-09-28' })).toBe('Skipped a cycle on 28 Sep 2026');
+    expect(describeOverride({ ...base, kind: 'set_next_due', until_hours: 70 }, 'mi', { madeOn: '2026-09-28' })).toBe('Next due set by you');
   });
 });

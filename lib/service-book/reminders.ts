@@ -127,10 +127,10 @@ export interface SessionDuePush {
 
 /**
  * The items this one session carried across `due_soon` or `overdue`: due with
- * the session counted as the rider weighted it, against due with the session
- * left out, every other row the same. A session weighted 0 adds nothing on
- * either side, so it pushed nothing, which is what lets the rider say "this day
- * did not count" and watch the notice clear. A snoozed item is not pushed - the
+ * the session counted as the rider weighted it, against due with the same
+ * session weighted 0, every other row the same. A session the rider weighted 0
+ * gives both sides the same rows, so it pushed nothing, which is what lets the
+ * rider say "this day did not count" and watch the notice clear. A snoozed item is not pushed - the
  * rider has already answered it - and an item with no interval or no usage to
  * measure cannot be.
  */
@@ -140,8 +140,10 @@ export function describeSessionDuePush(data: ServiceDueData, sessionId: string, 
   const withoutSession = computeBookDue(
     {
       ...data,
-      sessions: data.sessions.filter((session) => session.id !== sessionId),
-      laps: data.laps.filter((lap) => lap.session_id !== sessionId),
+      weights: [
+        ...data.weights.filter((weight) => weight.session_id !== sessionId),
+        { session_id: sessionId, weight: 0, minutes_override: null, distance_override: null },
+      ],
     },
     clock,
   );
@@ -208,23 +210,19 @@ export function weightOfChoice(choice: SessionWeightChoice): number {
 /**
  * The override in force, in the rider's words: `Snoozed until 20 Oct 2026`,
  * `Snoozed until 50 h or 1,300 mi`, `Snoozed until logged again`, `Skipped a
- * cycle on 20 Sep 2026`, `Next due set by you`. A snooze that no longer holds
- * (`holds` is the item's own `status === 'snoozed'`) says nothing: the
- * schedule's own answer is back. `null` when there is nothing to say.
+ * cycle on 20 Sep 2026`, `Next due set by you`. Only an override `computeDue`
+ * reports in force reaches here, so a snooze that has run out is never asked.
  */
 export function describeOverride(
   override: Pick<DueOverride, 'kind' | 'until_date' | 'until_hours' | 'until_distance'>,
   unit: DistanceUnit,
   state: {
-    /** Whether a snooze is still in force. */
-    holds: boolean;
     /** The day the override was made, in the owner's zone (`riderDateOfTimestamp`). */
     madeOn: string;
   },
-): string | null {
+): string {
   if (override.kind === 'skip_cycle') return `Skipped a cycle on ${formatDay(state.madeOn)}`;
   if (override.kind === 'set_next_due') return 'Next due set by you';
-  if (!state.holds) return null;
   const limits = [
     isIsoDate(override.until_date) ? formatDay(override.until_date) : null,
     formatHours(override.until_hours),

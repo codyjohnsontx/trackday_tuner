@@ -47,6 +47,29 @@ function report(event: string, error: Failure, context: Record<string, unknown>)
   reportError(event, new Error(error.message), { reason: error.code, details: error.details, hint: error.hint, ...context });
 }
 
+/** The Data API's `max_rows`: a request returns at most this many rows, and says nothing when it stops. */
+const PAGE_SIZE = 1000;
+
+/** Every row a query matches, a page at a time, so a long history is not cut off at `PAGE_SIZE`. */
+async function readAllRows<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: Failure | null }>,
+): Promise<{ data: T[]; error: Failure | null }> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1);
+    if (error) return { data: [], error };
+    rows.push(...(data ?? []));
+    if ((data ?? []).length < PAGE_SIZE) return { data: rows, error: null };
+  }
+}
+
+/** The rider's laps, read by rider rather than by a session list that grows the URL with every session. */
+function readRiderLaps(supabase: SupabaseServerClient, userId: string) {
+  return readAllRows((from, to) =>
+    supabase.from('session_laps').select('session_id, lap_time_ms, included').eq('user_id', userId).order('id').range(from, to),
+  );
+}
+
 function bookPath(vehicleId: string): string {
   return `/garage/${vehicleId}/book`;
 }
@@ -113,14 +136,17 @@ export async function getServiceBook(
   const book = bookRead.book;
 
   const entriesQuery = supabase.from('service_entries').select('*').eq('book_id', book.id);
-  const [fields, items, entries, readings, sessions, weights, overrides] = await Promise.all([
+  const [fields, items, entries, readings, sessions, laps, weights, overrides] = await Promise.all([
     supabase.from('service_book_fields').select('*').eq('book_id', book.id).order('sort_order'),
     supabase.from('service_items').select('*').eq('book_id', book.id).order('sort_order'),
     options.entryId !== undefined && isUuid(options.entryId)
       ? entriesQuery.or(`deleted_at.is.null,id.eq.${options.entryId}`)
       : entriesQuery.is('deleted_at', null),
     supabase.from('vehicle_readings').select('*').eq('book_id', book.id).order('reading_date'),
-    supabase.from('sessions').select('id, date, created_at').eq('user_id', user.id).eq('vehicle_id', vehicleId),
+    readAllRows((from, to) =>
+      supabase.from('sessions').select('id, date, created_at').eq('user_id', user.id).eq('vehicle_id', vehicleId).order('id').range(from, to),
+    ),
+    readRiderLaps(supabase, user.id),
     supabase.from('session_usage_weights').select('*').eq('book_id', book.id),
     supabase.from('service_due_overrides').select('*').eq('book_id', book.id),
   ]);
@@ -130,6 +156,7 @@ export async function getServiceBook(
     ['service_entries', entries],
     ['vehicle_readings', readings],
     ['sessions', sessions],
+    ['session_laps', laps],
     ['session_usage_weights', weights],
     ['service_due_overrides', overrides],
   ] as const) {
@@ -141,8 +168,8 @@ export async function getServiceBook(
 
   const entryRows = (entries.data ?? []) as Tables<'service_entries'>[];
   const entryIds = entryRows.map((entry) => entry.id);
-  const sessionIds = (sessions.data ?? []).map((session) => session.id);
-  const [entryItems, entryParts, revisions, laps] = await Promise.all([
+  const sessionIds = new Set(sessions.data.map((session) => session.id));
+  const [entryItems, entryParts, revisions] = await Promise.all([
     entryIds.length
       ? supabase.from('service_entry_items').select('*').in('entry_id', entryIds).order('created_at')
       : Promise.resolve({ data: [] as Tables<'service_entry_items'>[], error: null }),
@@ -152,15 +179,11 @@ export async function getServiceBook(
     entryIds.length
       ? supabase.from('service_entry_revisions').select('entry_id, revision, kind, changed_at').in('entry_id', entryIds).order('revision')
       : Promise.resolve({ data: [] as Pick<Tables<'service_entry_revisions'>, 'entry_id' | 'revision' | 'kind' | 'changed_at'>[], error: null }),
-    sessionIds.length
-      ? supabase.from('session_laps').select('session_id, lap_time_ms, included').in('session_id', sessionIds)
-      : Promise.resolve({ data: [] as Pick<Tables<'session_laps'>, 'session_id' | 'lap_time_ms' | 'included'>[], error: null }),
   ]);
   for (const [table, result] of [
     ['service_entry_items', entryItems],
     ['service_entry_parts', entryParts],
     ['service_entry_revisions', revisions],
-    ['session_laps', laps],
   ] as const) {
     if (result.error) {
       report('service-book-read', result.error, { table, userId: user.id, vehicleId, bookId: book.id });
@@ -188,8 +211,8 @@ export async function getServiceBook(
         items: (items.data ?? []) as Tables<'service_items'>[],
         entries: sortEntriesDesc(records),
         readings: (readings.data ?? []) as Tables<'vehicle_readings'>[],
-        sessions: sessions.data ?? [],
-        laps: laps.data ?? [],
+        sessions: sessions.data,
+        laps: laps.data.filter((lap) => sessionIds.has(lap.session_id)),
         weights: (weights.data ?? []) as Tables<'session_usage_weights'>[],
         overrides: (overrides.data ?? []) as Tables<'service_due_overrides'>[],
       },
@@ -855,7 +878,7 @@ export async function getServiceDueBooks(vehicleIds: string[]): Promise<Record<s
   const bookIds = books.map((book) => book.id);
   const vehicleIdsWithBooks = books.map((book) => book.vehicle_id);
 
-  const [items, entries, readings, sessions, weights, overrides] = await Promise.all([
+  const [items, entries, readings, sessions, laps, weights, overrides] = await Promise.all([
     supabase.from('service_items').select('id, book_id, name, interval_hours, interval_distance, interval_days, archived_at').in('book_id', bookIds),
     supabase
       .from('service_entries')
@@ -863,7 +886,16 @@ export async function getServiceDueBooks(vehicleIds: string[]): Promise<Record<s
       .in('book_id', bookIds)
       .is('deleted_at', null),
     supabase.from('vehicle_readings').select('id, book_id, reading_date, read_at, hours, distance, supersedes_id').in('book_id', bookIds),
-    supabase.from('sessions').select('id, vehicle_id, date, created_at').eq('user_id', user.id).in('vehicle_id', vehicleIdsWithBooks),
+    readAllRows((from, to) =>
+      supabase
+        .from('sessions')
+        .select('id, vehicle_id, date, created_at')
+        .eq('user_id', user.id)
+        .in('vehicle_id', vehicleIdsWithBooks)
+        .order('id')
+        .range(from, to),
+    ),
+    readRiderLaps(supabase, user.id),
     supabase.from('session_usage_weights').select('book_id, session_id, weight, minutes_override, distance_override').in('book_id', bookIds),
     supabase
       .from('service_due_overrides')
@@ -875,6 +907,7 @@ export async function getServiceDueBooks(vehicleIds: string[]): Promise<Record<s
     ['service_entries', entries],
     ['vehicle_readings', readings],
     ['sessions', sessions],
+    ['session_laps', laps],
     ['session_usage_weights', weights],
     ['service_due_overrides', overrides],
   ] as const) {
@@ -885,29 +918,18 @@ export async function getServiceDueBooks(vehicleIds: string[]): Promise<Record<s
   }
 
   const entryIds = (entries.data ?? []).map((entry) => entry.id);
-  const sessionIds = (sessions.data ?? []).map((session) => session.id);
-  const [entryItems, laps] = await Promise.all([
-    entryIds.length
-      ? supabase.from('service_entry_items').select('entry_id, item_id').in('entry_id', entryIds)
-      : Promise.resolve({ data: [] as Pick<Tables<'service_entry_items'>, 'entry_id' | 'item_id'>[], error: null }),
-    sessionIds.length
-      ? supabase.from('session_laps').select('session_id, lap_time_ms, included').in('session_id', sessionIds)
-      : Promise.resolve({ data: [] as Pick<Tables<'session_laps'>, 'session_id' | 'lap_time_ms' | 'included'>[], error: null }),
-  ]);
-  for (const [table, result] of [
-    ['service_entry_items', entryItems],
-    ['session_laps', laps],
-  ] as const) {
-    if (result.error) {
-      report('service-due-read', result.error, { table, userId: user.id, vehicleIds: ids });
-      return {};
-    }
+  const entryItems = entryIds.length
+    ? await supabase.from('service_entry_items').select('entry_id, item_id').in('entry_id', entryIds)
+    : { data: [] as Pick<Tables<'service_entry_items'>, 'entry_id' | 'item_id'>[], error: null };
+  if (entryItems.error) {
+    report('service-due-read', entryItems.error, { table: 'service_entry_items', userId: user.id, vehicleIds: ids });
+    return {};
   }
 
   const result: Record<string, ServiceDueData> = {};
   for (const book of books) {
     const bookEntries = (entries.data ?? []).filter((entry) => entry.book_id === book.id);
-    const bookSessions = (sessions.data ?? []).filter((session) => session.vehicle_id === book.vehicle_id);
+    const bookSessions = sessions.data.filter((session) => session.vehicle_id === book.vehicle_id);
     const bookSessionIds = new Set(bookSessions.map((session) => session.id));
     result[book.vehicle_id] = {
       book,
@@ -918,7 +940,7 @@ export async function getServiceDueBooks(vehicleIds: string[]): Promise<Record<s
       })),
       readings: (readings.data ?? []).filter((reading) => reading.book_id === book.id),
       sessions: bookSessions.map(({ id, date, created_at }) => ({ id, date, created_at })),
-      laps: (laps.data ?? []).filter((lap) => bookSessionIds.has(lap.session_id)),
+      laps: laps.data.filter((lap) => bookSessionIds.has(lap.session_id)),
       weights: (weights.data ?? []).filter((weight) => weight.book_id === book.id),
       overrides: (overrides.data ?? []).filter((override) => override.book_id === book.id),
     };

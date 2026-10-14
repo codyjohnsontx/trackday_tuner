@@ -248,14 +248,13 @@ function ItemDueLine({ due, unit }: { due: ItemDue | null; unit: 'mi' | 'km' }) 
 
 /**
  * The override in force on an item, in the rider's words. A snooze that has run
- * out says nothing, since the schedule's own answer is back on the chip.
+ * out is not in force, since the schedule's own answer is back on the chip.
  */
 function OverrideLine({ data, due, clock, unit }: { data: ServiceBookData; due: ItemDue | null; clock: RiderClock | null; unit: 'mi' | 'km' }) {
   if (!due?.override || !clock) return null;
   const row = data.overrides.find((override) => override.id === due.override?.id);
   if (!row) return null;
-  const text = describeOverride(row, unit, { holds: due.status === 'snoozed', madeOn: riderDateOfTimestamp(row.created_at, clock.timeZone) });
-  if (!text) return null;
+  const text = describeOverride(row, unit, { madeOn: riderDateOfTimestamp(row.created_at, clock.timeZone) });
   return (
     <p className="mt-1 text-xs text-ink-faint" data-testid="item-override">
       {text}

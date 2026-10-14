@@ -347,7 +347,7 @@ export function computeDue(input: DueInput): ItemDue[] {
         underlyingStatus: underlying,
         lastDone: last ? { entryId: last.id, serviceDate: last.service_date } : null,
         neverDone: last === null,
-        override: override ? { id: override.id, kind: override.kind } : null,
+        override: override && (override.kind !== 'snooze' || snoozed) ? { id: override.id, kind: override.kind } : null,
         axes,
       };
     });

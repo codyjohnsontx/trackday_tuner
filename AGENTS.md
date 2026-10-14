@@ -856,9 +856,9 @@ stored** (owner, Q8 and PQ1: in-app only until there is a domain). The garage
 chip, the dashboard line and the session page's notice all go through
 `lib/service-book/reminders.ts` over `getServiceDueBooks`, and the book screen's
 chip through the same `computeBookDue`, so no two screens can disagree. "This
-day pushed X past due" is due with the session against due with it left out,
-every other row the same, so a day the rider weights 0 pushed nothing and the
-notice clears; a snoozed item is never pushed. The weight and the overrides are
+day pushed X past due" is due with the session against due with that same
+session weighted 0, every other row the same, so a day the rider weights 0
+pushed nothing and the notice clears; a snoozed item is never pushed. The weight and the overrides are
 the rider's word and nothing else writes them: a weight is one row per book and
 session (no upsert - PostgREST would write the fixed columns the grant withholds),
 an override is always a new row the server dates, and "Clear" is a snooze ending
