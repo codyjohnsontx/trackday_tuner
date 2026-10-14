@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { getVehicleBaselines } from '@/lib/actions/baselines';
+import { getServiceDueBooks } from '@/lib/actions/service-book';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { DemoBanner } from '@/components/demo/demo-banner';
@@ -12,7 +13,10 @@ import { getFreePlanLimit, isAtFreePlanLimit } from '@/lib/plans';
 
 export default async function GaragePage() {
   const [vehicles, profile, demoMode] = await Promise.all([getVehicles(), getUserProfile(), isDemoMode()]);
-  const baselines = await getVehicleBaselines(vehicles.map((vehicle) => vehicle.id));
+  const [baselines, serviceDue] = await Promise.all([
+    getVehicleBaselines(vehicles.map((vehicle) => vehicle.id)),
+    getServiceDueBooks(vehicles.map((vehicle) => vehicle.id)),
+  ]);
   const baselineByVehicleId = new Map(baselines.map((baseline) => [baseline.vehicle_id, baseline]));
 
   const hasProAccess = resolveUserAccess(profile).hasProAccess;
@@ -60,6 +64,7 @@ export default async function GaragePage() {
               baseline={baselineByVehicleId.get(v.id) ?? null}
               baselineLocked={isFree}
               demoMode={demoMode}
+              serviceDue={serviceDue[v.id] ?? null}
             />
           ))}
         </ul>

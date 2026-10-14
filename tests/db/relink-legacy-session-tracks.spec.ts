@@ -206,7 +206,10 @@ test('leaves a name matching nothing alone, creates no track, and never reaches 
   await customTrack(otherRider!.id, 'Hidden Ranch Circuit');
   const nowhere = await legacySession('Nowhere Raceway');
   const private_ = await legacySession('Hidden Ranch Circuit');
-  const { count: before } = await admin.from('tracks').select('id', { count: 'exact', head: true });
+  // Counted by the names these sessions carry, not across the whole table: the
+  // other worker's specs create tracks of their own while this one runs.
+  const names = ['Nowhere Raceway', 'Hidden Ranch Circuit'];
+  const { count: before } = await admin.from('tracks').select('id', { count: 'exact', head: true }).in('name', names);
 
   const rows = await relink(rider!.id);
 
@@ -218,7 +221,7 @@ test('leaves a name matching nothing alone, creates no track, and never reaches 
       [private_, 'unmatched'],
     ].sort(),
   );
-  const { count: after } = await admin.from('tracks').select('id', { count: 'exact', head: true });
+  const { count: after } = await admin.from('tracks').select('id', { count: 'exact', head: true }).in('name', names);
   expect(after).toBe(before);
 });
 

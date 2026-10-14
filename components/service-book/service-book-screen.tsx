@@ -4,14 +4,18 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardGroup, Eyebrow, GroupRow } from '@/components/ui/surface';
+import { DueOverrideForm } from '@/components/service-book/due-override-form';
+import { SessionWeightSelect } from '@/components/service-book/session-weight';
 import { VehicleReadingForm } from '@/components/service-book/vehicle-reading-form';
-import { useRiderClock } from '@/components/service-book/rider-clock';
+import { useRiderClock, type RiderClock } from '@/components/service-book/rider-clock';
 import { buildServiceBookView, liveItems, type ServiceBookData, type ServiceBookView } from '@/lib/service-book/book-data';
 import { describeEntryItems } from '@/lib/service-book/entry-draft';
 import type { AxisDue, ItemDue, ItemDueStatus } from '@/lib/service-book/due';
 import { formatDistance, formatHours, formatInterval, formatReading, formatServiceDate } from '@/lib/service-book/format';
-import type { AxisUsage } from '@/lib/service-book/usage';
+import { describeOverride, SESSION_WEIGHT_CHOICES, weightChoiceOf } from '@/lib/service-book/reminders';
+import type { AxisUsage, SessionUsage } from '@/lib/service-book/usage';
 import { formatDay } from '@/lib/service-book/calendar';
+import { riderDateOfTimestamp } from '@/lib/local-date';
 import { cn } from '@/lib/utils';
 
 interface ServiceBookScreenProps {
@@ -39,6 +43,8 @@ export function ServiceBookScreen({ data, demoMode }: ServiceBookScreenProps) {
     <div className="space-y-5">
       <UsagePanel data={data} view={view} demoMode={demoMode} />
 
+      <CountedSessions data={data} view={view} demoMode={demoMode} />
+
       <CardGroup
         eyebrow="Schedule"
         title={`${items.length} ${items.length === 1 ? 'item' : 'items'}`}
@@ -55,16 +61,25 @@ export function ServiceBookScreen({ data, demoMode }: ServiceBookScreenProps) {
             <p className="text-sm text-ink-dim">No items yet. Add what this bike needs from the schedule settings.</p>
           </GroupRow>
         ) : (
-          items.map((item) => (
-            <GroupRow key={item.id} className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-medium text-ink">{item.name}</p>
-                <p className="mt-0.5 text-xs text-ink-faint">{formatInterval(item, unit) ?? 'No interval set'}</p>
-                <ItemDueLine due={view?.dueByItemId.get(item.id) ?? null} unit={unit} />
-              </div>
-              <DueChip due={view?.dueByItemId.get(item.id) ?? null} />
-            </GroupRow>
-          ))
+          items.map((item) => {
+            const due = view?.dueByItemId.get(item.id) ?? null;
+            return (
+              <GroupRow key={item.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-ink">{item.name}</p>
+                    <p className="mt-0.5 text-xs text-ink-faint">{formatInterval(item, unit) ?? 'No interval set'}</p>
+                    <ItemDueLine due={due} unit={unit} />
+                    <OverrideLine data={data} due={due} clock={clock} unit={unit} />
+                  </div>
+                  <DueChip due={due} />
+                </div>
+                {demoMode ? null : (
+                  <DueOverrideForm vehicleId={vehicleId} item={{ id: item.id, name: item.name }} book={data.book} usage={view?.usage ?? null} due={due} />
+                )}
+              </GroupRow>
+            );
+          })
         )}
       </CardGroup>
 
@@ -228,6 +243,67 @@ function ItemDueLine({ due, unit }: { due: ItemDue | null; unit: 'mi' | 'km' }) 
       {due.lastDone ? `Last done ${formatDay(due.lastDone.serviceDate)}` : due.neverDone ? 'Never logged' : null}
       {next.length > 0 ? `${due.lastDone || due.neverDone ? ' · ' : ''}Next ${next.join(' or ')}` : ''}
     </p>
+  );
+}
+
+/**
+ * The override in force on an item, in the rider's words. A snooze that has run
+ * out is not in force, since the schedule's own answer is back on the chip.
+ */
+function OverrideLine({ data, due, clock, unit }: { data: ServiceBookData; due: ItemDue | null; clock: RiderClock | null; unit: 'mi' | 'km' }) {
+  if (!due?.override || !clock) return null;
+  const row = data.overrides.find((override) => override.id === due.override?.id);
+  if (!row) return null;
+  const text = describeOverride(row, unit, { madeOn: riderDateOfTimestamp(row.created_at, clock.timeZone) });
+  return (
+    <p className="mt-1 text-xs text-ink-faint" data-testid="item-override">
+      {text}
+    </p>
+  );
+}
+
+/**
+ * The sessions counted on top of the latest reading, each with the rider's
+ * weight (owner, 2026-10-08: the rider decides what a day counts for). Only
+ * these move the figure above, so only these are offered here; the session
+ * page offers the same control for any session of the bike.
+ */
+function CountedSessions({ data, view, demoMode }: { data: ServiceBookData; view: ServiceBookView | null; demoMode: boolean }) {
+  if (!view) return null;
+  const byId = new Map<string, SessionUsage>();
+  for (const axis of [view.usage.hours, view.usage.distance]) {
+    for (const session of axis?.sessions ?? []) byId.set(session.sessionId, session);
+  }
+  const sessions = [...byId.values()].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  if (sessions.length === 0) return null;
+  const weightById = new Map(data.weights.map((row) => [row.session_id, row.weight]));
+
+  return (
+    <CardGroup eyebrow="Counted since the last reading" title={`${sessions.length} ${sessions.length === 1 ? 'session' : 'sessions'}`}>
+      {sessions.map((session) => {
+        const weight = weightById.get(session.sessionId) ?? null;
+        const label = SESSION_WEIGHT_CHOICES.find((choice) => choice.value === weightChoiceOf(weight))?.label ?? 'Normal';
+        return (
+          <GroupRow key={session.sessionId} className="flex items-center justify-between gap-3">
+            <Link
+              href={`/sessions/${session.sessionId}`}
+              className="flex min-h-11 min-w-0 flex-col justify-center rounded-plate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"
+            >
+              <span className="text-sm font-medium text-ink">{formatDay(session.date)}</span>
+              <span className="mt-0.5 text-xs text-ink-faint">
+                {Math.round(session.minutes)} min{session.minutesBasis === 'laps' ? ' from lap times' : session.minutesBasis === 'override' ? ', your figure' : ', the book’s default'}
+                {session.weight !== 1 ? ` · counted ×${session.weight}` : ''}
+              </span>
+            </Link>
+            {demoMode ? (
+              <span className="shrink-0 text-xs text-ink-dim">{label}</span>
+            ) : (
+              <SessionWeightSelect vehicleId={data.vehicle.id} sessionId={session.sessionId} weight={weight} label={formatDay(session.date)} />
+            )}
+          </GroupRow>
+        );
+      })}
+    </CardGroup>
   );
 }
 
