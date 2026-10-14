@@ -24,10 +24,11 @@ import type { ActionResult, Profile } from '@/types';
  *
  * The bucket is private and no rider policy reaches it, so the server is the
  * only way in and out: it mints a signed upload URL for a path the database
- * reserved, and `/api/service-book/attachments/[attachmentId]` mints a signed
- * read URL once the rider's own select of the row says the attachment is
- * theirs. The service role is used for exactly those two storage calls and for
- * taking back an upload that failed - never to decide whose an attachment is.
+ * reserved, and signed read URLs - thumbnails here, a file in
+ * `/api/service-book/attachments/[attachmentId]` - once the rider's own select
+ * of the row says the attachment is theirs. The service role is used for
+ * exactly that signing and for taking back an upload that failed - never to
+ * decide whose an attachment is.
  *
  * An upload is three steps and the browser drives them: `reserveServiceAttachment`
  * (the allowance is counted under a per-book lock in SQL), the upload straight
