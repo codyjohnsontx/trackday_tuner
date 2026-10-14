@@ -15,8 +15,9 @@ import type { Database } from '@/types/supabase';
  *
  * - the photo was resized in the browser and stored as a JPEG with a
  *   thumbnail, in the private `service-book` bucket;
- * - the page reads it through a signed URL that opens, while the same object's
- *   path answers nobody without one;
+ * - the page links it through the app's attachment route, which signs a URL
+ *   for the rider on each open and answers nobody without a session, while
+ *   the object's own storage path answers nobody without a signed URL;
  * - the entry reads "Receipt attached when logged" and is still "Unedited",
  *   because an attachment is not an edit;
  * - at the free plan's 25 per bike the uploader is replaced by the notice, and
@@ -106,7 +107,7 @@ test.describe('service book attachments', () => {
     rider = null;
   });
 
-  test('uploads a photo and a PDF, reads them through signed URLs, and stops at the free allowance', async ({ page }) => {
+  test('uploads a photo and a PDF, reads them through the attachment route, and stops at the free allowance', async ({ page }) => {
     const admin = createTestAdminClient();
     const { vehicleId, bookId, entryId } = await plantEntry(rider!);
     await signInWith(page, rider!.email, rider!.password);
@@ -141,12 +142,19 @@ test.describe('service book attachments', () => {
     expect(bytes.subarray(0, 2).toString('hex')).toBe('ffd8');
     expect(bytes.length).toBe(receipt.bytes);
 
-    // The page reads it through a signed URL, which opens; the same object answers nobody without one.
+    // The page links the app's route, which signs a URL for the rider on each open
+    // and answers nobody without a session; the object itself answers nobody without a signed URL.
     const src = await receiptTile.locator('img').getAttribute('src');
-    expect(src).toContain('/storage/v1/object/sign/service-book/');
-    const signed = await fetch(src!);
+    expect(src).toBe(`/api/service-book/attachments/${receipt.id}?variant=thumb`);
+    const opened = await page.request.get(src!, { maxRedirects: 0 });
+    expect(opened.status()).toBe(302);
+    const location = opened.headers()['location'];
+    expect(location).toContain('/storage/v1/object/sign/service-book/');
+    const signed = await fetch(location);
     expect(signed.status).toBe(200);
     expect(signed.headers.get('content-type')).toBe('image/jpeg');
+    const sessionless = await fetch(new URL(src!, page.url()), { redirect: 'manual' });
+    expect(sessionless.status).toBe(401);
     const base = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
     const publicPath = await fetch(`${base}/storage/v1/object/public/service-book/${receipt.object_path}`);
