@@ -360,10 +360,10 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   -- seeded from supabase/config.toml, not the migration, so a hosted project
   -- can take the SQL and still answer every upload with "Bucket not found".
   -- cron.job is read through query_to_xml for the reason the ai_request_text
-  -- row gives. Whether the sweep has RUN: /api/health fails attachment_sweep on
-  -- a pending row more than 48 hours old.
+  -- row gives. Whether the sweeps have RUN: /api/health fails attachment_sweep on
+  -- a pending row, or an object no ready row names, more than 48 hours old.
   (34, '20261014000400_add_service_attachments', 'table + functions + bucket + cron job',
-      'public.service_attachments, reserve/confirm_service_attachment, bucket service-book, cron job purge-stale-service-attachments',
+      'public.service_attachments, reserve/confirm_service_attachment, service_attachment_orphan_objects, bucket service-book, cron job purge-stale-service-attachments',
       to_regclass('public.service_attachments') is not null
       and (select md5(p.prosrc) = 'df08a489fe80ce5fb364a5aa8dc3844c'
                   and p.prosecdef and p.proconfig = array['search_path=""']
@@ -371,12 +371,18 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                   and not has_function_privilege('anon', p.oid, 'execute')
                   and not has_function_privilege('service_role', p.oid, 'execute')
              from pg_proc p where p.oid = to_regprocedure('public.reserve_service_attachment(uuid,uuid,text,text,integer)'))
-      and (select md5(p.prosrc) = '33bac9985b3165e60948ee02a9e67e8b'
+      and (select md5(p.prosrc) = '1cb3514415cafd0d9a09a357be7e3558'
                   and p.prosecdef and p.proconfig = array['search_path=""']
                   and has_function_privilege('authenticated', p.oid, 'execute')
                   and not has_function_privilege('anon', p.oid, 'execute')
                   and not has_function_privilege('service_role', p.oid, 'execute')
              from pg_proc p where p.oid = to_regprocedure('public.confirm_service_attachment(uuid)'))
+      and (select md5(p.prosrc) = 'e35e8630e5645e613af9b03a2ae7fb00'
+                  and p.prosecdef and p.proconfig = array['search_path=""']
+                  and has_function_privilege('service_role', p.oid, 'execute')
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                  and not has_function_privilege('authenticated', p.oid, 'execute')
+             from pg_proc p where p.oid = to_regprocedure('public.service_attachment_orphan_objects(integer)'))
       and exists (select 1 from storage.buckets b where b.id = 'service-book' and not b.public)
       and case when to_regclass('cron.job') is null then false
                else (xpath('count(/table/row)', query_to_xml(

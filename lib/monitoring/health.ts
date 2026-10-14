@@ -21,8 +21,9 @@
  *   that needs the missing function says so - to the rider, as a lost save
  * - no retained rider question text, and no `ai_requests` preview, has outlived
  *   its 90 days (`ai_text_retention`), which is the only proof the purge job runs
- * - no service book attachment reservation has outlived two days
- *   (`attachment_sweep`), the only proof the sweep job runs
+ * - no service book attachment reservation, and no attachment object no
+ *   `ready` row names, has outlived two days (`attachment_sweep`), the only
+ *   proof the two sweeps run
  *
  * `runHealthChecks` never throws. A health endpoint that 500s tells you only
  * that it 500'd; one that answers `503` with a named failing check tells you
@@ -301,35 +302,51 @@ export async function checkAiTextRetention(now: Date = new Date()): Promise<Heal
 }
 
 /**
- * How old an unconfirmed attachment reservation may be before the sweep is
- * called broken. The job deletes reservations older than a day, once a day, so
- * one waits up to two days at worst; past that a run was missed.
+ * How old an unconfirmed attachment reservation, or an object no `ready` row
+ * names, may be before the sweep is called broken. Both sweeps remove what is
+ * older than a day - the reservations once a day, the objects every 15 minutes -
+ * so one waits up to two days at worst; past that a run was missed.
  */
 export const ATTACHMENT_SWEEP_GRACE_MS = 48 * 60 * 60 * 1000;
 
 /**
- * The attachment sweep, checked by its effect (20261014000400). A reservation
- * nobody confirms - a tab closed mid-upload - holds one of a free rider's 25
- * slots until a daily `pg_cron` job, `purge-stale-service-attachments`, deletes
- * it. Nothing in the app sees that job, so a hosted project where it was never
- * scheduled looks healthy until riders find their allowance full of uploads
- * that never arrived. This asks whether any `pending` row is older than the
- * sweep allows, which holds whatever does the deleting.
+ * The attachment sweeps, checked by their effect (20261014000400). A
+ * reservation nobody confirms - a tab closed mid-upload - holds one of a free
+ * rider's 25 slots until a daily `pg_cron` job, `purge-stale-service-attachments`,
+ * deletes it; the file it uploaded stays in storage until
+ * `/api/monitoring/service-attachment-sweep`, which the scheduled workflow calls,
+ * removes it. Nothing in the app sees either, so a hosted project where one was
+ * never wired up looks healthy until riders find their allowance full of uploads
+ * that never arrived, or the 1 GB of storage full of files nothing lists. This
+ * asks whether any `pending` row, or any object
+ * `service_attachment_orphan_objects` lists, is older than the sweeps allow,
+ * which holds whatever does the deleting.
  */
 export async function checkAttachmentSweep(now: Date = new Date()): Promise<HealthCheck> {
   return timed('attachment_sweep', async () => {
-    const cutoff = new Date(now.getTime() - ATTACHMENT_SWEEP_GRACE_MS).toISOString();
+    const cutoff = new Date(now.getTime() - ATTACHMENT_SWEEP_GRACE_MS);
+    const admin = createAdminClient();
     // A GET, so a missing table fails rather than reading as an empty answer.
-    const stale = await createAdminClient()
+    const stale = await admin
       .from('service_attachments')
       .select('id', { count: 'exact' })
       .eq('status', 'pending')
-      .lt('created_at', cutoff)
+      .lt('created_at', cutoff.toISOString())
       .limit(1);
     const count = exactCount('service_attachments', stale);
     if (count > 0) {
       const err = new Error(`${count} service_attachments reservations are pending more than 48 hours.`);
       err.name = `StaleAttachmentReservationError:${count}`;
+      throw err;
+    }
+
+    // Oldest first, so the one row says whether any is overdue.
+    const oldest = await admin.rpc('service_attachment_orphan_objects', { p_limit: 1 });
+    if (oldest.error) throw supabaseError(oldest.error);
+    const orphan = oldest.data?.[0];
+    if (orphan && new Date(orphan.created_at) < cutoff) {
+      const err = new Error('A service-book object no ready attachment names is more than 48 hours old.');
+      err.name = 'OrphanedAttachmentObjectError';
       throw err;
     }
     return '0 stale';

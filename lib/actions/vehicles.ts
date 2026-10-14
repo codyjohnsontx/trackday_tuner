@@ -4,11 +4,13 @@ import { revalidatePath } from 'next/cache';
 import { getRealUser } from '@/lib/auth';
 import { getDemoProfile, getDemoVehicles } from '@/lib/demo/data';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { resolveUserAccess } from '@/lib/access';
 import { reportError } from '@/lib/monitoring/report-error';
 import {
+  VEHICLE_DELETE_ATTACHMENTS_FAILED_MESSAGE,
   VEHICLE_DELETE_COUNT_CHANGED_AFTER_PHOTOS_MESSAGE,
   VEHICLE_DELETE_COUNT_CHANGED_MESSAGE,
   VEHICLE_DELETE_COUNT_FAILED_MESSAGE,
@@ -20,7 +22,7 @@ import {
   type VehicleDeletionCounts,
 } from '@/lib/vehicle-delete';
 import { SESSION_PHOTO_BUCKET, sessionPhotoObjectPath } from '@/lib/session-delete';
-import { removeObjectsAfterDelete, removeOwnedPhotos } from '@/lib/storage-photo-removal';
+import { removeKnownObjects, removeOwnedPhotos } from '@/lib/storage-photo-removal';
 import type { TableInsert } from '@/types/supabase';
 import type { ActionResult, CreateVehicleInput, UpdateVehicleInput, Profile, Vehicle } from '@/types';
 
@@ -252,6 +254,44 @@ async function countVehicleCascade(
   };
 }
 
+const ATTACHMENT_PAGE_SIZE = 1000;
+
+/**
+ * Every object the bike's service book attachments name - receipts, invoices,
+ * photos and their thumbnails, confirmed or still pending - read as the rider so
+ * RLS decides. A bike with no book has none.
+ */
+async function readServiceBookObjects(
+  supabase: SupabaseServerClient,
+  vehicleId: string,
+): Promise<{ ok: true; objects: string[] } | { ok: false; error: CountError }> {
+  const { data: book, error: bookError } = await supabase
+    .from('service_books')
+    .select('id')
+    .eq('vehicle_id', vehicleId)
+    .maybeSingle();
+  if (bookError) return { ok: false, error: bookError };
+  if (!book) return { ok: true, objects: [] };
+
+  const objects: string[] = [];
+  for (let from = 0; ; from += ATTACHMENT_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('service_attachments')
+      .select('object_path, thumb_path')
+      .eq('book_id', book.id)
+      .order('id')
+      .range(from, from + ATTACHMENT_PAGE_SIZE - 1);
+    if (error) return { ok: false, error };
+    const page = data ?? [];
+    for (const row of page) {
+      objects.push(row.object_path);
+      if (row.thumb_path) objects.push(row.thumb_path);
+    }
+    if (page.length < ATTACHMENT_PAGE_SIZE) break;
+  }
+  return { ok: true, objects };
+}
+
 function reportCountFailure(error: CountError, userId: string, vehicleId: string) {
   reportError('vehicle-delete-count', new Error(error.message), {
     reason: error.code,
@@ -302,6 +342,13 @@ export async function getVehicleDeletionCounts(vehicleId: string): Promise<Actio
  * after that read keeps the bike. A photo uploaded to a session's fixed path
  * without changing its URL is invisible to that check, so each cascaded
  * session's path is removed once more after the delete, best effort.
+ *
+ * The service book's receipts, invoices and photos go first in the same way:
+ * every object its attachment rows name is removed from the private bucket, and
+ * the bike stays until Storage has confirmed all of them. An upload that lands
+ * between that read and the delete is left for the attachment object sweep
+ * (`/api/monitoring/service-attachment-sweep`), which removes any object no
+ * attachment names once it is a day old.
  */
 export async function deleteVehicle(
   id: string,
@@ -323,6 +370,19 @@ export async function deleteVehicle(
     return { ok: false, error: VEHICLE_DELETE_COUNT_CHANGED_MESSAGE };
   }
 
+  const serviceBook = await readServiceBookObjects(supabase, id);
+  if (!serviceBook.ok) {
+    reportError('vehicle-delete', new Error(serviceBook.error.message), {
+      reason: serviceBook.error.code,
+      query: 'service-book-objects',
+      details: serviceBook.error.details,
+      hint: serviceBook.error.hint,
+      userId: user.id,
+      vehicleId: id,
+    });
+    return { ok: false, error: VEHICLE_DELETE_FAILED_MESSAGE };
+  }
+
   const photosRemoved = await removeOwnedPhotos(supabase, {
     bucket: SESSION_PHOTO_BUCKET,
     photoUrls: recount.sessions.map((session) => session.photo_url),
@@ -331,7 +391,19 @@ export async function deleteVehicle(
     context: { vehicleId: id },
   });
   if (!photosRemoved) return { ok: false, error: VEHICLE_DELETE_SESSION_PHOTOS_FAILED_MESSAGE };
-  const hadSessionPhotos = recount.sessions.some((session) => session.photo_url !== null);
+
+  const attachmentsRemoved =
+    serviceBook.objects.length === 0 ||
+    (await removeKnownObjects(createAdminClient(), {
+      bucket: 'service-book',
+      objects: serviceBook.objects,
+      ownerId: user.id,
+      event: 'service-attachment-delete',
+      context: { vehicleId: id },
+    }));
+  if (!attachmentsRemoved) return { ok: false, error: VEHICLE_DELETE_ATTACHMENTS_FAILED_MESSAGE };
+  const filesRemoved =
+    recount.sessions.some((session) => session.photo_url !== null) || serviceBook.objects.length > 0;
 
   // RLS and the user_id check inside the function turn another rider's id, or a
   // vehicle already gone, into null rather than an error.
@@ -343,7 +415,7 @@ export async function deleteVehicle(
   if (error?.code === SESSIONS_CHANGED_CODE) {
     return {
       ok: false,
-      error: hadSessionPhotos ? VEHICLE_DELETE_COUNT_CHANGED_AFTER_PHOTOS_MESSAGE : VEHICLE_DELETE_COUNT_CHANGED_MESSAGE,
+      error: filesRemoved ? VEHICLE_DELETE_COUNT_CHANGED_AFTER_PHOTOS_MESSAGE : VEHICLE_DELETE_COUNT_CHANGED_MESSAGE,
     };
   }
   if (error) {
@@ -355,12 +427,12 @@ export async function deleteVehicle(
       userId: user.id,
       vehicleId: id,
     });
-    return { ok: false, error: hadSessionPhotos ? VEHICLE_DELETE_FAILED_AFTER_PHOTOS_MESSAGE : VEHICLE_DELETE_FAILED_MESSAGE };
+    return { ok: false, error: filesRemoved ? VEHICLE_DELETE_FAILED_AFTER_PHOTOS_MESSAGE : VEHICLE_DELETE_FAILED_MESSAGE };
   }
   const deleted = data as { id: string; photo_url: string | null } | null;
   if (!deleted) return { ok: false, error: VEHICLE_DELETE_NOT_FOUND_MESSAGE };
 
-  const sessionPhotosSwept = await removeObjectsAfterDelete(supabase, {
+  const sessionPhotosSwept = await removeKnownObjects(supabase, {
     bucket: SESSION_PHOTO_BUCKET,
     objects: recount.sessions.map((session) => sessionPhotoObjectPath(user.id, session.id)),
     ownerId: user.id,

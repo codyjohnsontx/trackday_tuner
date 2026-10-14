@@ -12,6 +12,10 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(),
 }));
 
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: vi.fn(),
+}));
+
 vi.mock('@/lib/monitoring/report-error', () => ({
   reportError: vi.fn(),
 }));
@@ -19,9 +23,11 @@ vi.mock('@/lib/monitoring/report-error', () => ({
 import { revalidatePath } from 'next/cache';
 import { getRealUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { reportError } from '@/lib/monitoring/report-error';
 import { createVehicle, deleteVehicle, getVehicleDeletionCounts, updateVehicle } from '@/lib/actions/vehicles';
 import {
+  VEHICLE_DELETE_ATTACHMENTS_FAILED_MESSAGE,
   VEHICLE_DELETE_COUNT_CHANGED_AFTER_PHOTOS_MESSAGE,
   VEHICLE_DELETE_COUNT_CHANGED_MESSAGE,
   VEHICLE_DELETE_COUNT_FAILED_MESSAGE,
@@ -51,6 +57,7 @@ function createQuery(response: QueryResponse = {}) {
   query.in = vi.fn(() => query);
   query.range = vi.fn(() => query);
   query.single = vi.fn(async () => single);
+  query.maybeSingle = vi.fn(async () => single);
   query.then = (onFulfilled: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
     Promise.resolve(base).then(onFulfilled, onRejected);
 
@@ -63,7 +70,9 @@ type RpcResponse = { data: unknown; error: { message: string; code?: string } | 
 /**
  * A client whose `from(table)` hands out that table's queries in call order.
  * `rpc` answers the guarded delete; `events` records Storage removals and the
- * delete in the order they happened, so "photos first" is asserted.
+ * delete in the order they happened, so "photos first" is asserted. The admin
+ * client shares the same Storage, which is where service book attachments are
+ * removed. A bike has no service book unless the test gives it one.
  */
 function clientFor(
   tables: Record<string, ReturnType<typeof createQuery>[]>,
@@ -74,7 +83,7 @@ function clientFor(
   rpcResponse: RpcResponse = { data: { id: 'veh-1', photo_url: null }, error: null },
 ) {
   const from = vi.fn((table: string) => {
-    const next = tables[table]?.shift();
+    const next = tables[table]?.shift() ?? (table === 'service_books' ? createQuery() : undefined);
     if (!next) throw new Error(`unexpected query on ${table}`);
     return next;
   });
@@ -92,6 +101,7 @@ function clientFor(
     return rpcResponse;
   });
   vi.mocked(createClient).mockResolvedValue({ from, rpc, storage: { from: storageFrom } } as never);
+  vi.mocked(createAdminClient).mockReturnValue({ storage: { from: storageFrom } } as never);
   lastStorageFrom = storageFrom;
   lastRemove = remove;
   lastRpc = rpc;
@@ -139,6 +149,14 @@ function photoSessionPage(count: number, offset = 0) {
 
 function lapCounts(batches: number) {
   return Array.from({ length: batches }, () => createQuery({ base: { data: null, error: null, count: 0 } }));
+}
+
+/** The bike's service book, its attachments naming these objects. */
+function serviceBookWith(rows: { object_path: string; thumb_path: string | null }[]) {
+  return {
+    service_books: [createQuery({ single: { data: { id: 'book-1' }, error: null } })],
+    service_attachments: [createQuery({ base: { data: rows, error: null } })],
+  };
 }
 
 describe('vehicles actions', () => {
@@ -481,6 +499,101 @@ describe('vehicles actions', () => {
       expect.objectContaining({ bucket: 'session-photos', object: 'user-1/sess-0.jpg', vehicleId: 'veh-1' }),
     );
     expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('removes every service book attachment before the bike, after its session photos', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    clientFor({
+      sessions: [photoSessionPage(1)],
+      session_laps: lapCounts(1),
+      vehicle_baselines: [baselineCount(0)],
+      ...aiRecords(),
+      ...serviceBookWith([
+        { object_path: 'book-1/att-1.jpg', thumb_path: 'book-1/att-1.thumb.jpg' },
+        { object_path: 'book-1/att-2.pdf', thumb_path: null },
+      ]),
+    });
+
+    const result = await deleteVehicle('veh-1', 1);
+
+    expect(result).toEqual({ ok: true, data: { sessionPhotoCleanupFailed: false } });
+    expect(lastEvents).toEqual([
+      'storage session-photos',
+      'remove 1',
+      'storage service-book',
+      'remove 3',
+      'delete vehicle',
+      'storage session-photos',
+      'remove 1',
+    ]);
+    expect(lastRemove).toHaveBeenNthCalledWith(2, ['book-1/att-1.jpg', 'book-1/att-1.thumb.jpg', 'book-1/att-2.pdf']);
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it('keeps the bike and its service book when storage refuses to remove an attachment', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    clientFor(
+      {
+        sessions: [sessionIdPage(0)],
+        vehicle_baselines: [baselineCount(0)],
+        ...aiRecords(),
+        ...serviceBookWith([{ object_path: 'book-1/att-1.pdf', thumb_path: null }]),
+      },
+      vi.fn(async () => ({ data: null, error: { message: 'storage down' } })),
+    );
+
+    const result = await deleteVehicle('veh-1', 0);
+
+    expect(result).toEqual({ ok: false, error: VEHICLE_DELETE_ATTACHMENTS_FAILED_MESSAGE });
+    expect(lastRpc).not.toHaveBeenCalled();
+    expect(reportError).toHaveBeenCalledWith(
+      'service-attachment-delete',
+      expect.any(Error),
+      expect.objectContaining({ bucket: 'service-book', object: 'book-1/att-1.pdf', vehicleId: 'veh-1' }),
+    );
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('removes nothing and keeps the bike when its attachments cannot be read', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    clientFor({
+      sessions: [photoSessionPage(1)],
+      session_laps: lapCounts(1),
+      vehicle_baselines: [baselineCount(0)],
+      ...aiRecords(),
+      service_books: [createQuery({ single: { data: { id: 'book-1' }, error: null } })],
+      service_attachments: [createQuery({ base: { data: null, error: { message: 'boom', code: '500' } } })],
+    });
+
+    const result = await deleteVehicle('veh-1', 1);
+
+    expect(result).toEqual({ ok: false, error: VEHICLE_DELETE_FAILED_MESSAGE });
+    expect(lastStorageFrom).not.toHaveBeenCalled();
+    expect(lastRpc).not.toHaveBeenCalled();
+    expect(reportError).toHaveBeenCalledWith(
+      'vehicle-delete',
+      expect.any(Error),
+      expect.objectContaining({ query: 'service-book-objects', vehicleId: 'veh-1' }),
+    );
+  });
+
+  it('does not tell the rider nothing was removed once attachments are gone and the delete fails', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    clientFor(
+      {
+        sessions: [sessionIdPage(0)],
+        vehicle_baselines: [baselineCount(0)],
+        ...aiRecords(),
+        ...serviceBookWith([{ object_path: 'book-1/att-1.pdf', thumb_path: null }]),
+      },
+      undefined,
+      { data: null, error: { message: 'Delete failed', code: '42501' } },
+    );
+
+    const result = await deleteVehicle('veh-1', 0);
+
+    expect(result).toEqual({ ok: false, error: VEHICLE_DELETE_FAILED_AFTER_PHOTOS_MESSAGE });
+    expect(lastEvents).toEqual(['storage service-book', 'remove 1', 'delete vehicle']);
   });
 
   it('sends a long history in batches of at most the Storage cap before deleting', async () => {

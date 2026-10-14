@@ -76,6 +76,7 @@ describe('the hosted service attachments block in docs/beta-runbook.md', () => {
       'confirm_service_attachment',
       'service_attachment_allowance',
       'purge_stale_service_attachments',
+      'service_attachment_orphan_objects',
     ]) {
       expect(verify, name).toContain(`'${functionBodyMd5(MIGRATION, name)}'`);
     }
@@ -85,6 +86,7 @@ describe('the hosted service attachments block in docs/beta-runbook.md', () => {
     expect(statements(fencedBlock(runbook, ROLLBACK_MARKER))).toEqual([
       'begin',
       "select cron.unschedule('purge-stale-service-attachments')",
+      'drop function if exists public.service_attachment_orphan_objects(integer)',
       'drop function if exists public.purge_stale_service_attachments()',
       'drop function if exists public.confirm_service_attachment(uuid)',
       'drop function if exists public.reserve_service_attachment(uuid, uuid, text, text, integer)',

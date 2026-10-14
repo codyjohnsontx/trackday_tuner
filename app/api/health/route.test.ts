@@ -49,7 +49,11 @@ function supabaseReturning(
   const eq = vi.fn(() => ({ lt }));
   const select = vi.fn(() => ({ limit, lt, not, eq }));
   const from = vi.fn(() => ({ select }));
-  const rpc = vi.fn().mockResolvedValue(rpcResult);
+  // The `attachment_sweep` check asks for the one oldest orphaned object, where
+  // the probes send an uncoercible limit; none is a healthy object sweep.
+  const rpc = vi.fn(async (name: string, args?: { p_limit?: unknown }) =>
+    name === 'service_attachment_orphan_objects' && args?.p_limit === 1 ? { data: [], error: null } : rpcResult,
+  );
   return { from, select, limit, rpc };
 }
 

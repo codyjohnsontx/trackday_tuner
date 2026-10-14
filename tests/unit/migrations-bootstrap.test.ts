@@ -972,6 +972,7 @@ describe('supabase migrations bootstrap a database from nothing', () => {
       'record_deleted_session',
       'record_service_entry_revision',
       'reserve_service_attachment',
+      'service_attachment_orphan_objects',
       'sync_service_entry_reading',
       'touch_service_entry',
     ]);

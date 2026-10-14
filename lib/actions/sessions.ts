@@ -32,7 +32,7 @@ import {
   SESSION_PHOTO_BUCKET,
   sessionPhotoObjectPath,
 } from '@/lib/session-delete';
-import { removeObjectsAfterDelete, removeOwnedPhotos } from '@/lib/storage-photo-removal';
+import { removeKnownObjects, removeOwnedPhotos } from '@/lib/storage-photo-removal';
 import { reportError } from '@/lib/monitoring/report-error';
 import { readStoredSession, readStoredSessions } from '@/lib/stored-session';
 import { createClient } from '@/lib/supabase/server';
@@ -626,7 +626,7 @@ export async function deleteSession(id: string): Promise<ActionResult<{ sessionP
     return { ok: false, error: photoUrl === null ? SESSION_DELETE_CHANGED_MESSAGE : SESSION_DELETE_CHANGED_AFTER_PHOTO_MESSAGE };
   }
 
-  const photoSwept = await removeObjectsAfterDelete(supabase, {
+  const photoSwept = await removeKnownObjects(supabase, {
     bucket: SESSION_PHOTO_BUCKET,
     objects: deleted.map((session) => sessionPhotoObjectPath(user.id, session.id)),
     ownerId: user.id,

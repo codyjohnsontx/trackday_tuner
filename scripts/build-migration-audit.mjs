@@ -70,6 +70,7 @@ const RELINK_LEGACY_SESSION_TRACKS = "to_regprocedure('public.relink_legacy_sess
 const SAVE_SERVICE_ENTRY = "to_regprocedure('public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)')";
 const RESERVE_SERVICE_ATTACHMENT = "to_regprocedure('public.reserve_service_attachment(uuid,uuid,text,text,integer)')";
 const CONFIRM_SERVICE_ATTACHMENT = "to_regprocedure('public.confirm_service_attachment(uuid)')";
+const SERVICE_ATTACHMENT_ORPHAN_OBJECTS = "to_regprocedure('public.service_attachment_orphan_objects(integer)')";
 const SERVICE_ATTACHMENTS_MIGRATION = '20261014000400_add_service_attachments';
 
 /**
@@ -625,11 +626,11 @@ export const MIGRATION_PROBES = {
       'seeded from supabase/config.toml, not the migration, so a hosted project',
       'can take the SQL and still answer every upload with "Bucket not found".',
       'cron.job is read through query_to_xml for the reason the ai_request_text',
-      'row gives. Whether the sweep has RUN: /api/health fails attachment_sweep on',
-      'a pending row more than 48 hours old.',
+      'row gives. Whether the sweeps have RUN: /api/health fails attachment_sweep on',
+      'a pending row, or an object no ready row names, more than 48 hours old.',
     ],
     kind: 'table + functions + bucket + cron job',
-    object: 'public.service_attachments, reserve/confirm_service_attachment, bucket service-book, cron job purge-stale-service-attachments',
+    object: 'public.service_attachments, reserve/confirm_service_attachment, service_attachment_orphan_objects, bucket service-book, cron job purge-stale-service-attachments',
     present: [
       "to_regclass('public.service_attachments') is not null",
       `and (select md5(p.prosrc) = '${functionBodyMd5(SERVICE_ATTACHMENTS_MIGRATION, 'reserve_service_attachment')}'`,
@@ -644,6 +645,12 @@ export const MIGRATION_PROBES = {
       "            and not has_function_privilege('anon', p.oid, 'execute')",
       "            and not has_function_privilege('service_role', p.oid, 'execute')",
       `       from pg_proc p where p.oid = ${CONFIRM_SERVICE_ATTACHMENT})`,
+      `and (select md5(p.prosrc) = '${functionBodyMd5(SERVICE_ATTACHMENTS_MIGRATION, 'service_attachment_orphan_objects')}'`,
+      "            and p.prosecdef and p.proconfig = array['search_path=\"\"']",
+      "            and has_function_privilege('service_role', p.oid, 'execute')",
+      "            and not has_function_privilege('anon', p.oid, 'execute')",
+      "            and not has_function_privilege('authenticated', p.oid, 'execute')",
+      `       from pg_proc p where p.oid = ${SERVICE_ATTACHMENT_ORPHAN_OBJECTS})`,
       "and exists (select 1 from storage.buckets b where b.id = 'service-book' and not b.public)",
       "and case when to_regclass('cron.job') is null then false",
       "         else (xpath('count(/table/row)', query_to_xml(",

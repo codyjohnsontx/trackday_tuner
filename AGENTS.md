@@ -857,8 +857,13 @@ rider's own select of the row (`lib/actions/service-attachments.ts`).
 bucket on its `SERVER_ONLY_BUCKETS` list. Load the browser Supabase client
 lazily (`await import`) in a client component on a page reached by client
 navigation: a static import on the entry page hung most navigations into it
-under `next start`. `tests/db/service-attachments.spec.ts` proves the cap, the
-sweep and the private bucket.
+under `next start`. SQL cannot delete a stored object, so files leave the
+bucket through the Storage API only: a failed upload is taken back by the
+action, a deleted bike's files are removed before the bike (as its session
+photos are), and `/api/monitoring/service-attachment-sweep`, which the
+monitoring workflow calls, removes any object a day old that no `ready` row
+names. `tests/db/service-attachments.spec.ts` proves the cap, both sweeps'
+SQL and the private bucket.
 
 The rules that read the book - usage from readings and weighted sessions, due
 state and the rider's overrides, the honest-history labels, the field layout -

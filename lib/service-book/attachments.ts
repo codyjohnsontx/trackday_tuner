@@ -49,6 +49,12 @@ export const ATTACHMENT_THUMB_LONG_EDGE = 400;
 export const ATTACHMENT_JPEG_QUALITY = 0.82;
 
 /**
+ * The most a thumbnail may weigh. A 400px JPEG is around 30 KB;
+ * confirm_service_attachment refuses one over this, or of any other type.
+ */
+export const ATTACHMENT_THUMB_MAX_BYTES = 1024 * 1024;
+
+/**
  * The size an image is drawn at: its own size when it already fits, otherwise
  * scaled so the long edge is `longEdge`, keeping its shape. Never upscaled.
  */

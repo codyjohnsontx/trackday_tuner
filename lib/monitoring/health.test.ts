@@ -398,6 +398,62 @@ describe('checkAttachmentSweep', () => {
     expect(check.status).toBe('fail');
     expect(check.detail).toBe('MissingCountError');
   });
+
+  it('asks for the oldest object no ready attachment names', async () => {
+    const requests = stubCountingPostgrest({});
+
+    await checkAttachmentSweep(now);
+
+    const orphans = requestTo(requests, 'rpc/service_attachment_orphan_objects');
+    expect(orphans.method).toBe('POST');
+  });
+
+  // The object sweep not running is the other failure: abandoned files fill the
+  // free plan's 1 GB while every row count reads healthy.
+  it('fails when an orphaned object has outlived the object sweep', async () => {
+    stubCountingPostgrest({
+      'rpc/service_attachment_orphan_objects': {
+        status: 200,
+        payload: [{ name: 'book-1/att-1.jpg', created_at: '2026-11-29T11:59:59.000Z' }],
+        contentRange: null,
+      },
+    });
+
+    const check = await checkAttachmentSweep(now);
+
+    expect(check.status).toBe('fail');
+    expect(check.detail).toBe('OrphanedAttachmentObjectError');
+    expect(JSON.stringify(check)).not.toContain('book-1');
+  });
+
+  it('passes while the oldest orphaned object is still inside the sweep window', async () => {
+    stubCountingPostgrest({
+      'rpc/service_attachment_orphan_objects': {
+        status: 200,
+        payload: [{ name: 'book-1/att-1.jpg', created_at: '2026-11-30T12:00:00.000Z' }],
+        contentRange: null,
+      },
+    });
+
+    const check = await checkAttachmentSweep(now);
+
+    expect(check.status).toBe('ok');
+  });
+
+  it('fails with the PostgREST code when the orphan listing is missing', async () => {
+    stubCountingPostgrest({
+      'rpc/service_attachment_orphan_objects': {
+        status: 404,
+        payload: { code: 'PGRST202', details: null, hint: null, message: 'Could not find the function public.service_attachment_orphan_objects(p_limit) in the schema cache' },
+        contentRange: null,
+      },
+    });
+
+    const check = await checkAttachmentSweep(now);
+
+    expect(check.status).toBe('fail');
+    expect(check.detail).toBe('SupabaseError:PGRST202');
+  });
 });
 
 describe('a check that misses its deadline', () => {

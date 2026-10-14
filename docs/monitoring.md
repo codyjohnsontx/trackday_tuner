@@ -115,9 +115,13 @@ decides what to do**:
   `SupabaseError:PGRST205` instead means `20260924001700` was never applied.
 - `attachment_sweep` - a service book attachment reservation nobody confirmed is
   more than 48 hours old, so the daily sweep is not running and free riders'
-  abandoned uploads are holding slots of their 25. The detail is
-  `StaleAttachmentReservationError:<n>`. See "The `attachment_sweep` check"
-  below. `SupabaseError:PGRST205` means `20261014000400` was never applied.
+  abandoned uploads are holding slots of their 25
+  (`StaleAttachmentReservationError:<n>`); or a file in the `service-book`
+  bucket that no confirmed attachment names is more than 48 hours old, so the
+  object sweep is not running and abandoned files are filling the 1 GB of
+  storage (`OrphanedAttachmentObjectError`). See "The `attachment_sweep` check"
+  below. `SupabaseError:PGRST205` or `SupabaseError:PGRST202` means
+  `20261014000400` was never applied.
 
 ### Step 2 - the 15-minute alert (no external account)
 
@@ -370,11 +374,23 @@ mid-upload - would hold its slot for good, so a `pg_cron` job,
 `purge-stale-service-attachments` (04:41 UTC daily), deletes `pending` rows more
 than a day old. This check asks whether any `pending` row is more than 48 hours
 old: one waits up to two days at worst, so past that a run was missed. It reads
-a count and never a row. The job cannot delete the stored object (Storage
-refuses a direct delete from SQL), so a reservation whose file did arrive leaves
-that object in the bucket; the app removes the objects of an upload it sees fail.
+a count and never a row.
 
-On a failure:
+The job cannot delete the stored object (Storage refuses a direct delete from
+SQL), so the files go through the Storage API instead. The app removes the
+objects of an upload it sees fail, and deleting a bike removes every file its
+service book's attachments name before the bike goes. Everything else - a file
+whose reservation was swept, one uploaded to a signed URL after its reservation
+was discarded (a signed upload token cannot be revoked), one that landed while
+its bike was being deleted - is removed by
+`/api/monitoring/service-attachment-sweep`, which the scheduled workflow calls
+every 15 minutes with the same bearer secret as `/api/monitoring/ai-health`. It
+removes every `service-book` object more than a day old that no `ready` row
+names, as `service_attachment_orphan_objects` lists them, at most 1000 a run.
+The check also asks that function for the oldest such object and fails when it
+is more than 48 hours old.
+
+On a `StaleAttachmentReservationError`:
 
 ```sql
 select status, return_message, start_time
@@ -388,6 +404,17 @@ No rows means the job was never scheduled - apply "Apply service book
 attachments by hand" in `docs/beta-runbook.md`. `select
 public.purge_stale_service_attachments();` run by hand clears what is stale
 while the cause is fixed.
+
+On an `OrphanedAttachmentObjectError`, look at the workflow's "Sweep -
+abandoned service book uploads" step: a 401 or 503 before the sweep ran is the
+secret (step 2 above), and a 503 after it is a failed read or Storage removal,
+named in the deployment's log under `service-attachment-sweep`. Calling the
+route by hand runs one batch:
+
+```bash
+curl --header "Authorization: Bearer $MONITORING_CRON_SECRET" \
+  "$MONITORING_APP_URL/api/monitoring/service-attachment-sweep"
+```
 
 #### The `schema_contract` check
 

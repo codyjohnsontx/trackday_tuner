@@ -223,6 +223,11 @@ export async function confirmServiceAttachment(vehicleId: string, attachmentId: 
  * Takes back an upload that did not finish: its objects and its reservation.
  * Only a pending attachment the rider's own select can see is touched, so a
  * confirmed receipt is never removed this way.
+ *
+ * A signed upload token cannot be revoked, so the reservation's URLs stay
+ * usable for their two hours after this. Anything uploaded through them names
+ * no row, and the attachment object sweep
+ * (`/api/monitoring/service-attachment-sweep`) removes it once it is a day old.
  */
 export async function discardServiceAttachment(vehicleId: string, attachmentId: string): Promise<ActionResult<void>> {
   const demoError = await assertNotDemoMode();
@@ -261,7 +266,7 @@ async function takeBack(userId: string, attachmentId: string, paths: (string | n
   ]);
   const failure = removed.error ?? deleted.error;
   if (failure) {
-    // The sweep deletes the reservation within a day whatever happens here.
+    // The sweeps delete the reservation and its objects within a day whatever happens here.
     report('service-attachment-discard', failure, { userId, attachmentId });
     return { ok: false, error: UPLOAD_FAILED };
   }

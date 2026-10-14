@@ -1,5 +1,5 @@
-# The scheduled probe. Every 15 minutes it asks the deployment two questions and
-# fails the run if either answer is not a 200:
+# The scheduled probe. Every 15 minutes it asks the deployment two questions,
+# runs one cleanup, and fails the run if any answer is not a 200:
 #
 #   /api/health                 - can this deployment serve? (Postgres reachable,
 #                                 RAG index present in the bundle, Data API still
@@ -8,6 +8,11 @@
 #                                 preview, past its 90 days)
 #   /api/monitoring/ai-health   - has anything failed in the last hour? (error
 #                                 rate and p95 latency over `ai_requests`)
+#   /api/monitoring/service-attachment-sweep
+#                               - removes service book files more than a day
+#                                 old that no confirmed attachment names (SQL
+#                                 cannot delete from storage, so the daily
+#                                 pg_cron sweep leaves them behind)
 #
 # A failed scheduled run is itself the alert, and this file configures no
 # recipient for it: GitHub notifies the user who CREATED this workflow, or
@@ -113,5 +118,26 @@ jobs:
           echo "HTTP $code"
           if [ "$code" != "200" ]; then
             echo "::error::/api/monitoring/ai-health answered $code. The body is deliberately not printed here - run the curl under \"Verify it worked\" in step 2 of docs/monitoring.md to see which requests failed and why."
+            exit 1
+          fi
+
+      # Independent of both probes above, for the same reason they are of each
+      # other: a red /api/health must not stop abandoned uploads being removed.
+      # Bearer-gated and printed as a status only, like the step above, and with
+      # no --location for the reason given there.
+      - name: Sweep - abandoned service book uploads
+        if: ${{ !cancelled() && steps.config.outputs.configured == 'true' }}
+        env:
+          APP_URL: ${{ vars.MONITORING_APP_URL }}
+          CRON_SECRET: ${{ secrets.MONITORING_CRON_SECRET }}
+        run: |
+          set -uo pipefail
+          code=$(curl --silent --show-error --max-time 30 \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            --output /dev/null --write-out '%{http_code}' \
+            "${APP_URL%/}/api/monitoring/service-attachment-sweep") || code=000
+          echo "HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::/api/monitoring/service-attachment-sweep answered $code. The deployment's log names whether the orphan read or the Storage removal failed."
             exit 1
           fi

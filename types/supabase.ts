@@ -1627,6 +1627,11 @@ export type Database = {
         Args: Record<string, never>;
         Returns: number;
       };
+      service_attachment_orphan_objects: {
+        Args: { p_limit: number };
+        /** `service-book` objects more than a day old that no `ready` attachment names, oldest first, at most `p_limit`. */
+        Returns: { name: string; created_at: string }[];
+      };
       record_race_engineer_memory_feedback: {
         Args: {
           p_user_id: string;

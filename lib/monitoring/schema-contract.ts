@@ -170,6 +170,9 @@ export const REQUIRED_RPCS: readonly RpcContract[] = [
   contract('confirm_service_attachment', {
     p_attachment_id: UNCOERCIBLE_PROBE_VALUE,
   }),
+  contract('service_attachment_orphan_objects', {
+    p_limit: UNCOERCIBLE_PROBE_VALUE,
+  }),
   contract('save_service_entry', {
     p_book_id: UNCOERCIBLE_PROBE_VALUE,
     p_entry_id: null,

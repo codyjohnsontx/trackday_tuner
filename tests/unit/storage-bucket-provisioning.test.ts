@@ -257,7 +257,11 @@ describe('every storage bucket the application uploads to is provisioned by the 
       {
         name: 'service-book',
         readPublicly: false,
-        files: ['components/service-book/service-entry-attachments.tsx', 'lib/actions/service-attachments.ts'],
+        files: [
+          'app/api/monitoring/service-attachment-sweep/route.ts',
+          'components/service-book/service-entry-attachments.tsx',
+          'lib/actions/service-attachments.ts',
+        ],
       },
       {
         name: 'vehicle-photos',

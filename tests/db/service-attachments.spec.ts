@@ -1,8 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { resolveUserAccess } from '@/lib/access';
 import { FREE_PLAN_ATTACHMENT_MAX_BYTES, PRO_ATTACHMENT_MAX_BYTES, getFreePlanLimit } from '@/lib/plans';
+import { ATTACHMENT_THUMB_MAX_BYTES } from '@/lib/service-book/attachments';
 import { createTestAdminClient } from '@/tests/e2e/helpers/supabase';
 import { createThrowawayRider, deleteThrowawayRider, type ThrowawayRider } from '@/tests/e2e/helpers/throwaway-rider';
+import { runAsPostgres } from '@/tests/db/helpers/auth-database';
 import { anonClient, createVehicle, signIn, type Client } from '@/tests/db/helpers/rider';
 import type { Profile } from '@/types';
 
@@ -13,12 +15,15 @@ import type { Profile } from '@/types';
  * - the free allowance is 25 per bike, the number lib/plans.ts prints, and two
  *   reserves racing for the last slot leave exactly 25 (the 26th is TT402);
  * - the per-file size is 10 MB free and 25 MB Pro, the numbers lib/plans.ts
- *   prints, both at reserve and against what storage actually holds;
+ *   prints, both at reserve and against what storage actually holds, and a
+ *   thumbnail is a JPEG of at most 1 MB;
  * - Pro is exactly `resolveUserAccess`;
  * - another rider, nobody and the service role cannot reserve or confirm, and a
  *   rider cannot write the table directly;
  * - a reservation a day old can no longer be confirmed, and one nobody
  *   confirms is swept after a day;
+ * - the object sweep is handed every object a day old that no ready attachment
+ *   names, and nothing else, and only the service role may ask;
  * - the bucket is private: nobody reads an object without a signed URL.
  *
  * Part of `npm run test:db`, which CI runs on every pull request against a
@@ -256,6 +261,52 @@ test.describe('service book attachments', () => {
 
     const states = await admin.from('service_attachments').select('status').in('id', [pdf.id, big.id]);
     expect(states.data!.map((state) => state.status)).toEqual(['pending', 'pending']);
+  });
+
+  test('refuses a thumbnail that is not a JPEG of at most 1 MB', async () => {
+    const { client, book, entry } = await newRider('confirm-thumbs');
+
+    const wrongType = (await reserve(client, book, entry)).data as unknown as Reserved;
+    await upload(wrongType.object_path, JPEG, 'image/jpeg');
+    await upload(wrongType.thumb_path!, JPEG, 'application/pdf');
+    expect((await client.rpc('confirm_service_attachment', { p_attachment_id: wrongType.id })).error?.code).toBe('22023');
+
+    const tooLarge = (await reserve(client, book, entry)).data as unknown as Reserved;
+    await upload(tooLarge.object_path, JPEG, 'image/jpeg');
+    await upload(tooLarge.thumb_path!, Buffer.alloc(ATTACHMENT_THUMB_MAX_BYTES + 1, 0x25), 'image/jpeg');
+    expect((await client.rpc('confirm_service_attachment', { p_attachment_id: tooLarge.id })).error?.code).toBe('22023');
+
+    const states = await admin.from('service_attachments').select('status').in('id', [wrongType.id, tooLarge.id]);
+    expect(states.data!.map((state) => state.status)).toEqual(['pending', 'pending']);
+  });
+
+  test('hands the object sweep every object a day old that no ready attachment names, and only the service role', async () => {
+    const { client, book, entry } = await newRider('orphans');
+    const kept = (await reserve(client, book, entry)).data as unknown as Reserved;
+    await upload(kept.object_path, JPEG, 'image/jpeg');
+    await upload(kept.thumb_path!, JPEG, 'image/jpeg');
+    expect((await client.rpc('confirm_service_attachment', { p_attachment_id: kept.id })).error).toBeNull();
+    const abandoned = (await reserve(client, book, entry, 'invoice', 'application/pdf', 100)).data as unknown as Reserved;
+    await upload(abandoned.object_path, JPEG, 'application/pdf');
+    const fresh = (await reserve(client, book, entry, 'invoice', 'application/pdf', 100)).data as unknown as Reserved;
+    await upload(fresh.object_path, JPEG, 'application/pdf');
+
+    const aged = [kept.object_path, kept.thumb_path!, abandoned.object_path].map((name) => `'${name}'`).join(', ');
+    const backdated = runAsPostgres(
+      `update storage.objects set created_at = now() - interval '25 hours' where bucket_id = '${BUCKET}' and name in (${aged});`,
+    );
+    expect(backdated.ok, backdated.stderr).toBe(true);
+
+    const listed = await admin.rpc('service_attachment_orphan_objects', { p_limit: 1000 });
+    expect(listed.error, listed.error?.message).toBeNull();
+    const names = (listed.data as { name: string }[]).map((object) => object.name);
+    expect(names).toContain(abandoned.object_path);
+    expect(names).not.toContain(kept.object_path);
+    expect(names).not.toContain(kept.thumb_path);
+    expect(names).not.toContain(fresh.object_path);
+
+    expect((await client.rpc('service_attachment_orphan_objects', { p_limit: 1000 })).error?.code).toBe('42501');
+    expect((await anonClient().rpc('service_attachment_orphan_objects', { p_limit: 1000 })).error?.code).toBe('42501');
   });
 
   test('refuses to confirm a reservation the allowance no longer counts', async () => {

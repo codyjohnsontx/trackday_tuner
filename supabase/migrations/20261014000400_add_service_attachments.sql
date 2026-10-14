@@ -28,8 +28,9 @@
 --    straight to storage, resized first, so no photo passes through a function.
 -- 3. `confirm_service_attachment` flips the row to `ready` only once the object
 --    is really there: it reads storage.objects for the path, and refuses an
---    object missing, of another type, or over the rider's per-file size, and a
---    reservation a day old, which the count no longer holds. The
+--    object missing, of another type, or over the rider's per-file size, a
+--    thumbnail missing or not a JPEG of at most 1 MB, and a reservation a day
+--    old, which the count no longer holds. The
 --    size kept on the row is the stored object's, not the one the browser
 --    declared. `uploaded_at` is set here and nowhere else, and it is what the
 --    "Receipt attached when logged" label reads.
@@ -39,9 +40,15 @@
 -- `attachment_sweep` check fails when one is more than two days old, which is
 -- what proves the job runs. A signed upload URL lives two hours, so nothing can
 -- arrive for a row once it is old enough to sweep. SQL cannot delete the object
--- itself (storage.objects refuses a direct delete), so an object uploaded for a
--- swept row stays in the bucket; the app removes the objects of an upload it
--- sees fail.
+-- itself (storage.objects refuses a direct delete), so the objects go through
+-- the Storage API instead: the app removes those of an upload it sees fail, and
+-- a scheduled route (/api/monitoring/service-attachment-sweep) removes every
+-- object more than a day old that no `ready` row names, which
+-- `service_attachment_orphan_objects` lists. That object sweep is what catches
+-- an upload abandoned before confirm, the files of a deleted bike, and an
+-- upload sent to a signed URL after its reservation was discarded - a signed
+-- upload token cannot be revoked. /api/health's `attachment_sweep` fails when
+-- such an object is more than two days old.
 --
 -- An attachment is not part of the entry's snapshot, so adding one writes no
 -- revision and an entry stays "Unedited". `entry_id` is required for the kinds
@@ -207,6 +214,8 @@ declare
   v_row public.service_attachments;
   v_size bigint;
   v_mime text;
+  v_thumb_size bigint;
+  v_thumb_mime text;
   v_max_bytes integer;
 begin
   if auth.uid() is null then
@@ -238,13 +247,22 @@ begin
   if v_size is null then
     raise exception 'the upload has not arrived' using errcode = 'TT404';
   end if;
-  if v_row.thumb_path is not null and not exists (
-    select 1 from storage.objects o where o.bucket_id = 'service-book' and o.name = v_row.thumb_path
-  ) then
-    raise exception 'the thumbnail has not arrived' using errcode = 'TT404';
+  if v_row.thumb_path is not null then
+    select (o.metadata ->> 'size')::bigint, o.metadata ->> 'mimetype'
+      into v_thumb_size, v_thumb_mime
+      from storage.objects o
+     where o.bucket_id = 'service-book'
+       and o.name = v_row.thumb_path;
+
+    if v_thumb_size is null then
+      raise exception 'the thumbnail has not arrived' using errcode = 'TT404';
+    end if;
   end if;
   if v_mime is distinct from v_row.mime then
     raise exception 'the upload is not the type that was reserved' using errcode = '22023';
+  end if;
+  if v_row.thumb_path is not null and (v_thumb_mime is distinct from 'image/jpeg' or v_thumb_size > 1048576) then
+    raise exception 'the thumbnail is not a JPEG of at most 1 MB' using errcode = '22023';
   end if;
 
   select a.max_bytes into v_max_bytes from public.service_attachment_allowance() a;
@@ -287,6 +305,36 @@ $$;
 
 revoke all on function public.purge_stale_service_attachments() from public, anon, authenticated, service_role;
 grant execute on function public.purge_stale_service_attachments() to service_role;
+
+-- The objects the scheduled route removes through the Storage API: every
+-- `service-book` object more than a day old that no `ready` attachment names,
+-- oldest first, at most `p_limit` of them (the route asks for what one Storage
+-- `remove` call takes). A day is the reservation window, and an object is never
+-- older than its row, so nothing listed can still be confirmed. security
+-- definer so the route needs no grant on storage.objects.
+create or replace function public.service_attachment_orphan_objects(p_limit integer)
+returns table (name text, created_at timestamptz)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select o.name, o.created_at
+    from storage.objects o
+   where o.bucket_id = 'service-book'
+     and o.created_at < now() - interval '1 day'
+     and not exists (
+       select 1
+         from public.service_attachments a
+        where a.status = 'ready'
+          and (a.object_path = o.name or a.thumb_path = o.name)
+     )
+   order by o.created_at
+   limit p_limit;
+$$;
+
+revoke all on function public.service_attachment_orphan_objects(integer) from public, anon, authenticated, service_role;
+grant execute on function public.service_attachment_orphan_objects(integer) to service_role;
 
 -- cron.schedule with a job name replaces a job of that name, so re-running this
 -- file leaves one job rather than two.
