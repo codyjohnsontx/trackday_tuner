@@ -56,8 +56,8 @@ export function ServiceEntryHistory({ vehicleId, entry, revisions, distanceUnit,
   const [error, setError] = useState('');
   const [isPending, startTransition] = useTransition();
   const provenance = useMemo(
-    () => (clock ? describeEntryProvenance({ entry, revisions, timeZone: clock.timeZone }) : null),
-    [entry, revisions, clock],
+    () => (clock ? describeEntryProvenance({ entry, revisions: entry.revisions, timeZone: clock.timeZone }) : null),
+    [entry, clock],
   );
 
   function remove() {

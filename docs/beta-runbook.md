@@ -3865,10 +3865,10 @@ $$;
 -- A rider calls it; nobody else needs to. The service role has no auth.uid()
 -- and the pin would refuse its insert without a logged_by, so it is not granted
 -- - and it is revoked by name, because the hosted project's default privileges
--- hand execute on every new public function to service_role (20260719001100
--- reaches it through the schema-wide grant), which the hand-paste's verify
--- query found still true after a revoke naming only public, anon and
--- authenticated (2026-10-14). The local stack does not reproduce that default.
+-- hand execute on every new public function to service_role, which the
+-- hand-paste's verify query found still true after a revoke naming only
+-- public, anon and authenticated (2026-10-14). The local stack does not
+-- reproduce that default.
 revoke all on function public.save_service_entry(uuid, uuid, jsonb, jsonb, jsonb) from public, anon, authenticated, service_role;
 grant execute on function public.save_service_entry(uuid, uuid, jsonb, jsonb, jsonb) to authenticated;
 commit;
