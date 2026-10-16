@@ -52,13 +52,14 @@ async function ownBook(
   return { ok: true, book: data ?? null };
 }
 
+/** Sets the book's zone only while it has none: once set it never moves (owner, Q4). */
 async function writeOwnerTimeZone(
   supabase: SupabaseServerClient,
   book: Pick<Tables<'service_books'>, 'id' | 'owner_time_zone'>,
   timeZone: string,
 ): Promise<Failure | null> {
-  if (book.owner_time_zone === timeZone) return null;
-  const { error } = await supabase.from('service_books').update({ owner_time_zone: timeZone }).eq('id', book.id);
+  if (book.owner_time_zone !== null) return null;
+  const { error } = await supabase.from('service_books').update({ owner_time_zone: timeZone }).eq('id', book.id).is('owner_time_zone', null);
   return error;
 }
 
@@ -94,8 +95,9 @@ export async function getServiceBookShares(vehicleId: string): Promise<ActionRes
 
 /**
  * Makes a link to the book and returns its token, which is stored nowhere and
- * so is returned only this once. `timeZone` is the owner's browser zone: it is
- * recorded first, so the book a buyer opens is already labelled in it.
+ * so is returned only this once. `timeZone` is the owner's browser zone: when
+ * the book has none yet it is recorded first, so the book a buyer opens is
+ * already labelled in it.
  */
 export async function createServiceBookShare(
   vehicleId: string,
@@ -175,9 +177,9 @@ export async function revokeServiceBookShare(vehicleId: string, shareId: string)
 }
 
 /**
- * Records the owner's zone when they open their book, so a shared copy is
- * labelled where the owner is (owner, Q4). A zone this server cannot read is
- * not stored, and an unchanged one writes nothing.
+ * Records the owner's zone the first time they open their book, so a shared
+ * copy is labelled where the owner is (owner, Q4). A zone this server cannot
+ * read is not stored, and a book that already has one keeps it.
  */
 export async function recordServiceBookOwnerTimeZone(vehicleId: string, timeZone: string): Promise<ActionResult<void>> {
   const demoError = await assertNotDemoMode();

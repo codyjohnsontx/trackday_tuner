@@ -828,8 +828,10 @@ screens the owner is the viewer, so `useRiderClock`
 mount and `buildServiceBookView` (`lib/service-book/book-data.ts`) runs every
 rule once over the rows the server loaded. A screen somebody else reads - the
 share link, a PDF - uses `service_books.owner_time_zone` instead
-(20261016000500), which the owner's browser writes when they open the book or
-make a link, and never the viewer's zone. The server actions in
+(20261016000500), which the owner's browser writes the first time they open the
+book or make a link, and never the viewer's zone. Once set it never changes
+(owner, 2026-10-16: a label never moves without an edit), and a trigger keeps it
+against every writer, the service role's included. The server actions in
 `lib/actions/service-book.ts` read and write rows only; the demo book is
 `lib/demo/service-book.ts`, and `tests/unit/service-book-screens.test.ts` holds
 the form to opening with nothing pressed and the demo to offering no save.

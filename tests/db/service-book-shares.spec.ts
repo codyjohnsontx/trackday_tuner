@@ -17,7 +17,9 @@ import { anonClient, createVehicle, signIn, type Client } from '@/tests/db/helpe
  *   view and not an attachment tap, holds a link to its rate limit without
  *   counting the refused view, leaves no row behind for a token that opens
  *   nothing, and only the service role may call it;
- * - `owner_time_zone` is the owner's to write, in the shape of a zone name.
+ * - `owner_time_zone` is the owner's to write, in the shape of a zone name, and
+ *   once set no writer moves it, so a shared book's labels never change after
+ *   the fact.
  *
  * Part of `npm run test:db` - see playwright.db.config.ts.
  */
@@ -177,17 +179,41 @@ test.describe('service book share links', () => {
     const owner = await newOwner('zone');
     const other = await newOwner('zone-other');
 
-    const set = await owner.client.from('service_books').update({ owner_time_zone: 'America/Chicago' }).eq('id', owner.book).select('owner_time_zone').single();
-    expect(set.error, set.error?.message).toBeNull();
-    expect(set.data!.owner_time_zone).toBe('America/Chicago');
-
     const malformed = await owner.client.from('service_books').update({ owner_time_zone: "'; drop table x; --" }).eq('id', owner.book).select('id');
     expect(malformed.error?.code).toBe('23514');
 
     const foreign = await other.client.from('service_books').update({ owner_time_zone: 'UTC' }).eq('id', owner.book).select('id');
     expect(foreign.error, foreign.error?.message).toBeNull();
     expect(foreign.data).toEqual([]);
-    const stored = await admin.from('service_books').select('owner_time_zone').eq('id', owner.book).single();
-    expect(stored.data!.owner_time_zone).toBe('America/Chicago');
+
+    const set = await owner.client.from('service_books').update({ owner_time_zone: 'America/Chicago' }).eq('id', owner.book).select('owner_time_zone').single();
+    expect(set.error, set.error?.message).toBeNull();
+    expect(set.data!.owner_time_zone).toBe('America/Chicago');
+  });
+
+  test('a recorded zone is never moved, by the owner or the service role', async () => {
+    const owner = await newOwner('zone-pinned');
+    const first = await owner.client.from('service_books').update({ owner_time_zone: 'America/Chicago' }).eq('id', owner.book).select('id');
+    expect(first.error, first.error?.message).toBeNull();
+
+    const fromElsewhere = await owner.client
+      .from('service_books')
+      .update({ owner_time_zone: 'Europe/London' })
+      .eq('id', owner.book)
+      .select('owner_time_zone')
+      .single();
+    expect(fromElsewhere.error, fromElsewhere.error?.message).toBeNull();
+    expect(fromElsewhere.data!.owner_time_zone).toBe('America/Chicago');
+
+    for (const zone of ['Asia/Tokyo', null]) {
+      const server = await admin.from('service_books').update({ owner_time_zone: zone }).eq('id', owner.book).select('owner_time_zone').single();
+      expect(server.error, server.error?.message).toBeNull();
+      expect(server.data!.owner_time_zone).toBe('America/Chicago');
+    }
+
+    // Another column's update keeps it too.
+    const unit = await owner.client.from('service_books').update({ distance_unit: 'km' }).eq('id', owner.book).select('owner_time_zone').single();
+    expect(unit.error, unit.error?.message).toBeNull();
+    expect(unit.data!.owner_time_zone).toBe('America/Chicago');
   });
 });

@@ -25,7 +25,10 @@
 -- whoever logged it, and the app stored no zone for a rider: the owner's own
 -- screens use the zone of the browser looking at them. A buyer's browser is
 -- somewhere else, so a shared book is labelled in `owner_time_zone`, which the
--- owner's browser writes when they open their book and when they make a link.
+-- owner's browser writes the first time they open their book or make a link.
+-- Once set it is never changed, by anyone (owner, 2026-10-16): a label must
+-- never move after the fact without an edit, and relabelling every entry in
+-- whatever zone the owner last opened the book from would do exactly that.
 -- The check holds only the shape of an IANA name; the server checks the zone is
 -- one its clock knows before writing it, and the shared page treats a stored
 -- zone it cannot use as absent rather than labelling in another one.
@@ -35,6 +38,28 @@ alter table public.service_books
     check (owner_time_zone is null or owner_time_zone ~ '^[A-Za-z0-9_+/-]{1,64}$');
 
 grant update (owner_time_zone) on public.service_books to authenticated;
+
+-- Keeps a set zone on every update, whoever writes it.
+create or replace function public.service_books_pin_owner_time_zone()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if old.owner_time_zone is not null then
+    new.owner_time_zone := old.owner_time_zone;
+  end if;
+  return new;
+end;
+$$;
+
+create or replace trigger service_books_pin_owner_time_zone
+  before update on public.service_books
+  for each row execute function public.service_books_pin_owner_time_zone();
+
+-- A trigger function, like the shares pin below: the decision is written down.
+revoke all on function public.service_books_pin_owner_time_zone() from public, anon, authenticated, service_role;
 
 create table if not exists public.service_book_shares (
   id uuid primary key default gen_random_uuid(),

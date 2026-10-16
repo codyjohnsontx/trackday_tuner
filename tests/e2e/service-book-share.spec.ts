@@ -20,7 +20,9 @@ import type { Database } from '@/types/supabase';
  * - a removed entry is only counted (PQ6), and the page carries no email, no
  *   rider id and none of the bike's session data, is marked noindex, and shows
  *   an attachment only through a URL signed for that view;
- * - once revoked, the link and its attachment are a 404.
+ * - once revoked, the link and its attachment are a 404;
+ * - the owner opening the book and making a link from another zone moves
+ *   neither the stored zone nor a single shared label (owner, 2026-10-16).
  */
 
 const OWNER_ZONE = 'Pacific/Kiritimati';
@@ -194,6 +196,32 @@ test.describe('sharing a service book by link', () => {
       expect(goneAttachment.status()).toBe(404);
     } finally {
       await visitor.close();
+    }
+
+    // The owner opens the book from the visitor's zone, a day behind, and makes
+    // a new link there. Actions run in order, so once the link is shown any
+    // zone write the page made on open has landed too.
+    const travelling = await visitorContext(browser);
+    try {
+      const away = await travelling.newPage();
+      await signInWith(away, rider!.email, rider!.password);
+      await gotoPage(away, `/garage/${vehicleId}/book`);
+      await expect(away.getByTestId('service-entry-row')).toHaveCount(1);
+      await away.getByRole('button', { name: 'Create share link' }).click();
+      const awayField = away.getByTestId('share-link-url');
+      await expect(awayField).toHaveValue(/\/book\/[A-Za-z0-9_-]{43}$/);
+      const awayLink = await awayField.inputValue();
+
+      const stored = await admin.from('service_books').select('owner_time_zone').eq('id', bookId).single();
+      expect(stored.data!.owner_time_zone).toBe(OWNER_ZONE);
+
+      const reshared = await travelling.newPage();
+      expect((await reshared.goto(awayLink))?.status()).toBe(200);
+      const awayEntries = reshared.getByTestId('shared-entry');
+      await expect(awayEntries).toHaveCount(1);
+      expect(await awayEntries.getByRole('list', { name: 'History' }).getByRole('listitem').allTextContents()).toEqual(ownerLabelTexts);
+    } finally {
+      await travelling.close();
     }
   });
 });

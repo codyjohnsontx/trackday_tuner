@@ -4407,7 +4407,9 @@ never undoes - the `open_service_book_share` lookup the public `/book/<token>`
 page calls with the service role, which holds a link to 120 uses an hour
 through `consume_beta_rate_limit` and counts each page view, and
 `service_books.owner_time_zone`, the owner's zone a shared book is labelled in,
-written by the owner's browser when they open their book or make a link.
+written by the owner's browser the first time they open their book or make a
+link and kept from then on by the `service_books_pin_owner_time_zone` trigger,
+so a later visit from another zone relabels nothing.
 **Apply after "Apply service book attachments by hand" and before merging the
 pull request that adds share links**: every book page writes the zone on open,
 so a deploy ahead of this paste fails that write on every visit (reported
@@ -4467,7 +4469,10 @@ begin;
 -- whoever logged it, and the app stored no zone for a rider: the owner's own
 -- screens use the zone of the browser looking at them. A buyer's browser is
 -- somewhere else, so a shared book is labelled in `owner_time_zone`, which the
--- owner's browser writes when they open their book and when they make a link.
+-- owner's browser writes the first time they open their book or make a link.
+-- Once set it is never changed, by anyone (owner, 2026-10-16): a label must
+-- never move after the fact without an edit, and relabelling every entry in
+-- whatever zone the owner last opened the book from would do exactly that.
 -- The check holds only the shape of an IANA name; the server checks the zone is
 -- one its clock knows before writing it, and the shared page treats a stored
 -- zone it cannot use as absent rather than labelling in another one.
@@ -4477,6 +4482,28 @@ alter table public.service_books
     check (owner_time_zone is null or owner_time_zone ~ '^[A-Za-z0-9_+/-]{1,64}$');
 
 grant update (owner_time_zone) on public.service_books to authenticated;
+
+-- Keeps a set zone on every update, whoever writes it.
+create or replace function public.service_books_pin_owner_time_zone()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if old.owner_time_zone is not null then
+    new.owner_time_zone := old.owner_time_zone;
+  end if;
+  return new;
+end;
+$$;
+
+create or replace trigger service_books_pin_owner_time_zone
+  before update on public.service_books
+  for each row execute function public.service_books_pin_owner_time_zone();
+
+-- A trigger function, like the shares pin below: the decision is written down.
+revoke all on function public.service_books_pin_owner_time_zone() from public, anon, authenticated, service_role;
 
 create table if not exists public.service_book_shares (
   id uuid primary key default gen_random_uuid(),
@@ -4636,6 +4663,12 @@ select
   has_table_privilege('anon', 'public.service_book_shares', 'select')
     or has_any_column_privilege('anon', 'public.service_book_shares', 'insert, update') as anon_reaches,
   has_column_privilege('authenticated', 'public.service_books', 'owner_time_zone', 'update') as rider_sets_zone,
+  (select md5(p.prosrc) = 'cf4e8a83ed1f298aa3807d7d382388eb' and not p.prosecdef
+     from pg_proc p where p.oid = to_regprocedure('public.service_books_pin_owner_time_zone()')) as zone_pin_matches,
+  (select count(*) from pg_trigger t
+    where t.tgrelid = to_regclass('public.service_books')
+      and t.tgfoid = to_regprocedure('public.service_books_pin_owner_time_zone()')
+      and t.tgenabled = 'O') as zone_pin_triggers,
   (select md5(p.prosrc) = 'feb240ee229cf6b035bf9b133aac798c' and not p.prosecdef
      from pg_proc p where p.oid = to_regprocedure('public.service_book_shares_pin()')) as pin_matches,
   (select count(*) from pg_trigger t
@@ -4650,9 +4683,9 @@ select
 ```
 
 Expect `true`, `true`, `true`, `false`, `false`, `true`, `true`, `1`, `true`,
-`true`, `false`. A `*_matches` `false` means a body on hosted is not byte for
-byte the migration's: run that `create or replace function` again rather than
-editing in place. `rider_writes_more` or `anon_reaches` `true` is the legacy
+`1`, `true`, `true`, `false`. A `*_matches` `false` means a body on hosted is
+not byte for byte the migration's: run that `create or replace function` again
+rather than editing in place. `rider_writes_more` or `anon_reaches` `true` is the legacy
 `grant all` default surviving: re-run the table's `revoke` and grants. Row 35 of
 `scripts/sql/audit-migrations-against-database.sql` then reads `present`.
 
@@ -4665,6 +4698,8 @@ begin;
 drop function if exists public.open_service_book_share(text, boolean, integer, integer);
 drop table if exists public.service_book_shares;
 drop function if exists public.service_book_shares_pin();
+drop trigger if exists service_books_pin_owner_time_zone on public.service_books;
+drop function if exists public.service_books_pin_owner_time_zone();
 alter table public.service_books drop column if exists owner_time_zone;
 commit;
 ```

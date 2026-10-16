@@ -20,7 +20,7 @@ export interface RiderClock {
  * On the owner's own screens the owner's zone is the viewer's, which is what
  * `describeEntryProvenance` is handed. A screen another person reads - the
  * share link, a PDF - cannot use this and reads `service_books.owner_time_zone`,
- * which the book screen records from this zone.
+ * which the book screen records from this zone the first time and never after.
  */
 export function useRiderClock(): RiderClock | null {
   const [clock, setClock] = useState<RiderClock | null>(null);

@@ -42,9 +42,10 @@ export function ServiceBookScreen({ data, demoMode }: ServiceBookScreenProps) {
   const storedZone = data.book.owner_time_zone;
 
   // A shared copy of the book is labelled in the owner's zone, which only their
-  // browser knows; record it whenever they open the book from somewhere new.
+  // browser knows; record it the first time they open the book. Once stored it
+  // never moves, so opening the book from somewhere else relabels nothing.
   useEffect(() => {
-    if (demoMode || !clock || clock.timeZone === storedZone) return;
+    if (demoMode || !clock || storedZone !== null) return;
     void recordServiceBookOwnerTimeZone(vehicleId, clock.timeZone);
   }, [demoMode, clock, storedZone, vehicleId]);
 
