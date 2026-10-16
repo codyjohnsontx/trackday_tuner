@@ -118,6 +118,7 @@ describe('how a PDF is printed', () => {
   it('names the file after the bike in plain letters', () => {
     expect(pdfFileName('Blue R6', { variant: 'summary', year: null })).toBe('Blue-R6-service-book-summary.pdf');
     expect(pdfFileName('Café "racer" 🏍', { variant: 'full', year: 2025 })).toBe('Cafe-racer-service-book-full-2025.pdf');
+    expect(pdfFileName('Blue R6 ÉTÉ 🏁', { variant: 'summary', year: null })).toBe('Blue-R6-ETE-service-book-summary.pdf');
     expect(pdfFileName('🏍', { variant: 'full', year: null })).toBe('bike-service-book-full.pdf');
   });
 

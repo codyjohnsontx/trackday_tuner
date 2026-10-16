@@ -29,29 +29,35 @@ const DIM = '#555555';
 const FAINT = '#888888';
 const RULE = '#dddddd';
 
+// On each text, not the page: a page's lineHeight reaches the fixed footer's
+// page-number text, and react-pdf then draws it far off the first page. In
+// points, because the page's 1.35 resolved against its 10pt font and every text
+// inherited the 13.5pt that came out, whatever its own size.
+const BODY_LINE = '13.5pt';
+
 const styles = StyleSheet.create({
-  page: { paddingTop: 40, paddingBottom: 52, paddingHorizontal: 44, fontFamily: 'Helvetica', fontSize: 10, color: INK, lineHeight: 1.35 },
+  page: { paddingTop: 40, paddingBottom: 52, paddingHorizontal: 44, fontFamily: 'Helvetica', fontSize: 10, color: INK },
   title: { fontSize: 22, lineHeight: 1.2, fontFamily: 'Helvetica-Bold' },
-  subtitle: { marginTop: 4, fontSize: 12, color: DIM },
-  meta: { marginTop: 6, fontSize: 9, color: FAINT },
-  intro: { marginTop: 10, color: DIM },
+  subtitle: { marginTop: 4, fontSize: 12, color: DIM, lineHeight: BODY_LINE },
+  meta: { marginTop: 6, fontSize: 9, color: FAINT, lineHeight: BODY_LINE },
+  intro: { marginTop: 10, color: DIM, lineHeight: BODY_LINE },
   readings: { marginTop: 10, flexDirection: 'row', gap: 24 },
-  readingLabel: { fontSize: 8, color: FAINT },
-  readingValue: { fontSize: 13, fontFamily: 'Helvetica-Bold' },
-  heading: { marginTop: 20, marginBottom: 6, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: INK, fontSize: 12, fontFamily: 'Helvetica-Bold' },
+  readingLabel: { fontSize: 8, color: FAINT, lineHeight: BODY_LINE },
+  readingValue: { fontSize: 13, fontFamily: 'Helvetica-Bold', lineHeight: BODY_LINE },
+  heading: { marginTop: 20, marginBottom: 6, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: INK, fontSize: 12, fontFamily: 'Helvetica-Bold', lineHeight: BODY_LINE },
   itemRow: { flexDirection: 'row', paddingVertical: 4, borderBottomWidth: 0.5, borderBottomColor: RULE },
-  itemName: { width: '40%', fontFamily: 'Helvetica-Bold' },
-  itemCell: { width: '30%', color: DIM },
+  itemName: { width: '40%', fontFamily: 'Helvetica-Bold', lineHeight: BODY_LINE },
+  itemCell: { width: '30%', color: DIM, lineHeight: BODY_LINE },
   entry: { paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: RULE },
   entryHead: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
-  entryTitle: { flexShrink: 1, fontFamily: 'Helvetica-Bold', fontSize: 11 },
-  entryDate: { color: DIM },
-  labels: { marginTop: 3, fontSize: 8.5, color: DIM },
+  entryTitle: { flexShrink: 1, fontFamily: 'Helvetica-Bold', fontSize: 11, lineHeight: BODY_LINE },
+  entryDate: { color: DIM, lineHeight: BODY_LINE },
+  labels: { marginTop: 3, fontSize: 8.5, color: DIM, lineHeight: BODY_LINE },
   detail: { flexDirection: 'row', marginTop: 2 },
-  detailLabel: { width: 90, color: DIM },
-  detailValue: { flex: 1 },
-  muted: { color: DIM },
-  note: { marginTop: 8, color: DIM },
+  detailLabel: { width: 90, color: DIM, lineHeight: BODY_LINE },
+  detailValue: { flex: 1, lineHeight: BODY_LINE },
+  muted: { color: DIM, lineHeight: BODY_LINE },
+  note: { marginTop: 8, color: DIM, lineHeight: BODY_LINE },
   imagePage: { paddingTop: 40, paddingBottom: 52, paddingHorizontal: 44, fontFamily: 'Helvetica', fontSize: 10, color: INK },
   imageCaption: { marginBottom: 10, fontFamily: 'Helvetica-Bold' },
   image: { width: '100%', maxHeight: 640, objectFit: 'contain' },

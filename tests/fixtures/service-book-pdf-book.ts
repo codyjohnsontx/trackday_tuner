@@ -129,3 +129,30 @@ export function pdfText(pdf: Buffer): string {
   }
   return pages.join('\n');
 }
+
+/**
+ * Where each "Page N of M" is drawn, read from the content streams: the y of
+ * the box holding it, from the top of the page (react-pdf flips the axis), so
+ * a footer on the page reads a little under the page height.
+ */
+export function pageNumberPositions(pdf: Buffer): { text: string; y: number }[] {
+  const raw = pdf.toString('latin1');
+  const found: { text: string; y: number }[] = [];
+  for (const match of raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+    let content: string;
+    try {
+      content = inflateSync(Buffer.from(match[1], 'latin1')).toString('latin1');
+    } catch {
+      continue;
+    }
+    let boxY: number | null = null;
+    for (const line of content.split('\n')) {
+      const box = line.match(/^1 0 0 1 44 (-?[\d.]+) cm$/);
+      if (box) boxY = Number(box[1]);
+      if (!line.endsWith('TJ')) continue;
+      const text = Buffer.from([...line.matchAll(/<([0-9a-fA-F]+)>/g)].map((run) => run[1]).join(''), 'hex').toString('latin1');
+      if (/^Page \d+ of \d+$/.test(text) && boxY !== null) found.push({ text, y: boxY });
+    }
+  }
+  return found;
+}

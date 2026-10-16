@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BOOK_ID, pageCount, pdfText, threeEntryBook } from '@/tests/fixtures/service-book-pdf-book';
+import { BOOK_ID, entry, pageCount, pageNumberPositions, pdfText, threeEntryBook } from '@/tests/fixtures/service-book-pdf-book';
 
 const { createAdminClient, createClient, getRealUser, isDemoMode, loadSharedBook } = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
@@ -100,5 +100,21 @@ describe("the owner's PDF of their service book", () => {
     riderOwns({ id: BOOK_ID });
 
     expect((await call('?variant=full&year=2019')).status).toBe(404);
+  });
+
+  it('prints every page number on its page, the first included', async () => {
+    riderOwns({ id: BOOK_ID });
+    const entries = Array.from({ length: 30 }, (_, index) => entry(`00000000-0000-4000-8000-0000000001${String(index).padStart(2, '0')}`));
+    loadSharedBook.mockResolvedValue(threeEntryBook(entries));
+
+    const pdf = Buffer.from(await (await call('?variant=summary')).arrayBuffer());
+    const pages = pageCount(pdf);
+    const positions = pageNumberPositions(pdf);
+
+    expect(pages).toBeGreaterThan(1);
+    expect(positions.map((position) => position.text)).toEqual(Array.from({ length: pages }, (_, index) => `Page ${index + 1} of ${pages}`));
+    // A Letter page is 792pt tall and the footer sits 24pt off its bottom edge.
+    for (const position of positions) expect(position.y).toBeGreaterThan(700);
+    for (const position of positions) expect(position.y).toBeLessThan(792);
   });
 });

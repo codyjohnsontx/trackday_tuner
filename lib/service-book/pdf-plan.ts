@@ -139,6 +139,7 @@ export function pdfFileName(title: string, request: PdfRequest): string {
   const name =
     title
       .normalize('NFKD')
+      .replace(/\p{M}/gu, '')
       .replace(/[^A-Za-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 60) || 'bike';
