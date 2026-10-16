@@ -15,8 +15,8 @@ import { computeUsage, type BookUsage, type UsageInput, type UsageLap, type Usag
  * rules are run over it. The rows are read on the server; the rules run where
  * the rider is, because two of their inputs exist only there: today's date in
  * the rider's own calendar (`todayLocalDate`) and the book owner's time zone,
- * which the app stores nowhere and which, on the owner's own screens, is the
- * zone of the browser looking at them.
+ * which on the owner's own screens is the zone of the browser looking at them
+ * (a shared copy reads the stored `owner_time_zone` instead, shared-view.ts).
  *
  * Pure: no Supabase, no Next, so the phone app can build the same screens.
  */

@@ -17,10 +17,10 @@ export interface RiderClock {
  * cannot seed them with where the server is; until then the hook answers
  * `null` and a screen shows nothing derived from them.
  *
- * The app stores no time zone for a rider, so on the owner's own screens the
- * owner's zone is the viewer's, which is what `describeEntryProvenance` is
- * handed. A screen another person reads - a share, a PDF - cannot use this and
- * needs the owner's zone stored, which is for the sharing slice to add.
+ * On the owner's own screens the owner's zone is the viewer's, which is what
+ * `describeEntryProvenance` is handed. A screen another person reads - the
+ * share link, a PDF - cannot use this and reads `service_books.owner_time_zone`,
+ * which the book screen records from this zone.
  */
 export function useRiderClock(): RiderClock | null {
   const [clock, setClock] = useState<RiderClock | null>(null);
