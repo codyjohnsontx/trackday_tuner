@@ -4411,9 +4411,9 @@ written by the owner's browser the first time they open their book or make a
 link and kept from then on by the `service_books_pin_owner_time_zone` trigger,
 so a later visit from another zone relabels nothing.
 **Apply after "Apply service book attachments by hand" and before merging the
-pull request that adds share links**: every book page writes the zone on open,
-so a deploy ahead of this paste fails that write on every visit (reported
-through `reportError`), every "Create share link" fails, and every
+pull request that adds share links**: a deploy ahead of this paste reads no
+`owner_time_zone` at all, so the book page never records one and the owner's
+labels stay in their browser's zone, every "Create share link" fails, and every
 `/book/<token>` page answers "could not be loaded" while `/api/health` reports
 `schema_contract` red.
 
