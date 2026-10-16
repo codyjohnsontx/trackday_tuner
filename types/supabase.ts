@@ -459,8 +459,9 @@ export type Database = {
           transferred_from_book_id: string | null;
           transferred_at: string | null;
           /**
-           * The owner's IANA zone, written by their browser when they open the
-           * book or make a share link; what a shared book's labels are read in.
+           * The owner's IANA zone, written by their browser the first time they
+           * open the book or make a share link and never changed after; what
+           * every screen reads an entry's labels in.
            */
           owner_time_zone: string | null;
           created_at: string;

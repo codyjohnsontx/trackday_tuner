@@ -821,17 +821,18 @@ cannot weaken them and a new writer does not have to remember them:
 `tests/db/service-book.spec.ts` proves each of these against a real database.
 
 **The book's screens run the rules on the rider's device, not on the server.**
-`computeDue` needs today's date in the rider's calendar (`todayLocalDate`) and
-`describeEntryProvenance` needs the book OWNER's time zone: on the owner's own
-screens the owner is the viewer, so `useRiderClock`
-(`components/service-book/rider-clock.ts`) reads both off the browser after
-mount and `buildServiceBookView` (`lib/service-book/book-data.ts`) runs every
-rule once over the rows the server loaded. A screen somebody else reads - the
-share link, a PDF - uses `service_books.owner_time_zone` instead
-(20261016000500), which the owner's browser writes the first time they open the
-book or make a link, and never the viewer's zone. Once set it never changes
-(owner, 2026-10-16: a label never moves without an edit), and a trigger keeps it
-against every writer, the service role's included. The server actions in
+`computeDue` needs today's date in the rider's calendar (`todayLocalDate`), so
+`useRiderClock` (`components/service-book/rider-clock.ts`) reads the day and
+zone off the browser after mount and `buildServiceBookView`
+(`lib/service-book/book-data.ts`) runs every rule once over the rows the server
+loaded. `describeEntryProvenance` needs the book OWNER's time zone, and every
+screen - the owner's, the share link, a PDF - reads it from
+`service_books.owner_time_zone` (20261016000500), never the viewer's zone, so
+owner and buyer see the same labels; the owner's screens fall back to the
+browser's zone only until one is stored (`ownerLabelTimeZone`). The owner's
+browser writes it the first time they open the book or make a link. Once set
+it never changes (owner, 2026-10-16: a label never moves without an edit), and
+a trigger keeps it against every writer, the service role's included. The server actions in
 `lib/actions/service-book.ts` read and write rows only; the demo book is
 `lib/demo/service-book.ts`, and `tests/unit/service-book-screens.test.ts` holds
 the form to opening with nothing pressed and the demo to offering no save.

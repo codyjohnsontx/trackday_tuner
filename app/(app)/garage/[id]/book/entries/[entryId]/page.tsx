@@ -74,6 +74,7 @@ export default async function ServiceEntryPage({ params }: ServiceEntryPageProps
         entry={entry}
         revisions={revisions.ok ? revisions.data : []}
         distanceUnit={data.book.distance_unit}
+        ownerTimeZone={data.book.owner_time_zone}
         demoMode={demoMode}
       />
 

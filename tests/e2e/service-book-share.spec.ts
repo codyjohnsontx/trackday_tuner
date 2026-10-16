@@ -22,7 +22,8 @@ import type { Database } from '@/types/supabase';
  *   an attachment only through a URL signed for that view;
  * - once revoked, the link and its attachment are a 404;
  * - the owner opening the book and making a link from another zone moves
- *   neither the stored zone nor a single shared label (owner, 2026-10-16).
+ *   neither the stored zone nor a single label, on the shared page or on the
+ *   owner's own book and entry pages (owner, 2026-10-16).
  */
 
 const OWNER_ZONE = 'Pacific/Kiritimati';
@@ -198,15 +199,19 @@ test.describe('sharing a service book by link', () => {
       await visitor.close();
     }
 
-    // The owner opens the book from the visitor's zone, a day behind, and makes
-    // a new link there. Actions run in order, so once the link is shown any
-    // zone write the page made on open has landed too.
+    // The owner opens the book from the visitor's zone, a day behind, reads the
+    // same labels there, and makes a new link. Actions run in order, so once the
+    // link is shown any zone write the page made on open has landed too.
     const travelling = await visitorContext(browser);
     try {
       const away = await travelling.newPage();
       await signInWith(away, rider!.email, rider!.password);
       await gotoPage(away, `/garage/${vehicleId}/book`);
-      await expect(away.getByTestId('service-entry-row')).toHaveCount(1);
+      const awayRow = away.getByTestId('service-entry-row');
+      await expect(awayRow).toHaveCount(1);
+      const awayOwnerLabels = awayRow.getByRole('list', { name: 'History' }).getByRole('listitem');
+      await expect(awayOwnerLabels.first()).toBeVisible();
+      expect(await awayOwnerLabels.allTextContents()).toEqual(ownerLabelTexts);
       await away.getByRole('button', { name: 'Create share link' }).click();
       const awayField = away.getByTestId('share-link-url');
       await expect(awayField).toHaveValue(/\/book\/[A-Za-z0-9_-]{43}$/);
@@ -220,6 +225,11 @@ test.describe('sharing a service book by link', () => {
       const awayEntries = reshared.getByTestId('shared-entry');
       await expect(awayEntries).toHaveCount(1);
       expect(await awayEntries.getByRole('list', { name: 'History' }).getByRole('listitem').allTextContents()).toEqual(ownerLabelTexts);
+
+      await awayRow.click();
+      const entryLabels = away.getByRole('list', { name: 'History labels' }).getByRole('listitem');
+      await expect(entryLabels.first()).toBeVisible();
+      expect(await entryLabels.allTextContents()).toEqual(ownerLabelTexts);
     } finally {
       await travelling.close();
     }

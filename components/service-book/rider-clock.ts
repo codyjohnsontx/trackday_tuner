@@ -17,10 +17,11 @@ export interface RiderClock {
  * cannot seed them with where the server is; until then the hook answers
  * `null` and a screen shows nothing derived from them.
  *
- * On the owner's own screens the owner's zone is the viewer's, which is what
- * `describeEntryProvenance` is handed. A screen another person reads - the
- * share link, a PDF - cannot use this and reads `service_books.owner_time_zone`,
- * which the book screen records from this zone the first time and never after.
+ * An entry's honest-history labels are read in `service_books.owner_time_zone`
+ * on every screen - the owner's, the share link, a PDF - so they never move with
+ * the viewer. The book screen records it from this zone the first time and never
+ * after, and the owner's screens fall back to this zone only until it is
+ * recorded (`ownerLabelTimeZone`).
  */
 export function useRiderClock(): RiderClock | null {
   const [clock, setClock] = useState<RiderClock | null>(null);
