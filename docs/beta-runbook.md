@@ -4466,10 +4466,11 @@ begin;
 -- book with the service role and prints only what a buyer may see.
 --
 -- THE OWNER'S ZONE. "Logged the day of service" means the day in the zone of
--- whoever logged it, and the app stored no zone for a rider: the owner's own
--- screens use the zone of the browser looking at them. A buyer's browser is
--- somewhere else, so a shared book is labelled in `owner_time_zone`, which the
--- owner's browser writes the first time they open their book or make a link.
+-- whoever logged it, and the app stored no zone for a rider. A buyer's browser
+-- is somewhere else, so every screen - the owner's own and a shared book - labels
+-- entries in `owner_time_zone`, which the owner's browser writes the first time
+-- they open their book or make a link; the owner's screens use the browser's
+-- zone only until one is stored.
 -- Once set it is never changed, by anyone (owner, 2026-10-16): a label must
 -- never move after the fact without an edit, and relabelling every entry in
 -- whatever zone the owner last opened the book from would do exactly that.
