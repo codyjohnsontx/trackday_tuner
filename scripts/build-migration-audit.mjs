@@ -72,6 +72,10 @@ const RESERVE_SERVICE_ATTACHMENT = "to_regprocedure('public.reserve_service_atta
 const CONFIRM_SERVICE_ATTACHMENT = "to_regprocedure('public.confirm_service_attachment(uuid)')";
 const SERVICE_ATTACHMENT_ORPHAN_OBJECTS = "to_regprocedure('public.service_attachment_orphan_objects(integer)')";
 const SERVICE_ATTACHMENTS_MIGRATION = '20261014000400_add_service_attachments';
+const OPEN_SERVICE_BOOK_SHARE = "to_regprocedure('public.open_service_book_share(text,boolean,integer,integer)')";
+const SERVICE_BOOK_SHARES_PIN = "to_regprocedure('public.service_book_shares_pin()')";
+const SERVICE_BOOKS_PIN_OWNER_TIME_ZONE = "to_regprocedure('public.service_books_pin_owner_time_zone()')";
+const SERVICE_BOOK_SHARING_MIGRATION = '20261016000500_add_service_book_sharing';
 
 /**
  * The tombstone trigger, proved field by field rather than by name: on
@@ -657,6 +661,45 @@ export const MIGRATION_PROBES = {
       "                 'select jobname from cron.job where jobname = ''purge-stale-service-attachments''',",
       "                 false, false, '')))[1]::text::int > 0",
       '    end',
+    ],
+  },
+  [SERVICE_BOOK_SHARING_MIGRATION]: {
+    note: [
+      'Share links and the owner\'s zone: the shares table under RLS with no anon',
+      'grant, the pin by its body and its trigger, the lookup by its body with',
+      'service-role-only execute, and service_books.owner_time_zone with the pin',
+      'that keeps it once set. Without the lookup every /book/<token> page fails',
+      'to load; without the column every book screen\'s zone write fails and a',
+      'shared book carries no labels; without the pin a later zone relabels it.',
+    ],
+    kind: 'table + column + functions',
+    object: 'public.service_book_shares, service_books.owner_time_zone, open_service_book_share, service_book_shares_pin, service_books_pin_owner_time_zone',
+    present: [
+      "to_regclass('public.service_book_shares') is not null",
+      "and (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.service_book_shares'))",
+      "and not has_table_privilege('anon', 'public.service_book_shares', 'select')",
+      "and exists (select 1 from information_schema.columns",
+      "             where table_schema = 'public' and table_name = 'service_books' and column_name = 'owner_time_zone')",
+      `and (select md5(p.prosrc) = '${functionBodyMd5(SERVICE_BOOK_SHARING_MIGRATION, 'service_books_pin_owner_time_zone')}'`,
+      "            and not p.prosecdef and p.proconfig = array['search_path=\"\"']",
+      `       from pg_proc p where p.oid = ${SERVICE_BOOKS_PIN_OWNER_TIME_ZONE})`,
+      "and exists (select 1 from pg_trigger t",
+      "             where t.tgrelid = to_regclass('public.service_books')",
+      `               and t.tgfoid = ${SERVICE_BOOKS_PIN_OWNER_TIME_ZONE}`,
+      "               and t.tgenabled = 'O' and not t.tgisinternal)",
+      `and (select md5(p.prosrc) = '${functionBodyMd5(SERVICE_BOOK_SHARING_MIGRATION, 'service_book_shares_pin')}'`,
+      "            and not p.prosecdef and p.proconfig = array['search_path=\"\"']",
+      `       from pg_proc p where p.oid = ${SERVICE_BOOK_SHARES_PIN})`,
+      "and exists (select 1 from pg_trigger t",
+      "             where t.tgrelid = to_regclass('public.service_book_shares')",
+      `               and t.tgfoid = ${SERVICE_BOOK_SHARES_PIN}`,
+      "               and t.tgenabled = 'O' and not t.tgisinternal)",
+      `and (select md5(p.prosrc) = '${functionBodyMd5(SERVICE_BOOK_SHARING_MIGRATION, 'open_service_book_share')}'`,
+      "            and not p.prosecdef and p.proconfig = array['search_path=\"\"']",
+      "            and has_function_privilege('service_role', p.oid, 'execute')",
+      "            and not has_function_privilege('anon', p.oid, 'execute')",
+      "            and not has_function_privilege('authenticated', p.oid, 'execute')",
+      `       from pg_proc p where p.oid = ${OPEN_SERVICE_BOOK_SHARE})`,
     ],
   },
 };

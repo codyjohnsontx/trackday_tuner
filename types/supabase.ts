@@ -458,6 +458,12 @@ export type Database = {
           /** The seller's book a transfer copied this one from; written only by the transfer. */
           transferred_from_book_id: string | null;
           transferred_at: string | null;
+          /**
+           * The owner's IANA zone, written by their browser the first time they
+           * open the book or make a share link and never changed after; what
+           * every screen reads an entry's labels in.
+           */
+          owner_time_zone: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -476,6 +482,29 @@ export type Database = {
           distance_unit?: DistanceUnit;
           default_session_minutes?: number;
           default_session_distance?: number | null;
+          owner_time_zone?: string | null;
+        };
+        Relationships: [];
+      };
+      service_book_shares: {
+        Row: {
+          id: string;
+          book_id: string;
+          /** SHA-256 hex of the link's token; the token itself is stored nowhere. */
+          token_hash: string;
+          created_by: string;
+          created_at: string;
+          /** Dated by the server and never cleared once set. */
+          revoked_at: string | null;
+          view_count: number;
+          last_viewed_at: string | null;
+        };
+        Insert: {
+          book_id: string;
+          token_hash: string;
+        };
+        Update: {
+          revoked_at?: string | null;
         };
         Relationships: [];
       };
@@ -1626,6 +1655,19 @@ export type Database = {
       purge_stale_service_attachments: {
         Args: Record<string, never>;
         Returns: number;
+      };
+      /**
+       * Which book an unrevoked share link opens, held to a rate limit on the
+       * token's hash; the service role only. No row for a link that opens nothing.
+       */
+      open_service_book_share: {
+        Args: {
+          p_token_hash: string;
+          p_count_view: boolean;
+          p_limit: number;
+          p_window_seconds: number;
+        };
+        Returns: { book_id: string | null; rate_limited: boolean }[];
       };
       service_attachment_orphan_objects: {
         Args: { p_limit: number };

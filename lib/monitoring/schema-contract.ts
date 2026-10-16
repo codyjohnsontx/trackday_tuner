@@ -180,6 +180,12 @@ export const REQUIRED_RPCS: readonly RpcContract[] = [
     p_items: [],
     p_parts: null,
   }),
+  contract('open_service_book_share', {
+    p_token_hash: 'probe',
+    p_count_view: false,
+    p_limit: UNCOERCIBLE_PROBE_VALUE,
+    p_window_seconds: UNCOERCIBLE_PROBE_VALUE,
+  }),
   contract('consume_beta_rate_limit', {
     p_key_hash: UNCOERCIBLE_PROBE_VALUE,
     p_limit: UNCOERCIBLE_PROBE_VALUE,

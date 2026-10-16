@@ -2,9 +2,11 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DemoBanner } from '@/components/demo/demo-banner';
 import { ServiceBookScreen } from '@/components/service-book/service-book-screen';
+import { ServiceBookSharing } from '@/components/service-book/service-book-sharing';
 import { ServiceBookSetup } from '@/components/service-book/service-book-setup';
 import { pageTitleClass } from '@/components/ui/page-header';
 import { getServiceBook } from '@/lib/actions/service-book';
+import { getServiceBookShares } from '@/lib/actions/service-book-shares';
 import { isDemoMode } from '@/lib/demo/mode';
 import { cn } from '@/lib/utils';
 
@@ -17,6 +19,8 @@ export default async function ServiceBookPage({ params }: ServiceBookPageProps) 
   const result = await getServiceBook(id);
 
   if (!result.ok && result.error === 'Vehicle not found.') notFound();
+  // Demo is a tour, so it offers no link to make (CLAUDE.md, "The Demo Is Read-Only").
+  const shares = result.ok && result.data.data && !demoMode ? await getServiceBookShares(id) : null;
 
   return (
     <div className="space-y-5">
@@ -51,6 +55,8 @@ export default async function ServiceBookPage({ params }: ServiceBookPageProps) 
       ) : (
         <ServiceBookScreen data={result.data.data} demoMode={demoMode} />
       )}
+
+      {shares ? <ServiceBookSharing vehicleId={id} shares={shares} /> : null}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import type { DueOverride, ItemDue } from '@/lib/service-book/due';
 import type { ServiceBookField } from '@/lib/service-book/fields';
 import {
   describeEntryProvenance,
+  isKnownTimeZone,
   type EntryProvenance,
   type ProvenanceAttachment,
   type ProvenanceRevision,
@@ -14,9 +15,10 @@ import { computeUsage, type BookUsage, type UsageInput, type UsageLap, type Usag
  * A bike's whole service book as its screens receive it, and the one way the
  * rules are run over it. The rows are read on the server; the rules run where
  * the rider is, because two of their inputs exist only there: today's date in
- * the rider's own calendar (`todayLocalDate`) and the book owner's time zone,
- * which the app stores nowhere and which, on the owner's own screens, is the
- * zone of the browser looking at them.
+ * the rider's own calendar (`todayLocalDate`) and their browser's zone. An
+ * entry's honest-history labels are the exception: they are read in the book's
+ * pinned `owner_time_zone`, as a shared copy reads them (shared-view.ts), and in
+ * the browser's zone only until one is pinned (`ownerLabelTimeZone`).
  *
  * Pure: no Supabase, no Next, so the phone app can build the same screens.
  */
@@ -91,6 +93,15 @@ export interface ServiceBookView {
   provenanceByEntryId: Map<string, EntryProvenance>;
 }
 
+/**
+ * The zone the owner's own screens label entries in: the book's pinned zone, so
+ * the owner reads what a buyer reads and no label moves without an edit (owner,
+ * 2026-10-16), and the browser's only while none this clock reads is pinned.
+ */
+export function ownerLabelTimeZone(ownerTimeZone: string | null, browserTimeZone: string): string {
+  return isKnownTimeZone(ownerTimeZone) ? ownerTimeZone : browserTimeZone;
+}
+
 export function buildServiceBookView(
   data: ServiceBookData,
   clock: { today: string; timeZone: string },
@@ -99,6 +110,7 @@ export function buildServiceBookView(
   // The same call the dashboard chips and the session banner make
   // (`lib/service-book/reminders.ts`), so a chip and the schedule agree.
   const due = computeBookDue(data, clock);
+  const labelZone = ownerLabelTimeZone(data.book.owner_time_zone, clock.timeZone);
   const provenanceByEntryId = new Map<string, EntryProvenance>();
   for (const entry of data.entries) {
     provenanceByEntryId.set(
@@ -107,7 +119,7 @@ export function buildServiceBookView(
         entry,
         revisions: entry.revisions,
         attachments: entry.attachments,
-        timeZone: clock.timeZone,
+        timeZone: labelZone,
       }),
     );
   }

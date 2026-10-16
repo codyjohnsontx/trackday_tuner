@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardGroup, Eyebrow, GroupRow } from '@/components/ui/surface';
 import { DueOverrideForm } from '@/components/service-book/due-override-form';
 import { SessionWeightSelect } from '@/components/service-book/session-weight';
 import { VehicleReadingForm } from '@/components/service-book/vehicle-reading-form';
 import { useRiderClock, type RiderClock } from '@/components/service-book/rider-clock';
+import { recordServiceBookOwnerTimeZone } from '@/lib/actions/service-book-shares';
 import { buildServiceBookView, liveItems, type ServiceBookData, type ServiceBookView } from '@/lib/service-book/book-data';
 import { describeEntryItems } from '@/lib/service-book/entry-draft';
 import type { AxisDue, ItemDue, ItemDueStatus } from '@/lib/service-book/due';
@@ -38,6 +39,15 @@ export function ServiceBookScreen({ data, demoMode }: ServiceBookScreenProps) {
   const vehicleId = data.vehicle.id;
   const items = liveItems(data.items);
   const unit = data.book.distance_unit;
+  const storedZone = data.book.owner_time_zone;
+
+  // A shared copy of the book is labelled in the owner's zone, which only their
+  // browser knows; record it the first time they open the book. Once stored it
+  // never moves, so opening the book from somewhere else relabels nothing.
+  useEffect(() => {
+    if (demoMode || !clock || storedZone !== null) return;
+    void recordServiceBookOwnerTimeZone(vehicleId, clock.timeZone);
+  }, [demoMode, clock, storedZone, vehicleId]);
 
   return (
     <div className="space-y-5">

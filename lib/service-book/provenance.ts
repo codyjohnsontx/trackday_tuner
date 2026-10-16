@@ -83,15 +83,19 @@ export interface ProvenanceInput {
   timeZone: string;
 }
 
-function assertTimeZone(timeZone: unknown): asserts timeZone is string {
-  if (typeof timeZone === 'string' && timeZone !== '') {
-    try {
-      new Intl.DateTimeFormat('en-US', { timeZone });
-      return;
-    } catch {
-      // Falls through to the error below.
-    }
+/** Whether `timeZone` is an IANA zone this runtime's clock knows. */
+export function isKnownTimeZone(timeZone: unknown): timeZone is string {
+  if (typeof timeZone !== 'string' || timeZone === '') return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone });
+    return true;
+  } catch {
+    return false;
   }
+}
+
+function assertTimeZone(timeZone: unknown): asserts timeZone is string {
+  if (isKnownTimeZone(timeZone)) return;
   throw new RangeError(`Service entry provenance needs the book owner's time zone, got ${JSON.stringify(timeZone)}`);
 }
 

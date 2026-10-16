@@ -31,6 +31,7 @@ const RULES = [
   'lib/service-book/reminders.ts',
   'lib/service-book/book-data.ts',
   'lib/service-book/attachments.ts',
+  'lib/service-book/shared-view.ts',
 ];
 
 /** Every file the rules may reach when they run. */

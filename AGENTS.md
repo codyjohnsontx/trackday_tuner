@@ -821,14 +821,18 @@ cannot weaken them and a new writer does not have to remember them:
 `tests/db/service-book.spec.ts` proves each of these against a real database.
 
 **The book's screens run the rules on the rider's device, not on the server.**
-`computeDue` needs today's date in the rider's calendar (`todayLocalDate`) and
-`describeEntryProvenance` needs the book OWNER's time zone, and the app stores
-no zone for a rider: on the owner's own screens the owner is the viewer, so
-`useRiderClock` (`components/service-book/rider-clock.ts`) reads both off the
-browser after mount and `buildServiceBookView` (`lib/service-book/book-data.ts`)
-runs every rule once over the rows the server loaded. A screen somebody else
-reads - a share, a PDF - cannot do that and needs the owner's zone stored,
-which is the sharing slice's to add. The server actions in
+`computeDue` needs today's date in the rider's calendar (`todayLocalDate`), so
+`useRiderClock` (`components/service-book/rider-clock.ts`) reads the day and
+zone off the browser after mount and `buildServiceBookView`
+(`lib/service-book/book-data.ts`) runs every rule once over the rows the server
+loaded. `describeEntryProvenance` needs the book OWNER's time zone, and every
+screen - the owner's, the share link, a PDF - reads it from
+`service_books.owner_time_zone` (20261016000500), never the viewer's zone, so
+owner and buyer see the same labels; the owner's screens fall back to the
+browser's zone only until one is stored (`ownerLabelTimeZone`). The owner's
+browser writes it the first time they open the book or make a link. Once set
+it never changes (owner, 2026-10-16: a label never moves without an edit), and
+a trigger keeps it against every writer, the service role's included. The server actions in
 `lib/actions/service-book.ts` read and write rows only; the demo book is
 `lib/demo/service-book.ts`, and `tests/unit/service-book-screens.test.ts` holds
 the form to opening with nothing pressed and the demo to offering no save.
@@ -844,6 +848,16 @@ so an untouched Save keeps every row's id and the pin reads no edit.
 `tests/db/save-service-entry.spec.ts` proves one save is one revision and an
 unchanged re-save adds none; the hosted paste is "Save a service entry in one
 transaction, by hand" in `docs/beta-runbook.md`.
+
+**A share link is a token nobody stores** (20261016000500). Only its SHA-256 is
+kept; `/book/[token]` is rendered on the server with the service role after
+`open_service_book_share` answers which book an unrevoked link opens (rate
+limited on the token's hash, view counted), and it prints
+`buildSharedBookView` (`lib/service-book/shared-view.ts`) and never a row - no
+rider id, email or session, a removed entry only as a count. Its attachments
+open through `/book/[token]/attachments/[id]`, signed per open.
+`tests/db/service-book-shares.spec.ts` proves the table's rules and
+`tests/e2e/service-book-share.spec.ts` the walk.
 
 **Attachments live in a private bucket no rider policy opens** (20261014000400).
 `service-book` is `public = false` with no `storage.objects` policy naming it, on

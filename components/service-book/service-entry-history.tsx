@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardGroup, Eyebrow, GroupRow } from '@/components/ui/surface';
 import { formatInstant, useRiderClock } from '@/components/service-book/rider-clock';
 import { removeServiceEntry } from '@/lib/actions/service-book';
-import type { ServiceEntryRecord, ServiceEntryRevisionRecord } from '@/lib/service-book/book-data';
+import { ownerLabelTimeZone, type ServiceEntryRecord, type ServiceEntryRevisionRecord } from '@/lib/service-book/book-data';
 import { describeEntryProvenance } from '@/lib/service-book/provenance';
 import { formatReading, formatServiceDate } from '@/lib/service-book/format';
 import type { DistanceUnit, ServiceEntryRevisionKind } from '@/types/supabase';
@@ -16,6 +16,8 @@ interface ServiceEntryHistoryProps {
   entry: ServiceEntryRecord;
   revisions: ServiceEntryRevisionRecord[];
   distanceUnit: DistanceUnit;
+  /** The book's pinned `owner_time_zone`, null until one is recorded. */
+  ownerTimeZone: string | null;
   demoMode: boolean;
 }
 
@@ -47,17 +49,25 @@ function describeSnapshot(snapshot: unknown, unit: DistanceUnit): string[] {
 /**
  * The honest-history labels on one entry and the list of its revisions - what
  * the owner reads above the edit form, and what a buyer will read in the
- * shared view. The labels come from `describeEntryProvenance` with the owner's
- * zone, which on this screen is the zone of the rider looking at it.
+ * shared view. The labels come from `describeEntryProvenance` in the book's
+ * pinned zone, the one the shared view uses (`ownerLabelTimeZone`).
  */
-export function ServiceEntryHistory({ vehicleId, entry, revisions, distanceUnit, demoMode }: ServiceEntryHistoryProps) {
+export function ServiceEntryHistory({ vehicleId, entry, revisions, distanceUnit, ownerTimeZone, demoMode }: ServiceEntryHistoryProps) {
   const clock = useRiderClock();
   const router = useRouter();
   const [error, setError] = useState('');
   const [isPending, startTransition] = useTransition();
   const provenance = useMemo(
-    () => (clock ? describeEntryProvenance({ entry, revisions: entry.revisions, attachments: entry.attachments, timeZone: clock.timeZone }) : null),
-    [entry, clock],
+    () =>
+      clock
+        ? describeEntryProvenance({
+            entry,
+            revisions: entry.revisions,
+            attachments: entry.attachments,
+            timeZone: ownerLabelTimeZone(ownerTimeZone, clock.timeZone),
+          })
+        : null,
+    [entry, clock, ownerTimeZone],
   );
 
   function remove() {
