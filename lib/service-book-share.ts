@@ -70,6 +70,29 @@ export async function openShare(token: string, options: { countView: boolean }):
   return row.book_id ? { kind: 'open', bookId: row.book_id } : { kind: 'not_found' };
 }
 
+/**
+ * How many full PDFs one link may make a day. A full file reads every photo in
+ * the book from storage - up to 150 of them - so it costs far more egress than a
+ * page view, and the hourly view limit alone would let a leaked link pull
+ * gigabytes a day. A summary is held only to the view limit.
+ */
+export const SHARE_FULL_PDF_LIMIT = 10;
+export const SHARE_FULL_PDF_WINDOW_SECONDS = 24 * 60 * 60;
+
+/** Spends one of the link's full PDFs for the day: `limited` once they are gone. */
+export async function consumeFullPdfAllowance(token: string): Promise<'ok' | 'limited' | 'failed'> {
+  const { data, error } = await createAdminClient().rpc('consume_beta_rate_limit', {
+    p_key_hash: `service-book-share-pdf:${hashShareToken(token)}`,
+    p_limit: SHARE_FULL_PDF_LIMIT,
+    p_window_seconds: SHARE_FULL_PDF_WINDOW_SECONDS,
+  });
+  if (error) {
+    reportError('service-book-share-pdf', new Error(error.message), { reason: error.code });
+    return 'failed';
+  }
+  return data ? 'limited' : 'ok';
+}
+
 type Failure = { message: string; code?: string };
 
 const PAGE_SIZE = 1000;
@@ -88,8 +111,10 @@ async function readAllRows<T>(
 
 export interface SharedBookRows {
   input: SharedBookInput;
-  /** Each confirmed attachment's thumbnail, signed for ten minutes; absent for a PDF. */
+  /** Each confirmed attachment's thumbnail, signed for ten minutes; absent for a PDF, and empty unless asked for. */
   thumbUrlByAttachmentId: Map<string, string>;
+  /** Each confirmed attachment of a live entry's stored object, for the server alone to read: a PDF export embeds the photos. */
+  objectPathByAttachmentId: Map<string, string>;
 }
 
 /**
@@ -100,7 +125,7 @@ export interface SharedBookRows {
  * shorter book: a history that silently loses rows is what the share exists to
  * rule out.
  */
-export async function loadSharedBook(bookId: string): Promise<SharedBookRows | null> {
+export async function loadSharedBook(bookId: string, options: { signThumbs: boolean } = { signThumbs: true }): Promise<SharedBookRows | null> {
   const admin = createAdminClient();
   const fail = (table: string, error: Failure) => {
     reportError('service-book-share-read', new Error(error.message), { reason: error.code, table, bookId });
@@ -167,7 +192,7 @@ export async function loadSharedBook(bookId: string): Promise<SharedBookRows | n
     readAllRows((from, to) =>
       admin
         .from('service_attachments')
-        .select('id, entry_id, kind, mime, bytes, uploaded_at, created_at, thumb_path')
+        .select('id, entry_id, kind, mime, bytes, uploaded_at, created_at, thumb_path, object_path')
         .eq('book_id', bookId)
         .eq('status', 'ready')
         .order('uploaded_at')
@@ -198,7 +223,8 @@ export async function loadSharedBook(bookId: string): Promise<SharedBookRows | n
   );
 
   const thumbUrlByAttachmentId = new Map<string, string>();
-  const thumbPaths = attachmentRows.flatMap((attachment) => (attachment.thumb_path ? [attachment.thumb_path] : []));
+  const objectPathByAttachmentId = new Map(attachmentRows.map((attachment) => [attachment.id, attachment.object_path]));
+  const thumbPaths = options.signThumbs ? attachmentRows.flatMap((attachment) => (attachment.thumb_path ? [attachment.thumb_path] : [])) : [];
   if (thumbPaths.length > 0) {
     const signed = await admin.storage.from('service-book').createSignedUrls(thumbPaths, ATTACHMENT_READ_URL_SECONDS);
     if (signed.error) return fail('storage.objects', signed.error);
@@ -250,6 +276,7 @@ export async function loadSharedBook(bookId: string): Promise<SharedBookRows | n
       readings: readings.data as SharedBookInput['readings'],
     },
     thumbUrlByAttachmentId,
+    objectPathByAttachmentId,
   };
 }
 

@@ -1,6 +1,6 @@
 import type { DistanceUnit, Tables } from '@/types/supabase';
 import { liveItems, sortEntriesDesc, type ServiceEntryRecord, type ServiceEntryAttachment, type ServiceItemRow } from '@/lib/service-book/book-data';
-import { formatDay } from '@/lib/service-book/calendar';
+import { formatDay, isIsoDate } from '@/lib/service-book/calendar';
 import { describeEntryItems } from '@/lib/service-book/entry-draft';
 import { readCustomFields, type ServiceBookField } from '@/lib/service-book/fields';
 import { formatDistance, formatHours, formatInterval, formatMoney, formatServiceDate } from '@/lib/service-book/format';
@@ -49,6 +49,8 @@ export interface SharedItem {
 export interface SharedEntry {
   id: string;
   serviceDate: string;
+  /** The calendar year of the service date, or null when it is not a date: what a PDF is split by. */
+  serviceYear: number | null;
   title: string;
   details: { label: string; value: string }[];
   parts: string[];
@@ -69,6 +71,11 @@ export interface SharedBookView {
   removedCount: number;
   /** Whether the entries carry their labels, which needs the owner's zone. */
   labelled: boolean;
+}
+
+/** The calendar year of a stored service date, or null when it is not one. */
+export function serviceYearOf(date: unknown): number | null {
+  return isIsoDate(date) ? Number(date.slice(0, 4)) : null;
 }
 
 export function describeRemovedEntries(count: number): string | null {
@@ -142,6 +149,7 @@ export function buildSharedBookView(input: SharedBookInput): SharedBookView {
     entries: live.map((entry) => ({
       id: entry.id,
       serviceDate: formatServiceDate(entry.service_date),
+      serviceYear: serviceYearOf(entry.service_date),
       title: describeEntryItems(entry.items) || 'Service',
       details: entryDetails(entry, input.fields, unit),
       parts: entry.parts.map(partText),

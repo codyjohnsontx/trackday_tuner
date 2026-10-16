@@ -2,12 +2,15 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DemoBanner } from '@/components/demo/demo-banner';
 import { ServiceBookScreen } from '@/components/service-book/service-book-screen';
+import { ServiceBookExport } from '@/components/service-book/service-book-export';
 import { ServiceBookSharing } from '@/components/service-book/service-book-sharing';
 import { ServiceBookSetup } from '@/components/service-book/service-book-setup';
 import { pageTitleClass } from '@/components/ui/page-header';
 import { getServiceBook } from '@/lib/actions/service-book';
 import { getServiceBookShares } from '@/lib/actions/service-book-shares';
 import { isDemoMode } from '@/lib/demo/mode';
+import { describePdfOffer } from '@/lib/service-book/pdf-plan';
+import { serviceYearOf } from '@/lib/service-book/shared-view';
 import { cn } from '@/lib/utils';
 
 interface ServiceBookPageProps {
@@ -21,6 +24,15 @@ export default async function ServiceBookPage({ params }: ServiceBookPageProps) 
   if (!result.ok && result.error === 'Vehicle not found.') notFound();
   // Demo is a tour, so it offers no link to make (CLAUDE.md, "The Demo Is Read-Only").
   const shares = result.ok && result.data.data && !demoMode ? await getServiceBookShares(id) : null;
+  // The export prints the rows the book holds, and the demo's book is code, not rows.
+  const pdfOffer =
+    result.ok && result.data.data && !demoMode
+      ? describePdfOffer(
+          result.data.data.entries
+            .filter((entry) => entry.deleted_at === null)
+            .map((entry) => ({ serviceYear: serviceYearOf(entry.service_date), attachments: entry.attachments })),
+        )
+      : null;
 
   return (
     <div className="space-y-5">
@@ -57,6 +69,7 @@ export default async function ServiceBookPage({ params }: ServiceBookPageProps) 
       )}
 
       {shares ? <ServiceBookSharing vehicleId={id} shares={shares} /> : null}
+      {pdfOffer ? <ServiceBookExport base={`/api/service-book/vehicles/${id}/pdf`} offer={pdfOffer} audience="owner" /> : null}
     </div>
   );
 }

@@ -263,6 +263,7 @@ describe('every storage bucket the application uploads to is provisioned by the 
           'app/book/[token]/attachments/[attachmentId]/route.ts',
           'components/service-book/service-entry-attachments.tsx',
           'lib/actions/service-attachments.ts',
+          'lib/service-book-pdf.ts',
           'lib/service-book-share.ts',
         ],
       },
