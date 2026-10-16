@@ -122,10 +122,12 @@ describe('how a PDF is printed', () => {
     expect(pdfFileName('🏍', { variant: 'full', year: null })).toBe('bike-service-book-full.pdf');
   });
 
-  it('keeps what the standard font can print and marks what it cannot', () => {
+  it('keeps what the standard font can print and leaves out what it cannot', () => {
     expect(toPdfText('Motul 300V × 3 · $15 – “ok” Ünïcödé €')).toBe('Motul 300V × 3 · $15 – “ok” Ünïcödé €');
     expect(toPdfText('new\nline')).toBe('new\nline');
-    expect(toPdfText('oil 🏍 done 日本')).toBe('oil ? done ??');
+    expect(toPdfText('Blue R6 ÉTÉ 🏁')).toBe('Blue R6 ÉTÉ');
+    expect(toPdfText('oil 🏍 done 日本')).toBe('oil done');
+    expect(toPdfText('chain 🔗 lubed\n🏁 ready')).toBe('chain lubed\nready');
     // Composed rather than left as a letter and a combining mark the font lacks.
     expect(toPdfText('Café')).toBe('Café');
   });

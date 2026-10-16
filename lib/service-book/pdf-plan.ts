@@ -154,9 +154,10 @@ export function tooManyImagesMessage(images: number): string {
 
 /**
  * The PDF standard fonts carry the Windows-1252 set and nothing else, and a
- * character outside it prints as stray glyphs. So anything else - an emoji in a
- * note, a script the font has no letters for - is printed as `?`, which at least
- * says something is missing.
+ * character outside it prints as stray glyphs or a `?`. So anything else - an
+ * emoji in a nickname, a script the font has no letters for - is left out, and
+ * the spaces it leaves behind are collapsed on each line. Newlines stay, so a
+ * note keeps its lines.
  */
 const WIN_ANSI_EXTRAS = new Set('€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ');
 
@@ -165,7 +166,10 @@ export function toPdfText(text: string): string {
   for (const char of text.normalize('NFC')) {
     const code = char.codePointAt(0) ?? 0;
     const printable = char === '\n' || (code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff) || WIN_ANSI_EXTRAS.has(char);
-    out += printable ? char : '?';
+    if (printable) out += char;
   }
-  return out;
+  return out
+    .split('\n')
+    .map((line) => line.replace(/ {2,}/g, ' ').trim())
+    .join('\n');
 }
