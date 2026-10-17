@@ -58,10 +58,10 @@ Screenshots are from the demo on the live app, at phone width.
 
 ### Race Engineer (AI setup advice)
 
-- `POST /api/ai/tuning-advice` (a Pro feature) and `POST /api/ai/day-plan`
-  build a prompt from the rider's own data: the current and previous session,
-  similar past sessions, recorded outcomes, earlier recommendations and a
-  per-vehicle memory. They add knowledge-base passages retrieved by embedding
+- `POST /api/ai/tuning-advice` and `POST /api/ai/day-plan` (both Pro
+  features) build a prompt from the rider's own data: the current and
+  previous session, similar past sessions, recorded outcomes, earlier
+  recommendations and a per-vehicle memory. They add knowledge-base passages retrieved by embedding
   similarity from `docs/knowledge-base/` (16 documents, 80 chunks in
   `data/rag-index.json`). The model is OpenAI `gpt-5.4-mini` with
   `text-embedding-3-small` embeddings (`lib/rag/`).
