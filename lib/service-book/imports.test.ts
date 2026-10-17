@@ -32,6 +32,7 @@ const RULES = [
   'lib/service-book/book-data.ts',
   'lib/service-book/attachments.ts',
   'lib/service-book/shared-view.ts',
+  'lib/service-book/pdf-plan.ts',
 ];
 
 /** Every file the rules may reach when they run. */

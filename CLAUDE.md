@@ -859,6 +859,17 @@ open through `/book/[token]/attachments/[id]`, signed per open.
 `tests/db/service-book-shares.spec.ts` proves the table's rules and
 `tests/e2e/service-book-share.spec.ts` the walk.
 
+**The PDF is the share link's view as a file** (`lib/service-book-pdf.ts`, owner
+PQ4). The owner's route (`/api/service-book/vehicles/[vehicleId]/pdf`, RLS read
+of the book first) and the share's (`/book/[token]/pdf`, `openShare` first) both
+print `buildSharedBookView` through `loadSharedBook`, so neither can carry more
+than the shared page. A full file embeds the stored photos (no resize - that
+would be another dependency), at most `PDF_IMAGE_CAP` per file, year by year
+past it (`lib/service-book/pdf-plan.ts`); a share link also spends one of
+`SHARE_FULL_PDF_LIMIT` full files a day, since each reads every photo. **The
+response is streamed on purpose**: Vercel refuses a buffered function response
+over 4.5 MB, and 150 photos are about 65 MB.
+
 **Attachments live in a private bucket no rider policy opens** (20261014000400).
 `service-book` is `public = false` with no `storage.objects` policy naming it, on
 purpose: `reserve_service_attachment` counts the allowance (25 per bike free,

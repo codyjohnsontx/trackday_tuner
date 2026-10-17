@@ -343,7 +343,7 @@ Free → Pro conversion rate (after hitting limits / wanting compare/export/AI)
 - Session history, deletion, lap times on the session page, and compare-with-previous workflow.
 - Stripe checkout + customer portal + webhook sync for entitlements.
 - Trackside tools: sag calculator and unit converter.
-- A service book per vehicle (`/garage/[id]/book`): maintenance items with their due state, entries built from a rider-adjustable field layout, odometer and hour readings, an honest history that labels back-filled and edited entries, and receipt, invoice and photo attachments on each entry (private storage, 25 per bike on the free plan).
+- A service book per vehicle (`/garage/[id]/book`): maintenance items with their due state, entries built from a rider-adjustable field layout, odometer and hour readings, an honest history that labels back-filled and edited entries, and receipt, invoice and photo attachments on each entry (private storage, 25 per bike on the free plan). The owner can share a book by read-only link, and download it as a PDF - a summary, or the full file with its photos - from the book or the link.
 - In-app service reminders: a due chip on each garage bike and a line per bike on the dashboard, a notice on a session that pushed an item past due, and the rider's overrides - snooze, skip a cycle, set the next due point, and how much a day counts.
 - AI tuning advice, day planning, recommendation feedback recorded through the session outcome flow, curated RAG helpers, and RAG evaluation/index scripts.
 

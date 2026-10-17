@@ -3,7 +3,9 @@ import { notFound } from 'next/navigation';
 import { Card, CardGroup, Eyebrow, GroupRow } from '@/components/ui/surface';
 import { PageHeader } from '@/components/ui/page-header';
 import { loadSharedBook, openShare } from '@/lib/service-book-share';
+import { ServiceBookExport } from '@/components/service-book/service-book-export';
 import { ATTACHMENT_KIND_LABELS } from '@/lib/service-book/attachments';
+import { describePdfOffer } from '@/lib/service-book/pdf-plan';
 import { buildSharedBookView, describeRemovedEntries, type SharedEntry } from '@/lib/service-book/shared-view';
 
 // Every request is a view: it is counted and rate limited, and the thumbnails
@@ -120,6 +122,8 @@ export default async function SharedBookPage({ params }: SharedBookPageProps) {
           </GroupRow>
         ) : null}
       </CardGroup>
+
+      <ServiceBookExport base={`/book/${token}/pdf`} offer={describePdfOffer(view.entries)} audience="visitor" />
     </div>
   );
 }
