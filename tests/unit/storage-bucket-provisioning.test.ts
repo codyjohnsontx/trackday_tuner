@@ -58,7 +58,7 @@ import { bucketsDeclaredIn, type DeclaredBucket } from './helpers/storage-bucket
 // the CLI reading the block; whether the predicate is *right* - a policy naming
 // the bucket and `auth.uid()` in a comparison that admits everyone still passes
 // here; and anything about the hosted project, which is seeded by hand with the
-// command the README records. tests/e2e/vehicle-photo-upload.spec.ts is that walk:
+// command docs/local-development.md records. tests/e2e/vehicle-photo-upload.spec.ts is that walk:
 // it uploads through the real form against a rebuilt stack, fetches the stored
 // URL with no session, and watches an anonymous client, a write into a foreign
 // folder, an upsert onto an object somebody else owns and a file that is not an

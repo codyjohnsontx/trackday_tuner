@@ -28,7 +28,7 @@
    so on a deployment standing up its own project, `npx supabase seed buckets
    --linked` after `supabase link` is what creates `vehicle-photos` and
    `session-photos`. Without it, adding a vehicle with a photo fails with "Photo
-   upload failed: Bucket not found". See "Local Run" in README.md.
+   upload failed: Bucket not found". See "Local Run" in docs/local-development.md.
    `20260901001400` and `20260903001500` are the migrations in that list carrying
    a **deploy-ordering requirement**: each changes the signature of
    `replace_session_laps`, so apply them *before* the release that calls it goes
@@ -1112,7 +1112,7 @@ select
 
 Expect `false`, `0`, then either `0` with two nulls (no bucket yet) or `1` with
 the bucket's current settings (`npx supabase seed buckets --linked` already ran,
-which the launch checklist and README both allow), then `true`.
+which the launch checklist and docs/local-development.md both allow), then `true`.
 
 - `photo_url_column` `true`, or `session_photo_policies` above `0`, means part of
   the migration is already there: stop and compare against the migration rather

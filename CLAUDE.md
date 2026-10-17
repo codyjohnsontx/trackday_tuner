@@ -256,7 +256,7 @@ What it builds is the schema and the storage buckets, and the buckets come from 
 different file. The CLI provisions buckets from `[storage.buckets.*]` in
 `supabase/config.toml`, not from migrations: `supabase start` and `db reset` seed
 `vehicle-photos` and `session-photos` locally, and a linked hosted project gets
-them from `npx supabase seed buckets --linked` (README "Local Run"), which
+them from `npx supabase seed buckets --linked` ("Local Run" in `docs/local-development.md`), which
 `db push` does not do; the hand-apply blocks in `docs/beta-runbook.md` create
 `session-photos` in SQL instead. The policies on `storage.objects` that scope
 writes to the rider's own folder are SQL, so they are migrations
