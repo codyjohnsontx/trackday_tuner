@@ -93,12 +93,17 @@ export function attachmentTooLargeMessage(maxBytes: number, hasProAccess: boolea
 
 /**
  * The count the allowance is held to: every confirmed attachment, and every
- * reservation younger than a day, so an upload in flight holds its slot.
+ * reservation younger than a day, so an upload in flight holds its slot. A
+ * receipt that came with a bike handed over by its previous owner is not one
+ * the rider added, and counts toward nothing (owner, TQ1) - the rule
+ * reserve_service_attachment enforces.
  */
 export function countTowardAllowance(
-  rows: readonly Pick<Tables<'service_attachments'>, 'status' | 'created_at'>[],
+  rows: readonly Pick<Tables<'service_attachments'>, 'status' | 'created_at' | 'copied_from_attachment_id'>[],
   now: Date,
 ): number {
   const cutoff = now.getTime() - ATTACHMENT_RESERVATION_TTL_MS;
-  return rows.filter((row) => row.status === 'ready' || Date.parse(row.created_at) > cutoff).length;
+  return rows.filter(
+    (row) => row.copied_from_attachment_id === null && (row.status === 'ready' || Date.parse(row.created_at) > cutoff),
+  ).length;
 }

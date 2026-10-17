@@ -27,6 +27,7 @@ const DEMO_BOOK: Tables<'service_books'> = {
   default_session_distance: null,
   transferred_from_book_id: null,
   transferred_at: null,
+  transferred_removed_entry_count: 0,
   owner_time_zone: null,
   created_at: bookCreatedAt,
   updated_at: bookCreatedAt,

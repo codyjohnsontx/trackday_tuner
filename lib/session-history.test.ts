@@ -29,6 +29,7 @@ function session(partial: Partial<Session> = {}): Session {
     extra_modules: null,
     notes: 'Front felt calmer on entry, but it still pushed a little mid-corner after four laps in the warmer afternoon session.',
     photo_url: null,
+    copied_from_session_id: null,
     created_at: '2026-04-23T13:15:00Z',
     updated_at: '2026-04-23T13:15:00Z',
     ...partial,

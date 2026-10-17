@@ -45,6 +45,7 @@ const vehicle: Vehicle = {
   make: 'Yamaha',
   model: 'YZF-R6',
   photo_url: null,
+  sold_at: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 };
@@ -75,6 +76,7 @@ const session: Session = {
   extra_modules: null,
   notes: 'baseline',
   photo_url: null,
+  copied_from_session_id: null,
   created_at: '2026-05-01T09:00:00Z',
   updated_at: '2026-05-01T09:00:00Z',
 };

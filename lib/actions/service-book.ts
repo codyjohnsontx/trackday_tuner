@@ -186,7 +186,7 @@ export async function getServiceBook(
     readAllRows((from, to) =>
       supabase
         .from('service_attachments')
-        .select('id, entry_id, kind, mime, bytes, status, uploaded_at, created_at')
+        .select('id, entry_id, kind, mime, bytes, status, uploaded_at, created_at, copied_from_attachment_id')
         .eq('book_id', book.id)
         .order('created_at')
         .order('id')
@@ -216,7 +216,7 @@ export async function getServiceBook(
   const entryRows = entries.data as Tables<'service_entries'>[];
   const attachmentRows = attachments.data as Pick<
     Tables<'service_attachments'>,
-    'id' | 'entry_id' | 'kind' | 'mime' | 'bytes' | 'status' | 'uploaded_at' | 'created_at'
+    'id' | 'entry_id' | 'kind' | 'mime' | 'bytes' | 'status' | 'uploaded_at' | 'created_at' | 'copied_from_attachment_id'
   >[];
   const records: ServiceEntryRecord[] = entryRows.map((entry) => ({
     ...entry,

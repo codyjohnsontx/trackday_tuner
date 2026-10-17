@@ -6,6 +6,7 @@ import {
   getFreePlanLimitMessage,
   getFreePlanLimitTitle,
   isAtFreePlanLimit,
+  vehiclesTowardPlan,
   type LimitedResource,
 } from '@/lib/plans';
 import type { Track, Vehicle } from '@/types';
@@ -70,6 +71,14 @@ describe('the free-plan limit', () => {
     for (const resource of RESOURCES) {
       expect(isAtFreePlanLimit(resource, getFreePlanLimit(resource) + 100, true)).toBe(false);
     }
+  });
+
+  it('counts no bike the rider handed over to a buyer toward the vehicle limit', () => {
+    const sold = { sold_at: '2026-10-17T12:00:00Z' };
+    const kept = { sold_at: null };
+    expect(vehiclesTowardPlan([sold, kept])).toBe(1);
+    expect(isAtFreePlanLimit('vehicles', vehiclesTowardPlan([sold]), false)).toBe(false);
+    expect(isAtFreePlanLimit('vehicles', vehiclesTowardPlan([sold, kept]), false)).toBe(true);
   });
 
   it('titles the limit with the same resource the message names', () => {

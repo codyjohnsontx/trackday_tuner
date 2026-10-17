@@ -70,13 +70,25 @@ describe('countTowardAllowance', () => {
     expect(
       countTowardAllowance(
         [
-          { status: 'ready', created_at: ago(400 * ATTACHMENT_RESERVATION_TTL_MS) },
-          { status: 'pending', created_at: ago(60_000) },
-          { status: 'pending', created_at: ago(ATTACHMENT_RESERVATION_TTL_MS + 1) },
+          { status: 'ready', created_at: ago(400 * ATTACHMENT_RESERVATION_TTL_MS), copied_from_attachment_id: null },
+          { status: 'pending', created_at: ago(60_000), copied_from_attachment_id: null },
+          { status: 'pending', created_at: ago(ATTACHMENT_RESERVATION_TTL_MS + 1), copied_from_attachment_id: null },
         ],
         now,
       ),
     ).toBe(2);
+  });
+
+  it('counts no receipt that came with a bike from its previous owner', () => {
+    expect(
+      countTowardAllowance(
+        [
+          { status: 'ready', created_at: ago(60_000), copied_from_attachment_id: 'a5d3c0c2-6f5e-4a51-9a3e-2b7b1d0c9e11' },
+          { status: 'ready', created_at: ago(60_000), copied_from_attachment_id: null },
+        ],
+        now,
+      ),
+    ).toBe(1);
   });
 
   it('counts nothing in an empty book', () => {

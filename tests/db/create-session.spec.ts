@@ -5,6 +5,7 @@ import { getFreePlanLimit, getFreePlanLimitMessage } from '@/lib/plans';
 import { MISSING_TRACK_MESSAGE } from '@/lib/session-track';
 import {
   SESSION_VEHICLE_NOT_OWNED_MESSAGE,
+  SESSION_VEHICLE_SOLD_MESSAGE,
   createSessionForUser,
   type CreateSessionContext,
   type CreateSessionOptions,
@@ -15,6 +16,7 @@ import {
   deleteThrowawayRider,
   type ThrowawayRider,
 } from '@/tests/e2e/helpers/throwaway-rider';
+import { runAsPostgres } from '@/tests/db/helpers/auth-database';
 import { anonClient, createVehicle, signIn, type Client } from '@/tests/db/helpers/rider';
 import type { CreateSessionInput, Profile } from '@/types';
 
@@ -347,6 +349,22 @@ test.describe('createSessionForUser against a real database', () => {
 
       expect(result).toEqual({ ok: false, error: SESSION_VEHICLE_NOT_OWNED_MESSAGE, kind: 'invalid' });
       expect(await sessionsOf(rider)).toEqual([]);
+    });
+
+    // A bike handed to a buyer is the seller's read-only copy (20261017000600);
+    // a session the phone logged on it after the sale is parked, never retried.
+    test('refuses a bike the rider has handed over, as theirs to resolve, keeping no track it made', async () => {
+      const rider = await newRider('save-vehicle-sold');
+      // Only the handover's accept marks a sale, so the test marks it as the owner.
+      const sold = runAsPostgres(`update public.vehicles set sold_at = now() where id = '${rider.vehicle}';`);
+      expect(sold.ok, sold.stderr).toBe(true);
+
+      const result = await save(rider, { track_name: NEW_CIRCUIT });
+
+      expect(result).toEqual({ ok: false, error: SESSION_VEHICLE_SOLD_MESSAGE, kind: 'vehicle_sold' });
+      expect(await sessionsOf(rider)).toEqual([]);
+      expect(await ownTracks(rider)).toEqual([]);
+      expect(rider.reports).toEqual([]);
     });
   });
 

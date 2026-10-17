@@ -813,10 +813,25 @@ cannot weaken them and a new writer does not have to remember them:
   whose `supersedes_id` names one of the same book's rider readings (at most
   once), so the old value stays, and current usage is the latest reading that
   nothing supersedes.
-- **Transfer copies, it does not move** (owner, PQ2): the buyer gets a new book on
-  their own vehicle and the copies diverge. The pins apply to the Data API roles
-  only so an owner-run `security definer` copy can carry the seller's dates
-  forward; keep it that way when building transfer.
+- **Transfer copies, it does not move** (owner, PQ2; TQ1-TQ6, 2026-10-17;
+  20261017000600): the buyer gets a new vehicle, book and sessions, copied in
+  ONE transaction, `accept_service_book_transfer`, after
+  `prepare_service_book_transfer_accept` mints the ids and names the storage
+  objects the server copies first (SQL cannot write one); accept is TT409 until
+  every object is there and every session and receipt is mapped. A copied entry
+  keeps the seller's dates, author and revisions under a `transferred` one,
+  because the pins apply to the Data API roles only - keep it that way. **A new
+  table that describes the bike goes into the copy or is excluded on purpose**
+  (the plan's table: baseline, AI rows and audit trail stay with the seller).
+  `copied_from_*` and `transferred_from_book_id` are pointers, never followed to
+  the other rider's row. **Every free-cap count skips copies**
+  (`copied_from_session_id` / `copied_from_attachment_id` null) and the vehicle
+  count skips sold bikes (`vehiclesTowardPlan`). A sold bike is the seller's
+  read-only copy: **every write policy on a service book table reads
+  `service_book_writable`**, never `service_book_owned` alone, and the write
+  functions answer TT410; a copied entry is remove-only for the buyer (TT403).
+  `tests/db/service-book-transfer.spec.ts` proves it as two riders; the hosted
+  paste is "Hand a service book to a buyer, by hand".
 
 `tests/db/service-book.spec.ts` proves each of these against a real database.
 

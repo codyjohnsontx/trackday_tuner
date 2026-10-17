@@ -43,6 +43,7 @@ const wellFormed: Session = {
   extra_modules: { geometry: { sag_front: '32mm', notes: '' }, drivetrain: {} },
   notes: 'Pushed the front on entry.',
   photo_url: null,
+  copied_from_session_id: null,
   created_at: '2026-09-20T12:00:00Z',
   updated_at: '2026-09-20T12:00:00Z',
 };

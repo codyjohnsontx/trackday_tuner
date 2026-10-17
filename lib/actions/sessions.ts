@@ -231,6 +231,11 @@ export async function getLatestSessionsByVehicle(): Promise<Record<string, Sessi
   return latest;
 }
 
+/**
+ * The rider's sessions as the free plan counts them: every session they logged,
+ * and none that came with a bike handed to them (`copied_from_session_id`,
+ * 20261017000600; owner, TQ1) - the rule create_session_with_laps enforces.
+ */
 export async function getSessionCount(vehicleId?: string): Promise<number> {
   if (await isDemoMode()) {
     return getDemoSessionCount(vehicleId);
@@ -243,7 +248,8 @@ export async function getSessionCount(vehicleId?: string): Promise<number> {
   let query = supabase
     .from('sessions')
     .select('id', { count: 'exact', head: true })
-    .eq('user_id', user.id);
+    .eq('user_id', user.id)
+    .is('copied_from_session_id', null);
 
   if (vehicleId) {
     query = query.eq('vehicle_id', vehicleId);

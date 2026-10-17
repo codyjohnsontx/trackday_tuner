@@ -2,13 +2,16 @@ export type LimitedResource = 'vehicles' | 'tracks' | 'sessions' | 'attachments'
 
 // `sessions` is enforced in SQL: create_session_with_laps counts every create,
 // the website form's and the phone's, under a per-rider lock (20260928002300),
-// and this number is what the app says the cap is. tests/db/ runs the SQL at this
+// and this number is what the app says the cap is. Sessions that came with a
+// bike handed over by its previous owner count toward neither number (owner,
+// TQ1); `getSessionCount` is the app's count by that rule. tests/db/ runs the SQL at this
 // cap on a real database on every pull request, so the two cannot drift apart
 // unnoticed.
 //
 // `attachments` is per bike and is enforced the same way, by
 // reserve_service_attachment under a per-book lock (20261014000400), and
-// tests/db/service-attachments.spec.ts holds the SQL to this number.
+// tests/db/service-attachments.spec.ts holds the SQL to this number. Copied
+// receipts do not count either (`countTowardAllowance`).
 const FREE_PLAN_LIMITS: Record<LimitedResource, number> = {
   vehicles: 1,
   tracks: 3,
@@ -27,6 +30,16 @@ const RESOURCE_LABELS: Record<LimitedResource, string> = {
 const RESOURCE_SCOPES: Partial<Record<LimitedResource, string>> = {
   attachments: ' per bike',
 };
+
+/**
+ * How many of a rider's vehicles the free plan's vehicle limit counts. A bike
+ * the rider handed to a buyer (`sold_at`, 20261017000600) stays in their garage
+ * as a read-only copy and no longer counts, so they can add the next one (owner,
+ * TQ3); accept_service_book_transfer holds a buyer to the same rule in SQL.
+ */
+export function vehiclesTowardPlan(vehicles: readonly { sold_at: string | null }[]): number {
+  return vehicles.filter((vehicle) => !vehicle.sold_at).length;
+}
 
 /**
  * The largest one service book attachment may be, in bytes: 10 MB on the free

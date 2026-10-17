@@ -98,6 +98,7 @@ function vehicle(): Vehicle {
     make: 'Yamaha',
     model: 'YZF-R6',
     photo_url: null,
+    sold_at: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   };
@@ -130,6 +131,7 @@ function session(partial: Partial<Session> = {}): Session {
     extra_modules: null,
     notes: 'Front pushed mid-corner.',
     photo_url: null,
+    copied_from_session_id: null,
     created_at: '2026-04-01T00:00:00Z',
     updated_at: '2026-04-01T00:00:00Z',
     ...partial,

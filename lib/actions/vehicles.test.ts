@@ -53,6 +53,7 @@ function createQuery(response: QueryResponse = {}) {
   query.update = vi.fn(() => query);
   query.delete = vi.fn(() => query);
   query.eq = vi.fn(() => query);
+  query.is = vi.fn(() => query);
   query.order = vi.fn(() => query);
   query.in = vi.fn(() => query);
   query.range = vi.fn(() => query);
@@ -202,6 +203,8 @@ describe('vehicles actions', () => {
       ok: false,
       error: 'Free plan is limited to 1 vehicle. Upgrade to Pro for unlimited vehicles.',
     });
+    // A bike handed to a buyer is not in the count.
+    expect(countQuery.is).toHaveBeenCalledWith('sold_at', null);
   });
 
   it('creates vehicle and revalidates garage path', async () => {

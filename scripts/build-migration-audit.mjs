@@ -76,6 +76,37 @@ const OPEN_SERVICE_BOOK_SHARE = "to_regprocedure('public.open_service_book_share
 const SERVICE_BOOK_SHARES_PIN = "to_regprocedure('public.service_book_shares_pin()')";
 const SERVICE_BOOKS_PIN_OWNER_TIME_ZONE = "to_regprocedure('public.service_books_pin_owner_time_zone()')";
 const SERVICE_BOOK_SHARING_MIGRATION = '20261016000500_add_service_book_sharing';
+/**
+ * Replaces six function bodies earlier migrations created - the entry pin and
+ * history, the session create, the entry save and the attachment reserve and
+ * confirm - so each earlier row fingerprinting one of them accepts this
+ * migration's body too, as the 2200 row accepts its 2300 replacement. Without
+ * that, a database that took this migration would read those rows MISSING.
+ */
+const SERVICE_BOOK_TRANSFER_MIGRATION = '20261017000600_add_service_book_transfer';
+const SERVICE_BOOK_TRANSFER_REPLACES = new Set([
+  'service_entries_pin',
+  'record_service_entry_revision',
+  'create_session_with_laps',
+  'save_service_entry',
+  'reserve_service_attachment',
+  'confirm_service_attachment',
+]);
+
+/**
+ * `= '<md5>'` for the body `name` has in `migration`, or `in (...)` that also
+ * accepts the transfer migration's replacement when it replaces `name`.
+ */
+function bodyMatches(migration, name) {
+  const bodies = [functionBodyMd5(migration, name)];
+  if (SERVICE_BOOK_TRANSFER_REPLACES.has(name)) bodies.push(functionBodyMd5(SERVICE_BOOK_TRANSFER_MIGRATION, name));
+  return bodies.length === 1 ? `= '${bodies[0]}'` : `in (${bodies.map((body) => `'${body}'`).join(', ')})`;
+}
+const PREPARE_SERVICE_BOOK_TRANSFER = "to_regprocedure('public.prepare_service_book_transfer_accept(text)')";
+const ACCEPT_SERVICE_BOOK_TRANSFER = "to_regprocedure('public.accept_service_book_transfer(text,jsonb)')";
+const CREATE_SERVICE_BOOK_TRANSFER = "to_regprocedure('public.create_service_book_transfer(uuid,text,text,numeric,numeric,text)')";
+const CANCEL_SERVICE_BOOK_TRANSFER = "to_regprocedure('public.cancel_service_book_transfer(uuid)')";
+const DESCRIBE_SERVICE_BOOK_TRANSFER = "to_regprocedure('public.describe_service_book_transfer(text,uuid,text)')";
 
 /**
  * The tombstone trigger, proved field by field rather than by name: on
@@ -420,7 +451,7 @@ export const MIGRATION_PROBES = {
       'there by name. Only the body fingerprint says the installed definition is',
       "this migration's; the other three read the security and grants it sets.",
       '20260928002300 replaces the body, so its fingerprint is accepted here too,',
-      'as the 1400 row accepts its 1500 replacement.',
+      'as the 1400 row accepts its 1500 replacement, and so does 20261017000600.',
     ],
     kind: 'function',
     object: 'public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)',
@@ -428,7 +459,8 @@ export const MIGRATION_PROBES = {
       `${CREATE_SESSION_WITH_LAPS} is not null`,
       '     and (select md5(p.prosrc) in (' +
         `'${functionBodyMd5('20260927002200_add_create_session_with_laps')}', ` +
-        `'${functionBodyMd5('20260928002300_session_vehicle_ownership_and_deleted_sessions', 'create_session_with_laps')}')`,
+        `'${functionBodyMd5('20260928002300_session_vehicle_ownership_and_deleted_sessions', 'create_session_with_laps')}', ` +
+        `'${functionBodyMd5(SERVICE_BOOK_TRANSFER_MIGRATION, 'create_session_with_laps')}')`,
       '            and not p.prosecdef',
       "            and p.proconfig = array['search_path=\"\"']",
       "            and has_function_privilege('authenticated', p.oid, 'execute')",
@@ -453,8 +485,7 @@ export const MIGRATION_PROBES = {
     object: 'create_session_with_laps cap and tombstones, deleted_sessions, sessions vehicle-owned policies',
     present: [
       `${CREATE_SESSION_WITH_LAPS} is not null`,
-      '     and (select md5(p.prosrc) = ' +
-        `'${functionBodyMd5('20260928002300_session_vehicle_ownership_and_deleted_sessions', 'create_session_with_laps')}'`,
+      `     and (select md5(p.prosrc) ${bodyMatches('20260928002300_session_vehicle_ownership_and_deleted_sessions', 'create_session_with_laps')}`,
       `          from pg_proc p where p.oid = ${CREATE_SESSION_WITH_LAPS})`,
       `     and ${RECORD_DELETED_SESSION} is not null`,
       '     and (select md5(p.prosrc) = ' +
@@ -591,7 +622,7 @@ export const MIGRATION_PROBES = {
       '    end',
       ...SERVICE_BOOK_FINGERPRINTED_FUNCTIONS.map(
         (signature) =>
-          `and (select md5(p.prosrc) = '${functionBodyMd5('20261010000100_add_service_book', signature.split('(')[0])}' ` +
+          `and (select md5(p.prosrc) ${bodyMatches('20261010000100_add_service_book', signature.split('(')[0])} ` +
           `from pg_proc p where p.oid = to_regprocedure('public.${signature}'))`,
       ),
     ],
@@ -614,7 +645,7 @@ export const MIGRATION_PROBES = {
     object: 'public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)',
     present: [
       `${SAVE_SERVICE_ENTRY} is not null`,
-      `     and (select md5(p.prosrc) = '${functionBodyMd5('20261013000300_add_save_service_entry')}'`,
+      `     and (select md5(p.prosrc) ${bodyMatches('20261013000300_add_save_service_entry', 'save_service_entry')}`,
       '            and not p.prosecdef',
       "            and p.proconfig = array['search_path=\"\"']",
       "            and has_function_privilege('authenticated', p.oid, 'execute')",
@@ -637,13 +668,13 @@ export const MIGRATION_PROBES = {
     object: 'public.service_attachments, reserve/confirm_service_attachment, service_attachment_orphan_objects, bucket service-book, cron job purge-stale-service-attachments',
     present: [
       "to_regclass('public.service_attachments') is not null",
-      `and (select md5(p.prosrc) = '${functionBodyMd5(SERVICE_ATTACHMENTS_MIGRATION, 'reserve_service_attachment')}'`,
+      `and (select md5(p.prosrc) ${bodyMatches(SERVICE_ATTACHMENTS_MIGRATION, 'reserve_service_attachment')}`,
       "            and p.prosecdef and p.proconfig = array['search_path=\"\"']",
       "            and has_function_privilege('authenticated', p.oid, 'execute')",
       "            and not has_function_privilege('anon', p.oid, 'execute')",
       "            and not has_function_privilege('service_role', p.oid, 'execute')",
       `       from pg_proc p where p.oid = ${RESERVE_SERVICE_ATTACHMENT})`,
-      `and (select md5(p.prosrc) = '${functionBodyMd5(SERVICE_ATTACHMENTS_MIGRATION, 'confirm_service_attachment')}'`,
+      `and (select md5(p.prosrc) ${bodyMatches(SERVICE_ATTACHMENTS_MIGRATION, 'confirm_service_attachment')}`,
       "            and p.prosecdef and p.proconfig = array['search_path=\"\"']",
       "            and has_function_privilege('authenticated', p.oid, 'execute')",
       "            and not has_function_privilege('anon', p.oid, 'execute')",
@@ -700,6 +731,75 @@ export const MIGRATION_PROBES = {
       "            and not has_function_privilege('anon', p.oid, 'execute')",
       "            and not has_function_privilege('authenticated', p.oid, 'execute')",
       `       from pg_proc p where p.oid = ${OPEN_SERVICE_BOOK_SHARE})`,
+    ],
+  },
+  [SERVICE_BOOK_TRANSFER_MIGRATION]: {
+    note: [
+      'Handing a bike to a buyer: the handover table under RLS with no anon read',
+      'and no write for a rider or the service role, the four columns only the',
+      'copy writes, the three triggers that pin them and refuse a session on a',
+      'sold bike, the five handover functions by their bodies and execute, and',
+      'the six bodies it replaces by this file\'s fingerprint. Without the',
+      'replacements a sold bike still takes writes and copies count toward the',
+      'free caps; without the triggers a rider can mark a session copied.',
+    ],
+    kind: 'table + columns + triggers + functions',
+    object: 'public.service_book_transfers, vehicles.sold_at, sessions.copied_from_session_id, the handover functions',
+    present: [
+      "to_regclass('public.service_book_transfers') is not null",
+      "and (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.service_book_transfers'))",
+      "and not has_table_privilege('anon', 'public.service_book_transfers', 'select')",
+      "and not has_any_column_privilege('authenticated', 'public.service_book_transfers', 'insert, update')",
+      "and not has_table_privilege('authenticated', 'public.service_book_transfers', 'delete')",
+      "and not has_any_column_privilege('service_role', 'public.service_book_transfers', 'insert, update')",
+      "and not has_column_privilege('authenticated', 'public.service_book_transfers', 'token_hash', 'select')",
+      ...[
+        ['vehicles', 'sold_at'],
+        ['sessions', 'copied_from_session_id'],
+        ['service_attachments', 'copied_from_attachment_id'],
+        ['service_books', 'transferred_removed_entry_count'],
+      ].map(
+        ([table, column]) =>
+          `and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = '${table}' and column_name = '${column}')`,
+      ),
+      ...[
+        ['vehicles', 'vehicles_pin_sold_at'],
+        ['sessions', 'sessions_pin_transfer_origin'],
+        ['sessions', 'sessions_refuse_sold_vehicle'],
+      ].flatMap(([table, name]) => [
+        `and (select md5(p.prosrc) = '${functionBodyMd5(SERVICE_BOOK_TRANSFER_MIGRATION, name)}' and not p.prosecdef`,
+        `       from pg_proc p where p.oid = to_regprocedure('public.${name}()'))`,
+        "and exists (select 1 from pg_trigger t",
+        `             where t.tgrelid = to_regclass('public.${table}')`,
+        `               and t.tgfoid = to_regprocedure('public.${name}()')`,
+        "               and t.tgenabled = 'O' and not t.tgisinternal)",
+      ]),
+      ...[
+        [CREATE_SERVICE_BOOK_TRANSFER, 'create_service_book_transfer', 'authenticated'],
+        [CANCEL_SERVICE_BOOK_TRANSFER, 'cancel_service_book_transfer', 'authenticated'],
+        [PREPARE_SERVICE_BOOK_TRANSFER, 'prepare_service_book_transfer_accept', 'authenticated'],
+        [ACCEPT_SERVICE_BOOK_TRANSFER, 'accept_service_book_transfer', 'authenticated'],
+        [DESCRIBE_SERVICE_BOOK_TRANSFER, 'describe_service_book_transfer', 'service_role'],
+      ].flatMap(([signature, name, caller]) => [
+        `and (select md5(p.prosrc) = '${functionBodyMd5(SERVICE_BOOK_TRANSFER_MIGRATION, name)}'`,
+        "            and p.prosecdef and p.proconfig = array['search_path=\"\"']",
+        ...['anon', 'authenticated', 'service_role'].map(
+          (role) => `            and ${role === caller ? '' : 'not '}has_function_privilege('${role}', p.oid, 'execute')`,
+        ),
+        `       from pg_proc p where p.oid = ${signature})`,
+      ]),
+      ...[
+        "to_regprocedure('public.service_entries_pin()')",
+        "to_regprocedure('public.record_service_entry_revision()')",
+        CREATE_SESSION_WITH_LAPS,
+        SAVE_SERVICE_ENTRY,
+        RESERVE_SERVICE_ATTACHMENT,
+        CONFIRM_SERVICE_ATTACHMENT,
+      ].map(
+        (signature) =>
+          `and (select md5(p.prosrc) = '${functionBodyMd5(SERVICE_BOOK_TRANSFER_MIGRATION, signature.match(/public\.(\w+)\(/)[1])}' ` +
+          `from pg_proc p where p.oid = ${signature})`,
+      ),
     ],
   },
 };
