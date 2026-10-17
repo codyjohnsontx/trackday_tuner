@@ -1,466 +1,219 @@
 # Track Tuner
 
-A mobile race engineer for riders and drivers.
-
-Log a session at the track in under 60 seconds, then compare what you changed against what you felt. Track Tuner keeps your setups, session history, and conditions in one place, and its AI setup guidance is grounded in your own riding history rather than generic advice.
-
-## What it includes
-
-- Fast trackside session logging for motorcycles and cars
-- Setup modules you add only where you have data
-- Session comparison showing what changed between runs
-- Track conditions and session outcomes
-- Retrieval-based AI setup guidance grounded in your own history
-
-**Built with:** Next.js · TypeScript · Supabase · Tailwind CSS
-
----
-
-## Product Requirements (PRD v1.0)
-
-1. One-liner
-
-A mobile-first motorsport setup logger for motorcycles + cars with free + paid tiers, designed to help drivers record sessions, compare changes, and get AI guidance based on what they felt and what they changed.
-
-2. Goals
-
-Make it effortless to log a session at the track in under 60 seconds (for a basic user).
-
-Let advanced users go deep without forcing complexity on everyone.
-
-Convert users naturally from free → paid via genuinely useful advanced features.
-
-Build a data foundation that supports analytics + AI recommendations later.
-
-3. Non-goals (for MVP)
-
-Social feed / sharing / followers
-
-Real-time telemetry ingestion (possible later)
-
-Native mobile apps (PWA-ready is enough initially)
-
-4. Users & Use Cases
-   Primary Users
-
-Track day riders (motorcycle)
-
-HPDE / time attack drivers (car)
-
-Club racers (both)
-
-Core Use Cases
-
-“I changed tire pressures and rebound, and it felt worse—what did I do last time that felt good?”
-
-“I’m a beginner: I only know tire pressures and notes.”
-
-“I’m advanced: I want full alignment + damping + comparisons.”
-
-“I want to understand what changes to try next session.”
-
-5. Product Principles
-
-Mobile-first always (thumb-friendly, sunlight-friendly, quick entry)
-
-Progressive complexity (start simple, add modules as needed)
-
-No skill-level gating by self-identity (people overestimate skill)
-
-Modules over mandatory fields (only log what you know)
-
-Fast capture > perfect capture (optimize for trackside reality)
-
-6. Core Concepts & Data Model
-   Vehicle Types
-
-Motorcycle
-
-Car
-
-Session
-
-A single on-track outing tied to:
-
-Vehicle
-
-Track
-
-Date/time
-
-Conditions
-
-Setup modules (optional)
-
-Modular Setup System
-
-Users can add/remove modules per session.
-Modules store data as JSON, allowing flexibility across vehicles and future expansion.
-
-7. MVP Feature Set (V1)
-   A) Auth & Accounts
-
-Sign up / sign in (email + optional OAuth later)
-
-User profile
-
-Subscription tier flag (free/pro)
-
-B) Garage
-
-Create/edit/delete vehicles (deleting one also deletes its sessions)
-
-Vehicle type: motorcycle or car
-
-Minimal required fields:
-
-nickname (ex: “R6 Track”)
-
-year/make/model (optional at creation, can add later)
-
-C) Tracks
-
-Track list (pre-seeded + user-added)
-
-Track detail page
-
-Circuit configurations are layouts of one track, picked per session
-
-D) Sessions (the heart)
-
-Create session quickly
-
-Inputs:
-
-Track
-
-Date
-
-Session number (optional)
-
-Conditions (temp, weather, track condition optional)
-
-Notes (always available)
-
-E) Setup Modules (optional per session)
-
-Motorcycle modules:
-
-Tires (front/rear pressures hot/cold)
-
-Suspension (fork + shock clickers)
-
-Geometry (sag, ride height notes)
-
-Drivetrain (gearing)
-
-Notes
-
-Car modules:
-
-Tires (FL/FR/RL/RR hot/cold)
-
-Alignment (camber/toe/caster)
-
-Suspension (damping / spring / bars)
-
-Aero (optional)
-
-Notes
-
-Users can:
-
-Add module
-
-Skip module
-
-Hide module defaults globally (settings)
-
-F) History + Compare (basic in V1)
-
-Session list by vehicle
-
-Session detail view
-
-“Compare with previous session” (simple diff of fields that exist)
-
-8. Free vs Pro (initial plan)
-   Free Tier
-
-1 vehicle
-
-3 tracks
-
-10 sessions total
-
-Core logging + notes
-
-Basic compare with previous (limited)
-
-Pro Tier
-
-Unlimited vehicles / tracks / sessions
-
-Advanced compare (choose any two sessions)
-
-Exports (CSV)
-
-Analytics views (simple charts later)
-
-AI Setup Assistant
-
-Pricing rollout:
-- Pro base price: `$2.99/month`
-- Founder special: `$1.99/month` with promo code `FOUNDER100` (first 100 redemptions)
-
-(We can tune the exact limits later, but this structure matches your “free → love it → subscribe” behavior.)
-
-1. AI Setup Assistant
-   Concept
-
-After a session, user enters:
-
-what changed
-
-what they experienced (ex: “front pushing mid-corner”, “rear spinning on exit”, “brake dive”)
-
-AI returns:
-
-clarifying questions (if needed)
-
-suggested next change(s), in small safe increments
-
-explains tradeoffs
-
-links suggestion to prior sessions (“last time it felt better you had X”)
-
-Constraints
-
-Must include disclaimers: suggestions are informational; rider responsible
-
-Should bias toward: “change one thing at a time”, “small increments”
-
-Must be transparent: “based on your notes and past sessions, not real telemetry”
-
-Data Needed
-
-Structured symptom tags (optional, user-friendly)
-
-Session diffs
-
-Conditions + tires + setup modules where available
-
-10. UX Requirements (Mobile First)
-    Core UX Requirements
-
-One-handed entry (thumb reachable)
-
-Big tap targets
-
-Dark mode default + high contrast
-
-Works offline-ish (at least: local draft saving)
-
-Minimal typing (toggles, stepper inputs, quick-select chips)
-
-Session Entry Target
-
-Basic session logged (track + notes + tires) in < 60 seconds
-
-Advanced session entry still reasonable (modular cards)
-
-11. Tech Stack (locked)
-
-Next.js (App Router)
-
-Tailwind
-
-Supabase (Postgres + Auth + Storage)
-
-Stripe (subscriptions)
-
-Deployed on Vercel
-
-12. Architecture Decisions
-    Database approach
-
-Relational core (users, vehicles, tracks, sessions)
-
-JSON module payloads for flexibility
-
-Suggested tables:
-
-users (supabase auth)
-
-profiles (tier, preferences)
-
-vehicles
-
-tracks
-
-sessions
-
-session_modules (module_type + json data)
-
-subscriptions (Stripe mapping)
-
-Feature gating
-
-Enforce limits server-side:
-
-counts per user
-
-pro-only routes/features
-
-13. Success Metrics
-
-Time-to-first-session logged (activation)
-
-Sessions per active user per month
-
-% of users who create a 2nd session (retention)
-
-Free → Pro conversion rate (after hitting limits / wanting compare/export/AI)
-
----
-
-## Current Implementation Status
-
-- Framework migrated to Next.js App Router + TypeScript + Tailwind v4.
-- Mobile-first shell is implemented with routes for `/`, `/login`, and authenticated app sections.
-- Session logging supports both `motorcycle` and `car` modes.
-- Session modules are optional per session and can be added/removed.
-- Advanced fields are hidden by default and available through per-module toggles.
-- The session weather answer is required: the row opens with nothing selected and a save is refused until the rider chooses, because `sessions.conditions` is NOT NULL.
-- Partial entry is supported and can be saved locally as a draft.
-
-## Implemented vs Planned
-
-### Implemented
-
-- Authentication with Supabase, including password recovery by email, and route-protected app pages.
-- Garage, tracks, and session logging workflows with free-tier limits.
-- Session history, deletion, lap times on the session page, and compare-with-previous workflow.
-- Stripe checkout + customer portal + webhook sync for entitlements.
-- Trackside tools: sag calculator and unit converter.
-- A service book per vehicle (`/garage/[id]/book`): maintenance items with their due state, entries built from a rider-adjustable field layout, odometer and hour readings, an honest history that labels back-filled and edited entries, and receipt, invoice and photo attachments on each entry (private storage, 25 per bike on the free plan). The owner can share a book by read-only link, and download it as a PDF - a summary, or the full file with its photos - from the book or the link.
-- In-app service reminders: a due chip on each garage bike and a line per bike on the dashboard, a notice on a session that pushed an item past due, and the rider's overrides - snooze, skip a cycle, set the next due point, and how much a day counts.
-- AI tuning advice, day planning, recommendation feedback recorded through the session outcome flow, curated RAG helpers, and RAG evaluation/index scripts.
-
-### Planned
-
-- Expanded analytics and export features.
-- More knowledge-base coverage and AI evaluation fixtures.
-
-## Local Run
-
-The app needs a database, and this repository builds one. Install first, then
-start Docker: the local stack runs in containers, and `supabase start` silently
-has nothing to do without it.
+Track Tuner is a mobile-first web app for motorcycle and car track days. A rider
+logs each session's setup (tires, suspension, geometry, drivetrain), conditions
+and lap times, compares sessions to see what changed, and can ask an AI "Race
+Engineer" for a setup change grounded in their own logged sessions and a curated
+knowledge base. The app's header reads "Trackday Tuner".
+
+**Live app:** https://trackday-tuner.vercel.app
+
+**Try it without an account:** open https://trackday-tuner.vercel.app/demo (or
+"Explore the demo" on the landing page). It sets a demo cookie and opens a
+read-only tour of sample data: one bike, four sessions at one track, a Race
+Engineer answer and a service book. Nothing can be saved in demo mode, and
+"Exit Demo" leaves it.
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/dashboard.png" alt="Dashboard with recent sessions and a service reminder" width="160"></td>
+    <td><img src="docs/screenshots/setup-changes.png" alt="Setup changes against the previous session and the vehicle baseline" width="160"></td>
+    <td><img src="docs/screenshots/compare.png" alt="Session comparison with lap metrics" width="160"></td>
+    <td><img src="docs/screenshots/race-engineer.png" alt="Race Engineer recommendation" width="160"></td>
+    <td><img src="docs/screenshots/service-book.png" alt="Service book usage estimate" width="160"></td>
+  </tr>
+  <tr>
+    <td>Dashboard</td>
+    <td>Setup changes</td>
+    <td>Comparison</td>
+    <td>Race Engineer</td>
+    <td>Service book</td>
+  </tr>
+</table>
+
+Screenshots are from the demo on the live app, at phone width.
+
+## What it does
+
+### Trackside logging and comparison
+
+- Sessions for motorcycles and cars, with setup modules a rider adds only where
+  they have data, lap times, weather and track temperature, and photos.
+  Answers a rider did not give stay empty: the weather row opens with nothing
+  selected and a save is refused until one is chosen
+  (`lib/session-answers.ts`, `components/ui/choice-row.tsx`).
+- A session is written by one Postgres function, `create_session_with_laps`, so
+  the row, laps and conditions save together or not at all. The same path
+  serves the website form and a bearer-authenticated mobile endpoint
+  (`POST /api/mobile/sessions`), is idempotent on a client-minted id, and
+  enforces the free-plan session cap under a per-rider lock
+  (`lib/sessions/create.ts`).
+- Each session shows its setup changes against the previous session and against
+  a rider-chosen vehicle baseline, and a comparison page sets lap metrics and
+  setup deltas side by side with flags for context differences such as ambient
+  temperature (`lib/session-compare.ts`).
+- North American circuits and their layouts are seeded by a migration, with
+  aliases, so typed track names resolve to one circuit
+  (`lib/track-lookup.ts`, `CONTEXT.md`).
+
+### Race Engineer (AI setup advice)
+
+- `POST /api/ai/tuning-advice` (a Pro feature) and `POST /api/ai/day-plan`
+  build a prompt from the rider's own data: the current and previous session,
+  similar past sessions, recorded outcomes, earlier recommendations and a
+  per-vehicle memory. They add knowledge-base passages retrieved by embedding
+  similarity from `docs/knowledge-base/` (16 documents, 80 chunks in
+  `data/rag-index.json`). The model is OpenAI `gpt-5.4-mini` with
+  `text-embedding-3-small` embeddings (`lib/rag/`).
+- The model must answer in a fixed JSON shape, and `evaluateAdvicePolicy`
+  (`lib/rag/policy.ts`) checks each answer before a rider sees it: every
+  recommended change must use a component and direction from a closed
+  vocabulary, stay under a per-component magnitude ceiling, cite a document that
+  was actually retrieved, and reference only session ids the prompt contained.
+  An answer that breaks these rules is withheld and the rider gets a refusal
+  instead; a single unverifiable session citation is dropped with a notice
+  rather than discarding the answer. The same vocabulary file
+  generates the part of the system prompt that tells the model those words
+  (`lib/rag/component-vocabulary.ts`).
+- Request-side guards (`lib/rag/domain-guard.ts`, `lib/rag/premise-guard.ts`):
+  - a prompt-injection screen over the submitted question and, separately, over
+    text the rider stored earlier that the prompt prints (notes, nicknames,
+    setup strings);
+  - an off-topic screen on Race Engineer questions that refuses requests
+    outside vehicle setup;
+  - a dangerous-action premise guard (removing or disabling named brake
+    hardware) and a dangerous-value premise guard (a tire pressure above the
+    highest figure any cited tire maker publishes for that vehicle type, from
+    `docs/knowledge-base/tires/pressure-limits.md`). These reject the premise
+    with a warning and still answer the underlying question.
+  - a per-rider rate limit and an `ai_requests` audit row for every request.
+- Known gaps in the guards are recorded rather than hidden: the uncovered
+  phrasings and known false positives are pinned as test cases in
+  `lib/rag/premise-guard.test.ts` and listed under `limitations` in
+  `eval-baseline.json`.
+
+### RAG evaluation harness
+
+- `npm run rag:eval` runs 33 golden cases
+  (`tests/fixtures/rag-eval/golden-cases.json`) through the production prompt
+  builder, retrieval, model call and policy, and scores rubric pass rate,
+  refusal accuracy, recall@k, MRR and component and direction accuracy.
+- Offline mode replays committed OpenAI responses keyed by a hash of each
+  request, so it needs no API key and any prompt change shows up as a named
+  miss. `--live` re-records against the real API.
+- CI fails when a gated metric, or any single case, regresses against the
+  committed `eval-baseline.json`. Each run also scores three known-bad responses
+  and fails if any of them passes, so the scorer is shown to be able to fail.
+
+### Service book
+
+- A maintenance record per vehicle (`/garage/[id]/book`): service items with a
+  due state computed from odometer or hour readings and logged sessions,
+  entries, receipts and photos in a private storage bucket, and in-app
+  reminders on the garage, dashboard and session pages
+  (`lib/service-book/`).
+- History is kept honest in the database: every change to an entry writes a
+  revision from a trigger that no API role can edit, entries are soft-deleted
+  rather than removed, and the server-set `logged_at` beside the rider-typed
+  service date is what labels an entry as back-filled. "Edited" is counted
+  from the revisions.
+- An owner can share a book through a read-only link (only a SHA-256 hash of
+  the token is stored) and download it as a PDF, either a summary or the full
+  file with photos (`lib/service-book-pdf.ts`).
+
+### Production monitoring
+
+- `GET /api/health` checks the database, that the RAG index is in the deployed
+  bundle, that every RPC the app calls still resolves through the Data API,
+  AI question-text retention and the attachment sweep
+  (`lib/monitoring/health.ts`).
+- A scheduled GitHub Actions workflow (`.github/workflows/monitoring.yml`)
+  probes `/api/health` and `/api/monitoring/ai-health` (AI error rate and p95
+  latency over the last hour) every 15 minutes and runs the attachment cleanup.
+  Handled errors are reported to Sentry through `reportError`
+  (`lib/monitoring/report-error.ts`). See `docs/monitoring.md`.
+
+## Architecture
+
+- **Next.js 15** App Router with React 19 and TypeScript (strict). Server
+  components and server actions for most reads and writes, route handlers for
+  the AI, Stripe, mobile and monitoring endpoints. Tailwind CSS v4.
+- **Supabase**: Postgres with row-level security on rider data, Auth
+  (email/password and OAuth), and Storage. Grants to the Data API roles are
+  made per table and per function. Schema changes are SQL migrations in
+  `supabase/migrations/`; nothing applies them on deploy, so they are applied
+  by an operator (`npm run db:push`, or by hand from `docs/beta-runbook.md`),
+  and `/api/health` reports a deployment whose database is missing an RPC.
+- **OpenAI** for chat completions and embeddings. The retrieval index is built
+  offline from `docs/knowledge-base/` and shipped in the bundle.
+- **Stripe** for the Pro subscription (checkout, customer portal, webhook).
+- **Vercel** for hosting; GitHub Actions for CI and the monitoring probe;
+  Sentry for errors.
+
+```mermaid
+flowchart LR
+  rider[Browser / phone] --> app[Next.js app on Vercel]
+  app --> db[(Supabase Postgres + RLS)]
+  app --> auth[Supabase Auth]
+  app --> storage[Supabase Storage]
+  app --> openai[OpenAI chat + embeddings]
+  app --> stripe[Stripe]
+  index[data/rag-index.json] --> app
+  gha[GitHub Actions monitoring] -->|every 15 min| app
+  app --> sentry[Sentry]
+```
+
+## Running it locally
+
+Requires Node 22.18 or later (CI uses Node 24) and Docker.
 
 ```bash
 npm install
 npx supabase start
+cp .env.example .env.local
 ```
 
-That creates the database and applies every migration in `supabase/migrations/`
-in order, on the ports declared in `supabase/config.toml` (API 54321, database
-54322, Studio 54323). The CLI is a repo devDependency, which is why the bare
-`supabase` in the `db:*` scripts resolves - npm puts `node_modules/.bin` on PATH
-for scripts, but not for your own shell, so run it as `npx supabase` here. That
-is also why `npm install` comes first: on a clean checkout there is no local copy
-yet and `npx` would fetch an unpinned CLI from the registry instead of the
-pinned one.
-See "Building a database from nothing" in `CLAUDE.md` for which of those
-migrations exist only to make a clean build work, and for the caveat that
-applies to the hosted project.
-
-Copy `.env.example` to `.env.local` and fill `NEXT_PUBLIC_SUPABASE_URL`,
-`NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` from
-`npx supabase status -o env`. Those are local development values, not the hosted
-project's.
-
-Set `BETA_INVITE_ONLY=false` in the same file. `.env.example` ships it as `true`
-and `isBetaInviteOnly()` in `lib/env.server.ts` reads unset as `true`, so leaving
-it alone puts the invite-only wall in front of signup and no account can be
-created. To exercise the invite flow instead, leave it `true`, set
-`BETA_INVITE_SECRET`, and mint a code with
-`npm run beta:invite -- create you@example.com`.
+`npx supabase start` builds a local database from every migration and creates
+the storage buckets. Fill `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` in `.env.local`
+from `npx supabase status -o env`, and set `BETA_INVITE_ONLY=false` so signup is
+open. Then:
 
 ```bash
 npm run dev
 ```
 
-Then open `http://127.0.0.1:3000`. Email confirmation is disabled locally in
-`supabase/config.toml`, so signing up logs you straight in.
+and open http://127.0.0.1:3000. Email confirmation is off locally, so signing up
+logs you straight in, and `/demo` works without signing up. The AI routes need
+`OPENAI_API_KEY` and billing needs the Stripe keys listed in `.env.example`.
 
-Password recovery does send mail. The local stack captures it rather than
-delivering it, so read the reset link in the mail viewer on
-`http://127.0.0.1:54324` (`local_smtp` in `supabase/config.toml`). Request the
-link with the app open on `http://127.0.0.1:3000`. That origin is required for
-this one step: the app asks Supabase to return the rider to whichever origin the
-browser is on, and `site_url` plus `additional_redirect_urls` in the same file are
-the allow-list that return URL is checked against. A return URL that list does not
-accept falls back to `site_url`. Measured against the local stack as shipped: a
-link requested with the app on `http://127.0.0.1:3000` returns the rider to
-`/reset-password` there, while one requested from `localhost` comes back to the
-site URL instead.
+[docs/local-development.md](docs/local-development.md) has the full setup:
+password-recovery mail, storage buckets, rebuilding the database and lint
+configuration.
 
-Following the link does not reach the form on the first hop, and the detour is
-`next dev` rather than the app. The callback signs the rider in and sets the
-session cookie on `127.0.0.1`, then sends them to
-`http://localhost:3000/reset-password`: under `next dev` the request URL a route
-handler sees always reports `localhost`, whichever host the browser asked for, and
-the redirect is built from it. No cookie was set on `localhost`, so that page
-reads "Link expired". Put `127.0.0.1` back in the address bar and reload - the
-session is already there, the form appears, and the new password saves. The
-recovery code is spent by then and does not need to be used again.
-
-What that builds is the database and the storage buckets, not everything the app
-touches. `supabase start` (and `db reset`) seed the `vehicle-photos` and
-`session-photos` buckets from their `[storage.buckets.*]` blocks in
-`supabase/config.toml` and log `Creating Storage bucket: <name>` for each; the
-policies that let a rider write their own folder are migrations like any other.
-Before the `vehicle-photos` block existed a fresh database applied every migration
-cleanly and answered the first photo with "Photo upload failed: Bucket not
-found". The North American circuits a rider picks from are seeded by a migration,
-so a fresh database has them too.
-
-The buckets are the one thing `db push` does not carry to the hosted project, because
-the CLI provisions buckets from `config.toml` rather than from migrations. A
-deployment standing up its own project runs this once after `supabase link`, with
-the same operator credentials `db push` needs:
+## Tests
 
 ```bash
-npx supabase seed buckets --linked
+npm run lint          # ESLint
+npm run test:unit     # Vitest unit suite
+npm run rag:eval      # RAG eval, offline replay (no API key needed)
+npm run build         # production build
+npx tsc --noEmit      # type check (after a build, which generates route types)
+npm run test:db       # Postgres behaviour against the local Supabase stack
+npm run test:e2e      # Playwright browser specs; see TESTING.md
 ```
 
-It creates a bucket that is missing and brings an existing one's settings
-(public, accepted MIME types, size limit) into line with `config.toml`. Run it
-again whenever that block changes.
+CI (`.github/workflows/ci.yml`) runs lint, the unit suite, the offline RAG eval,
+the build and the type check on every pull request, and runs `test:db` against
+a fresh local Supabase stack. The browser e2e suite is run manually, since it
+needs a running app and real credentials. [TESTING.md](TESTING.md) covers the
+environment each suite needs.
 
-The garage card renders that photo through `next/image`, which serves only hosts
-named in `images.remotePatterns`. `next.config.ts` derives that host from
-`NEXT_PUBLIC_SUPABASE_URL` (`lib/supabase-storage-remote-patterns.ts`), so the
-local stack is admitted as soon as `.env.local` points at it, next to
-`*.supabase.co` for hosted projects. The value is read when the config loads:
-after changing it, restart `npm run dev`. Before that rule existed the card threw
-`hostname "127.0.0.1" is not configured under images` against a local stack while
-the upload and the public URL were both correct.
+## More documentation
 
-To rebuild, `npx supabase db reset` re-applies every migration to the running
-stack, and `npx supabase stop --no-backup` followed by `npx supabase start`
-destroys the containers and volumes and rebuilds from nothing.
-
-## Linting
-
-This repo uses ESLint v9 with a flat config at `eslint.config.mjs` (via `@eslint/eslintrc` `FlatCompat` wrapping `eslint-config-next` presets).
-
-```bash
-npm run lint
-```
-
-Notes:
-
-- `next lint` is intentionally not used here; the lint script runs the ESLint CLI directly.
-- `next-env.d.ts` is ignored by ESLint because Next generates a triple-slash reference there that conflicts with `@typescript-eslint/triple-slash-reference`.
+- [docs/prd.md](docs/prd.md): the original product requirements document
+- [CONTEXT.md](CONTEXT.md) and [docs/adr/](docs/adr/): domain glossary and decisions
+- [docs/ai-mvp-spec.md](docs/ai-mvp-spec.md): the AI feature spec
+- [docs/monitoring.md](docs/monitoring.md): monitoring runbook
+- [docs/beta-runbook.md](docs/beta-runbook.md): operating the hosted project
+- [CLAUDE.md](CLAUDE.md): engineering notes for contributors and coding agents

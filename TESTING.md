@@ -144,7 +144,7 @@ Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwrigh
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a
 redirect out of a route handler lands on a different origin - and a different
 cookie scope - than the `127.0.0.1` the suite drives, and the browser arrives
-without the cookies that redirect just set. README's "Local Run" describes the
+without the cookies that redirect just set. "Local Run" in `docs/local-development.md` describes the
 same hop from the operator's side, walking a recovery link by hand. A spec that
 follows one has to re-enter on the base origin before it can see them again, and
 should assert on the path rather than the whole URL;
