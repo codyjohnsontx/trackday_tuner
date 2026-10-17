@@ -16,7 +16,7 @@ Engineer answer and a service book. Nothing can be saved in demo mode, and
 
 <table>
   <tr>
-    <td><img src="docs/screenshots/dashboard.png" alt="Dashboard with recent sessions and a service reminder" width="160"></td>
+    <td><img src="docs/screenshots/dashboard.png" alt="Dashboard in demo mode with the garage and recent sessions" width="160"></td>
     <td><img src="docs/screenshots/setup-changes.png" alt="Setup changes against the previous session and the vehicle baseline" width="160"></td>
     <td><img src="docs/screenshots/compare.png" alt="Session comparison with lap metrics" width="160"></td>
     <td><img src="docs/screenshots/race-engineer.png" alt="Race Engineer recommendation" width="160"></td>
