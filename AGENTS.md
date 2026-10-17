@@ -828,8 +828,11 @@ cannot weaken them and a new writer does not have to remember them:
   (`copied_from_session_id` / `copied_from_attachment_id` null) and the vehicle
   count skips sold bikes (`vehiclesTowardPlan`). A sold bike is the seller's
   read-only copy: **every write policy on a service book table reads
-  `service_book_writable`**, never `service_book_owned` alone, and the write
-  functions answer TT410; a copied entry is remove-only for the buyer (TT403).
+  `service_book_writable`**, never `service_book_owned` alone - except
+  `service_book_shares`, so a sold bike's share link still works - and the
+  write functions answer TT410; a copied entry is remove-only for the buyer
+  (TT403). That check reads the bike `for key share`, as the session trigger
+  does, so a write racing accept waits and then sees it sold.
   `tests/db/service-book-transfer.spec.ts` proves it as two riders; the hosted
   paste is "Hand a service book to a buyer, by hand".
 

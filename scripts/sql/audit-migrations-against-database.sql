@@ -365,7 +365,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   (34, '20261014000400_add_service_attachments', 'table + functions + bucket + cron job',
       'public.service_attachments, reserve/confirm_service_attachment, service_attachment_orphan_objects, bucket service-book, cron job purge-stale-service-attachments',
       to_regclass('public.service_attachments') is not null
-      and (select md5(p.prosrc) in ('df08a489fe80ce5fb364a5aa8dc3844c', 'b7087b7a036653e2f263714f1fbc1af6')
+      and (select md5(p.prosrc) in ('df08a489fe80ce5fb364a5aa8dc3844c', '45706e3ad0cc492a98baeb9d18d42b1a')
                   and p.prosecdef and p.proconfig = array['search_path=""']
                   and has_function_privilege('authenticated', p.oid, 'execute')
                   and not has_function_privilege('anon', p.oid, 'execute')
@@ -454,7 +454,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                    where t.tgrelid = to_regclass('public.sessions')
                      and t.tgfoid = to_regprocedure('public.sessions_pin_transfer_origin()')
                      and t.tgenabled = 'O' and not t.tgisinternal)
-      and (select md5(p.prosrc) = '50bc120200ed75daa44b3355437b6b10' and not p.prosecdef
+      and (select md5(p.prosrc) = '2867f3235e6307c64060e4b0acc02e06' and not p.prosecdef
              from pg_proc p where p.oid = to_regprocedure('public.sessions_refuse_sold_vehicle()'))
       and exists (select 1 from pg_trigger t
                    where t.tgrelid = to_regclass('public.sessions')
@@ -478,7 +478,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                   and has_function_privilege('authenticated', p.oid, 'execute')
                   and not has_function_privilege('service_role', p.oid, 'execute')
              from pg_proc p where p.oid = to_regprocedure('public.prepare_service_book_transfer_accept(text)'))
-      and (select md5(p.prosrc) = '2767a1ba91f36801abbcd1c475eb2d6b'
+      and (select md5(p.prosrc) = '4154700d03cae46c31a6ee6f0d9e6066'
                   and p.prosecdef and p.proconfig = array['search_path=""']
                   and not has_function_privilege('anon', p.oid, 'execute')
                   and has_function_privilege('authenticated', p.oid, 'execute')
@@ -494,7 +494,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
       and (select md5(p.prosrc) = '15a7ab3838d9d4e1ea53ccf226213cf7' from pg_proc p where p.oid = to_regprocedure('public.record_service_entry_revision()'))
       and (select md5(p.prosrc) = 'b4967bd8143b3a351ba912405c39089b' from pg_proc p where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)'))
       and (select md5(p.prosrc) = 'c15fd7d406e3dd73ed479ef21d7c83e4' from pg_proc p where p.oid = to_regprocedure('public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)'))
-      and (select md5(p.prosrc) = 'b7087b7a036653e2f263714f1fbc1af6' from pg_proc p where p.oid = to_regprocedure('public.reserve_service_attachment(uuid,uuid,text,text,integer)'))
+      and (select md5(p.prosrc) = '45706e3ad0cc492a98baeb9d18d42b1a' from pg_proc p where p.oid = to_regprocedure('public.reserve_service_attachment(uuid,uuid,text,text,integer)'))
       and (select md5(p.prosrc) = '9a3fd355658fb0934d94d6cacb2697d7' from pg_proc p where p.oid = to_regprocedure('public.confirm_service_attachment(uuid)')))
 )
 select ordinality as "#",

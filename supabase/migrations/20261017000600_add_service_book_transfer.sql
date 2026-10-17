@@ -157,23 +157,29 @@ grant select on public.service_book_transfers to service_role;
 -- WHO MAY WRITE A BOOK
 --
 -- security invoker, like service_book_owned: RLS on vehicles still applies
--- inside them.
+-- inside them. The bike's row is read `for key share`, so a write that meets a
+-- running accept waits for it and then reads the bike sold, rather than
+-- passing on the snapshot from before the sale and landing in the seller's
+-- read-only copy.
 
 create or replace function public.service_book_writable(p_book_id uuid)
 returns boolean
-language sql
-stable
+language plpgsql
+volatile
 security invoker
 set search_path = ''
 as $$
-  select exists (
-    select 1
-      from public.service_books b
-      join public.vehicles v on v.id = b.vehicle_id
-     where b.id = p_book_id
-       and v.user_id = auth.uid()
-       and v.sold_at is null
-  );
+declare
+  v_sold_at timestamptz;
+begin
+  select v.sold_at into v_sold_at
+    from public.service_books b
+    join public.vehicles v on v.id = b.vehicle_id
+   where b.id = p_book_id
+     and v.user_id = auth.uid()
+   for key share of v;
+  return found and v_sold_at is null;
+end;
 $$;
 
 -- An entry's items and parts change only on an entry this book's rider logged:
@@ -181,7 +187,7 @@ $$;
 create or replace function public.service_entry_writable(p_entry_id uuid)
 returns boolean
 language sql
-stable
+volatile
 security invoker
 set search_path = ''
 as $$
@@ -205,7 +211,7 @@ alter policy "service_books: insert own"
 
 alter policy "service_books: update own"
   on public.service_books
-  using (exists (select 1 from public.vehicles v where v.id = service_books.vehicle_id and v.user_id = auth.uid() and v.sold_at is null))
+  using (public.service_book_writable(id))
   with check (exists (select 1 from public.vehicles v where v.id = service_books.vehicle_id and v.user_id = auth.uid() and v.sold_at is null));
 
 alter policy "service_book_fields: insert own"
@@ -523,17 +529,27 @@ revoke all on function public.sessions_pin_transfer_origin() from public, anon, 
 -- whoever writes it: the website form, the phone and a direct insert alike.
 -- TT410 is what create_session_with_laps answers too. A session already on the
 -- bike stays readable and editable; the delete of a sold bike cascades as ever.
+-- The bike is read `for key share`, as service_book_writable reads it, so a
+-- session synced while accept runs waits and is refused rather than landing
+-- on the seller's copy after the buyer's was made.
 create or replace function public.sessions_refuse_sold_vehicle()
 returns trigger
 language plpgsql
 security invoker
 set search_path = ''
 as $$
+declare
+  v_sold_at timestamptz;
 begin
-  if (tg_op = 'INSERT' or new.vehicle_id is distinct from old.vehicle_id)
-     and exists (select 1 from public.vehicles v where v.id = new.vehicle_id and v.sold_at is not null) then
-    raise exception 'this bike was handed over to a new owner, so no session can be logged on it'
-      using errcode = 'TT410';
+  if tg_op = 'INSERT' or new.vehicle_id is distinct from old.vehicle_id then
+    select v.sold_at into v_sold_at
+      from public.vehicles v
+     where v.id = new.vehicle_id
+       for key share;
+    if v_sold_at is not null then
+      raise exception 'this bike was handed over to a new owner, so no session can be logged on it'
+        using errcode = 'TT410';
+    end if;
   end if;
   return new;
 end;
@@ -903,14 +919,14 @@ begin
     raise exception 'reserve_service_attachment needs a signed-in rider' using errcode = '42501';
   end if;
 
-  perform pg_advisory_xact_lock(hashtextextended('reserve_service_attachment:' || p_book_id::text, 0));
-
   if not public.service_book_owned(p_book_id) then
     raise exception 'this service book is not one of this rider''s' using errcode = 'TT404';
   end if;
   if not public.service_book_writable(p_book_id) then
     raise exception 'this bike was handed over to a new owner, so its book no longer changes' using errcode = 'TT410';
   end if;
+
+  perform pg_advisory_xact_lock(hashtextextended('reserve_service_attachment:' || p_book_id::text, 0));
   if not exists (
     select 1
       from public.service_entries e
@@ -1493,8 +1509,9 @@ begin
     raise exception 'the handover has not been prepared' using errcode = 'TT409';
   end if;
 
-  -- The seller's bike, locked: a session insert takes `for key share` on it and
-  -- waits, as delete_vehicle_if_sessions_unchanged relies on. The book's
+  -- The seller's bike, locked: the sold check of a session insert and of every
+  -- write to the book takes `for key share` on it, so each waits for this
+  -- transaction and then reads the bike sold. The book's
   -- attachment lock holds a reserve off; the live entries are locked so an edit
   -- cannot slip a revision in under the copy.
   select v.* into v_vehicle
@@ -1771,6 +1788,12 @@ begin
     values (v_book.id, (now() at time zone v_zone)::date, v_t.handover_hours, v_t.handover_distance, 'transfer'),
            (v_t.new_book_id, (now() at time zone v_zone)::date, v_t.handover_hours, v_t.handover_distance, 'transfer');
   end if;
+
+  update public.service_books b
+     set owner_time_zone = v_t.seller_time_zone
+   where b.id = v_book.id
+     and b.owner_time_zone is null
+     and v_t.seller_time_zone is not null;
 
   update public.vehicles v set sold_at = now() where v.id = v_vehicle.id;
 

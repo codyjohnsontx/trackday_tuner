@@ -20,10 +20,11 @@ import { getBetaFeedback, hasTwoDistinctTrackDays } from '@/lib/actions/beta';
 import { BetaSurvey } from '@/components/beta/beta-survey';
 
 export default async function DashboardPage() {
-  const [vehicles, sessions, sessionCount, profile, demoMode, betaFeedback, hasTwoTrackDays] = await Promise.all([
+  const [vehicles, sessions, sessionCount, totalSessionCount, profile, demoMode, betaFeedback, hasTwoTrackDays] = await Promise.all([
     getVehicles(),
     getSessions(undefined, 3),
     getSessionCount(),
+    getSessionCount(undefined, { includeCopied: true }),
     getUserProfile(),
     isDemoMode(),
     getBetaFeedback(),
@@ -62,7 +63,7 @@ export default async function DashboardPage() {
         title="Dashboard"
         sub={
           hasVehicles
-            ? `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} · ${sessionCount}/${isFree ? getFreePlanLimit('sessions') : '∞'} sessions`
+            ? `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} · ${isFree ? `${sessionCount}/${getFreePlanLimit('sessions')}` : `${totalSessionCount}/∞`} sessions`
             : 'Nothing in the garage yet'
         }
       />
