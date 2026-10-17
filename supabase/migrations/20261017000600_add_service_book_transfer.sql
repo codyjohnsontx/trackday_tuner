@@ -989,6 +989,7 @@ set search_path = ''
 as $$
 declare
   v_row public.service_attachments;
+  v_writable boolean;
   v_size bigint;
   v_mime text;
   v_thumb_size bigint;
@@ -998,6 +999,11 @@ begin
   if auth.uid() is null then
     raise exception 'confirm_service_attachment needs a signed-in rider' using errcode = '42501';
   end if;
+
+  select public.service_book_writable(a.book_id) into v_writable
+    from public.service_attachments a
+   where a.id = p_attachment_id
+     and public.service_book_owned(a.book_id);
 
   select a.* into v_row
     from public.service_attachments a
@@ -1011,7 +1017,7 @@ begin
   if v_row.status = 'ready' then
     return to_jsonb(v_row);
   end if;
-  if not public.service_book_writable(v_row.book_id) then
+  if not coalesce(v_writable, false) then
     raise exception 'this bike was handed over to a new owner, so its book no longer changes' using errcode = 'TT410';
   end if;
   if v_row.created_at <= now() - interval '1 day' then

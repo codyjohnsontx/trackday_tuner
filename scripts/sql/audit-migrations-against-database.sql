@@ -371,7 +371,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                   and not has_function_privilege('anon', p.oid, 'execute')
                   and not has_function_privilege('service_role', p.oid, 'execute')
              from pg_proc p where p.oid = to_regprocedure('public.reserve_service_attachment(uuid,uuid,text,text,integer)'))
-      and (select md5(p.prosrc) in ('1cb3514415cafd0d9a09a357be7e3558', '9a3fd355658fb0934d94d6cacb2697d7')
+      and (select md5(p.prosrc) in ('1cb3514415cafd0d9a09a357be7e3558', 'fa38d6b1c35fb73180e79e293aa05b19')
                   and p.prosecdef and p.proconfig = array['search_path=""']
                   and has_function_privilege('authenticated', p.oid, 'execute')
                   and not has_function_privilege('anon', p.oid, 'execute')
@@ -495,7 +495,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
       and (select md5(p.prosrc) = 'b4967bd8143b3a351ba912405c39089b' from pg_proc p where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)'))
       and (select md5(p.prosrc) = 'c15fd7d406e3dd73ed479ef21d7c83e4' from pg_proc p where p.oid = to_regprocedure('public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)'))
       and (select md5(p.prosrc) = '45706e3ad0cc492a98baeb9d18d42b1a' from pg_proc p where p.oid = to_regprocedure('public.reserve_service_attachment(uuid,uuid,text,text,integer)'))
-      and (select md5(p.prosrc) = '9a3fd355658fb0934d94d6cacb2697d7' from pg_proc p where p.oid = to_regprocedure('public.confirm_service_attachment(uuid)')))
+      and (select md5(p.prosrc) = 'fa38d6b1c35fb73180e79e293aa05b19' from pg_proc p where p.oid = to_regprocedure('public.confirm_service_attachment(uuid)')))
 )
 select ordinality as "#",
        migration,

@@ -5786,6 +5786,7 @@ set search_path = ''
 as $$
 declare
   v_row public.service_attachments;
+  v_writable boolean;
   v_size bigint;
   v_mime text;
   v_thumb_size bigint;
@@ -5795,6 +5796,11 @@ begin
   if auth.uid() is null then
     raise exception 'confirm_service_attachment needs a signed-in rider' using errcode = '42501';
   end if;
+
+  select public.service_book_writable(a.book_id) into v_writable
+    from public.service_attachments a
+   where a.id = p_attachment_id
+     and public.service_book_owned(a.book_id);
 
   select a.* into v_row
     from public.service_attachments a
@@ -5808,7 +5814,7 @@ begin
   if v_row.status = 'ready' then
     return to_jsonb(v_row);
   end if;
-  if not public.service_book_writable(v_row.book_id) then
+  if not coalesce(v_writable, false) then
     raise exception 'this bike was handed over to a new owner, so its book no longer changes' using errcode = 'TT410';
   end if;
   if v_row.created_at <= now() - interval '1 day' then
@@ -6643,7 +6649,7 @@ select
        ('save_service_entry', 'c15fd7d406e3dd73ed479ef21d7c83e4'),
        ('service_attachment_object_path', '1b6cdf0b07b2af74f6c0f5405529442d'),
        ('reserve_service_attachment', '45706e3ad0cc492a98baeb9d18d42b1a'),
-       ('confirm_service_attachment', '9a3fd355658fb0934d94d6cacb2697d7'),
+       ('confirm_service_attachment', 'fa38d6b1c35fb73180e79e293aa05b19'),
        ('service_book_transfer_photo_source', '1fe88504fa3336fe448ad08cb35a4dbd'),
        ('service_book_transfer_photo_destination', '9f496ec1d4e5470cd8d2be097fa2501b'),
        ('service_book_transfer_admit', '9ae3accdef2c0555c52eea74b544e49e'),

@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { getFreePlanLimit } from '@/lib/plans';
 import { createTestAdminClient } from '@/tests/e2e/helpers/supabase';
 import { createThrowawayRider, deleteThrowawayRider, type ThrowawayRider } from '@/tests/e2e/helpers/throwaway-rider';
-import { runAsPostgres } from '@/tests/db/helpers/auth-database';
+import { runAsPostgres, startAsPostgres } from '@/tests/db/helpers/auth-database';
 import { anonClient, createVehicle, signIn, type Client } from '@/tests/db/helpers/rider';
 import type { Json } from '@/types/supabase';
 
@@ -332,11 +332,22 @@ test.describe('handing a service book to a buyer', () => {
       const after = await record(seller.vehicle, seller.book);
       const copy = await record(accepted.vehicle_id, accepted.book_id);
 
-      // The seller's rows are what they were, but for the sale and the reading that closed it.
+      // The seller's rows are what they were, but for the sale, the reading that
+      // closed it and the zone the handover named, which now labels both copies.
       const sold = after.vehicles[0].sold_at as string | null;
       expect(sold).not.toBeNull();
-      expect({ ...after, vehicles: [{ ...after.vehicles[0], sold_at: null, updated_at: null }], vehicle_readings: after.vehicle_readings.filter((r) => r.source !== 'transfer') })
-        .toEqual({ ...before, vehicles: [{ ...before.vehicles[0], updated_at: null }] });
+      expect(before.service_books[0].owner_time_zone).toBeNull();
+      expect(after.service_books[0].owner_time_zone).toBe('America/Chicago');
+      expect({
+        ...after,
+        vehicles: [{ ...after.vehicles[0], sold_at: null, updated_at: null }],
+        service_books: [{ ...after.service_books[0], owner_time_zone: null, updated_at: null }],
+        vehicle_readings: after.vehicle_readings.filter((r) => r.source !== 'transfer'),
+      }).toEqual({
+        ...before,
+        vehicles: [{ ...before.vehicles[0], updated_at: null }],
+        service_books: [{ ...before.service_books[0], updated_at: null }],
+      });
       const closing = after.vehicle_readings.filter((r) => r.source === 'transfer');
       expect(closing).toHaveLength(1);
       expect(Number(closing[0].hours)).toBe(52.5);
@@ -689,6 +700,41 @@ test.describe('handing a service book to a buyer', () => {
     expect(accepted.sessions).toBe(2);
     const copied = await admin.from('sessions').select('copied_from_session_id').eq('vehicle_id', accepted.vehicle_id);
     expect(copied.data!.map((row) => row.copied_from_session_id)).toContain(late);
+  });
+
+  test('a write that meets a running accept waits for it, then finds the bike sold and writes nothing', async () => {
+    const seller = await bike('race');
+    const holder = `transfer-race-${randomUUID()}`;
+    // Accept's first step and its last, with time between them for the writes to arrive.
+    const sale = startAsPostgres(`
+      set application_name = '${holder}';
+      select 1 from public.vehicles where id = '${seller.vehicle}' for update;
+      select pg_sleep(3);
+      update public.vehicles set sold_at = now() where id = '${seller.vehicle}';
+    `);
+    await expect
+      .poll(() => runAsPostgres(`select count(*) from pg_stat_activity where application_name = '${holder}' and query like '%pg_sleep%';`).stdout, { timeout: 15_000 })
+      .toBe('1');
+
+    const [created, reading, saved] = await Promise.all([
+      seller.client.rpc('create_session_with_laps', {
+        p_session_id: randomUUID(),
+        p_session: sessionFields(seller.vehicle),
+        p_laps: [],
+        p_environment: null,
+      }),
+      seller.client.from('vehicle_readings').insert({ book_id: seller.book, reading_date: '2026-10-17', hours: 12 }),
+      seller.client.rpc('save_service_entry', { p_book_id: seller.book, p_entry_id: null, p_entry: { service_date: '2026-10-17' }, p_items: [{ label: 'x' }], p_parts: null }),
+    ]);
+    const sold = await sale;
+    expect(sold.ok, sold.stderr).toBe(true);
+
+    expect(created.error?.code).toBe('TT410');
+    expect(reading.error?.code).toBe('42501');
+    expect(saved.error?.code).toBe('TT410');
+    expect((await admin.from('sessions').select('id').eq('vehicle_id', seller.vehicle)).data).toEqual([]);
+    expect((await admin.from('vehicle_readings').select('id').eq('book_id', seller.book)).data).toEqual([]);
+    expect((await admin.from('service_entries').select('id').eq('book_id', seller.book)).data).toEqual([]);
   });
 
   test('a receipt or photo missing from storage makes accept TT409 with nothing written', async () => {
