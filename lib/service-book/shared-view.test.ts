@@ -39,7 +39,7 @@ function entry(id: string, extra: Partial<ServiceEntryRecord> = {}): ServiceEntr
 function input(extra: Partial<SharedBookInput> = {}): SharedBookInput {
   return {
     vehicle: { nickname: 'R6', type: 'motorcycle', year: 2019, make: 'Yamaha', model: 'YZF-R6' },
-    book: { distance_unit: 'mi', owner_time_zone: 'America/Chicago' },
+    book: { distance_unit: 'mi', owner_time_zone: 'America/Chicago', transferred_removed_entry_count: 0 },
     fields: [],
     items: [
       {
@@ -71,13 +71,13 @@ describe('a shared service book', () => {
 
     // The same entry in another owner's zone reads differently, which is why the
     // zone has to be the owner's and never the viewer's.
-    const elsewhere = buildSharedBookView(input({ book: { distance_unit: 'mi', owner_time_zone: 'UTC' } }));
+    const elsewhere = buildSharedBookView(input({ book: { distance_unit: 'mi', owner_time_zone: 'UTC', transferred_removed_entry_count: 0 } }));
     expect(elsewhere.entries[0].labels).toEqual(['Logged 1 day after service', 'Unedited']);
   });
 
   it('carries no labels when the owner zone is missing or unknown, rather than guessing one', () => {
     for (const owner_time_zone of [null, 'Mars/Olympus_Mons']) {
-      const view = buildSharedBookView(input({ book: { distance_unit: 'mi', owner_time_zone } }));
+      const view = buildSharedBookView(input({ book: { distance_unit: 'mi', owner_time_zone, transferred_removed_entry_count: 0 } }));
       expect(view.labelled).toBe(false);
       expect(view.entries[0].labels).toEqual([]);
     }
@@ -97,6 +97,16 @@ describe('a shared service book', () => {
     expect(describeRemovedEntries(view.removedCount)).toBe('1 entry removed by the owner');
     expect(describeRemovedEntries(3)).toBe('3 entries removed by the owner');
     expect(describeRemovedEntries(0)).toBeNull();
+  });
+
+  it('counts the removals a book came with from earlier owners, and its own on top', () => {
+    const book = { distance_unit: 'mi' as const, owner_time_zone: 'America/Chicago', transferred_removed_entry_count: 3 };
+    const inherited = buildSharedBookView(input({ book }));
+    expect(inherited.entries).toHaveLength(1);
+    expect(inherited.removedCount).toBe(3);
+
+    const removed = entry('00000000-0000-4000-8000-000000000002', { deleted_at: '2026-09-25T00:00:00Z' });
+    expect(buildSharedBookView(input({ book, entries: [entry('00000000-0000-4000-8000-000000000001'), removed] })).removedCount).toBe(4);
   });
 
   it('prints no id of the owner', () => {

@@ -25,7 +25,8 @@ import { latestReading, type UsageReading } from '@/lib/service-book/usage';
 
 export interface SharedBookInput {
   vehicle: Pick<Tables<'vehicles'>, 'nickname' | 'type' | 'year' | 'make' | 'model'>;
-  book: Pick<Tables<'service_books'>, 'distance_unit' | 'owner_time_zone'>;
+  /** `transferred_removed_entry_count` is the removals the book came with from earlier owners. */
+  book: Pick<Tables<'service_books'>, 'distance_unit' | 'owner_time_zone' | 'transferred_removed_entry_count'>;
   fields: ServiceBookField[];
   items: ServiceItemRow[];
   /** Every entry of the book, removed ones included: those are counted, never shown. */
@@ -159,7 +160,7 @@ export function buildSharedBookView(input: SharedBookInput): SharedBookView {
         : [],
       attachments: entry.attachments,
     })),
-    removedCount: input.entries.length - live.length,
+    removedCount: input.book.transferred_removed_entry_count + input.entries.length - live.length,
     labelled: timeZone !== null,
   };
 }

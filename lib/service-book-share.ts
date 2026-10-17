@@ -134,7 +134,7 @@ export async function loadSharedBook(bookId: string, options: { signThumbs: bool
 
   const bookRead = await admin
     .from('service_books')
-    .select('id, vehicle_id, distance_unit, owner_time_zone')
+    .select('id, vehicle_id, distance_unit, owner_time_zone, transferred_removed_entry_count')
     .eq('id', bookId)
     .maybeSingle();
   if (bookRead.error) return fail('service_books', bookRead.error);
@@ -269,7 +269,11 @@ export async function loadSharedBook(bookId: string, options: { signThumbs: bool
   return {
     input: {
       vehicle: vehicle.data as Pick<Tables<'vehicles'>, 'nickname' | 'type' | 'year' | 'make' | 'model'>,
-      book: { distance_unit: book.distance_unit, owner_time_zone: book.owner_time_zone },
+      book: {
+        distance_unit: book.distance_unit,
+        owner_time_zone: book.owner_time_zone,
+        transferred_removed_entry_count: book.transferred_removed_entry_count,
+      },
       fields: (fields.data ?? []) as ServiceBookField[],
       items: (items.data ?? []) as Tables<'service_items'>[],
       entries: records,
