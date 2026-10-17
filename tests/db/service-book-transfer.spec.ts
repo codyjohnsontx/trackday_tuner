@@ -662,6 +662,8 @@ test.describe('handing a service book to a buyer', () => {
     const link = await hand(seller, buyer.rider.email);
     const accepted = await takeOver(buyer.client, link.raw);
     expect(accepted).toMatchObject({ sessions: SESSION_CAP + 1, attachments: ATTACHMENT_CAP });
+    const copies = await admin.from('sessions').select('original_user_id').eq('vehicle_id', accepted.vehicle_id);
+    expect(new Set(copies.data!.map((row) => row.original_user_id))).toEqual(new Set([seller.rider.id]));
 
     for (let index = 0; index < SESSION_CAP; index += 1) await session(buyer.client, accepted.vehicle_id);
     const eleventh = await buyer.client.rpc('create_session_with_laps', {
@@ -680,6 +682,63 @@ test.describe('handing a service book to a buyer', () => {
     expect((await reserve(copiedEntry)).error?.code).toBe('TT403');
     for (let index = 0; index < ATTACHMENT_CAP; index += 1) expect((await reserve(own)).error).toBeNull();
     expect((await reserve(own)).error?.code).toBe('TT402');
+  });
+
+  test('a bike handed back to the rider who logged its history brings no free sessions or receipts with it', async () => {
+    // A fills the free caps on their bike and hands it to B; B logs one session
+    // of their own and hands it back; A deletes the sold copy they kept.
+    const first = await bike('loop-a');
+    const receiptEntry = await entry(first.client, first.book);
+    for (let index = 0; index < SESSION_CAP; index += 1) await session(first.client, first.vehicle);
+    for (let index = 0; index < ATTACHMENT_CAP; index += 1) await receipt(first.client, first.book, receiptEntry);
+
+    const second = await rider('loop-b');
+    const toSecond = await takeOver(second.client, (await hand(first, second.rider.email)).raw);
+    await session(second.client, toSecond.vehicle_id);
+    const secondBike: Bike = { ...second, vehicle: toSecond.vehicle_id, book: toSecond.book_id };
+
+    const back = await hand(secondBike, first.rider.email);
+    expect((await first.client.from('vehicles').delete().eq('id', first.vehicle).select('id')).data).toHaveLength(1);
+    const toFirst = await takeOver(first.client, back.raw);
+    expect(toFirst).toMatchObject({ sessions: SESSION_CAP + 1, attachments: ATTACHMENT_CAP });
+
+    const another = await first.client.rpc('create_session_with_laps', {
+      p_session_id: randomUUID(),
+      p_session: sessionFields(toFirst.vehicle_id),
+      p_laps: [],
+      p_environment: null,
+    });
+    expect(another.error?.code).toBe('TT402');
+    const ownEntry = await entry(first.client, toFirst.book_id);
+    const reserved = await first.client.rpc('reserve_service_attachment', {
+      p_book_id: toFirst.book_id,
+      p_entry_id: ownEntry,
+      p_kind: 'receipt',
+      p_mime: 'application/pdf',
+      p_bytes: 10,
+    });
+    expect(reserved.error?.code).toBe('TT402');
+  });
+
+  test('a book counts every entry removed across its whole history', async () => {
+    const first = await bike('removed-1');
+    await entry(first.client, first.book, { notes: 'kept' });
+    for (let index = 0; index < 3; index += 1) {
+      const removed = await entry(first.client, first.book);
+      expect((await first.client.from('service_entries').update({ deleted_at: new Date().toISOString() }).eq('id', removed).select('id')).data).toHaveLength(1);
+    }
+    const second = await rider('removed-2');
+    const toSecond = await takeOver(second.client, (await hand(first, second.rider.email)).raw);
+    expect((await admin.from('service_books').select('transferred_removed_entry_count').eq('id', toSecond.book_id).single()).data!.transferred_removed_entry_count).toBe(3);
+
+    const removed = await entry(second.client, toSecond.book_id);
+    expect((await second.client.from('service_entries').update({ deleted_at: new Date().toISOString() }).eq('id', removed).select('id')).data).toHaveLength(1);
+    const third = await rider('removed-3');
+    const link = await hand({ ...second, vehicle: toSecond.vehicle_id, book: toSecond.book_id }, third.rider.email);
+    const summary = await admin.from('service_book_transfers').select('summary').eq('id', link.id).single();
+    expect(summary.data!.summary).toMatchObject({ removed_entries: 4 });
+    const toThird = await takeOver(third.client, link.raw);
+    expect((await admin.from('service_books').select('transferred_removed_entry_count').eq('id', toThird.book_id).single()).data!.transferred_removed_entry_count).toBe(4);
   });
 
   test('a session logged after prepare makes accept TT409 with nothing written, and preparing again lets it through', async () => {
@@ -775,7 +834,7 @@ test.describe('handing a service book to a buyer', () => {
     const owner = await bike('pins');
     const plainSession = await session(owner.client, owner.vehicle);
 
-    // `copied_from_session_id` on a rider's own insert or update is not theirs to set.
+    // `copied_from_session_id` and `original_user_id` on a rider's own insert or update are not theirs to set.
     const id = randomUUID();
     const inserted = await owner.client.from('sessions').insert({
       id,
@@ -786,11 +845,13 @@ test.describe('handing a service book to a buyer', () => {
       tires: {},
       suspension: {},
       copied_from_session_id: plainSession,
+      original_user_id: randomUUID(),
     } as never);
     expect(inserted.error, inserted.error?.message).toBeNull();
-    expect((await admin.from('sessions').select('copied_from_session_id').eq('id', id).single()).data!.copied_from_session_id).toBeNull();
-    expect((await owner.client.from('sessions').update({ copied_from_session_id: plainSession } as never).eq('id', id)).error).toBeNull();
-    expect((await admin.from('sessions').select('copied_from_session_id').eq('id', id).single()).data!.copied_from_session_id).toBeNull();
+    const origin = () => admin.from('sessions').select('copied_from_session_id, original_user_id').eq('id', id).single();
+    expect((await origin()).data).toEqual({ copied_from_session_id: null, original_user_id: null });
+    expect((await owner.client.from('sessions').update({ copied_from_session_id: plainSession, original_user_id: randomUUID() } as never).eq('id', id)).error).toBeNull();
+    expect((await origin()).data).toEqual({ copied_from_session_id: null, original_user_id: null });
 
     // Nor `sold_at`, on insert or update - not even by the service role.
     const marked = await owner.client.from('vehicles').update({ sold_at: new Date().toISOString() } as never).eq('id', owner.vehicle);

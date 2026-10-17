@@ -381,6 +381,12 @@ export type Database = {
            * free cap. Set only by the handover; null on a rider's insert.
            */
           copied_from_session_id: string | null;
+          /**
+           * On a copy, the rider who logged the first session of its line. A copy
+           * that comes back to that rider counts toward their free cap again
+           * (owner, TQ7). Set only by the handover; null on a rider's insert.
+           */
+          original_user_id: string | null;
           created_at: string;
           updated_at: string;
         };

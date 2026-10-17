@@ -82,6 +82,7 @@ export function baselineToComparableSession(baseline: VehicleBaseline): Session 
     notes: baseline.notes,
     photo_url: null,
     copied_from_session_id: null,
+    original_user_id: null,
     created_at: baseline.created_at,
     updated_at: baseline.updated_at,
   };

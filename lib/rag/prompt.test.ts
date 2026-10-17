@@ -132,6 +132,7 @@ function session(partial: Partial<Session> = {}): Session {
     notes: 'Front pushed mid-corner.',
     photo_url: null,
     copied_from_session_id: null,
+    original_user_id: null,
     created_at: '2026-04-01T00:00:00Z',
     updated_at: '2026-04-01T00:00:00Z',
     ...partial,

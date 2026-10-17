@@ -29,7 +29,8 @@
 -- the bike: the Race Engineer's advice and memory, the saved baseline (TQ5),
 -- AI question text and audit rows, product events and session tombstones. A
 -- removed entry comes over only as `transferred_removed_entry_count`, never its
--- content (PQ6). After accept the two copies are two riders' private rows under
+-- content (PQ6), and that count is the whole history's: the seller's removals
+-- plus the ones their own book came with. After accept the two copies are two riders' private rows under
 -- the RLS that already exists, and no policy here reaches across.
 --
 -- THE STEPS. `create_service_book_transfer` (the seller) stores the buyer's
@@ -58,11 +59,12 @@
 -- carries the seller's `owner_time_zone`, so every copied label reads in the
 -- zone it was logged in; the pin of 20261016000500 then keeps it.
 --
--- WHAT ONLY A FUNCTION CAN WRITE. `vehicles.sold_at` and
--- `sessions.copied_from_session_id` sit on tables `authenticated` holds
--- table-level insert and update on (20260719001100), so a trigger pins each:
--- null on a Data API insert, kept on every update. Without the second pin a
--- rider could mark their own sessions copied and escape the free cap.
+-- WHAT ONLY A FUNCTION CAN WRITE. `vehicles.sold_at`,
+-- `sessions.copied_from_session_id` and `sessions.original_user_id` sit on
+-- tables `authenticated` holds table-level insert and update on
+-- (20260719001100), so a trigger pins each: null on a Data API insert, kept on
+-- every update. Without the session pins a rider could mark their own sessions
+-- copied and escape the free cap.
 -- `service_attachments.copied_from_attachment_id` and
 -- `service_books.transferred_removed_entry_count` are in no rider grant and the
 -- attachments table takes no API insert at all.
@@ -84,10 +86,15 @@
 -- `save_service_entry` refuses one with TT403 before either, and
 -- `reserve_service_attachment` adds no attachment to one.
 --
--- CAPS COUNT WHAT A RIDER LOGGED (TQ1). `create_session_with_laps` counts the
--- rider's sessions with no `copied_from_session_id`, and
+-- CAPS COUNT WHAT A RIDER LOGGED (TQ1, TQ7). `create_session_with_laps` counts
+-- the rider's sessions with no `copied_from_session_id`, and
 -- `reserve_service_attachment` the book's attachments with no
--- `copied_from_attachment_id`. The vehicle cap counts vehicles not sold, which
+-- `copied_from_attachment_id` - and each also counts a copy the rider logged
+-- themselves, come back to them on a bike handed back (TQ7), so two accounts
+-- passing one bike between them gain nothing. A copied session carries the
+-- rider who logged the first of its line in `original_user_id`, which accept
+-- writes, because the earlier owner's rows are not the buyer's to read; a
+-- copied attachment carries its uploader in `created_by` already. The vehicle cap counts vehicles not sold, which
 -- prepare and accept apply to the buyer: a free buyer already holding an
 -- unsold bike is TT402, the only cap that can refuse a handover.
 --
@@ -104,6 +111,8 @@ alter table public.service_books
     check (transferred_removed_entry_count >= 0);
 
 alter table public.sessions add column if not exists copied_from_session_id uuid;
+
+alter table public.sessions add column if not exists original_user_id uuid;
 
 alter table public.service_attachments add column if not exists copied_from_attachment_id uuid;
 
@@ -499,8 +508,9 @@ create or replace trigger vehicles_pin_sold_at
 
 revoke all on function public.vehicles_pin_sold_at() from public, anon, authenticated, service_role;
 
--- A rider cannot mark their own session copied, which would take it out of the
--- free cap: null on a Data API insert, and kept on every update by anyone.
+-- A rider cannot mark their own session copied, or name who logged it, either of
+-- which would take it out of the free cap: null on a Data API insert, and kept
+-- on every update by anyone.
 create or replace function public.sessions_pin_transfer_origin()
 returns trigger
 language plpgsql
@@ -511,9 +521,11 @@ begin
   if tg_op = 'INSERT' then
     if current_user in ('anon', 'authenticated', 'service_role') then
       new.copied_from_session_id := null;
+      new.original_user_id := null;
     end if;
   else
     new.copied_from_session_id := old.copied_from_session_id;
+    new.original_user_id := old.original_user_id;
   end if;
   return new;
 end;
@@ -564,7 +576,7 @@ revoke all on function public.sessions_refuse_sold_vehicle() from public, anon, 
 -- THE CAPS AND THE SOLD STATE IN THE WRITE FUNCTIONS
 
 -- 20260928002300's function, with two changes: a sold bike is refused with
--- TT410, and the free cap counts only sessions the rider logged (TQ1). The
+-- TT410, and the free cap counts only sessions the rider logged (TQ1, TQ7). The
 -- signature is unchanged, so the phone and the schema contract call it as
 -- before.
 create or replace function public.create_session_with_laps(
@@ -629,7 +641,7 @@ begin
        select count(*)
          from public.sessions s
         where s.user_id = auth.uid()
-          and s.copied_from_session_id is null
+          and (s.copied_from_session_id is null or s.original_user_id = auth.uid())
      ) >= 10 then
     raise exception 'the free plan holds 10 sessions' using errcode = 'TT402';
   end if;
@@ -960,7 +972,7 @@ begin
     select count(*)
       from public.service_attachments a
      where a.book_id = p_book_id
-       and a.copied_from_attachment_id is null
+       and (a.copied_from_attachment_id is null or a.created_by = auth.uid())
        and (a.status = 'ready' or a.created_at > now() - interval '1 day')
   ) >= v_allowance.max_count then
     raise exception 'the free plan holds % attachments per bike', v_allowance.max_count using errcode = 'TT402';
@@ -1228,7 +1240,8 @@ begin
     p_handover_distance, p_time_zone,
     jsonb_build_object(
       'entries', (select count(*) from public.service_entries e where e.book_id = p_book_id and e.deleted_at is null),
-      'removed_entries', (select count(*) from public.service_entries e where e.book_id = p_book_id and e.deleted_at is not null),
+      'removed_entries', (select b.transferred_removed_entry_count from public.service_books b where b.id = p_book_id)
+        + (select count(*) from public.service_entries e where e.book_id = p_book_id and e.deleted_at is not null),
       'items', (select count(*) from public.service_items i where i.book_id = p_book_id),
       'readings', (select count(*) from public.vehicle_readings r where r.book_id = p_book_id and r.source in ('rider', 'transfer')),
       'attachments', (
@@ -1622,7 +1635,8 @@ begin
   values (
     v_t.new_book_id, v_t.new_vehicle_id, v_book.tracks_hours, v_book.tracks_distance, v_book.distance_unit,
     v_book.default_session_minutes, v_book.default_session_distance, v_book.id, now(),
-    (select count(*) from public.service_entries e where e.book_id = v_book.id and e.deleted_at is not null),
+    v_book.transferred_removed_entry_count
+      + (select count(*) from public.service_entries e where e.book_id = v_book.id and e.deleted_at is not null),
     coalesce(v_book.owner_time_zone, v_t.seller_time_zone)
   );
 
@@ -1699,7 +1713,7 @@ begin
   insert into public.sessions (
     id, user_id, vehicle_id, track_id, track_name, layout_id, layout_name, date, start_time, session_number,
     conditions, tires, suspension, alignment, enabled_modules, extra_modules, notes, photo_url,
-    copied_from_session_id, created_at, updated_at
+    copied_from_session_id, original_user_id, created_at, updated_at
   )
   select (v_session_map ->> s.id::text)::uuid, v_buyer, v_t.new_vehicle_id,
          case when t.is_seeded then s.track_id end, s.track_name,
@@ -1710,7 +1724,7 @@ begin
            when public.service_book_transfer_photo_source(s.photo_url, 'session-photos', v_t.from_user_id) is null then null
            else v_photos -> 'sessions' ->> (v_session_map ->> s.id::text)
          end,
-         s.id, s.created_at, s.updated_at
+         s.id, coalesce(s.original_user_id, s.user_id), s.created_at, s.updated_at
     from public.sessions s
     left join public.tracks t on t.id = s.track_id
    where s.vehicle_id = v_vehicle.id;

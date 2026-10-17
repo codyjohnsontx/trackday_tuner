@@ -135,6 +135,7 @@ describe('the hosted service book transfer block in docs/beta-runbook.md', () =>
           'drop trigger if exists vehicles_pin_sold_at on public.vehicles;',
           'drop function if exists public.vehicles_pin_sold_at();',
           'alter table public.service_attachments drop column if exists copied_from_attachment_id;',
+          'alter table public.sessions drop column if exists original_user_id;',
           'alter table public.sessions drop column if exists copied_from_session_id;',
           'alter table public.service_books drop column if exists transferred_removed_entry_count;',
           'alter table public.vehicles drop column if exists sold_at;',

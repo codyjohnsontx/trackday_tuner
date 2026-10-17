@@ -825,8 +825,10 @@ cannot weaken them and a new writer does not have to remember them:
   (the plan's table: baseline, AI rows and audit trail stay with the seller).
   `copied_from_*` and `transferred_from_book_id` are pointers, never followed to
   the other rider's row. **Every free-cap count skips copies**
-  (`copied_from_session_id` / `copied_from_attachment_id` null) and the vehicle
-  count skips sold bikes (`vehiclesTowardPlan`). A sold bike is the seller's
+  (`copied_from_session_id` / `copied_from_attachment_id` null) **except one the
+  rider logged themselves, come back on a bike handed back** (TQ7: a session's
+  `original_user_id`, which accept writes, or an attachment's `created_by`), and
+  the vehicle count skips sold bikes (`vehiclesTowardPlan`). A sold bike is the seller's
   read-only copy: **every write policy on a service book table reads
   `service_book_writable`**, never `service_book_owned` alone - except
   `service_book_shares`, so a sold bike's share link still works - and the

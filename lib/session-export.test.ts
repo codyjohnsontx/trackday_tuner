@@ -69,6 +69,7 @@ function session(overrides: Partial<Session> = {}): Session {
     notes: 'Good drive, watch T5.',
     photo_url: null,
     copied_from_session_id: null,
+    original_user_id: null,
     created_at: '2026-05-01T09:00:00Z',
     updated_at: '2026-05-01T09:00:00Z',
     ...overrides,

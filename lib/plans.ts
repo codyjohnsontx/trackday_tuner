@@ -4,14 +4,15 @@ export type LimitedResource = 'vehicles' | 'tracks' | 'sessions' | 'attachments'
 // the website form's and the phone's, under a per-rider lock (20260928002300),
 // and this number is what the app says the cap is. Sessions that came with a
 // bike handed over by its previous owner count toward neither number (owner,
-// TQ1); `getSessionCount` is the app's count by that rule. tests/db/ runs the SQL at this
+// TQ1), unless the rider logged them and the bike came back (TQ7);
+// `getSessionCount` is the app's count by that rule. tests/db/ runs the SQL at this
 // cap on a real database on every pull request, so the two cannot drift apart
 // unnoticed.
 //
 // `attachments` is per bike and is enforced the same way, by
 // reserve_service_attachment under a per-book lock (20261014000400), and
 // tests/db/service-attachments.spec.ts holds the SQL to this number. Copied
-// receipts do not count either (`countTowardAllowance`).
+// receipts do not count either, by the same two rules (`countTowardAllowance`).
 const FREE_PLAN_LIMITS: Record<LimitedResource, number> = {
   vehicles: 1,
   tracks: 3,

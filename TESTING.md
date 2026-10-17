@@ -228,8 +228,7 @@ assert fails them.
   whether it would join an existing account or start a new one. The Data API cannot write `auth`, so it writes
   the identity row the way GoTrue does - as `supabase_auth_admin`, through `psql`
   inside the stack's database container (`tests/db/helpers/auth-database.ts`),
-  which needs Docker and the container `supabase_db_<project_id>`, or the one
-  `SUPABASE_DB_CONTAINER` names for a stack started under another project id.
+  which needs Docker and the container `supabase_db_<project_id>`.
 - `relink-legacy-session-tracks.spec.ts` calls `relink_legacy_session_tracks`
   (`20261004002800`) with the service role over legacy rows it writes straight
   to `sessions`: a name or alias linked to its circuit, a name over an alias, a

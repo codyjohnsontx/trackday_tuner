@@ -65,15 +65,19 @@ describe('the closed lists', () => {
 describe('countTowardAllowance', () => {
   const now = new Date('2026-10-14T12:00:00Z');
   const ago = (ms: number) => new Date(now.getTime() - ms).toISOString();
+  const owner = '0d2b6f8e-3a41-4c1e-9b7a-5f6e2d1c0b9a';
+  const seller = '7c9e1a2b-4d5f-4e6a-8b9c-0d1e2f3a4b5c';
+  const copied = 'a5d3c0c2-6f5e-4a51-9a3e-2b7b1d0c9e11';
 
   it('counts every confirmed attachment and every reservation younger than a day', () => {
     expect(
       countTowardAllowance(
         [
-          { status: 'ready', created_at: ago(400 * ATTACHMENT_RESERVATION_TTL_MS), copied_from_attachment_id: null },
-          { status: 'pending', created_at: ago(60_000), copied_from_attachment_id: null },
-          { status: 'pending', created_at: ago(ATTACHMENT_RESERVATION_TTL_MS + 1), copied_from_attachment_id: null },
+          { status: 'ready', created_at: ago(400 * ATTACHMENT_RESERVATION_TTL_MS), copied_from_attachment_id: null, created_by: owner },
+          { status: 'pending', created_at: ago(60_000), copied_from_attachment_id: null, created_by: owner },
+          { status: 'pending', created_at: ago(ATTACHMENT_RESERVATION_TTL_MS + 1), copied_from_attachment_id: null, created_by: owner },
         ],
+        owner,
         now,
       ),
     ).toBe(2);
@@ -83,16 +87,30 @@ describe('countTowardAllowance', () => {
     expect(
       countTowardAllowance(
         [
-          { status: 'ready', created_at: ago(60_000), copied_from_attachment_id: 'a5d3c0c2-6f5e-4a51-9a3e-2b7b1d0c9e11' },
-          { status: 'ready', created_at: ago(60_000), copied_from_attachment_id: null },
+          { status: 'ready', created_at: ago(60_000), copied_from_attachment_id: copied, created_by: seller },
+          { status: 'ready', created_at: ago(60_000), copied_from_attachment_id: null, created_by: owner },
         ],
+        owner,
+        now,
+      ),
+    ).toBe(1);
+  });
+
+  it('counts a receipt the rider uploaded themselves that came back with the bike', () => {
+    expect(
+      countTowardAllowance(
+        [
+          { status: 'ready', created_at: ago(60_000), copied_from_attachment_id: copied, created_by: owner },
+          { status: 'ready', created_at: ago(60_000), copied_from_attachment_id: copied, created_by: seller },
+        ],
+        owner,
         now,
       ),
     ).toBe(1);
   });
 
   it('counts nothing in an empty book', () => {
-    expect(countTowardAllowance([], now)).toBe(0);
+    expect(countTowardAllowance([], owner, now)).toBe(0);
   });
 });
 

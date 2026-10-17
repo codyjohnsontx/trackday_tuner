@@ -234,8 +234,10 @@ export async function getLatestSessionsByVehicle(): Promise<Record<string, Sessi
 /**
  * The rider's sessions as the free plan counts them: every session they logged,
  * and none that came with a bike handed to them (`copied_from_session_id`,
- * 20261017000600; owner, TQ1) - the rule create_session_with_laps enforces.
- * `includeCopied` counts every session the rider holds, for a Pro total.
+ * 20261017000600; owner, TQ1) unless they logged it themselves and the bike
+ * came back (`original_user_id`; owner, TQ7) - the rule create_session_with_laps
+ * enforces. `includeCopied` counts every session the rider holds, for a Pro
+ * total.
  */
 export async function getSessionCount(
   vehicleId?: string,
@@ -255,7 +257,7 @@ export async function getSessionCount(
     .eq('user_id', user.id);
 
   if (!includeCopied) {
-    query = query.is('copied_from_session_id', null);
+    query = query.or(`copied_from_session_id.is.null,original_user_id.eq.${user.id}`);
   }
 
   if (vehicleId) {

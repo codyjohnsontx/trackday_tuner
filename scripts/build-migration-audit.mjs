@@ -756,6 +756,7 @@ export const MIGRATION_PROBES = {
       ...[
         ['vehicles', 'sold_at'],
         ['sessions', 'copied_from_session_id'],
+        ['sessions', 'original_user_id'],
         ['service_attachments', 'copied_from_attachment_id'],
         ['service_books', 'transferred_removed_entry_count'],
       ].map(
