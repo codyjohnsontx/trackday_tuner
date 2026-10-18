@@ -181,11 +181,11 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   -- there by name. Only the body fingerprint says the installed definition is
   -- this migration's; the other three read the security and grants it sets.
   -- 20260928002300 replaces the body, so its fingerprint is accepted here too,
-  -- as the 1400 row accepts its 1500 replacement.
+  -- as the 1400 row accepts its 1500 replacement, and so does 20261017000600.
   (25, '20260927002200_add_create_session_with_laps', 'function',
       'public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)',
       to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)') is not null
-           and (select md5(p.prosrc) in ('8c9d41c909128fbf696780c5b0c0d5ce', 'd511ff7c7be1ab357c5a1dd207c639ab')
+           and (select md5(p.prosrc) in ('8c9d41c909128fbf696780c5b0c0d5ce', 'd511ff7c7be1ab357c5a1dd207c639ab', 'f0381d69193d09359802464d0d1f7444')
                   and not p.prosecdef
                   and p.proconfig = array['search_path=""']
                   and has_function_privilege('authenticated', p.oid, 'execute')
@@ -204,7 +204,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   (26, '20260928002300_session_vehicle_ownership_and_deleted_sessions', 'function + trigger + table + policies',
       'create_session_with_laps cap and tombstones, deleted_sessions, sessions vehicle-owned policies',
       to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)') is not null
-           and (select md5(p.prosrc) = 'd511ff7c7be1ab357c5a1dd207c639ab'
+           and (select md5(p.prosrc) in ('d511ff7c7be1ab357c5a1dd207c639ab', 'f0381d69193d09359802464d0d1f7444')
                 from pg_proc p where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)'))
            and to_regprocedure('public.record_deleted_session()') is not null
            and (select md5(p.prosrc) = 'f683960a5a0bd7344368cc936e3120b4'
@@ -333,8 +333,8 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                     and not has_any_column_privilege('service_role', 'public.vehicle_readings', 'update')
                     and not has_table_privilege('service_role', 'public.vehicle_readings', 'delete')
           end
-      and (select md5(p.prosrc) = '45f9566e5babe570149dad981e5d1e6e' from pg_proc p where p.oid = to_regprocedure('public.service_entries_pin()'))
-      and (select md5(p.prosrc) = '6d6a5676ad5cdbaedb3b03f923987a2e' from pg_proc p where p.oid = to_regprocedure('public.record_service_entry_revision()'))
+      and (select md5(p.prosrc) in ('45f9566e5babe570149dad981e5d1e6e', 'bf026fe0e674aa3b26e57e8400f0405d') from pg_proc p where p.oid = to_regprocedure('public.service_entries_pin()'))
+      and (select md5(p.prosrc) in ('6d6a5676ad5cdbaedb3b03f923987a2e', '15a7ab3838d9d4e1ea53ccf226213cf7') from pg_proc p where p.oid = to_regprocedure('public.record_service_entry_revision()'))
       and (select md5(p.prosrc) = 'db3a88e2ea61179ccaefa5bed2007b11' from pg_proc p where p.oid = to_regprocedure('public.touch_service_entry()'))
       and (select md5(p.prosrc) = 'a054c4eeadd645b5206f678f2528796d' from pg_proc p where p.oid = to_regprocedure('public.sync_service_entry_reading()'))
       and (select md5(p.prosrc) = 'db5b07d99d872cfbb26237e4a654c631' from pg_proc p where p.oid = to_regprocedure('public.service_entry_snapshot(jsonb)'))),
@@ -348,7 +348,7 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   (33, '20261013000300_add_save_service_entry', 'function',
       'public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)',
       to_regprocedure('public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)') is not null
-           and (select md5(p.prosrc) = '686bb4ee3ad4d17d3292b6a22b25b30d'
+           and (select md5(p.prosrc) in ('686bb4ee3ad4d17d3292b6a22b25b30d', 'c15fd7d406e3dd73ed479ef21d7c83e4')
                   and not p.prosecdef
                   and p.proconfig = array['search_path=""']
                   and has_function_privilege('authenticated', p.oid, 'execute')
@@ -365,13 +365,13 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
   (34, '20261014000400_add_service_attachments', 'table + functions + bucket + cron job',
       'public.service_attachments, reserve/confirm_service_attachment, service_attachment_orphan_objects, bucket service-book, cron job purge-stale-service-attachments',
       to_regclass('public.service_attachments') is not null
-      and (select md5(p.prosrc) = 'df08a489fe80ce5fb364a5aa8dc3844c'
+      and (select md5(p.prosrc) in ('df08a489fe80ce5fb364a5aa8dc3844c', '52a88f0325d65d966e5c3b9b9729869b')
                   and p.prosecdef and p.proconfig = array['search_path=""']
                   and has_function_privilege('authenticated', p.oid, 'execute')
                   and not has_function_privilege('anon', p.oid, 'execute')
                   and not has_function_privilege('service_role', p.oid, 'execute')
              from pg_proc p where p.oid = to_regprocedure('public.reserve_service_attachment(uuid,uuid,text,text,integer)'))
-      and (select md5(p.prosrc) = '1cb3514415cafd0d9a09a357be7e3558'
+      and (select md5(p.prosrc) in ('1cb3514415cafd0d9a09a357be7e3558', 'fa38d6b1c35fb73180e79e293aa05b19')
                   and p.prosecdef and p.proconfig = array['search_path=""']
                   and has_function_privilege('authenticated', p.oid, 'execute')
                   and not has_function_privilege('anon', p.oid, 'execute')
@@ -421,7 +421,82 @@ with expected(ordinality, migration, object_kind, object_name, present) as (valu
                   and has_function_privilege('service_role', p.oid, 'execute')
                   and not has_function_privilege('anon', p.oid, 'execute')
                   and not has_function_privilege('authenticated', p.oid, 'execute')
-             from pg_proc p where p.oid = to_regprocedure('public.open_service_book_share(text,boolean,integer,integer)')))
+             from pg_proc p where p.oid = to_regprocedure('public.open_service_book_share(text,boolean,integer,integer)'))),
+  -- Handing a bike to a buyer: the handover table under RLS with no anon read
+  -- and no write for a rider or the service role, the four columns only the
+  -- copy writes, the three triggers that pin them and refuse a session on a
+  -- sold bike, the five handover functions by their bodies and execute, and
+  -- the six bodies it replaces by this file's fingerprint. Without the
+  -- replacements a sold bike still takes writes and copies count toward the
+  -- free caps; without the triggers a rider can mark a session copied.
+  (36, '20261017000600_add_service_book_transfer', 'table + columns + triggers + functions',
+      'public.service_book_transfers, vehicles.sold_at, sessions.copied_from_session_id, the handover functions',
+      to_regclass('public.service_book_transfers') is not null
+      and (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.service_book_transfers'))
+      and not has_table_privilege('anon', 'public.service_book_transfers', 'select')
+      and not has_any_column_privilege('authenticated', 'public.service_book_transfers', 'insert, update')
+      and not has_table_privilege('authenticated', 'public.service_book_transfers', 'delete')
+      and not has_any_column_privilege('service_role', 'public.service_book_transfers', 'insert, update')
+      and not has_column_privilege('authenticated', 'public.service_book_transfers', 'token_hash', 'select')
+      and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'vehicles' and column_name = 'sold_at')
+      and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'sessions' and column_name = 'copied_from_session_id')
+      and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'sessions' and column_name = 'original_user_id')
+      and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'service_attachments' and column_name = 'copied_from_attachment_id')
+      and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'service_books' and column_name = 'transferred_removed_entry_count')
+      and (select md5(p.prosrc) = 'bfe6637963bebf35067addade3df0d1a' and not p.prosecdef
+             from pg_proc p where p.oid = to_regprocedure('public.vehicles_pin_sold_at()'))
+      and exists (select 1 from pg_trigger t
+                   where t.tgrelid = to_regclass('public.vehicles')
+                     and t.tgfoid = to_regprocedure('public.vehicles_pin_sold_at()')
+                     and t.tgenabled = 'O' and not t.tgisinternal)
+      and (select md5(p.prosrc) = 'ded283e1ae283972ab8083602ecccc33' and not p.prosecdef
+             from pg_proc p where p.oid = to_regprocedure('public.sessions_pin_transfer_origin()'))
+      and exists (select 1 from pg_trigger t
+                   where t.tgrelid = to_regclass('public.sessions')
+                     and t.tgfoid = to_regprocedure('public.sessions_pin_transfer_origin()')
+                     and t.tgenabled = 'O' and not t.tgisinternal)
+      and (select md5(p.prosrc) = '2867f3235e6307c64060e4b0acc02e06' and not p.prosecdef
+             from pg_proc p where p.oid = to_regprocedure('public.sessions_refuse_sold_vehicle()'))
+      and exists (select 1 from pg_trigger t
+                   where t.tgrelid = to_regclass('public.sessions')
+                     and t.tgfoid = to_regprocedure('public.sessions_refuse_sold_vehicle()')
+                     and t.tgenabled = 'O' and not t.tgisinternal)
+      and (select md5(p.prosrc) = 'e7a2babae6af034e1725bfb8bdd678e3'
+                  and p.prosecdef and p.proconfig = array['search_path=""']
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                  and has_function_privilege('authenticated', p.oid, 'execute')
+                  and not has_function_privilege('service_role', p.oid, 'execute')
+             from pg_proc p where p.oid = to_regprocedure('public.create_service_book_transfer(uuid,text,text,numeric,numeric,text)'))
+      and (select md5(p.prosrc) = '4cc8b4ccfbdf5cd01b7300155cd18b6a'
+                  and p.prosecdef and p.proconfig = array['search_path=""']
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                  and has_function_privilege('authenticated', p.oid, 'execute')
+                  and not has_function_privilege('service_role', p.oid, 'execute')
+             from pg_proc p where p.oid = to_regprocedure('public.cancel_service_book_transfer(uuid)'))
+      and (select md5(p.prosrc) = '7689daf89e959c7f88d94e3615ddff3e'
+                  and p.prosecdef and p.proconfig = array['search_path=""']
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                  and has_function_privilege('authenticated', p.oid, 'execute')
+                  and not has_function_privilege('service_role', p.oid, 'execute')
+             from pg_proc p where p.oid = to_regprocedure('public.prepare_service_book_transfer_accept(text)'))
+      and (select md5(p.prosrc) = '7208dc0d69391aaba374d790b5155ba7'
+                  and p.prosecdef and p.proconfig = array['search_path=""']
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                  and has_function_privilege('authenticated', p.oid, 'execute')
+                  and not has_function_privilege('service_role', p.oid, 'execute')
+             from pg_proc p where p.oid = to_regprocedure('public.accept_service_book_transfer(text,jsonb)'))
+      and (select md5(p.prosrc) = '94acf7c4f500262b3eec070472d58788'
+                  and p.prosecdef and p.proconfig = array['search_path=""']
+                  and not has_function_privilege('anon', p.oid, 'execute')
+                  and not has_function_privilege('authenticated', p.oid, 'execute')
+                  and has_function_privilege('service_role', p.oid, 'execute')
+             from pg_proc p where p.oid = to_regprocedure('public.describe_service_book_transfer(text,uuid,text)'))
+      and (select md5(p.prosrc) = 'bf026fe0e674aa3b26e57e8400f0405d' from pg_proc p where p.oid = to_regprocedure('public.service_entries_pin()'))
+      and (select md5(p.prosrc) = '15a7ab3838d9d4e1ea53ccf226213cf7' from pg_proc p where p.oid = to_regprocedure('public.record_service_entry_revision()'))
+      and (select md5(p.prosrc) = 'f0381d69193d09359802464d0d1f7444' from pg_proc p where p.oid = to_regprocedure('public.create_session_with_laps(uuid,jsonb,jsonb,jsonb)'))
+      and (select md5(p.prosrc) = 'c15fd7d406e3dd73ed479ef21d7c83e4' from pg_proc p where p.oid = to_regprocedure('public.save_service_entry(uuid,uuid,jsonb,jsonb,jsonb)'))
+      and (select md5(p.prosrc) = '52a88f0325d65d966e5c3b9b9729869b' from pg_proc p where p.oid = to_regprocedure('public.reserve_service_attachment(uuid,uuid,text,text,integer)'))
+      and (select md5(p.prosrc) = 'fa38d6b1c35fb73180e79e293aa05b19' from pg_proc p where p.oid = to_regprocedure('public.confirm_service_attachment(uuid)')))
 )
 select ordinality as "#",
        migration,

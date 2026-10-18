@@ -80,9 +80,12 @@ export type CreatedSession =
  * Why a create was refused, for a caller that has to answer with a status
  * rather than a sentence. The server action shows the sentence and ignores this;
  * the phone's sync engine reads it to decide between parking an entry for the
- * rider (`invalid`, `plan_limit`, `id_taken`) and retrying it later (`fault`).
+ * rider (`invalid`, `plan_limit`, `id_taken`, `vehicle_sold`) and retrying it
+ * later (`fault`). `vehicle_sold` is a session for a bike the rider has since
+ * handed to a buyer - logged in the paddock the day after the sale, say - which
+ * no retry will ever store.
  */
-export type CreateSessionFailureKind = 'invalid' | 'plan_limit' | 'id_taken' | 'fault';
+export type CreateSessionFailureKind = 'invalid' | 'plan_limit' | 'id_taken' | 'vehicle_sold' | 'fault';
 
 export type CreateSessionResult =
   | { ok: true; data: CreatedSession }
@@ -132,6 +135,14 @@ export const SESSION_REFERENCE_GONE_MESSAGE =
  */
 export const SESSION_VEHICLE_NOT_OWNED_MESSAGE =
   'This session was not saved because the vehicle it names is not in your garage. Choose one of your vehicles and save it again.';
+
+/**
+ * The session names a bike the rider handed over to a buyer, whose copy of the
+ * history is read-only from then on (owner, TQ3). `create_session_with_laps`
+ * refuses it as `TT410` (20261017000600).
+ */
+export const SESSION_VEHICLE_SOLD_MESSAGE =
+  'This session was not saved because the bike it was logged against was handed over to a new owner. Your earlier sessions on it are kept, read-only.';
 
 function hasEnvironmentValues(environment: CreateSessionEnvironmentInput | null | undefined): boolean {
   if (!environment) return false;
@@ -402,6 +413,8 @@ const VEHICLE_NOT_OWNED_CODE = 'TT404';
  * last free slot cannot both pass - the reason the count moved there.
  */
 const PLAN_LIMIT_CODE = 'TT402';
+/** `create_session_with_laps` refusing a bike that was handed over (20261017000600). */
+const VEHICLE_SOLD_CODE = 'TT410';
 
 /**
  * What this rider already has under a session id: the session, or the record
@@ -530,6 +543,9 @@ async function insertSession({
     }
     if (error.code === PLAN_LIMIT_CODE) {
       return { status: 'answered', result: { ok: false, error: getFreePlanLimitMessage('sessions'), kind: 'plan_limit' } };
+    }
+    if (error.code === VEHICLE_SOLD_CODE) {
+      return { status: 'answered', result: { ok: false, error: SESSION_VEHICLE_SOLD_MESSAGE, kind: 'vehicle_sold' } };
     }
     report('session-create', new Error(error.message), {
       reason: error.code,

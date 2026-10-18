@@ -78,7 +78,7 @@ export function threeEntryBook(entries?: ServiceEntryRecord[]): SharedBookRows {
   return {
     input: {
       vehicle: { nickname: 'Blue R6', type: 'motorcycle', year: 2019, make: 'Yamaha', model: 'YZF-R6' },
-      book: { distance_unit: 'mi', owner_time_zone: 'America/Chicago' },
+      book: { distance_unit: 'mi', owner_time_zone: 'America/Chicago', transferred_removed_entry_count: 0 },
       fields: [],
       items: [
         {

@@ -30,8 +30,9 @@ import type { Profile } from '@/types';
  * THE STATUS IS THE PHONE'S RETRY DECISION, so it is chosen by who can fix the
  * failure rather than by what failed:
  * - 400, 402, 409 - the rider has to change something (a missing answer, the
- *   free-plan cap, an id already in use). The sync engine parks the entry with
- *   `error`, which is written for a rider, and never retries it on its own.
+ *   free-plan cap, an id already in use, a bike since handed over to a buyer).
+ *   The sync engine parks the entry with `error`, which is written for a
+ *   rider, and never retries it on its own.
  * - 401 - no usable session. The phone treats it as signed out.
  * - 503 - ours, and transient. The entry is retried with back-off, which is why
  *   an unreachable GoTrue is 503 and not 401: that would sign every rider out.
@@ -44,6 +45,7 @@ const STATUS_BY_KIND: Record<CreateSessionFailureKind, number> = {
   invalid: 400,
   plan_limit: 402,
   id_taken: 409,
+  vehicle_sold: 409,
   fault: 503,
 };
 

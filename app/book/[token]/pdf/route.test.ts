@@ -73,7 +73,7 @@ describe('a shared service book as a PDF', () => {
     expect(text).toContain('Blue R6');
     expect(text).toContain('Chain cleaned and adjusted');
     expect(text).toContain('Logged the day of service');
-    expect(text).toContain('1 entry removed by the owner');
+    expect(text).toContain('1 entry removed by an owner');
     expect(text).not.toContain('removed note text');
     expect(text).not.toContain('Jul 2026');
     // A download spends the link's rate limit but is not a view.

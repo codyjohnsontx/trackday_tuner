@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { DemoBanner } from '@/components/demo/demo-banner';
-import { getSessionEnvironments, getSessions, getTelemetrySummaries } from '@/lib/actions/sessions';
+import { getSessionCount, getSessionEnvironments, getSessions, getTelemetrySummaries } from '@/lib/actions/sessions';
 import { getVehicles, getUserProfile } from '@/lib/actions/vehicles';
 import { resolveQuestionRetention } from '@/lib/ai-question-retention';
 import { isDemoMode } from '@/lib/demo/mode';
@@ -17,11 +17,12 @@ import { effectiveTier, resolveUserAccess } from '@/lib/access';
 import { getFreePlanLimit, getFreePlanLimitTitle, isAtFreePlanLimit } from '@/lib/plans';
 
 export default async function SessionsPage() {
-  const [sessions, vehicles, profile, demoMode] = await Promise.all([
+  const [sessions, vehicles, profile, demoMode, sessionCount] = await Promise.all([
     getSessions(),
     getVehicles(),
     getUserProfile(),
     isDemoMode(),
+    getSessionCount(),
   ]);
   const sessionIds = sessions.map((session) => session.id);
   const [environments, telemetry] = await Promise.all([
@@ -32,10 +33,10 @@ export default async function SessionsPage() {
   const hasProAccess = resolveUserAccess(profile).hasProAccess;
   const isFree = !hasProAccess;
   const accessTier = effectiveTier(profile);
-  const atLimit = isAtFreePlanLimit('sessions', sessions.length, hasProAccess);
+  const atLimit = isAtFreePlanLimit('sessions', sessionCount, hasProAccess);
 
   const tierLabel = isFree
-    ? `Free plan · ${sessions.length}/${getFreePlanLimit('sessions')} sessions`
+    ? `Free plan · ${sessionCount}/${getFreePlanLimit('sessions')} sessions`
     : `Pro plan · ${sessions.length} session${sessions.length !== 1 ? 's' : ''}`;
 
   const vehicleMap = new Map(vehicles.map((v) => [v.id, v.nickname]));

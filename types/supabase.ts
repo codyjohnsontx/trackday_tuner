@@ -17,6 +17,7 @@ export type RecommendationStatus = 'proposed' | 'applied' | 'rejected' | 'supers
 export type SessionLapSource = 'manual' | 'import';
 export type AiRequestTextRoute = 'tuning_advice' | 'day_plan';
 export type DistanceUnit = 'mi' | 'km';
+export type ServiceBookTransferStatus = 'pending' | 'accepted' | 'cancelled';
 export type ServiceBookBuiltinField =
   | 'reading'
   | 'performed_by'
@@ -226,6 +227,12 @@ export type Database = {
           make: string | null;
           model: string | null;
           photo_url: string | null;
+          /**
+           * When the bike was handed over to a buyer (20261017000600): the
+           * seller's copy is read-only from then on. Written only by the
+           * handover's accept; a trigger keeps it against every Data API write.
+           */
+          sold_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -368,6 +375,18 @@ export type Database = {
            * (`lib/session-delete.ts`).
            */
           photo_url: string | null;
+          /**
+           * The seller's session a handover copied this one from - a pointer,
+           * never followed to their row. Copied sessions do not count toward the
+           * free cap. Set only by the handover; null on a rider's insert.
+           */
+          copied_from_session_id: string | null;
+          /**
+           * On a copy, the rider who logged the first session of its line. A copy
+           * that comes back to that rider counts toward their free cap again
+           * (owner, TQ7). Set only by the handover; null on a rider's insert.
+           */
+          original_user_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -458,6 +477,8 @@ export type Database = {
           /** The seller's book a transfer copied this one from; written only by the transfer. */
           transferred_from_book_id: string | null;
           transferred_at: string | null;
+          /** How many entries the seller had removed when the book was handed over; their content never comes over. */
+          transferred_removed_entry_count: number;
           /**
            * The owner's IANA zone, written by their browser the first time they
            * open the book or make a share link and never changed after; what
@@ -506,6 +527,39 @@ export type Database = {
         Update: {
           revoked_at?: string | null;
         };
+        Relationships: [];
+      };
+      /**
+       * A bike handed to a buyer (20261017000600). The seller reads their own,
+       * less the token's hash; only the handover functions write it.
+       */
+      service_book_transfers: {
+        Row: {
+          id: string;
+          book_id: string;
+          from_user_id: string;
+          to_email_normalized: string;
+          token_hash: string;
+          status: ServiceBookTransferStatus;
+          /** Fourteen days after creation; a pending row past it is expired. */
+          expires_at: string;
+          handover_hours: number | null;
+          handover_distance: number | null;
+          seller_time_zone: string | null;
+          /** The counts the handover screen showed the seller. */
+          summary: Json;
+          new_vehicle_id: string | null;
+          new_book_id: string | null;
+          session_id_map: Json;
+          attachment_id_map: Json;
+          to_user_id: string | null;
+          result: Json | null;
+          accepted_at: string | null;
+          cancelled_at: string | null;
+          created_at: string;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
         Relationships: [];
       };
       service_book_fields: {
@@ -722,6 +776,8 @@ export type Database = {
           uploaded_at: string | null;
           created_by: string;
           created_at: string;
+          /** The seller's attachment a handover copied this one from. Copies do not count toward the free allowance. */
+          copied_from_attachment_id: string | null;
         };
         /** The service role only; a rider reserves through the function. */
         Insert: {
@@ -1514,6 +1570,51 @@ export type Database = {
       };
     };
     Functions: {
+      /**
+       * The seller hands a book over (20261017000600). `p_token_hash` is the
+       * SHA-256 hex of the link's token. Returns the handover's id. TT404 not the
+       * caller's book, TT410 a sold bike, TT409 a pending handover already,
+       * 22023 the caller's own address or an unknown zone.
+       */
+      create_service_book_transfer: {
+        Args: {
+          p_book_id: string;
+          p_to_email: string;
+          p_token_hash: string;
+          p_handover_hours: number | null;
+          p_handover_distance: number | null;
+          p_time_zone: string | null;
+        };
+        Returns: string;
+      };
+      /** Withdraws the caller's pending handover; false when there was none. */
+      cancel_service_book_transfer: {
+        Args: { p_transfer_id: string };
+        Returns: boolean;
+      };
+      /** What a handover link may show the viewer; the service role only. */
+      describe_service_book_transfer: {
+        Args: { p_token: string; p_viewer_id: string | null; p_viewer_email: string | null };
+        Returns: Json;
+      };
+      /**
+       * Mints the buyer's ids and returns the storage copies to make before
+       * accept. TT404 a link not pending, TT403 the seller or another address,
+       * TT402 a free buyer already holding an unsold bike.
+       */
+      prepare_service_book_transfer_accept: {
+        Args: { p_token: string };
+        Returns: Json;
+      };
+      /**
+       * The copy, in one transaction: `{ vehicle_id, book_id, entries, sessions,
+       * attachments }`. TT409 when the bike changed since prepare or a copy has
+       * not landed; prepare's refusals otherwise.
+       */
+      accept_service_book_transfer: {
+        Args: { p_token: string; p_photo_urls: Json };
+        Returns: Json;
+      };
       reserve_service_attachment: {
         Args: {
           p_book_id: string;

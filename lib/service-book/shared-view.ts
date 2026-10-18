@@ -25,7 +25,8 @@ import { latestReading, type UsageReading } from '@/lib/service-book/usage';
 
 export interface SharedBookInput {
   vehicle: Pick<Tables<'vehicles'>, 'nickname' | 'type' | 'year' | 'make' | 'model'>;
-  book: Pick<Tables<'service_books'>, 'distance_unit' | 'owner_time_zone'>;
+  /** `transferred_removed_entry_count` is the removals the book came with from earlier owners. */
+  book: Pick<Tables<'service_books'>, 'distance_unit' | 'owner_time_zone' | 'transferred_removed_entry_count'>;
   fields: ServiceBookField[];
   items: ServiceItemRow[];
   /** Every entry of the book, removed ones included: those are counted, never shown. */
@@ -67,7 +68,10 @@ export interface SharedBookView {
   readings: SharedReading[];
   items: SharedItem[];
   entries: SharedEntry[];
-  /** Entries the owner removed: the line "N entries removed by the owner". */
+  /**
+   * Entries removed by any owner across the bike's history, those the book came
+   * with at handover included: the line "N entries removed by an owner".
+   */
   removedCount: number;
   /** Whether the entries carry their labels, which needs the owner's zone. */
   labelled: boolean;
@@ -80,7 +84,7 @@ export function serviceYearOf(date: unknown): number | null {
 
 export function describeRemovedEntries(count: number): string | null {
   if (count <= 0) return null;
-  return `${count} ${count === 1 ? 'entry' : 'entries'} removed by the owner`;
+  return `${count} ${count === 1 ? 'entry' : 'entries'} removed by an owner`;
 }
 
 function readingsOf(readings: readonly UsageReading[], unit: DistanceUnit): SharedReading[] {
@@ -159,7 +163,7 @@ export function buildSharedBookView(input: SharedBookInput): SharedBookView {
         : [],
       attachments: entry.attachments,
     })),
-    removedCount: input.entries.length - live.length,
+    removedCount: input.book.transferred_removed_entry_count + input.entries.length - live.length,
     labelled: timeZone !== null,
   };
 }

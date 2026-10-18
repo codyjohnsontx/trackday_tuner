@@ -5,7 +5,7 @@ import { VehicleForm } from '@/components/garage/vehicle-form';
 import { isDemoMode } from '@/lib/demo/mode';
 import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
-import { isAtFreePlanLimit } from '@/lib/plans';
+import { isAtFreePlanLimit, vehiclesTowardPlan } from '@/lib/plans';
 import { pageTitleClass } from '@/components/ui/page-header';
 import { cn } from '@/lib/utils';
 
@@ -22,7 +22,7 @@ export default async function NewVehiclePage() {
 
   // Same gate as the New Session route: createVehicle refuses past the free
   // limit, so the form behind it is a form that cannot save.
-  if (isAtFreePlanLimit('vehicles', vehicles.length, resolveUserAccess(profile).hasProAccess)) {
+  if (isAtFreePlanLimit('vehicles', vehiclesTowardPlan(vehicles), resolveUserAccess(profile).hasProAccess)) {
     return (
       <PlanLimitNotice
         resource="vehicles"

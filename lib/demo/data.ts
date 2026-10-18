@@ -57,6 +57,7 @@ export const DEMO_VEHICLES: Vehicle[] = [
     make: 'Yamaha',
     model: 'YZF-R6',
     photo_url: null,
+    sold_at: null,
     created_at: createdAt,
     updated_at: createdAt,
   },
@@ -145,6 +146,8 @@ export const DEMO_SESSIONS: Session[] = [
     notes:
       'Hotter later session. Rear started feeling greasy after four laps and exit drive fell off. Keep the better front setup from S3, but watch rear pressure as track temp rises.',
     photo_url: null,
+    copied_from_session_id: null,
+    original_user_id: null,
     created_at: '2026-05-18T19:45:00.000Z',
     updated_at: '2026-05-18T19:45:00.000Z',
   },
@@ -189,6 +192,8 @@ export const DEMO_SESSIONS: Session[] = [
     notes:
       'Lowered front pressure and softened front compression from S2. Better turn-in and front compliance. Bike finished corners without needing extra bar pressure.',
     photo_url: null,
+    copied_from_session_id: null,
+    original_user_id: null,
     created_at: '2026-05-18T16:55:00.000Z',
     updated_at: '2026-05-18T16:55:00.000Z',
   },
@@ -233,6 +238,8 @@ export const DEMO_SESSIONS: Session[] = [
     notes:
       'Raised front pressure and added rebound control. Front pushed mid-corner and the bike was harder to finish turns. Felt worse than baseline.',
     photo_url: null,
+    copied_from_session_id: null,
+    original_user_id: null,
     created_at: '2026-05-18T15:35:00.000Z',
     updated_at: '2026-05-18T15:35:00.000Z',
   },
@@ -277,6 +284,8 @@ export const DEMO_SESSIONS: Session[] = [
     notes:
       'Neutral baseline. Stable on entry and rear drive was acceptable. Front gave good feedback through long right-handers.',
     photo_url: null,
+    copied_from_session_id: null,
+    original_user_id: null,
     created_at: '2026-05-18T14:10:00.000Z',
     updated_at: '2026-05-18T14:10:00.000Z',
   },

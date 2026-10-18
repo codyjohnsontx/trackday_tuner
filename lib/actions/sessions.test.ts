@@ -176,6 +176,8 @@ const createdSession: Session = {
   extra_modules: null,
   notes: 'baseline',
   photo_url: null,
+  copied_from_session_id: null,
+  original_user_id: null,
   created_at: '2026-02-24T09:30:00Z',
   updated_at: '2026-02-24T09:30:00Z',
 };
@@ -622,6 +624,8 @@ describe('sessions actions', () => {
       extra_modules: null,
       notes: null,
       photo_url: null,
+      copied_from_session_id: null,
+      original_user_id: null,
       created_at: '2026-02-24T12:00:00Z',
       updated_at: '2026-02-24T12:00:00Z',
     };
@@ -667,6 +671,8 @@ describe('sessions actions', () => {
       extra_modules: null,
       notes: null,
       photo_url: null,
+      copied_from_session_id: null,
+      original_user_id: null,
       created_at: '2026-02-24T12:00:00Z',
       updated_at: '2026-02-24T12:00:00Z',
     };

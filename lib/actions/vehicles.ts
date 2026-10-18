@@ -78,7 +78,9 @@ export async function createVehicle(
     const { count } = await supabase
       .from('vehicles')
       .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id);
+      .eq('user_id', user.id)
+      // A bike handed to a buyer no longer counts (vehiclesTowardPlan).
+      .is('sold_at', null);
 
     if ((count ?? 0) >= getFreePlanLimit('vehicles')) {
       return {

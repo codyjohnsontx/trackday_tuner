@@ -16,6 +16,7 @@ const motorcycle: Vehicle = {
   make: 'Yamaha',
   model: 'YZF-R6',
   photo_url: null,
+  sold_at: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 };
@@ -67,6 +68,8 @@ function session(overrides: Partial<Session> = {}): Session {
     },
     notes: 'Good drive, watch T5.',
     photo_url: null,
+    copied_from_session_id: null,
+    original_user_id: null,
     created_at: '2026-05-01T09:00:00Z',
     updated_at: '2026-05-01T09:00:00Z',
     ...overrides,

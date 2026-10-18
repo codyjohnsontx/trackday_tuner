@@ -45,6 +45,7 @@ function data(ownerTimeZone: string | null): ServiceBookData {
       default_session_distance: null,
       transferred_from_book_id: null,
       transferred_at: null,
+      transferred_removed_entry_count: 0,
       owner_time_zone: ownerTimeZone,
       created_at: '2026-09-01T00:00:00Z',
       updated_at: '2026-09-01T00:00:00Z',
