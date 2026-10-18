@@ -13,7 +13,25 @@ import {
  */
 export type SkippableSource =
   | { kind: 'recommendation'; id: string }
-  | { kind: 'sessionEnvironment' };
+  | { kind: 'sessionEnvironment' }
+  /**
+   * A session that came with a bike handed over by its previous owner
+   * (`sessions.copied_from_session_id`, 20261017000600), printed as context -
+   * the previous session, a similar session, a day-plan recent session - and
+   * dropped whole, with everything derived from it.
+   */
+  | { kind: 'copiedSession'; id: string };
+
+/**
+ * Who wrote a stored value: the rider reading the answer, or a previous owner
+ * of the bike whose rows came over at handover. The stored-text screen runs
+ * the narrower `STORED_TEXT_INJECTION_PATTERNS` only on the rider's own text -
+ * the argument for the narrower set is that the attacker and the victim are
+ * the same person, and a handover is the one write path into a rider's rows
+ * that someone else holds. Text a previous owner wrote gets the full submitted
+ * set, as if a stranger had typed it into the request.
+ */
+export type RiderTextAuthor = 'rider' | 'previous_owner';
 
 /**
  * A stored free-text value one of the AI prompts interpolates, paired with a
@@ -43,11 +61,14 @@ export type SkippableSource =
  * `onMatch` is required and has no default, because choosing between those two
  * is the safety decision and a field added without making it is a silent hole.
  * `source` is required on the skip branch: skipping only means anything if the
- * caller can remove exactly that value from the prompt.
+ * caller can remove exactly that value from the prompt. `author` is required
+ * for the same reason: it picks which pattern set the value is screened with,
+ * and a field added without saying who wrote it would be screened as the
+ * rider's own.
  */
 export type RiderTextField =
-  | { onMatch: 'refuse'; label: string; value: string }
-  | { onMatch: 'skip'; label: string; value: string; source: SkippableSource };
+  | { onMatch: 'refuse'; author: RiderTextAuthor; label: string; value: string }
+  | { onMatch: 'skip'; author: RiderTextAuthor; label: string; value: string; source: SkippableSource };
 
 /** Identity of a source, for de-duplicating drops reported by several fields. */
 function skippableSourceKey(source: SkippableSource): string {
@@ -56,6 +77,8 @@ function skippableSourceKey(source: SkippableSource): string {
       return `recommendation:${source.id}`;
     case 'sessionEnvironment':
       return 'sessionEnvironment';
+    case 'copiedSession':
+      return `copiedSession:${source.id}`;
     default: {
       const unhandled: never = source;
       throw new Error(`Unhandled skippable source: ${JSON.stringify(unhandled)}`);
@@ -156,7 +179,9 @@ interface NormalizeAdviceResponseInput {
  * strictly weaker than the bare phrase against a determined attacker. It is
  * acceptable because for STORED text the attacker and the victim are the same
  * person: every row reaching these prompts is RLS-scoped to the requesting
- * rider, and there is no shared, imported or third-party write path, so working
+ * rider, and the one write path into a rider's rows that someone else holds -
+ * a bike handed over by its previous owner (20261017000600) - is screened with
+ * the full submitted set instead, by `RiderTextAuthor`. So working
  * around this manipulates only your own advice. `evaluateAdvicePolicy` then
  * still force-refuses unless the result names a vocabulary component and
  * direction, a magnitude under its ceiling, a retrieved citation and real
@@ -536,7 +561,10 @@ export function classifyStoredRiderText(
   for (const field of input.fields) {
     const value = typeof field.value === 'string' ? field.value.trim() : '';
     if (!value) continue;
-    if (countMatches(value, STORED_TEXT_INJECTION_PATTERNS) === 0) continue;
+    // A previous owner's text is a third party's, so it gets the full set the
+    // request screen uses - see `RiderTextAuthor`.
+    const patterns = field.author === 'previous_owner' ? PROMPT_INJECTION_PATTERNS : STORED_TEXT_INJECTION_PATTERNS;
+    if (countMatches(value, patterns) === 0) continue;
     if (field.onMatch === 'skip') {
       const key = skippableSourceKey(field.source);
       if (!seenSources.has(key)) {

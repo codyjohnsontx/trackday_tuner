@@ -840,6 +840,29 @@ cannot weaken them and a new writer does not have to remember them:
   does, so a write racing accept waits and then sees it sold.
   `tests/db/service-book-transfer.spec.ts` proves it as two riders; the hosted
   paste is "Hand a service book to a buyer, by hand".
+- **The buyer takes the bike at `/transfer/[token]`**, outside `(app)` so a
+  signed-out buyer is offered sign-in and comes back through `/login?next=`
+  (the one `next` the login page reads, through `sanitizeNextPath`). The page
+  asks `describe_service_book_transfer` with the service role for the viewer
+  signed in now, prints what `lib/service-book/handover-view.ts` makes of the
+  answer, and shows the bike only to the recipient of a pending link; every
+  other link reads the same way. Accept is `takeOverServiceBook`
+  (`lib/service-book-transfer-accept.ts`): prepare, copy the objects ten at a
+  time with the service role (a destination already there counts as done),
+  accept, and again on TT409 up to three times, taking the public-bucket
+  copies back when it gives up. A copied entry reads "Logged by a previous
+  owner, handed over on <date>" (`describeEntryProvenance`, dated from the
+  book's `transferred_at` in its pinned zone) with the seller's edits counted
+  below the last `transferred` revision and the buyer's above it; it opens
+  read-only with only Remove, since the database refuses every other change
+  (TT403). The book's banner and its "N entries removed by an owner before the
+  handover" line come from `describeReceivedHistory`, which counts the rows'
+  own `copied_from_*` pointers. **Nothing follows one of those pointers to the
+  other rider's row** - a cap reads one as a null check, a screen as a boolean
+  - and `tests/unit/transfer-pointers-never-followed.test.ts` sweeps `app/`,
+  `lib/` and `components/` for a filter that does.
+  `tests/e2e/service-book-handover.spec.ts` is the two-rider walk and records
+  the copy's wall time for a 25-receipt bike.
 
 `tests/db/service-book.spec.ts` proves each of these against a real database.
 
@@ -1442,6 +1465,20 @@ the whole preflight after the screen and a probe costs nothing but also *counts*
 nothing, so the one path that refuses can be looped forever. Put it before and
 every refused probe spends a slot. Day-plan runs throttle, screen, reserve;
 tuning-advice classifies after the whole preflight and needs no split.
+
+**A session that came with a bike handed over by its previous owner is a third
+party's text.** The seller's notes and setup strings sit in the buyer's rows
+(`copied_from_session_id`) and reach the buyer's prompts as their own would,
+so `sessionDisposition` (`lib/rag/prompt.ts`) screens one with the FULL
+submitted pattern set - `RiderTextField.author` picks the set, and
+`classifyStoredRiderText` reads it - and, printed as context (the previous
+session, a similar session, a day-plan recent session), SKIPS it on a match:
+dropped from the prompt, from `allowedSessionIds` and from the day trend and
+the `history` and `manual` flags, through `dropScreenedSources` and day-plan's
+own `dropCopiedSessionsFromDayPlan`. The subject session cannot be dropped,
+so it refuses with a label ending ", which came with the bike"; the buyer owns
+the row and the session form edits it. Feedback and change records on a copied
+session carry no mark and stay on the rider's side, which is recorded there.
 
 **The two passes are not the same screen, and the asymmetry is deliberate.**
 Stored text runs a *narrower* pattern set than submitted text, in two places now.

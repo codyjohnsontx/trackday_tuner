@@ -195,7 +195,7 @@ describe('classifyStoredRiderText', () => {
   function fields(...pairs: Array<[string, string | null]>): RiderTextField[] {
     return pairs
       .filter((pair): pair is [string, string] => typeof pair[1] === 'string')
-      .map(([label, value]) => ({ onMatch: 'refuse' as const, label, value }));
+      .map(([label, value]) => ({ onMatch: 'refuse' as const, author: 'rider' as const, label, value }));
   }
 
   // Fields the rider has no way to reach, so a refusal naming one would be a
@@ -203,6 +203,7 @@ describe('classifyStoredRiderText', () => {
   function skipFields(source: SkippableSource, ...values: string[]): RiderTextField[] {
     return values.map((value) => ({
       onMatch: 'skip' as const,
+      author: 'rider' as const,
       source,
       label: 'a field the rider cannot reach',
       value,

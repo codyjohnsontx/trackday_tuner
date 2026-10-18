@@ -39,7 +39,7 @@ function entry(id: string, extra: Partial<ServiceEntryRecord> = {}): ServiceEntr
 function input(extra: Partial<SharedBookInput> = {}): SharedBookInput {
   return {
     vehicle: { nickname: 'R6', type: 'motorcycle', year: 2019, make: 'Yamaha', model: 'YZF-R6' },
-    book: { distance_unit: 'mi', owner_time_zone: 'America/Chicago', transferred_removed_entry_count: 0 },
+    book: { distance_unit: 'mi', owner_time_zone: 'America/Chicago', transferred_removed_entry_count: 0, transferred_at: null },
     fields: [],
     items: [
       {
@@ -71,13 +71,13 @@ describe('a shared service book', () => {
 
     // The same entry in another owner's zone reads differently, which is why the
     // zone has to be the owner's and never the viewer's.
-    const elsewhere = buildSharedBookView(input({ book: { distance_unit: 'mi', owner_time_zone: 'UTC', transferred_removed_entry_count: 0 } }));
+    const elsewhere = buildSharedBookView(input({ book: { distance_unit: 'mi', owner_time_zone: 'UTC', transferred_removed_entry_count: 0, transferred_at: null } }));
     expect(elsewhere.entries[0].labels).toEqual(['Logged 1 day after service', 'Unedited']);
   });
 
   it('carries no labels when the owner zone is missing or unknown, rather than guessing one', () => {
     for (const owner_time_zone of [null, 'Mars/Olympus_Mons']) {
-      const view = buildSharedBookView(input({ book: { distance_unit: 'mi', owner_time_zone, transferred_removed_entry_count: 0 } }));
+      const view = buildSharedBookView(input({ book: { distance_unit: 'mi', owner_time_zone, transferred_removed_entry_count: 0, transferred_at: null } }));
       expect(view.labelled).toBe(false);
       expect(view.entries[0].labels).toEqual([]);
     }
@@ -100,7 +100,7 @@ describe('a shared service book', () => {
   });
 
   it('counts the removals a book came with from earlier owners, and its own on top', () => {
-    const book = { distance_unit: 'mi' as const, owner_time_zone: 'America/Chicago', transferred_removed_entry_count: 3 };
+    const book = { distance_unit: 'mi' as const, owner_time_zone: 'America/Chicago', transferred_removed_entry_count: 3, transferred_at: null };
     const inherited = buildSharedBookView(input({ book }));
     expect(inherited.entries).toHaveLength(1);
     expect(inherited.removedCount).toBe(3);
@@ -124,5 +124,33 @@ describe('a shared service book', () => {
       { label: 'Cost', value: '$45.00' },
     ]);
     expect(view.items).toEqual([{ id: ITEM_ID, name: 'Engine oil and filter', interval: 'every 15 h', lastDone: '20 Sep 2026' }]);
+  });
+});
+
+describe('an entry that came with the bike', () => {
+  it('reads as a previous owner\'s, dated the handover in the owner zone, while the owner\'s own entry does not', () => {
+    const copied = entry('00000000-0000-4000-8000-000000000002', {
+      copied_from_entry_id: '00000000-0000-4000-8000-0000000000e2',
+      revision: 2,
+      revisions: [
+        { revision: 1, kind: 'created', changed_at: '2026-09-21T01:30:00Z' },
+        { revision: 2, kind: 'transferred', changed_at: '2026-10-18T02:30:00Z' },
+      ],
+    });
+    const view = buildSharedBookView(
+      input({
+        book: { distance_unit: 'mi', owner_time_zone: 'America/Chicago', transferred_removed_entry_count: 0, transferred_at: '2026-10-18T02:30:00Z' },
+        entries: [entry('00000000-0000-4000-8000-000000000001'), copied],
+      }),
+    );
+    const byId = new Map(view.entries.map((shared) => [shared.id, shared.labels]));
+    expect(byId.get(copied.id)).toContain('Logged by a previous owner, handed over on 17 Oct 2026');
+    expect(byId.get('00000000-0000-4000-8000-000000000001')!.some((label) => label.startsWith('Logged by a previous owner'))).toBe(false);
+  });
+
+  it('never labels an entry whose read left the pointer out', () => {
+    const unread = { ...entry('00000000-0000-4000-8000-000000000003'), copied_from_entry_id: undefined } as unknown as ReturnType<typeof entry>;
+    const view = buildSharedBookView(input({ entries: [unread] }));
+    expect(view.entries[0].labels.some((label) => label.startsWith('Logged by a previous owner'))).toBe(false);
   });
 });

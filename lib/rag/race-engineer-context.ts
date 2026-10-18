@@ -203,6 +203,18 @@ export function hasDegradedContextPrefix(dayTrend: string): boolean {
   return dayTrend.startsWith(DEGRADED_CONTEXT_PREFIX);
 }
 
+/**
+ * The day trend the day-plan route writes when a rider has no session history
+ * on the vehicle. Here rather than in the route because `prepareDayPlanPrompt`
+ * rebuilds it when the screen drops the only sessions there were, and two
+ * copies of one sentence drift.
+ */
+export function dayPlanNoHistoryTrend(hasEnvironment: boolean): string {
+  return hasEnvironment
+    ? 'A planned environment is available, but there is no prior session history for this vehicle yet.'
+    : 'No planned environment or prior session history is available yet.';
+}
+
 export function buildDayTrend(
   current: Session,
   currentEnv: SessionEnvironment | null,

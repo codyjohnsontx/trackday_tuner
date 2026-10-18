@@ -267,10 +267,17 @@ describe('every storage bucket the application uploads to is provisioned by the 
           'lib/service-book-share.ts',
         ],
       },
+      // The handover copies a seller's photos into the buyer's folders with
+      // the service role and stores the copies' public URLs (20261017000600).
+      {
+        name: 'session-photos',
+        readPublicly: true,
+        files: ['lib/service-book-transfer-accept.ts'],
+      },
       {
         name: 'vehicle-photos',
         readPublicly: true,
-        files: ['components/garage/vehicle-form.tsx'],
+        files: ['components/garage/vehicle-form.tsx', 'lib/service-book-transfer-accept.ts'],
       },
     ]);
   });

@@ -7,6 +7,7 @@ import {
 } from '@/lib/rag/component-vocabulary';
 import {
   classifyStoredRiderText,
+  type RiderTextAuthor,
   type RiderTextField,
   type SkippableSource,
 } from '@/lib/rag/domain-guard';
@@ -18,7 +19,9 @@ import {
 import type { RetrievedChunk } from '@/lib/rag/types';
 import {
   buildDayTrend,
+  dayPlanNoHistoryTrend,
   hasDegradedContextPrefix,
+  hasManualSessionData,
   withDegradedContextPrefix,
   type RaceEngineerContext,
 } from '@/lib/rag/race-engineer-context';
@@ -530,12 +533,13 @@ function buildDayPlanPrompt(input: BuildDayPlanInput): string {
 }
 
 type RiderTextDisposition =
-  | { onMatch: 'refuse' }
-  | { onMatch: 'skip'; source: SkippableSource };
+  | { onMatch: 'refuse'; author: RiderTextAuthor }
+  | { onMatch: 'skip'; author: RiderTextAuthor; source: SkippableSource };
 
-const REFUSE_ON_MATCH: RiderTextDisposition = { onMatch: 'refuse' };
+const REFUSE_ON_MATCH: RiderTextDisposition = { onMatch: 'refuse', author: 'rider' };
 const SKIP_SESSION_ENVIRONMENT: RiderTextDisposition = {
   onMatch: 'skip',
+  author: 'rider',
   source: { kind: 'sessionEnvironment' },
 };
 
@@ -548,9 +552,47 @@ function pushRiderText(
   if (typeof value !== 'string' || value.trim().length === 0) return;
   fields.push(
     disposition.onMatch === 'skip'
-      ? { onMatch: 'skip', source: disposition.source, label, value }
-      : { onMatch: 'refuse', label, value },
+      ? { onMatch: 'skip', author: disposition.author, source: disposition.source, label, value }
+      : { onMatch: 'refuse', author: disposition.author, label, value },
   );
+}
+
+/**
+ * Where a session sits in a prompt: the SUBJECT is the session the rider asked
+ * about, which the prompt cannot do without; CONTEXT is every other session it
+ * prints - the previous session, a similar session, a day-plan recent session.
+ */
+type SessionRole = 'subject' | 'context';
+
+/**
+ * How a session's stored strings are disposed, and that is where a bike handed
+ * over by its previous owner (`copied_from_session_id`, 20261017000600) enters
+ * the screen. The seller's notes and setup strings now sit in the buyer's rows,
+ * so they reach the buyer's prompts exactly as their own do - and the seller
+ * is a third party to the buyer's answer, so a copied session is screened with
+ * the FULL submitted pattern set (`RiderTextAuthor`), not the narrower stored
+ * one whose justification is that the author and the reader are one person.
+ *
+ * What a match DOES follows the role. A copied session printed as CONTEXT is
+ * SKIPPED: dropped from the prompt, from the ids the policy accepts and from
+ * every flag derived from it, because a refusal over a note the buyer did not
+ * write - on a session the similar-session search picked for them - would
+ * refuse every question on the bike until they found and rewrote it. The
+ * SUBJECT cannot be dropped, so it REFUSES, and the label says the session
+ * came with the bike: the buyer owns that row now and the session form edits
+ * its notes, so the refusal names something they can open. A session the
+ * rider logged themselves keeps the narrower set and refuses, as before.
+ *
+ * `session_feedback` and `session_changes` on a copied session carry no mark
+ * of their own and stay on the rider's side of the screen: they are the
+ * buyer's rows, the outcome panel rewrites them, and a refusal names that
+ * panel. Recorded rather than widened here.
+ */
+function sessionDisposition(session: Session, role: SessionRole): RiderTextDisposition {
+  if (!cameWithTheBike(session)) return REFUSE_ON_MATCH;
+  return role === 'subject'
+    ? { onMatch: 'refuse', author: 'previous_owner' }
+    : { onMatch: 'skip', author: 'previous_owner', source: { kind: 'copiedSession', id: session.id } };
 }
 
 function collectVehicleRiderText(vehicle: Vehicle): RiderTextField[] {
@@ -597,16 +639,30 @@ function collectEnvironmentRiderText(
  * an ordinal here would name a position no screen shows.
  */
 function sessionLabelSuffix(session: Session): string {
-  return session.session_number
+  const where = session.session_number
     ? `on session ${session.session_number} of your ${session.date} track day`
     : `on your ${session.date} session`;
+  // A buyer reading a refusal over a note they never wrote needs to know why
+  // it is in their book at all.
+  return cameWithTheBike(session) ? `${where}, which came with the bike` : where;
 }
 
-function collectSessionRiderText(session: Session): RiderTextField[] {
+/**
+ * Whether a session came over at handover. Read as "carries a pointer" rather
+ * than "is not null": a row read through `readStoredSession` always has the
+ * column, but these builders take any `Session`, and a fixture or a caller that
+ * left it out is the rider's own session, not a copied one.
+ */
+function cameWithTheBike(session: Session): boolean {
+  return typeof session.copied_from_session_id === 'string' && session.copied_from_session_id.length > 0;
+}
+
+function collectSessionRiderText(session: Session, role: SessionRole): RiderTextField[] {
   const fields: RiderTextField[] = [];
   const suffix = sessionLabelSuffix(session);
+  const disposition = sessionDisposition(session, role);
   const add = (name: string, value: string | null | undefined) =>
-    pushRiderText(fields, REFUSE_ON_MATCH, `the ${name} ${suffix}`, value);
+    pushRiderText(fields, disposition, `the ${name} ${suffix}`, value);
 
   add('track name', session.track_name);
   add('tyre condition', session.tires?.condition);
@@ -717,12 +773,15 @@ function collectRaceEngineerContextRiderText(
   // `formatRaceEngineerContext` prints a narrower slice of a similar session
   // than the recent-sessions block does, and draws from a wider candidate list,
   // so these are collected separately rather than assumed already covered.
+  // A similar session that came with the bike is context, so it skips - see
+  // `sessionDisposition`.
   for (const item of context.similarSessions) {
     const suffix = sessionLabelSuffix(item.session);
-    pushRiderText(fields, REFUSE_ON_MATCH, `the track name ${suffix}`, item.session.track_name);
-    pushRiderText(fields, REFUSE_ON_MATCH, `the front tyre pressure ${suffix}`, item.session.tires?.front?.pressure);
-    pushRiderText(fields, REFUSE_ON_MATCH, `the rear tyre pressure ${suffix}`, item.session.tires?.rear?.pressure);
-    pushRiderText(fields, REFUSE_ON_MATCH, `the notes ${suffix}`, item.session.notes);
+    const disposition = sessionDisposition(item.session, 'context');
+    pushRiderText(fields, disposition, `the track name ${suffix}`, item.session.track_name);
+    pushRiderText(fields, disposition, `the front tyre pressure ${suffix}`, item.session.tires?.front?.pressure);
+    pushRiderText(fields, disposition, `the rear tyre pressure ${suffix}`, item.session.tires?.rear?.pressure);
+    pushRiderText(fields, disposition, `the notes ${suffix}`, item.session.notes);
   }
 
   // Dated in the rider's zone exactly as the memory label above is, and worded
@@ -753,6 +812,7 @@ function collectRaceEngineerContextRiderText(
   for (const recommendation of context.recentRecommendations) {
     const disposition = {
       onMatch: 'skip',
+      author: 'rider',
       source: { kind: 'recommendation', id: recommendation.id },
     } as const;
     const label = `the saved recommendation from ${recommendation.created_at.slice(0, 10)}`;
@@ -891,6 +951,12 @@ function collectRaceEngineerContextRiderText(
  *   it, which is why the disposition is a parameter of
  *   `collectEnvironmentRiderText` and why both call sites say so inline.
  *
+ * - A session that came with a bike handed over by its previous owner, printed
+ *   as CONTEXT on either route. Who wrote it is what moves it to the full
+ *   pattern set; what the rider can reach is still what decides the
+ *   disposition, and the reasoning - including why the SUBJECT session refuses
+ *   instead - is on `sessionDisposition`.
+ *
  * Adding a skip means teaching `dropScreenedSources` to remove it. That is
  * enforced rather than remembered: `SkippableSource` is a closed union and that
  * function switches on it exhaustively.
@@ -924,7 +990,7 @@ function collectDayPlanRiderText(
     ...requestFields,
     ...collectEnvironmentRiderText(input.environment, 'you entered for today', REFUSE_ON_MATCH),
     ...collectVehicleRiderText(input.vehicle),
-    ...input.recentSessions.flatMap(collectSessionRiderText),
+    ...input.recentSessions.flatMap((session) => collectSessionRiderText(session, 'context')),
     ...collectRaceEngineerContextRiderText(
       input.raceEngineerContext,
       'you entered for today',
@@ -954,8 +1020,8 @@ function collectTuningAdviceRiderText(
 ): RiderTextField[] {
   return [
     ...collectVehicleRiderText(input.vehicle),
-    ...collectSessionRiderText(input.session),
-    ...(input.previousSession ? collectSessionRiderText(input.previousSession) : []),
+    ...collectSessionRiderText(input.session, 'subject'),
+    ...(input.previousSession ? collectSessionRiderText(input.previousSession, 'context') : []),
     // SKIP on the environment here, and REFUSE on it in the day-plan collector
     // above. The inconsistency is the point and is deliberate:
     // `formatEnvironmentBlock('Current environment', ...)` and the adaptive
@@ -1086,10 +1152,18 @@ function dropScreenedSources(
   droppedSources: readonly SkippableSource[],
   session: Session,
   loadedRecommendations: RaceEngineerContext['recentRecommendations'],
+  /**
+   * Copied sessions the CALLER already removed from the part of the prompt it
+   * owns - the previous session, the day-plan recent sessions - which live
+   * outside the context. A dropped copied session has to be found in one place
+   * or the other, or the drop removed nothing.
+   */
+  droppedElsewhere: ReadonlySet<string>,
 ): RaceEngineerContext {
   if (droppedSources.length === 0) return context;
 
   const droppedRecommendationIds = new Set<string>();
+  const droppedCopiedSessionIds = new Set<string>();
   let dropSessionEnvironment = false;
 
   for (const source of droppedSources) {
@@ -1099,6 +1173,9 @@ function dropScreenedSources(
         break;
       case 'sessionEnvironment':
         dropSessionEnvironment = true;
+        break;
+      case 'copiedSession':
+        droppedCopiedSessionIds.add(source.id);
         break;
       default: {
         const unhandled: never = source;
@@ -1122,6 +1199,22 @@ function dropScreenedSources(
   if (dropSessionEnvironment && !context.sessionEnvironment) {
     throw new Error('A screened session environment was not in the context it was collected from.');
   }
+
+  // A copied session is dropped from the similar sessions here; the previous
+  // session and the day-plan recent sessions are the caller's to drop, and it
+  // says which it did. One that is in neither place was not printed where it
+  // was collected from, and the value would stay in the prompt unscreened.
+  let similarSessions = context.similarSessions;
+  if (droppedCopiedSessionIds.size > 0) {
+    similarSessions = context.similarSessions.filter((item) => !droppedCopiedSessionIds.has(item.session.id));
+    for (const id of droppedCopiedSessionIds) {
+      const inSimilar = context.similarSessions.some((item) => item.session.id === id);
+      if (!inSimilar && !droppedElsewhere.has(id)) {
+        throw new Error('A screened copied session was not in the prompt it was collected from.');
+      }
+    }
+  }
+  const similarChanged = similarSessions.length !== context.similarSessions.length;
 
   // `dataUsed.feedback` is derived from BOTH lists the loader had
   // (`recentFeedback.length > 0 || recentRecommendations.some(status !== 'proposed')`
@@ -1150,32 +1243,44 @@ function dropScreenedSources(
             ),
         };
 
-  if (!dropSessionEnvironment) {
+  if (!dropSessionEnvironment && !similarChanged) {
     return { ...context, recentRecommendations, dataUsed: dataUsedAfterDrops };
   }
 
+  const sessionEnvironment = dropSessionEnvironment ? null : context.sessionEnvironment;
   return {
     ...context,
     recentRecommendations,
-    sessionEnvironment: null,
-    // Both of these are read off the environment where the context is built, and
-    // both reach the model: `dataUsed.weather` as `data_used` through the
-    // policy's fallback, `dayTrend` printed straight into the prompt. Left as
-    // they were, the prompt would say the environment is absent, that no weather
-    // data was used, and that the track temperature is logged, all at once.
-    // Recomputed rather than hand-written, so this cannot drift from what the
-    // loader would have produced had the row never existed.
+    similarSessions,
+    sessionEnvironment,
+    // All of these are read off the environment and the similar sessions where
+    // the context is built, and all reach the model: `dataUsed.weather` and
+    // `dataUsed.history` as `data_used` through the policy's fallback,
+    // `dayTrend` printed straight into the prompt. Left as they were, the prompt
+    // would say the environment is absent, that no weather data was used, and
+    // that the track temperature is logged, all at once - or claim history it
+    // just withheld. Recomputed rather than hand-written, so this cannot drift
+    // from what the loader would have produced had the rows never existed.
     //
-    // The degraded flag is NOT derived from the environment, so it survives the
-    // rebuild rather than being dropped with it. Both sides go through the same
-    // pair in `race-engineer-context`, so the prefix cannot drift between the
-    // loader that applies it and this rebuild that restores it.
+    // The degraded flag is NOT derived from either, so it survives the rebuild
+    // rather than being dropped with them. Both sides go through the same pair
+    // in `race-engineer-context`, so the prefix cannot drift between the loader
+    // that applies it and this rebuild that restores it.
     dayTrend: withDegradedContextPrefix(
-      buildDayTrend(session, null, context.similarSessions),
+      buildDayTrend(session, sessionEnvironment, similarSessions),
       hasDegradedContextPrefix(context.dayTrend),
     ),
-    dataUsed: { ...dataUsedAfterDrops, weather: false },
+    dataUsed: {
+      ...dataUsedAfterDrops,
+      weather: dropSessionEnvironment ? false : dataUsedAfterDrops.weather,
+      history: similarChanged ? similarSessions.length > 0 : dataUsedAfterDrops.history,
+    },
   };
+}
+
+/** The ids of the copied sessions a screen asked to drop. */
+function droppedCopiedSessionIds(droppedSources: readonly SkippableSource[]): Set<string> {
+  return new Set(droppedSources.flatMap((source) => (source.kind === 'copiedSession' ? [source.id] : [])));
 }
 
 function buildMessages(input: BuildPromptInput): AdviceMessages {
@@ -1344,13 +1449,23 @@ export function prepareTuningAdvicePrompt(
     };
   }
 
+  // The previous session is this prompt's own to drop; the context's similar
+  // sessions are `dropScreenedSources`'s. The subject session refuses rather
+  // than skips (`sessionDisposition`), so it is never in this set.
+  const copiedDrops = droppedCopiedSessionIds(assessment.droppedSources);
+  const previousSession =
+    windowed.previousSession && copiedDrops.has(windowed.previousSession.id) ? null : windowed.previousSession;
+  const droppedElsewhere = new Set(
+    windowed.previousSession && previousSession === null ? [windowed.previousSession.id] : [],
+  );
   const screenedContext = dropScreenedSources(
     windowed.raceEngineerContext,
     assessment.droppedSources,
     fields.session,
     fields.raceEngineerContext.recentRecommendations,
+    droppedElsewhere,
   );
-  const promptInput = { ...windowed, raceEngineerContext: screenedContext };
+  const promptInput = { ...windowed, previousSession, raceEngineerContext: screenedContext };
 
   return {
     decision: 'proceed',
@@ -1377,16 +1492,25 @@ export function prepareTuningAdvicePrompt(
  * collectors at all: each is derived from the input its own prompt is built
  * from.
  *
- * It fails closed rather than open on a skip. Nothing this prompt collects is
- * skippable today: the route's context carries no recommendations and this
- * route's environment is disposed `refuse` because the rider just typed it. But
- * the first of those is a fact about the route's `buildContext`, and the skip
- * disposition reaches here through the shared context collector - give day-plan
- * real recommendations later and a value would be neither screened nor
- * withheld, with nothing failing. `dropScreenedSources` needs a `Session` to
- * rebuild the day trend and a day plan has none to hand it, so this throws
- * instead; the route's error boundary turns that into the shaped 500 and closes
- * the reserved slot.
+ * The one skip it handles is a session that came with the bike
+ * (`sessionDisposition`): dropped from the recent sessions, from the similar
+ * sessions, from the ids the policy accepts, and from the day trend and the
+ * `manual` and `history` flags the route derived from them. The route's
+ * `buildContext` builds its planning session from the newest recent session
+ * with the target date and no start time, and `buildDayTrend` reads only those
+ * two fields of it, so the rebuild uses the same shape over the sessions that
+ * are left - and with none left, the no-history trend the route itself would
+ * have written (`dayPlanNoHistoryTrend`), from the one place that text lives.
+ *
+ * On any OTHER skip it fails closed rather than open. Nothing else this prompt
+ * collects is skippable today: the route's context carries no recommendations
+ * and this route's environment is disposed `refuse` because the rider just
+ * typed it. But the first of those is a fact about the route's `buildContext`,
+ * and the skip disposition reaches here through the shared context collector -
+ * give day-plan real recommendations later and a value would be neither
+ * screened nor withheld, with nothing failing. So this throws instead; the
+ * route's error boundary turns that into the shaped 500 and closes the
+ * reserved slot.
  */
 export function prepareDayPlanPrompt(input: DayPlanPromptInput): AdvicePromptPreparation {
   const { riderTimeZone, ...fields } = input;
@@ -1408,24 +1532,70 @@ export function prepareDayPlanPrompt(input: DayPlanPromptInput): AdvicePromptPre
         'I could not build a plan from your saved setup data. Check your saved vehicle and session notes for wording that reads as an instruction.',
     };
   }
-  if (assessment.droppedSources.length > 0) {
+  if (assessment.droppedSources.some((source) => source.kind !== 'copiedSession')) {
     throw new Error(
       'Day-plan collected a skippable field but has no way to drop it from the prompt.',
     );
   }
+  const screenedInput = dropCopiedSessionsFromDayPlan(promptInput, fields.recentSessions, assessment.droppedSources);
 
   return {
     decision: 'proceed',
     retrieval: {
-      query: dayPlanRetrievalQuery(promptInput),
-      vehicleType: promptInput.vehicle.type,
+      query: dayPlanRetrievalQuery(screenedInput),
+      vehicleType: screenedInput.vehicle.type,
     },
-    messages: (retrieved) => buildDayPlanMessages({ ...promptInput, retrieved }),
+    messages: (retrieved) => buildDayPlanMessages({ ...screenedInput, retrieved }),
     // Only real, persisted sessions ground personal evidence. The planning
     // session the route synthesises is not one of them and is never printed -
     // see `collectDayPlanSessionIds`.
-    allowedSessionIds: collectDayPlanSessionIds(promptInput),
-    fallbackDataUsed: promptInput.raceEngineerContext.dataUsed,
-    screenedContext: promptInput.raceEngineerContext,
+    allowedSessionIds: collectDayPlanSessionIds(screenedInput),
+    fallbackDataUsed: screenedInput.raceEngineerContext.dataUsed,
+    screenedContext: screenedInput.raceEngineerContext,
   };
+}
+
+/**
+ * Drop the copied sessions the screen named from a day-plan prompt input - the
+ * printed recent sessions, the context's similar sessions, and what the route
+ * derived from them. See `prepareDayPlanPrompt` for why the planning shape is
+ * rebuilt here and what it rests on.
+ */
+function dropCopiedSessionsFromDayPlan(
+  promptInput: Omit<BuildDayPlanInput, 'retrieved'> & { raceEngineerContext: RaceEngineerContext },
+  loadedRecentSessions: readonly Session[],
+  droppedSources: readonly SkippableSource[],
+): Omit<BuildDayPlanInput, 'retrieved'> & { raceEngineerContext: RaceEngineerContext } {
+  const copiedDrops = droppedCopiedSessionIds(droppedSources);
+  if (copiedDrops.size === 0) return promptInput;
+
+  const recentSessions = promptInput.recentSessions.filter((session) => !copiedDrops.has(session.id));
+  const droppedElsewhere = new Set(
+    promptInput.recentSessions.filter((session) => copiedDrops.has(session.id)).map((session) => session.id),
+  );
+  // What the route's planning session was built from: the newest of EVERY
+  // loaded recent session, not only the printed window, less the dropped ones.
+  const baseline = loadedRecentSessions.find((session) => !copiedDrops.has(session.id)) ?? null;
+  const planningShape = (session: Session): Session => ({ ...session, date: promptInput.targetDate, start_time: null });
+
+  const context = promptInput.raceEngineerContext;
+  const screened = dropScreenedSources(
+    context,
+    droppedSources,
+    planningShape(baseline ?? promptInput.recentSessions[0]),
+    context.recentRecommendations,
+    droppedElsewhere,
+  );
+  const raceEngineerContext: RaceEngineerContext = baseline
+    ? { ...screened, dataUsed: { ...screened.dataUsed, manual: hasManualSessionData(planningShape(baseline)) } }
+    : {
+        ...screened,
+        similarSessions: [],
+        dayTrend: withDegradedContextPrefix(
+          dayPlanNoHistoryTrend(Boolean(screened.sessionEnvironment)),
+          hasDegradedContextPrefix(screened.dayTrend),
+        ),
+        dataUsed: { ...screened.dataUsed, manual: false, history: false },
+      };
+  return { ...promptInput, recentSessions, raceEngineerContext };
 }

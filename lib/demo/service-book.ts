@@ -263,6 +263,7 @@ export function getDemoServiceBook(vehicleId: string): DemoServiceBookRead | nul
     id: session.id,
     date: session.date,
     created_at: session.created_at,
+    copied_from_session_id: session.copied_from_session_id,
   }));
   const laps = DEMO_TELEMETRY_SUMMARIES.filter((summaryRow) => sessions.some((session) => session.id === summaryRow.session_id)).flatMap(
     (summaryRow) =>

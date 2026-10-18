@@ -102,6 +102,17 @@ export interface RpcContract {
    * here the same way a missing function does.
    */
   probe: Record<string, unknown>;
+  /**
+   * How a probe that CAN be coerced is kept from running the body. A function
+   * whose parameters are all text and json has nothing to poison, so the probe
+   * resolves and executes - and the only acceptable body to execute is one
+   * whose first statement refuses a caller with no rider, which the service
+   * role the health check runs as never has. `signed_in_rider` says the
+   * migration's body opens with `if auth.uid() is null then raise`, which
+   * `schema-contract.test.ts` holds it to, and the probe then earns `42501`
+   * before any read or write.
+   */
+  guard?: 'signed_in_rider';
 }
 
 /**
@@ -119,8 +130,9 @@ export interface RpcContract {
 function contract<Name extends DatabaseFunction>(
   name: Name,
   probe: { [Key in keyof Database['public']['Functions'][Name]['Args']]: unknown },
+  guard?: RpcContract['guard'],
 ): RpcContract {
-  return { name, probe };
+  return guard ? { name, probe, guard } : { name, probe };
 }
 
 /**
@@ -191,6 +203,15 @@ export const REQUIRED_RPCS: readonly RpcContract[] = [
     p_limit: UNCOERCIBLE_PROBE_VALUE,
     p_window_seconds: UNCOERCIBLE_PROBE_VALUE,
   }),
+  contract('describe_service_book_transfer', {
+    p_token: 'probe',
+    p_viewer_id: UNCOERCIBLE_PROBE_VALUE,
+    p_viewer_email: null,
+  }),
+  // Both take the raw link token and a json: nothing to poison. Each opens by
+  // refusing a caller with no rider (42501), which the service role is.
+  contract('prepare_service_book_transfer_accept', { p_token: 'probe' }, 'signed_in_rider'),
+  contract('accept_service_book_transfer', { p_token: 'probe', p_photo_urls: {} }, 'signed_in_rider'),
 ];
 
 /**

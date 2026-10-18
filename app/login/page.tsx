@@ -1,9 +1,11 @@
+import type { Route } from 'next';
 import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { AuthForm } from '@/components/auth/auth-form';
 import { getViewer } from '@/lib/auth';
 import { authErrorMessage } from '@/lib/auth/messages';
 import { getOAuthProviders } from '@/lib/auth/providers';
+import { sanitizeNextPath } from '@/lib/auth/redirects';
 import { isBetaInviteOnly } from '@/lib/env.server';
 
 export default async function LoginPage({
@@ -11,12 +13,19 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  // Where to land once signed in. `/dashboard` unless the link that brought the
+  // rider here says otherwise - a handover link (`/transfer/<token>`) sends a
+  // signed-out buyer through here and back - and never anywhere off this
+  // origin (`sanitizeNextPath`).
+  const { error, provider, next } = await searchParams;
+  const nextPath = sanitizeNextPath(typeof next === 'string' ? next : null);
+
   // A demo viewer is already "in" the app, so send them on rather than offering
   // a login form they cannot use.
   const viewer = await getViewer();
 
   if (viewer.status !== 'anonymous') {
-    redirect('/dashboard');
+    redirect(nextPath as Route);
   }
 
   // Resolve providers server-side so NEXT_PUBLIC_* vars are read consistently
@@ -26,7 +35,6 @@ export default async function LoginPage({
 
   // `/auth/callback` can only report a failure through the URL. Without this the
   // rider is bounced back to a login form with no idea their link had expired.
-  const { error, provider } = await searchParams;
   const initialError =
     authErrorMessage(typeof error === 'string' ? error : null, typeof provider === 'string' ? provider : null) ?? '';
 
@@ -58,7 +66,7 @@ export default async function LoginPage({
       </div>
 
       <div className="px-4 pt-4 pb-2 sm:px-5 md:px-6">
-        <AuthForm providers={providers} inviteOnly={inviteOnly} initialError={initialError} />
+        <AuthForm providers={providers} inviteOnly={inviteOnly} initialError={initialError} nextPath={nextPath} />
         <a
           href="/demo"
           className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-control bg-surface px-4 text-sm font-semibold text-ink transition hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-signal/80"

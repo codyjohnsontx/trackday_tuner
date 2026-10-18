@@ -170,6 +170,7 @@ describe('the service-book screens as rendered', () => {
           revisions: getDemoServiceEntryRevisions(entry.id) ?? [],
           distanceUnit: demo.data.book.distance_unit,
           ownerTimeZone: demo.data.book.owner_time_zone,
+          transferredAt: demo.data.book.transferred_at,
           demoMode: false,
         }),
       ),

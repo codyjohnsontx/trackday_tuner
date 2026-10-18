@@ -1,8 +1,11 @@
 import type { DistanceUnit, Tables } from '@/types/supabase';
+import { riderDateOfTimestamp } from '@/lib/local-date';
+import { formatDay, instantOf } from '@/lib/service-book/calendar';
 import type { DueOverride, ItemDue } from '@/lib/service-book/due';
 import type { ServiceBookField } from '@/lib/service-book/fields';
 import {
   describeEntryProvenance,
+  entryCameWithTheBike,
   isKnownTimeZone,
   type EntryProvenance,
   type ProvenanceAttachment,
@@ -50,6 +53,13 @@ export type ServiceEntryRevisionRecord = Pick<
   'id' | 'revision' | 'kind' | 'snapshot' | 'changed_at'
 >;
 
+/**
+ * A session as the book reads it: what the usage rules need, and whether it
+ * came with the bike at handover (`copied_from_session_id`, 20261017000600),
+ * which the received-book banner counts and nothing follows.
+ */
+export type ServiceBookSession = UsageSession & Pick<Tables<'sessions'>, 'copied_from_session_id'>;
+
 export interface ServiceBookData {
   vehicle: Pick<Tables<'vehicles'>, 'id' | 'nickname' | 'type'>;
   book: ServiceBookRow;
@@ -58,7 +68,7 @@ export interface ServiceBookData {
   /** Live entries, plus the one removed entry a caller names by `entryId`. */
   entries: ServiceEntryRecord[];
   readings: VehicleReadingRow[];
-  sessions: UsageSession[];
+  sessions: ServiceBookSession[];
   laps: UsageLap[];
   weights: UsageWeight[];
   overrides: DueOverride[];
@@ -91,6 +101,38 @@ export interface ServiceBookView {
   due: ItemDue[];
   dueByItemId: Map<string, ItemDue>;
   provenanceByEntryId: Map<string, EntryProvenance>;
+  /** What the book came with, when it was handed to this owner; null on a book that was not. */
+  handover: ReceivedHistory | null;
+}
+
+/**
+ * The banner on a book a buyer received (owner, PQ2): when it was handed over,
+ * in the same zone the entries' labels are read in, and how much of the history
+ * came with it - counted off the rows' own `copied_from_*` pointers, never by
+ * following one to the previous owner's data.
+ */
+export interface ReceivedHistory {
+  /** The handover day, formatted. */
+  handedOverOn: string;
+  entries: number;
+  sessions: number;
+  /** "N entries removed by an owner", or null when none was. */
+  removedEntries: string | null;
+}
+
+export function describeReceivedHistory(
+  data: Pick<ServiceBookData, 'book' | 'entries' | 'sessions'>,
+  labelZone: string,
+): ReceivedHistory | null {
+  const transferredAt = data.book.transferred_at;
+  if (transferredAt === null || instantOf(transferredAt) === null) return null;
+  const removed = data.book.transferred_removed_entry_count;
+  return {
+    handedOverOn: formatDay(riderDateOfTimestamp(transferredAt, labelZone)),
+    entries: data.entries.filter((entry) => entryCameWithTheBike(entry) && entry.deleted_at === null).length,
+    sessions: data.sessions.filter((session) => typeof session.copied_from_session_id === 'string' && session.copied_from_session_id !== '').length,
+    removedEntries: removed > 0 ? `${removed} ${removed === 1 ? 'entry' : 'entries'} removed by an owner before the handover` : null,
+  };
 }
 
 /**
@@ -119,6 +161,7 @@ export function buildServiceBookView(
         entry,
         revisions: entry.revisions,
         attachments: entry.attachments,
+        transferredAt: data.book.transferred_at,
         timeZone: labelZone,
       }),
     );
@@ -128,6 +171,7 @@ export function buildServiceBookView(
     due,
     dueByItemId: new Map(due.map((item) => [item.itemId, item])),
     provenanceByEntryId,
+    handover: describeReceivedHistory(data, labelZone),
   };
 }
 

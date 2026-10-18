@@ -178,7 +178,13 @@ export async function getServiceBook(
     ),
     readAllRows((from, to) => supabase.from('vehicle_readings').select('*').eq('book_id', book.id).order('reading_date').order('id').range(from, to)),
     readAllRows((from, to) =>
-      supabase.from('sessions').select('id, date, created_at').eq('user_id', user.id).eq('vehicle_id', vehicleId).order('id').range(from, to),
+      supabase
+        .from('sessions')
+        .select('id, date, created_at, copied_from_session_id')
+        .eq('user_id', user.id)
+        .eq('vehicle_id', vehicleId)
+        .order('id')
+        .range(from, to),
     ),
     readVehicleLaps(supabase, [vehicleId]),
     readAllRows((from, to) => supabase.from('session_usage_weights').select('*').eq('book_id', book.id).order('id').range(from, to)),

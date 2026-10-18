@@ -79,3 +79,58 @@ describe("the owner's book screen labels", () => {
     expect(labels(null, 'America/Chicago')).toEqual(['Logged the day of service', 'Unedited']);
   });
 });
+
+describe('a book that came with a bike handed over', () => {
+  // Handed over at 02:30 UTC on 18 Oct: the evening of the 17th in the book's zone.
+  const copiedEntry: ServiceEntryRecord = {
+    ...ENTRY,
+    id: '00000000-0000-4000-8000-000000000002',
+    revision: 2,
+    copied_from_entry_id: '00000000-0000-4000-8000-0000000000e2',
+    revisions: [
+      { revision: 1, kind: 'created', changed_at: '2026-09-21T01:30:00Z' },
+      { revision: 2, kind: 'transferred', changed_at: '2026-10-18T02:30:00Z' },
+    ],
+  };
+  const removedCopy: ServiceEntryRecord = { ...copiedEntry, id: '00000000-0000-4000-8000-000000000003', deleted_at: '2026-10-19T00:00:00Z' };
+
+  function received(): ServiceBookData {
+    const base = data('America/Chicago');
+    return {
+      ...base,
+      book: { ...base.book, transferred_from_book_id: '00000000-0000-4000-8000-0000000000b1', transferred_at: '2026-10-18T02:30:00Z', transferred_removed_entry_count: 2 },
+      entries: [ENTRY, copiedEntry, removedCopy],
+      sessions: [
+        { id: 's1', date: '2026-09-27', created_at: '2026-09-27T00:00:00Z', copied_from_session_id: '00000000-0000-4000-8000-0000000000s1' },
+        { id: 's2', date: '2026-10-20', created_at: '2026-10-20T00:00:00Z', copied_from_session_id: null },
+      ],
+    };
+  }
+
+  it('says when it was handed over, in the labels\' zone, and what came with it', () => {
+    const view = buildServiceBookView(received(), { today: '2026-10-21', timeZone: 'Europe/London' });
+    expect(view.handover).toEqual({
+      handedOverOn: '17 Oct 2026',
+      entries: 1,
+      sessions: 1,
+      removedEntries: '2 entries removed by an owner before the handover',
+    });
+  });
+
+  it('labels the copied entry as a previous owner\'s, dated the same way', () => {
+    const view = buildServiceBookView(received(), { today: '2026-10-21', timeZone: 'Europe/London' });
+    expect(view.provenanceByEntryId.get(copiedEntry.id)!.labels.map((label) => label.text)).toEqual([
+      'Logged the day of service',
+      'Logged by a previous owner, handed over on 17 Oct 2026',
+      'Unedited',
+    ]);
+    expect(view.provenanceByEntryId.get(ENTRY_ID)!.labels.map((label) => label.text)).toEqual(['Logged the day of service', 'Unedited']);
+  });
+
+  it('has no banner on a book that was never handed over, and no removed line when nothing was removed', () => {
+    expect(buildServiceBookView(data('America/Chicago'), { today: '2026-10-21', timeZone: 'UTC' }).handover).toBeNull();
+    const base = received();
+    const none = buildServiceBookView({ ...base, book: { ...base.book, transferred_removed_entry_count: 0 } }, { today: '2026-10-21', timeZone: 'UTC' });
+    expect(none.handover?.removedEntries).toBeNull();
+  });
+});

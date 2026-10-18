@@ -35,6 +35,7 @@ import { trackNameKey } from '@/lib/session-track';
 import { findVisibleTrackByName } from '@/lib/track-lookup';
 import {
   buildDayTrend,
+  dayPlanNoHistoryTrend,
   hasManualSessionData,
   selectSimilarSessions,
   type RaceEngineerContext,
@@ -264,9 +265,7 @@ function buildContext(params: {
       recentRecommendations: [],
       memory: params.memory,
       telemetrySummary: null,
-      dayTrend: params.environment
-        ? 'A planned environment is available, but there is no prior session history for this vehicle yet.'
-        : 'No planned environment or prior session history is available yet.',
+      dayTrend: dayPlanNoHistoryTrend(Boolean(params.environment)),
       dataUsed: {
         manual: false,
         weather: Boolean(params.environment),
