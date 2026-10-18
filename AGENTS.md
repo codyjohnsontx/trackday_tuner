@@ -498,8 +498,11 @@ Data semantics are `faster` (green) and `slower` (red), which is why the accent 
 deliberately neither. Primary buttons are a white fill (`bg-ink text-canvas`), not
 an accent fill, so the accent stays scarce enough to mean something.
 
-**Type.** `font-display` (Instrument Serif) is for page titles only — use
-`PageHeader` or `pageTitleClass`. Everything carrying a measurement stays on the
+**Type.** `font-display` (Barlow Semi Condensed 600, owner's pick 2026-10-18 over
+the Instrument Serif it replaced) is for page titles only - use `PageHeader` or
+`pageTitleClass`. It is loaded once in `app/layout.tsx` and reaches the utility
+through `--font-display` in `@theme`; `tests/unit/display-face.test.ts` compiles
+the stylesheet and checks a rendered title resolves to that face at 600. Everything carrying a measurement stays on the
 system sans. Digits are tabular by default.
 
 **Primitives.** Compose screens from `components/ui/surface.tsx` (`Card`,
