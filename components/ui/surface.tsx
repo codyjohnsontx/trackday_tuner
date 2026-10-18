@@ -53,7 +53,7 @@ export function Eyebrow({ children, icon: Icon, className }: EyebrowProps) {
 interface CardGroupProps {
   /** Quiet label above the group title. */
   eyebrow?: ReactNode;
-  /** The group's name, in sans — page titles are the only serif on screen. */
+  /** The group's name, in sans - page titles are the only use of the display face. */
   title?: ReactNode;
   icon?: ComponentType<{ className?: string }>;
   /** Rendered at the trailing edge of the header, e.g. a "View all" link. */

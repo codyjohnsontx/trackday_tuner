@@ -23,7 +23,7 @@ interface PageHeaderProps {
 
 /**
  * The only use of the display face on any screen. It marks where a page
- * begins, which is why no card or row is allowed to wear it — if everything is
+ * begins, which is why no card or row is allowed to wear it - if everything is
  * a title, nothing is.
  */
 export function PageHeader({ title, muted, sub, action, className }: PageHeaderProps) {

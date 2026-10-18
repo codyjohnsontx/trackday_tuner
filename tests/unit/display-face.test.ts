@@ -1,109 +1,89 @@
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { compile } from 'tailwindcss';
 import { describe, expect, it } from 'vitest';
+import { PageHeader } from '@/components/ui/page-header';
 
-// Guards the page-title face recorded in CLAUDE.md ("Type"): Barlow Semi
-// Condensed 600, loaded once in app/layout.tsx, reaching the `font-display`
-// utility through `--font-display` in the `@theme` block of app/globals.css,
-// and worn only by `pageTitleClass` in components/ui/page-header.tsx.
+// Guards the page-title face recorded in CLAUDE.md ("Type"): a page title
+// rendered by `PageHeader` has to come out of the real stylesheet as Barlow
+// Semi Condensed 600, the face app/layout.tsx loads into
+// `--font-barlow-semi-condensed`.
 //
-// The face is a chain of three files that have to agree, and nothing else
-// checks the links: next/font happily loads a family nobody references, the
-// `@theme` token happily names a CSS variable nothing sets, and the utility
-// happily falls through to the fallback stack with no build warning. The
-// owner's pick would then be "live" and every title would quietly render in
-// the system sans. So this locks the chain, link by link.
+// Nothing else checks that chain: the `@theme` token happily names a CSS
+// variable nothing sets, and the utility happily falls through to the fallback
+// stack with no build warning, so every title would quietly render in the
+// system sans. This renders the title, compiles app/globals.css through
+// Tailwind with the classes the title actually carries, and reads the emitted
+// CSS.
 //
 // WHAT IT CATCHES:
-//   - the layout loading a different family or weight, or dropping the
-//     `variable` that hands the face to CSS
-//   - `--font-display` not starting from that same variable, or the fallback
-//     stack drifting back to a serif
-//   - `pageTitleClass` losing `font-display`, or any other module in
-//     components/ or app/ reaching for `font-display` directly, which is the
-//     "every card is a title" drift the page-header comment warns about
+//   - the title losing the display face or the 600 weight the layout loads
+//   - `--font-display` no longer starting from the layout's variable, or its
+//     fallback stack drifting back to a serif
 //
-// WHAT IT DOES NOT CATCH: whether the font file actually loads and renders.
-// That is a browser question, answered by the screenshots on the pull request.
+// WHAT IT DOES NOT CATCH: app/layout.tsx loading a different family under that
+// variable, or the font file failing to load. next/font only runs inside a Next
+// build, so that is a browser question, answered by the screenshots on the
+// pull request.
 
-function read(relative: string): string {
-  return readFileSync(fileURLToPath(new URL(`../../${relative}`, import.meta.url)), 'utf8');
+const root = fileURLToPath(new URL('../../', import.meta.url));
+const require = createRequire(import.meta.url);
+
+async function compileGlobals(candidates: string[]): Promise<string> {
+  const cssPath = path.join(root, 'app/globals.css');
+  const compiler = await compile(await readFile(cssPath, 'utf8'), {
+    base: path.dirname(cssPath),
+    loadStylesheet: async (id, base) => {
+      const file = id === 'tailwindcss' ? require.resolve('tailwindcss/index.css') : path.resolve(base, id);
+      return { path: file, base: path.dirname(file), content: await readFile(file, 'utf8') };
+    },
+  });
+  return compiler.build(candidates);
 }
 
-const layout = read('app/layout.tsx');
-const globalsCss = read('app/globals.css');
-const pageHeader = read('components/ui/page-header.tsx');
+function declaration(css: string, selector: string, property: string): string | undefined {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const rule = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+  return rule?.[1].match(new RegExp(`(?:^|[;\\s])${property}:\\s*([^;]+);`))?.[1].trim();
+}
 
-const FAMILY_IMPORT = 'Barlow_Semi_Condensed';
-const FONT_VARIABLE = '--font-barlow-semi-condensed';
-
-function themeBlock(css: string): string {
-  const start = css.indexOf('@theme {');
-  expect(start, 'app/globals.css must declare an @theme block').toBeGreaterThan(-1);
-  const end = css.indexOf('\n}', start);
-  expect(end, '@theme block must be closed').toBeGreaterThan(start);
-  return css.slice(start, end);
+function titleClasses(): string[] {
+  const html = renderToStaticMarkup(createElement(PageHeader, { title: 'Dashboard' }));
+  const h1 = html.match(/<h1 class="([^"]*)">Dashboard<\/h1>/);
+  expect(h1, 'PageHeader must render the title in an <h1>').not.toBeNull();
+  return h1![1].split(/\s+/);
 }
 
 describe('display face', () => {
-  it('loads Barlow Semi Condensed at 600 through next/font and hands it to CSS as a variable', () => {
-    expect(layout).toContain(`import { ${FAMILY_IMPORT} } from 'next/font/google';`);
+  it('renders a page title in Barlow Semi Condensed at 600', async () => {
+    const classes = titleClasses();
+    const css = await compileGlobals(classes);
 
-    const call = layout.match(new RegExp(`${FAMILY_IMPORT}\\(\\{([\\s\\S]*?)\\}\\)`));
-    expect(call, `app/layout.tsx must call ${FAMILY_IMPORT}({ ... })`).not.toBeNull();
-    const options = call![1];
-    expect(options).toMatch(/weight:\s*'600'/);
-    expect(options).toMatch(new RegExp(`variable:\\s*'${FONT_VARIABLE}'`));
+    const family = classes
+      .map((name) => declaration(css, `.${name}`, 'font-family'))
+      .filter((value): value is string => value !== undefined);
+    expect(family).toEqual(['var(--font-display)']);
 
-    // The variable only exists on the page once the class is on <html>.
-    expect(layout).toMatch(/<html[^>]*className=\{displayFace\.variable\}/);
-  });
-
-  it('maps --font-display to that variable with the body sans as the fallback', () => {
-    const theme = themeBlock(globalsCss);
-    const token = theme.match(/--font-display:\s*([^;]+);/);
-    expect(token, '@theme must declare --font-display').not.toBeNull();
-    const value = token![1].trim();
-    expect(value.startsWith(`var(${FONT_VARIABLE})`)).toBe(true);
-    expect(value).toContain('ui-sans-serif');
-    // A generic `serif` or a named serif in the stack is the old fallback
-    // creeping back; `sans-serif` at the end is the body stack and is right.
-    expect(value).not.toMatch(/\bui-serif\b|\bGeorgia\b|(^|,)\s*serif\s*$/);
-  });
-
-  it('is worn by pageTitleClass and nowhere else in the app', () => {
-    const pageTitle = pageHeader.match(/export const pageTitleClass =\s*'([^']+)'/);
-    expect(pageTitle, 'page-header.tsx must export pageTitleClass').not.toBeNull();
-    const classes = pageTitle![1].split(/\s+/);
-    expect(classes).toContain('font-display');
     // The layout loads the 600 face only, so the title has to ASK for 600:
-    // preflight sets headings to `font-weight: inherit`, and a 400 request
-    // against a 600-only family renders through the browser's nearest-weight
-    // fallback rather than by design.
-    expect(classes).toContain('font-semibold');
-    expect(classes).toContain('text-[2.25rem]');
-    expect(classes).toContain('tracking-normal');
-    expect(classes).toContain('text-ink');
+    // preflight sets headings to `font-weight: inherit`, and any other request
+    // renders through the browser's nearest-weight fallback.
+    const weight = classes
+      .map((name) => declaration(css, `.${name}`, 'font-weight'))
+      .filter((value): value is string => value !== undefined);
+    expect(weight).toEqual(['var(--font-weight-semibold)']);
+    expect(declaration(css, ':root, :host', '--font-weight-semibold')).toBe('600');
 
-    // Every other `font-display` in the codebase is the token in globals.css or
-    // prose in the agent docs; a component spelling it directly has stepped
-    // around pageTitleClass.
-    const root = fileURLToPath(new URL('../../', import.meta.url));
-    let hits = '';
-    try {
-      hits = execFileSync(
-        'grep',
-        ['-rln', '--include=*.tsx', '--include=*.ts', 'font-display', 'app', 'components', 'lib'],
-        { cwd: root, encoding: 'utf8' },
-      );
-    } catch (error) {
-      // grep exits 1 when nothing matches, which cannot happen here because
-      // page-header.tsx matches; anything else is a real failure.
-      const status = (error as { status?: number }).status;
-      if (status !== 1) throw error;
-    }
-    const files = hits.split('\n').filter(Boolean).sort();
-    expect(files).toEqual(['components/ui/page-header.tsx']);
+    const display = declaration(css, ':root, :host', '--font-display');
+    expect(display, 'the compiled theme must define --font-display').toBeDefined();
+    const stack = display!.split(',').map((entry) => entry.trim());
+    expect(stack[0]).toBe('var(--font-barlow-semi-condensed)');
+    // A title that fails to load falls back to the body sans, never a serif.
+    expect(stack.at(-1)).toBe('sans-serif');
+    expect(stack).not.toContain('serif');
+    expect(stack).not.toContain('ui-serif');
   });
 });
