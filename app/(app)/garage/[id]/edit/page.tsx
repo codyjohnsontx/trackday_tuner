@@ -46,11 +46,27 @@ export default async function EditVehiclePage({ params }: EditVehiclePageProps) 
       <section className="rounded-card bg-surface p-4">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-faint">Delete Vehicle</h2>
         {counts.ok ? (
-          <VehicleDeleteForm vehicleId={result.data.id} nickname={result.data.nickname} counts={counts.data} />
+          <VehicleDeleteForm vehicleId={result.data.id} nickname={result.data.nickname} counts={counts.data} sold={result.data.sold_at !== null} />
         ) : (
           <p className="text-sm text-slower" role="alert">{counts.error}</p>
         )}
       </section>
+
+      {result.data.sold_at === null ? (
+        <section className="rounded-card bg-surface p-4">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-faint">Selling it?</h2>
+          <p className="text-sm text-ink-dim">
+            Hand the service book and the sessions to the buyer instead of deleting them. You keep a read-only copy of everything up to
+            the handover.
+          </p>
+          <Link
+            href={`/garage/${result.data.id}/book/handover`}
+            className="mt-3 inline-flex min-h-11 items-center justify-center rounded-control bg-surface-3 px-4 text-sm font-semibold text-ink transition hover:bg-surface-3/70 focus-visible:ring-2 focus-visible:ring-signal/80"
+          >
+            Hand over to a buyer
+          </Link>
+        </section>
+      ) : null}
     </div>
   );
 }

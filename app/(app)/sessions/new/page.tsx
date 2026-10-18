@@ -13,7 +13,7 @@ import { SessionForm } from '@/components/sessions/session-form';
 import { pageTitleClass } from '@/components/ui/page-header';
 
 export default async function NewSessionPage() {
-  const [vehicles, trackDirectory, latestSessionsByVehicle, demoMode, profile, sessionCount] =
+  const [allVehicles, trackDirectory, latestSessionsByVehicle, demoMode, profile, sessionCount] =
     await Promise.all([
       getVehicles(),
       getTrackDirectory(),
@@ -27,6 +27,10 @@ export default async function NewSessionPage() {
     return <DemoReadOnlyNotice backHref="/sessions" backLabel="Back to Sessions" />;
   }
 
+  // A bike handed to a buyer takes no new session (owner, TQ3): the database
+  // refuses one with TT410, so the picker does not offer it, and a rider whose
+  // only bike is sold is sent to add the next one.
+  const vehicles = allVehicles.filter((vehicle) => vehicle.sold_at === null);
   if (vehicles.length === 0) {
     redirect('/garage/new');
   }

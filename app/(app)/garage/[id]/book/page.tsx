@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DemoBanner } from '@/components/demo/demo-banner';
+import { ServiceBookHandoverCard } from '@/components/service-book/service-book-handover-card';
 import { ServiceBookScreen } from '@/components/service-book/service-book-screen';
 import { ServiceBookExport } from '@/components/service-book/service-book-export';
 import { ServiceBookSharing } from '@/components/service-book/service-book-sharing';
@@ -8,6 +9,7 @@ import { ServiceBookSetup } from '@/components/service-book/service-book-setup';
 import { pageTitleClass } from '@/components/ui/page-header';
 import { getServiceBook } from '@/lib/actions/service-book';
 import { getServiceBookShares } from '@/lib/actions/service-book-shares';
+import { getServiceBookHandover } from '@/lib/actions/service-book-transfers';
 import { isDemoMode } from '@/lib/demo/mode';
 import { describePdfOffer } from '@/lib/service-book/pdf-plan';
 import { serviceYearOf } from '@/lib/service-book/shared-view';
@@ -23,7 +25,12 @@ export default async function ServiceBookPage({ params }: ServiceBookPageProps) 
 
   if (!result.ok && result.error === 'Vehicle not found.') notFound();
   // Demo is a tour, so it offers no link to make (CLAUDE.md, "The Demo Is Read-Only").
-  const shares = result.ok && result.data.data && !demoMode ? await getServiceBookShares(id) : null;
+  const [shares, handover] =
+    result.ok && result.data.data && !demoMode ? await Promise.all([getServiceBookShares(id), getServiceBookHandover(id)]) : [null, null];
+  // A sold bike's book is the seller's read-only copy (owner, TQ3): no
+  // settings to edit, no handover to make, and the pending-link line is gone
+  // with the link that was accepted.
+  const sold = result.ok && result.data.vehicle.sold_at !== null;
   // The export prints the rows the book holds, and the demo's book is code, not rows.
   const pdfOffer =
     result.ok && result.data.data && !demoMode
@@ -46,7 +53,7 @@ export default async function ServiceBookPage({ params }: ServiceBookPageProps) 
           <h1 className={cn('mt-3', pageTitleClass)}>Service book</h1>
           {result.ok ? <p className="mt-1 text-sm text-ink-dim">{result.data.vehicle.nickname}</p> : null}
         </div>
-        {result.ok && result.data.data && !demoMode ? (
+        {result.ok && result.data.data && !demoMode && !sold ? (
           <Link
             href={`/garage/${id}/book/settings`}
             className="flex min-h-11 shrink-0 items-center rounded-control bg-surface-3 px-3 text-xs font-semibold text-ink-dim transition hover:bg-surface-3/70 hover:text-ink focus-visible:ring-2 focus-visible:ring-signal/80"
@@ -69,6 +76,7 @@ export default async function ServiceBookPage({ params }: ServiceBookPageProps) 
       )}
 
       {shares ? <ServiceBookSharing vehicleId={id} shares={shares} /> : null}
+      {handover && !sold ? <ServiceBookHandoverCard vehicleId={id} handover={handover} /> : null}
       {pdfOffer ? <ServiceBookExport base={`/api/service-book/vehicles/${id}/pdf`} offer={pdfOffer} audience="owner" /> : null}
     </div>
   );

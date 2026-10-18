@@ -102,7 +102,7 @@ async function ownBook(
 }
 
 export interface ServiceBookRead {
-  vehicle: Pick<Vehicle, 'id' | 'nickname' | 'type'>;
+  vehicle: Pick<Vehicle, 'id' | 'nickname' | 'type' | 'sold_at'>;
   /** `null` until the book is started. */
   data: ServiceBookData | null;
 }
@@ -131,7 +131,7 @@ export async function getServiceBook(
   const supabase = await createClient();
   const vehicle = await ownVehicle(supabase, user.id, vehicleId);
   if (!vehicle) return { ok: false, error: VEHICLE_NOT_FOUND };
-  const summary = { id: vehicle.id, nickname: vehicle.nickname, type: vehicle.type };
+  const summary = { id: vehicle.id, nickname: vehicle.nickname, type: vehicle.type, sold_at: vehicle.sold_at };
 
   const bookRead = await ownBook(supabase, vehicleId);
   if (!bookRead.ok) {
@@ -880,7 +880,10 @@ export async function saveServiceItem(vehicleId: string, input: ServiceItemInput
  * `lib/service-book/reminders.ts`. A bike with no book is left out, as is one
  * whose read failed - that is reported, and the chip for it is simply absent,
  * because nothing here decides a write. The session page's weight control
- * reads the stored row again before it writes.
+ * reads the stored row again before it writes. A bike handed to a buyer is
+ * left out too (owner, TQ3): a reminder for a bike the rider no longer has is
+ * noise, and its session page offers no weight, since the copy no longer
+ * changes.
  */
 export async function getServiceDueBooks(vehicleIds: string[]): Promise<Record<string, ServiceDueData>> {
   const ids = Array.isArray(vehicleIds) ? vehicleIds.filter((id): id is string => typeof id === 'string') : [];
@@ -899,7 +902,7 @@ export async function getServiceDueBooks(vehicleIds: string[]): Promise<Record<s
   if (!user) return {};
 
   const supabase = await createClient();
-  const booksRead = await supabase.from('service_books').select('*').in('vehicle_id', ids);
+  const booksRead = await supabase.from('service_books').select('*, vehicles!inner()').in('vehicle_id', ids).is('vehicles.sold_at', null);
   if (booksRead.error) {
     report('service-due-read', booksRead.error, { table: 'service_books', userId: user.id, vehicleIds: ids });
     return {};

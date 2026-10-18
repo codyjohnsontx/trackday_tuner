@@ -35,6 +35,19 @@ describe('describeVehicleDeletion', () => {
     );
   });
 
+  it('tells a seller that deleting a sold bike removes only their copy and frees its sessions', () => {
+    expect(describeVehicleDeletion('Blue R6', { sessionCount: 3, lapCount: 0, ...none }, { sold: true })).toBe(
+      "Deleting Blue R6 also deletes all 3 sessions you logged on it, with their setups, notes and outcomes. You handed Blue R6 over, so this removes only your copy; the new owner's is untouched. Those sessions stop counting toward your plan once they are gone. This cannot be undone.",
+    );
+    expect(describeVehicleDeletion('Blue R6', { sessionCount: 1, lapCount: 0, ...none }, { sold: true })).toContain(
+      'That session stops counting toward your plan once it is gone.',
+    );
+    expect(describeVehicleDeletion('Blue R6', { sessionCount: 0, lapCount: 0, ...none }, { sold: true })).toBe(
+      "Deleting Blue R6 removes it from your garage. No sessions are logged on it, so nothing else is lost. You handed Blue R6 over, so this removes only your copy; the new owner's is untouched. This cannot be undone.",
+    );
+    expect(describeVehicleDeletion('Blue R6', { sessionCount: 3, lapCount: 0, ...none }, { sold: false })).not.toContain('handed');
+  });
+
   it('says plainly that nothing else goes when the bike has no sessions or records', () => {
     expect(describeVehicleDeletion('Blue R6', { sessionCount: 0, lapCount: 0, ...none })).toBe(
       'Deleting Blue R6 removes it from your garage. No sessions are logged on it, so nothing else is lost. This cannot be undone.',

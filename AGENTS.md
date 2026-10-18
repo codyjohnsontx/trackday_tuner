@@ -839,7 +839,20 @@ cannot weaken them and a new writer does not have to remember them:
   (TT403). That check reads the bike `for key share`, as the session trigger
   does, so a write racing accept waits and then sees it sold.
   `tests/db/service-book-transfer.spec.ts` proves it as two riders; the hosted
-  paste is "Hand a service book to a buyer, by hand".
+  paste is "Hand a service book to a buyer, by hand". **The seller's screens
+  read `vehicle.sold_at` and offer no save on a sold bike**, the demo's rule
+  again: `ServiceBookData.vehicle` carries it, the entry, new-entry and settings
+  pages redirect or go read-only on it, `getServiceDueBooks` leaves a sold bike
+  out (no due chip, no weight control), and the new-session picker lists only
+  unsold bikes. The handover screen (`/garage/[id]/book/handover`,
+  `lib/actions/service-book-transfers.ts`) counts what goes over off the same
+  `getServiceBook` read the book renders, through `countHandover`
+  (`lib/service-book/handover.ts`); the three figures that read never loads
+  (session photos, outcomes, this owner's removed entries) come from
+  `getServiceBookHandoverCounts`. One pending link per book, read by
+  `getServiceBookHandover` and shown by `HandoverStatus` on the card, the book
+  and the screen; the link is `/transfer/<token>`, token hashed as a share
+  link's is.
 
 `tests/db/service-book.spec.ts` proves each of these against a real database.
 

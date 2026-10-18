@@ -15,6 +15,8 @@ interface VehicleDeleteFormProps {
   vehicleId: string;
   nickname: string;
   counts: VehicleDeletionCounts;
+  /** The bike was handed to a buyer, so this removes only the rider's copy (owner, TQ3). */
+  sold?: boolean;
 }
 
 /**
@@ -22,7 +24,7 @@ interface VehicleDeleteFormProps {
  * the one destructive action here gated on typing rather than a hold: the rider
  * has to read the name - and the counts beside it - to get the button at all.
  */
-export function VehicleDeleteForm({ vehicleId, nickname, counts }: VehicleDeleteFormProps) {
+export function VehicleDeleteForm({ vehicleId, nickname, counts, sold = false }: VehicleDeleteFormProps) {
   const router = useRouter();
   const [typed, setTyped] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -47,7 +49,7 @@ export function VehicleDeleteForm({ vehicleId, nickname, counts }: VehicleDelete
 
   return (
     <div className="space-y-4">
-      <p className="text-sm leading-6 text-ink">{describeVehicleDeletion(nickname, counts)}</p>
+      <p className="text-sm leading-6 text-ink">{describeVehicleDeletion(nickname, counts, { sold })}</p>
       <Input
         label={`Type ${nickname} to confirm`}
         value={typed}
