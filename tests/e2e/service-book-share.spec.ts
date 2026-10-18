@@ -167,7 +167,7 @@ test.describe('sharing a service book by link', () => {
       await expect(entries).toHaveCount(1);
       await expect(entries.getByText('Oil change')).toBeVisible();
       expect(await entries.getByRole('list', { name: 'History' }).getByRole('listitem').allTextContents()).toEqual(ownerLabelTexts);
-      await expect(shared.getByTestId('shared-removed-entries')).toHaveText('1 entry removed by the owner');
+      await expect(shared.getByTestId('shared-removed-entries')).toHaveText('1 entry removed by an owner');
 
       const html = await shared.content();
       for (const secret of [rider!.email, rider!.id, vehicleId, SESSION_NOTE, REMOVED_NOTE, 'Chain adjust']) {

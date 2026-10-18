@@ -68,7 +68,10 @@ export interface SharedBookView {
   readings: SharedReading[];
   items: SharedItem[];
   entries: SharedEntry[];
-  /** Entries the owner removed: the line "N entries removed by the owner". */
+  /**
+   * Entries removed by any owner across the bike's history, those the book came
+   * with at handover included: the line "N entries removed by an owner".
+   */
   removedCount: number;
   /** Whether the entries carry their labels, which needs the owner's zone. */
   labelled: boolean;
@@ -81,7 +84,7 @@ export function serviceYearOf(date: unknown): number | null {
 
 export function describeRemovedEntries(count: number): string | null {
   if (count <= 0) return null;
-  return `${count} ${count === 1 ? 'entry' : 'entries'} removed by the owner`;
+  return `${count} ${count === 1 ? 'entry' : 'entries'} removed by an owner`;
 }
 
 function readingsOf(readings: readonly UsageReading[], unit: DistanceUnit): SharedReading[] {

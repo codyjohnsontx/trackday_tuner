@@ -54,7 +54,7 @@ describe("the owner's PDF of their service book", () => {
     expect(response.status).toBe(200);
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
     expect(pageCount(pdf)).toBe(1);
-    expect(pdfText(pdf)).toContain('1 entry removed by the owner');
+    expect(pdfText(pdf)).toContain('1 entry removed by an owner');
     expect(pdfText(pdf)).not.toContain('removed note text');
     expect(eq).toHaveBeenCalledWith('vehicle_id', VEHICLE_ID);
     expect(loadSharedBook).toHaveBeenCalledWith(BOOK_ID, { signThumbs: false });

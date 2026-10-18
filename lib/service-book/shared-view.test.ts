@@ -94,8 +94,8 @@ describe('a shared service book', () => {
     expect(view.removedCount).toBe(1);
     expect(JSON.stringify(view)).not.toContain('removed note text');
     expect(JSON.stringify(view)).not.toContain('Removed work');
-    expect(describeRemovedEntries(view.removedCount)).toBe('1 entry removed by the owner');
-    expect(describeRemovedEntries(3)).toBe('3 entries removed by the owner');
+    expect(describeRemovedEntries(view.removedCount)).toBe('1 entry removed by an owner');
+    expect(describeRemovedEntries(3)).toBe('3 entries removed by an owner');
     expect(describeRemovedEntries(0)).toBeNull();
   });
 
