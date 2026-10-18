@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { DemoReadOnlyNotice } from '@/components/demo/read-only-notice';
-import { getVehicle, getVehicleDeletionCounts } from '@/lib/actions/vehicles';
+import { getUserProfile, getVehicle, getVehicleDeletionCounts } from '@/lib/actions/vehicles';
+import { resolveUserAccess } from '@/lib/access';
 import { isDemoMode } from '@/lib/demo/mode';
 import { VehicleForm } from '@/components/garage/vehicle-form';
 import { VehicleDeleteForm } from '@/components/garage/vehicle-delete-form';
@@ -24,7 +25,7 @@ export default async function EditVehiclePage({ params }: EditVehiclePageProps) 
     redirect('/garage');
   }
 
-  const counts = await getVehicleDeletionCounts(id);
+  const [counts, profile] = await Promise.all([getVehicleDeletionCounts(id), getUserProfile()]);
 
   return (
     <div className="space-y-5">
@@ -46,7 +47,13 @@ export default async function EditVehiclePage({ params }: EditVehiclePageProps) 
       <section className="rounded-card bg-surface p-4">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-faint">Delete Vehicle</h2>
         {counts.ok ? (
-          <VehicleDeleteForm vehicleId={result.data.id} nickname={result.data.nickname} counts={counts.data} sold={result.data.sold_at !== null} />
+          <VehicleDeleteForm
+            vehicleId={result.data.id}
+            nickname={result.data.nickname}
+            counts={counts.data}
+            sold={result.data.sold_at !== null}
+            freePlan={!resolveUserAccess(profile).hasProAccess}
+          />
         ) : (
           <p className="text-sm text-slower" role="alert">{counts.error}</p>
         )}

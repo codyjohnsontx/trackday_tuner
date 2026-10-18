@@ -14,6 +14,8 @@ interface HandoverStatusProps {
   handover: ServiceBookHandoverRow;
   /** Whether to link the handover screen beside the line; the screen itself does not. */
   linkToScreen?: boolean;
+  /** Called once the link is cancelled, for a screen that holds the link in its own state. */
+  onCancelled?: () => void;
   className?: string;
 }
 
@@ -28,7 +30,7 @@ interface HandoverStatusProps {
  * carries no day count; and a cancelled link leaves the screen from this
  * component's own state ahead of the server's next render.
  */
-export function HandoverStatus({ vehicleId, handover, linkToScreen = false, className }: HandoverStatusProps) {
+export function HandoverStatus({ vehicleId, handover, linkToScreen = false, onCancelled, className }: HandoverStatusProps) {
   const router = useRouter();
   const clock = useRiderClock();
   const [cancelled, setCancelled] = useState(false);
@@ -48,6 +50,7 @@ export function HandoverStatus({ vehicleId, handover, linkToScreen = false, clas
         return;
       }
       setCancelled(true);
+      onCancelled?.();
       router.refresh();
     });
   }

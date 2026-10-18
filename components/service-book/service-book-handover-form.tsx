@@ -50,6 +50,7 @@ export function ServiceBookHandoverForm({ vehicleId, nickname, data, extra, pend
   const view = useMemo(() => (clock ? buildServiceBookView(data, clock) : null), [data, clock]);
   const description = useMemo(() => (view ? describeHandover(countHandover(data, view, extra)) : null), [data, view, extra]);
   const unit = data.book.distance_unit;
+  const { tracks_hours: tracksHours, tracks_distance: tracksDistance } = data.book;
 
   const [email, setEmail] = useState('');
   const [hours, setHours] = useState('');
@@ -58,6 +59,7 @@ export function ServiceBookHandoverForm({ vehicleId, nickname, data, extra, pend
   const [typed, setTyped] = useState('');
   const [error, setError] = useState('');
   const [created, setCreated] = useState<{ handover: ServiceBookHandoverRow; url: string } | null>(null);
+  const [cancelledId, setCancelledId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [canShare, setCanShare] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -66,9 +68,9 @@ export function ServiceBookHandoverForm({ vehicleId, nickname, data, extra, pend
   useEffect(() => {
     if (!view || readingTouched) return;
     const defaults = handoverReadingDefaults(view);
-    setHours(defaults.hours);
-    setDistance(data.book.tracks_distance ? defaults.distance : '');
-  }, [view, readingTouched, data.book.tracks_distance]);
+    setHours(tracksHours ? defaults.hours : '');
+    setDistance(tracksDistance ? defaults.distance : '');
+  }, [view, readingTouched, tracksHours, tracksDistance]);
 
   useEffect(() => {
     setCanShare(typeof navigator !== 'undefined' && typeof navigator.share === 'function');
@@ -100,6 +102,14 @@ export function ServiceBookHandoverForm({ vehicleId, nickname, data, extra, pend
       }
       setCreated({ handover: result.data.handover, url: `${window.location.origin}/transfer/${result.data.token}` });
     });
+  }
+
+  function startOver(handoverId: string) {
+    setCancelledId(handoverId);
+    setCreated(null);
+    setCopied(false);
+    setEmail('');
+    setTyped('');
   }
 
   async function copy(url: string) {
@@ -147,7 +157,7 @@ export function ServiceBookHandoverForm({ vehicleId, nickname, data, extra, pend
               ) : null}
             </div>
           </GroupRow>
-          <HandoverStatus vehicleId={vehicleId} handover={created.handover} />
+          <HandoverStatus vehicleId={vehicleId} handover={created.handover} onCancelled={() => startOver(created.handover.id)} />
         </CardGroup>
         <Card>
           <p className="text-sm text-ink-dim">
@@ -158,10 +168,10 @@ export function ServiceBookHandoverForm({ vehicleId, nickname, data, extra, pend
     );
   }
 
-  if (pending) {
+  if (pending && pending.id !== cancelledId) {
     return (
       <section className="space-y-3 rounded-card bg-surface p-2" data-testid="handover-pending">
-        <HandoverStatus vehicleId={vehicleId} handover={pending} />
+        <HandoverStatus vehicleId={vehicleId} handover={pending} onCancelled={() => startOver(pending.id)} />
         <p className="px-3 pb-2 text-sm text-ink-dim">
           One link at a time: cancel this one to make another. Nothing changes for you until the buyer accepts.
         </p>
@@ -219,47 +229,51 @@ export function ServiceBookHandoverForm({ vehicleId, nickname, data, extra, pend
         />
       </Card>
 
-      <Card className="space-y-4">
-        <Eyebrow>Reading at handover</Eyebrow>
-        <p className="text-sm text-ink-dim">
-          Optional. Written as the closing reading of your copy and the opening reading of the buyer&apos;s, from the book&apos;s usage today.
-        </p>
-        <div className={data.book.tracks_distance ? 'grid grid-cols-2 gap-3' : ''}>
-          <Input
-            label="Hours"
-            type="number"
-            inputMode="decimal"
-            step="any"
-            min={0}
-            value={hours}
-            onChange={(event) => {
-              setReadingTouched(true);
-              setHours(event.target.value);
-            }}
-            disabled={isPending}
-          />
-          {data.book.tracks_distance ? (
-            <Input
-              label={`Distance (${unit})`}
-              type="number"
-              inputMode="decimal"
-              step="any"
-              min={0}
-              value={distance}
-              onChange={(event) => {
-                setReadingTouched(true);
-                setDistance(event.target.value);
-              }}
-              disabled={isPending}
-            />
-          ) : null}
-        </div>
-        {!readingValid ? (
-          <p className="text-sm text-slower" role="alert">
-            A reading has to be a number of zero or more.
+      {tracksHours || tracksDistance ? (
+        <Card className="space-y-4">
+          <Eyebrow>Reading at handover</Eyebrow>
+          <p className="text-sm text-ink-dim">
+            Optional. Written as the closing reading of your copy and the opening reading of the buyer&apos;s, from the book&apos;s usage today.
           </p>
-        ) : null}
-      </Card>
+          <div className={tracksHours && tracksDistance ? 'grid grid-cols-2 gap-3' : ''}>
+            {tracksHours ? (
+              <Input
+                label="Hours"
+                type="number"
+                inputMode="decimal"
+                step="any"
+                min={0}
+                value={hours}
+                onChange={(event) => {
+                  setReadingTouched(true);
+                  setHours(event.target.value);
+                }}
+                disabled={isPending}
+              />
+            ) : null}
+            {tracksDistance ? (
+              <Input
+                label={`Distance (${unit})`}
+                type="number"
+                inputMode="decimal"
+                step="any"
+                min={0}
+                value={distance}
+                onChange={(event) => {
+                  setReadingTouched(true);
+                  setDistance(event.target.value);
+                }}
+                disabled={isPending}
+              />
+            ) : null}
+          </div>
+          {!readingValid ? (
+            <p className="text-sm text-slower" role="alert">
+              A reading has to be a number of zero or more.
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
 
       <Card className="space-y-4">
         <Eyebrow>Confirm</Eyebrow>
