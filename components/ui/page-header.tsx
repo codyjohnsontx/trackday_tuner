@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
  * and an action) still land on the same display treatment as `PageHeader`.
  */
 export const pageTitleClass =
-  'font-display text-[2.125rem] leading-[1.1] tracking-[-0.01em] text-ink';
+  'font-display font-semibold text-[2.25rem] leading-[1.1] tracking-normal text-ink';
 
 interface PageHeaderProps {
   title: string;
@@ -22,9 +22,9 @@ interface PageHeaderProps {
 }
 
 /**
- * The only serif on any screen. It marks where a page begins, which is why no
- * card or row is allowed to use the display face — if everything is editorial,
- * nothing is.
+ * The only use of the display face on any screen. It marks where a page
+ * begins, which is why no card or row is allowed to wear it — if everything is
+ * a title, nothing is.
  */
 export function PageHeader({ title, muted, sub, action, className }: PageHeaderProps) {
   return (

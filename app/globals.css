@@ -68,7 +68,10 @@
   --radius-plate: 6px;
   --radius-control: 6px;
 
-  --font-display: var(--font-instrument-serif), ui-serif, Georgia, serif;
+  /* The page-title face, loaded in app/layout.tsx. The fallback is the body
+     stack on purpose: a title that fails to load should read as a bolder line
+     of the same instrument, not switch families. */
+  --font-display: var(--font-barlow-semi-condensed), ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 /* ── Element defaults ───────────────────────────────────────────────────
