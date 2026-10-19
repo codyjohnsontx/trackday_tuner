@@ -108,9 +108,8 @@ export interface RpcContract {
    * resolves and executes - and the only acceptable body to execute is one
    * whose first statement refuses a caller with no rider, which the service
    * role the health check runs as never has. `signed_in_rider` says the
-   * migration's body opens with `if auth.uid() is null then raise`, which
-   * `schema-contract.test.ts` holds it to, and the probe then earns `42501`
-   * before any read or write.
+   * probe earns `42501` before any read or write, which
+   * `tests/db/service-book-transfer.spec.ts` proves against a live handover.
    */
   guard?: 'signed_in_rider';
 }

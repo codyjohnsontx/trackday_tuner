@@ -85,6 +85,7 @@ export default async function TransferPage({ params }: TransferPageProps) {
   }
   const page = resolveHandoverPage(description, atVehicleLimit);
   const nextPath = handoverPath(token);
+  const loginPath = `/login?next=${encodeURIComponent(nextPath)}`;
 
   switch (page.kind) {
     case 'sign_in':
@@ -101,14 +102,14 @@ export default async function TransferPage({ params }: TransferPageProps) {
                 // Leaving the demo is a GET that drops a cookie, so a plain anchor
                 // rather than a prefetching Link (see "Leaving Demo Mode").
                 <a
-                  href={`/demo/exit?next=${encodeURIComponent(nextPath)}`}
+                  href={`/demo/exit?next=${encodeURIComponent(loginPath)}`}
                   className="flex min-h-12 flex-1 items-center justify-center rounded-control bg-ink px-4 text-sm font-semibold text-canvas"
                 >
                   Leave the demo and sign in
                 </a>
               ) : (
                 <Link
-                  href={`/login?next=${encodeURIComponent(nextPath)}`}
+                  href={loginPath}
                   className="flex min-h-12 flex-1 items-center justify-center rounded-control bg-ink px-4 text-sm font-semibold text-canvas"
                   data-testid="handover-sign-in-link"
                 >
@@ -124,7 +125,7 @@ export default async function TransferPage({ params }: TransferPageProps) {
     case 'wrong_account':
       return (
         <Notice title={HANDOVER_COPY.wrongAccount} testId="handover-wrong-account">
-          <Link href="/logout" className="text-ink underline-offset-2 hover:underline">
+          <Link href={`/logout?next=${encodeURIComponent(nextPath)}`} prefetch={false} className="text-ink underline-offset-2 hover:underline">
             Sign out
           </Link>{' '}
           and sign back in with that address.

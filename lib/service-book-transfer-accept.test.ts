@@ -174,13 +174,14 @@ describe('taking over the book', () => {
     expect(outcome).toMatchObject({ ok: true, attempts: 2 });
 
     const never = fakeRider(
-      Array.from({ length: HANDOVER_ACCEPT_ATTEMPTS }, () => ({ data: prepared(), error: null })),
+      Array.from({ length: HANDOVER_ACCEPT_ATTEMPTS + 1 }, () => ({ data: prepared(), error: null })),
       Array.from({ length: HANDOVER_ACCEPT_ATTEMPTS }, () => ({ ...stale })),
     );
     const storage = fakeStorage();
     const gaveUp = await takeOverServiceBook({ rider: never, storage, token: TOKEN, report: vi.fn() });
     expect(gaveUp).toEqual({ ok: false, stage: 'accept', code: 'TT409', message: stale.error.message, attempts: HANDOVER_ACCEPT_ATTEMPTS });
-    expect(never.calls.filter((call) => call.name === 'prepare_service_book_transfer_accept')).toHaveLength(HANDOVER_ACCEPT_ATTEMPTS);
+    // The last prepare asks whether the handover is still not this rider's.
+    expect(never.calls.filter((call) => call.name === 'prepare_service_book_transfer_accept')).toHaveLength(HANDOVER_ACCEPT_ATTEMPTS + 1);
     // The public-bucket copies are taken back; the private ones are swept.
     expect(storage.removed).toEqual([
       { bucket: 'session-photos', paths: ['buyer/ns1.jpg'] },
@@ -190,10 +191,15 @@ describe('taking over the book', () => {
 
   it('returns any other refusal with its code, without retrying', async () => {
     for (const code of ['TT402', 'TT403', 'TT404', 'TT410']) {
-      const rider = fakeRider([{ data: prepared(), error: null }], [{ data: null, error: { code, message: 'refused' } }]);
-      const outcome = await takeOverServiceBook({ rider, storage: fakeStorage(), token: TOKEN, report: vi.fn() });
+      const rider = fakeRider(
+        [{ data: prepared(), error: null }, { data: null, error: { code, message: 'refused' } }],
+        [{ data: null, error: { code, message: 'refused' } }],
+      );
+      const storage = fakeStorage();
+      const outcome = await takeOverServiceBook({ rider, storage, token: TOKEN, report: vi.fn() });
       expect(outcome).toMatchObject({ ok: false, stage: 'accept', code, attempts: 1 });
-      expect(rider.calls).toHaveLength(2);
+      expect(rider.calls.map((call) => call.name)).toEqual(['prepare_service_book_transfer_accept', 'accept_service_book_transfer', 'prepare_service_book_transfer_accept']);
+      expect(storage.removed.map((removal) => removal.bucket)).toEqual(['session-photos', 'vehicle-photos']);
     }
     const refusedEarly = fakeRider([{ data: null, error: { code: 'TT403', message: 'wrong address' } }], []);
     const storage = fakeStorage();
@@ -203,13 +209,30 @@ describe('taking over the book', () => {
   });
 
   it('stops before accept when a copy failed, reporting each failed object', async () => {
-    const rider = fakeRider([{ data: prepared(), error: null }], []);
+    const rider = fakeRider([{ data: prepared(), error: null }, { data: prepared(), error: null }], []);
     const storage = fakeStorage((bucket) => (bucket === 'session-photos' ? { message: 'Object not found', statusCode: '404' } : null));
     const report = vi.fn();
     const outcome = await takeOverServiceBook({ rider, storage, token: TOKEN, report });
     expect(outcome).toMatchObject({ ok: false, stage: 'copy', attempts: 1 });
-    expect(rider.calls.map((call) => call.name)).toEqual(['prepare_service_book_transfer_accept']);
+    expect(rider.calls.map((call) => call.name)).toEqual(['prepare_service_book_transfer_accept', 'prepare_service_book_transfer_accept']);
     expect(report).toHaveBeenCalledWith('service-book-handover-copy', expect.any(Error), expect.objectContaining({ bucket: 'session-photos', from: 'seller/s1.jpg' }));
+  });
+
+  it('keeps the public copies when the handover may have committed: accept answered nothing readable, or another press took the bike', async () => {
+    const lost = { data: null, error: { message: 'TypeError: fetch failed' } };
+    const acceptedNow = { data: prepared({ accepted: true, attachments: [], session_photos: [], vehicle_photo: null }), error: null };
+    for (const recheck of [acceptedNow, lost, { data: null, error: { code: '42501', message: 'needs a signed-in rider' } }]) {
+      const rider = fakeRider([{ data: prepared(), error: null }, recheck], [lost]);
+      const storage = fakeStorage();
+      const outcome = await takeOverServiceBook({ rider, storage, token: TOKEN, report: vi.fn() });
+      expect(outcome).toMatchObject({ ok: false, stage: 'accept', code: undefined, attempts: 1 });
+      expect(storage.removed).toEqual([]);
+    }
+
+    const tookIt = fakeRider([{ data: prepared(), error: null }, acceptedNow], []);
+    const failing = fakeStorage((bucket) => (bucket === 'vehicle-photos' ? { message: 'Gateway Timeout', statusCode: '504' } : null));
+    expect(await takeOverServiceBook({ rider: tookIt, storage: failing, token: TOKEN, report: vi.fn() })).toMatchObject({ ok: false, stage: 'copy' });
+    expect(failing.removed).toEqual([]);
   });
 
   it('a handover accepted already copies nothing and answers the first result', async () => {

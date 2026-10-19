@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { findUnresolvableRpcs, REQUIRED_RPCS } from '@/lib/monitoring/schema-contract';
 import { getFreePlanLimit } from '@/lib/plans';
 import { createTestAdminClient } from '@/tests/e2e/helpers/supabase';
 import { createThrowawayRider, deleteThrowawayRider, type ThrowawayRider } from '@/tests/e2e/helpers/throwaway-rider';
@@ -650,6 +651,33 @@ test.describe('handing a service book to a buyer', () => {
     await refused(buyer.client, link.raw, 'TT404');
     expect(await writes()).toEqual(cancelledStart);
     await takeOver(buyer.client, reissued.raw);
+  });
+
+  test('the health check probes prepare and accept as the service role and runs neither, even with a live link', async () => {
+    const seller = await bike('probe');
+    const buyer = await rider('probe-buyer');
+    await entry(seller.client, seller.book);
+    await session(seller.client, seller.vehicle);
+    const link = await hand(seller, buyer.rider.email);
+
+    const state = async () => ({
+      transfer: (await admin.from('service_book_transfers').select('*').eq('id', link.id).single()).data,
+      buyerVehicles: (await admin.from('vehicles').select('id', { count: 'exact', head: true }).eq('user_id', buyer.rider.id)).count,
+      copiedBooks: (await admin.from('service_books').select('id', { count: 'exact', head: true }).eq('transferred_from_book_id', seller.book)).count,
+      sold: (await admin.from('vehicles').select('sold_at').eq('id', seller.vehicle).single()).data!.sold_at,
+    });
+    const before = await state();
+
+    const untyped = admin as unknown as { rpc(name: string, args: Record<string, unknown>): PromiseLike<{ error: { code?: string } | null }> };
+    for (const contract of REQUIRED_RPCS.filter((required) => required.guard)) {
+      for (const probe of [contract.probe, { ...contract.probe, p_token: link.raw }]) {
+        expect((await untyped.rpc(contract.name, probe)).error?.code, contract.name).toBe('42501');
+      }
+    }
+    expect(await findUnresolvableRpcs(admin)).toEqual([]);
+
+    expect(await state()).toEqual(before);
+    expect(before).toMatchObject({ transfer: { status: 'pending' }, buyerVehicles: 0, copiedBooks: 0, sold: null });
   });
 
   test('copied sessions and receipts count toward no free cap; the buyer\'s own still do', async () => {

@@ -859,8 +859,8 @@ cannot weaken them and a new writer does not have to remember them:
   handover" line come from `describeReceivedHistory`, which counts the rows'
   own `copied_from_*` pointers. **Nothing follows one of those pointers to the
   other rider's row** - a cap reads one as a null check, a screen as a boolean
-  - and `tests/unit/transfer-pointers-never-followed.test.ts` sweeps `app/`,
-  `lib/` and `components/` for a filter that does.
+  - and RLS keeps that row out of reach whatever a filter asks, which
+  `tests/db/service-book-transfer.spec.ts` proves as two riders.
   `tests/e2e/service-book-handover.spec.ts` is the two-rider walk and records
   the copy's wall time for a 25-receipt bike.
 

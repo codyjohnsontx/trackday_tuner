@@ -217,10 +217,29 @@ export function photoUrlsOf(storage: HandoverStorage, prepared: PreparedHandover
 }
 
 /**
- * Takes the copies in the two PUBLIC buckets back after a handover that will
- * not complete: nothing names them and, unlike the private `service-book`
+ * Whether prepare, asked again, shows this rider has not taken the bike. A
+ * failure does not prove that: accept may have committed with its answer lost,
+ * or another press of Accept may have committed it, and the buyer's rows then
+ * name these very paths. Prepare answers `accepted: true` for this rider's
+ * accepted handover before it refuses anything, so a readable `accepted: false`
+ * or a TT refusal says no; anything else cannot tell.
+ */
+async function stillNotAccepted(rider: HandoverRpcClient, token: string): Promise<boolean> {
+  try {
+    const { data, error } = await rider.rpc('prepare_service_book_transfer_accept', { p_token: token });
+    if (error) return error.code?.startsWith('TT') ?? false;
+    return readPreparedHandover(data)?.accepted === false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Takes the copies in the two PUBLIC buckets back after a handover that has
+ * not completed: nothing names them and, unlike the private `service-book`
  * bucket, no sweep removes them. Best effort - a failure here is reported and
- * costs nothing but an orphaned photo.
+ * costs nothing but an orphaned photo, which is also the cost of keeping them
+ * when it cannot be shown the handover did not commit.
  */
 async function removePublicCopies(storage: HandoverStorage, copies: readonly ObjectCopy[], report: TakeOverParams['report'], context: Record<string, unknown>) {
   for (const bucket of ['session-photos', 'vehicle-photos'] as const) {
@@ -243,11 +262,11 @@ async function removePublicCopies(storage: HandoverStorage, copies: readonly Obj
 export async function takeOverServiceBook({ rider, storage, token, report }: TakeOverParams): Promise<HandoverOutcome> {
   let attempts = 0;
   let objectsCopied = 0;
-  let lastCopies: ObjectCopy[] = [];
+  let publicCopies: ObjectCopy[] = [];
   const context = { tokenLength: token.length };
 
   const giveUp = async (outcome: Extract<HandoverOutcome, { ok: false }>): Promise<HandoverOutcome> => {
-    if (lastCopies.length > 0) await removePublicCopies(storage, lastCopies, report, context);
+    if (publicCopies.length > 0 && (await stillNotAccepted(rider, token))) await removePublicCopies(storage, publicCopies, report, context);
     return outcome;
   };
 
@@ -265,7 +284,7 @@ export async function takeOverServiceBook({ rider, storage, token, report }: Tak
     }
 
     const copies = plan.accepted ? [] : objectCopiesOf(plan);
-    lastCopies = copies;
+    publicCopies = copies.filter((copy) => copy.bucket !== 'service-book');
     const failed = await copyHandoverObjects(storage, copies);
     objectsCopied += copies.length - failed.length;
     if (failed.length > 0) {

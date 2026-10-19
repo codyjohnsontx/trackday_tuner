@@ -185,19 +185,6 @@ describe('findUnresolvableRpcs', () => {
 // neighbouring failure, a PGRST202 carrying a `hint`) fails to build.
 // ---------------------------------------------------------------------------
 
-/** The LAST migration's text from `create or replace function public.<name>(` on, or null. */
-function lastDefinition(name: string): string | null {
-  const files = readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
-  let found: string | null = null;
-  for (const file of files) {
-    const sql = readFileSync(path.join(migrationsDir, file), 'utf8');
-    const start = sql.indexOf(`create or replace function public.${name}(`);
-    if (start === -1) continue;
-    found = sql.slice(start);
-  }
-  return found;
-}
-
 /** Parameter name -> declared SQL type, from the LAST migration defining `name`. */
 function declaredParameters(name: string): Map<string, string> {
   const files = readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
@@ -243,32 +230,11 @@ describe.each(REQUIRED_RPCS as RpcContract[])('$name contract', (contract) => {
   // execute on `consume_beta_rate_limit`, so a well-formed payload would spend a
   // real rate-limit slot every fifteen minutes.
   //
-  // A function with nothing to poison - every parameter text or json - may
-  // instead declare that its body refuses a caller with no rider before it
-  // reads or writes anything. That is held to the migration: the first
-  // statement after `begin` has to be that refusal.
-  it(contract.guard ? 'opens its body by refusing a caller with no rider, so the probe runs nothing else' : 'puts the uncoercible value in a parameter no value of that type can parse', () => {
+  // A function with nothing to poison - every parameter text or json - instead
+  // declares a guard, and tests/db/service-book-transfer.spec.ts runs its probe
+  // as the service role against a live handover to show it writes nothing.
+  it.skipIf(Boolean(contract.guard))('puts the uncoercible value in a parameter no value of that type can parse', () => {
     const declared = declaredParameters(contract.name);
-    if (contract.guard === 'signed_in_rider') {
-      const definition = lastDefinition(contract.name);
-      expect(definition, `no migration defines ${contract.name}`).not.toBeNull();
-      const bodyStart = definition!.indexOf('\nbegin\n');
-      const declareBlock = definition!.slice(0, bodyStart);
-      const firstStatement = definition!.slice(bodyStart).replace(/^\nbegin\n/, '').replace(/^\s+/, '');
-      // `if auth.uid() is null then raise`, or the same through a variable the
-      // declare block initialised to `auth.uid()`.
-      const refusal = /^if (auth\.uid\(\)|[a-z_]+) is null then\s+raise exception/.exec(firstStatement);
-      expect(refusal, `${contract.name} must open by refusing a null auth.uid()`).not.toBeNull();
-      if (refusal![1] !== 'auth.uid()') {
-        expect(declareBlock, `${contract.name}: ${refusal![1]} must be declared as auth.uid()`).toMatch(
-          new RegExp(`\\b${refusal![1]} uuid := auth\\.uid\\(\\);`),
-        );
-      }
-      // And nothing in the probe is a type the sentinel could have poisoned,
-      // or the guard would be hiding a probe that should poison instead.
-      expect([...declared.values()].some((type) => UNPARSEABLE_TYPES.includes(type))).toBe(false);
-      return;
-    }
     const poisoned = Object.entries(contract.probe)
       .filter(([, value]) => value === UNCOERCIBLE_PROBE_VALUE)
       .map(([key]) => declared.get(key) ?? '');
