@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { DemoReadOnlyNotice } from '@/components/demo/read-only-notice';
 import { getUserProfile, getVehicle, getVehicleDeletionCounts } from '@/lib/actions/vehicles';
 import { resolveUserAccess } from '@/lib/access';
+import { hasServiceBook } from '@/lib/actions/service-book-transfers';
 import { isDemoMode } from '@/lib/demo/mode';
 import { VehicleForm } from '@/components/garage/vehicle-form';
 import { VehicleDeleteForm } from '@/components/garage/vehicle-delete-form';
@@ -25,7 +26,7 @@ export default async function EditVehiclePage({ params }: EditVehiclePageProps) 
     redirect('/garage');
   }
 
-  const [counts, profile] = await Promise.all([getVehicleDeletionCounts(id), getUserProfile()]);
+  const [counts, profile, hasBook] = await Promise.all([getVehicleDeletionCounts(id), getUserProfile(), hasServiceBook(id)]);
 
   return (
     <div className="space-y-5">
@@ -59,7 +60,7 @@ export default async function EditVehiclePage({ params }: EditVehiclePageProps) 
         )}
       </section>
 
-      {result.data.sold_at === null ? (
+      {result.data.sold_at === null && hasBook ? (
         <section className="rounded-card bg-surface p-4">
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-faint">Selling it?</h2>
           <p className="text-sm text-ink-dim">

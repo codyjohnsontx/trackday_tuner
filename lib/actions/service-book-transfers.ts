@@ -113,6 +113,26 @@ export async function getServiceBookHandover(vehicleId: string): Promise<ActionR
 }
 
 /**
+ * Whether this bike has a service book, for the vehicle edit page's handover
+ * link: a bike without one has nothing to hand over. A failed read is reported
+ * and answers no, since nothing here decides a write.
+ */
+export async function hasServiceBook(vehicleId: string): Promise<boolean> {
+  if (await isDemoMode()) return false;
+
+  const user = await getRealUser();
+  if (!user) return false;
+
+  const supabase = await createClient();
+  const bookRead = await ownBook(supabase, vehicleId);
+  if (!bookRead.ok) {
+    report('service-book-handover-read', bookRead.error, { table: 'service_books', userId: user.id, vehicleId });
+    return false;
+  }
+  return bookRead.book !== null;
+}
+
+/**
  * The pending handover of each of these bikes, keyed by vehicle id, for the
  * garage cards. A failed read is reported and leaves every card without the
  * line, since nothing here decides a write.

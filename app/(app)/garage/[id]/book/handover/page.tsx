@@ -13,6 +13,16 @@ interface ServiceBookHandoverPageProps {
   params: Promise<{ id: string }>;
 }
 
+function ReadFailure({ message }: { message: string }) {
+  return (
+    <section className="rounded-card bg-surface p-5">
+      <p className="text-sm text-slower" role="alert">
+        {message}
+      </p>
+    </section>
+  );
+}
+
 /**
  * The seller's handover screen (owner, PQ2). Demo offers none: the demo is a
  * tour, and a handover is the one write that ends a bike's life in a garage.
@@ -28,18 +38,11 @@ export default async function ServiceBookHandoverPage({ params }: ServiceBookHan
 
   const [result, handover, counts] = await Promise.all([getServiceBook(id), getServiceBookHandover(id), getServiceBookHandoverCounts(id)]);
   if (!result.ok && result.error === 'Vehicle not found.') notFound();
-  const failure = !result.ok ? result.error : !handover.ok ? handover.error : !counts.ok ? counts.error : null;
-  if (failure !== null || !result.ok || !handover.ok || !counts.ok) {
-    return (
-      <section className="rounded-card bg-surface p-5">
-        <p className="text-sm text-slower" role="alert">
-          {failure}
-        </p>
-      </section>
-    );
-  }
-  if (result.data.data === null) redirect(`/garage/${id}/book`);
-  const { vehicle } = result.data;
+  if (!result.ok) return <ReadFailure message={result.error} />;
+  const { vehicle, data } = result.data;
+  if (data === null) redirect(`/garage/${id}/book`);
+  if (!handover.ok) return <ReadFailure message={handover.error} />;
+  if (!counts.ok) return <ReadFailure message={counts.error} />;
 
   return (
     <div className="space-y-5">
@@ -54,7 +57,7 @@ export default async function ServiceBookHandoverPage({ params }: ServiceBookHan
       {vehicle.sold_at !== null ? (
         <SoldBanner soldAt={vehicle.sold_at} />
       ) : (
-        <ServiceBookHandoverForm vehicleId={id} nickname={vehicle.nickname} data={result.data.data} extra={counts.data} pending={handover.data} />
+        <ServiceBookHandoverForm vehicleId={id} nickname={vehicle.nickname} data={data} extra={counts.data} pending={handover.data} />
       )}
     </div>
   );
