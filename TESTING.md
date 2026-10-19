@@ -139,6 +139,9 @@ dashboard, the rider weighting the day to nothing, and a snooze from the book.
 `service-book` bucket from `[storage.buckets.service-book]`, which `supabase
 start` or `db reset` seeds; without the bucket every upload fails rather than
 skipping.
+`tests/e2e/service-book-handover.spec.ts` needs the same plus `20261017000600`
+applied, and signs in a second throwaway rider as the buyer to accept the
+handover through the buyer's client.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a
