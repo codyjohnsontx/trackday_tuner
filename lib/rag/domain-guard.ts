@@ -20,7 +20,12 @@ export type SkippableSource =
    * the previous session, a similar session, a day-plan recent session - and
    * dropped whole, with everything derived from it.
    */
-  | { kind: 'copiedSession'; id: string };
+  | { kind: 'copiedSession'; id: string }
+  /**
+   * An outcome on a session that came with the bike, printed as context on a
+   * session other than the one asked about, and dropped from the prompt.
+   */
+  | { kind: 'copiedFeedback'; id: string };
 
 /**
  * Who wrote a stored value: the rider reading the answer, or a previous owner
@@ -79,6 +84,8 @@ function skippableSourceKey(source: SkippableSource): string {
       return 'sessionEnvironment';
     case 'copiedSession':
       return `copiedSession:${source.id}`;
+    case 'copiedFeedback':
+      return `copiedFeedback:${source.id}`;
     default: {
       const unhandled: never = source;
       throw new Error(`Unhandled skippable source: ${JSON.stringify(unhandled)}`);

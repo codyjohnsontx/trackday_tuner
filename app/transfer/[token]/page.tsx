@@ -87,6 +87,7 @@ export default async function TransferPage({ params }: TransferPageProps) {
   const page = resolveHandoverPage(description, atVehicleLimit);
   const nextPath = handoverPath(token);
   const loginPath = `/login?next=${encodeURIComponent(nextPath)}`;
+  const inviteOnly = isBetaInviteOnly();
 
   switch (page.kind) {
     case 'sign_in':
@@ -95,9 +96,10 @@ export default async function TransferPage({ params }: TransferPageProps) {
           <PageHeader title="Bike handover" sub="A bike's history has been handed to you" />
           <Card>
             <p className="text-sm text-ink" data-testid="handover-sign-in">
-              Someone is handing you a bike on Trackday Tuner, with its service book and track sessions. Sign in with the email address
-              they sent this link to, or create an account with it, and you will come back here to accept.
-              {isBetaInviteOnly() ? ' This link stands in for an invitation code for that address.' : null}
+              Someone is handing you a bike on Trackday Tuner, with its service book and track sessions.{' '}
+              {inviteOnly
+                ? 'Sign in with the email address they sent this link to and you will come back here to accept. Trackday Tuner is invite-only right now, so if you have no account yet, ask the seller or Trackday Tuner for an invite, sign up with the email this link was sent to, and come back to this link.'
+                : 'Sign in with the email address they sent this link to, or create an account with it, and you will come back here to accept.'}
             </p>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
               {viewer.status === 'demo' ? (
@@ -115,7 +117,7 @@ export default async function TransferPage({ params }: TransferPageProps) {
                   className="flex min-h-12 flex-1 items-center justify-center rounded-control bg-ink px-4 text-sm font-semibold text-canvas"
                   data-testid="handover-sign-in-link"
                 >
-                  Sign in or create an account
+                  {inviteOnly ? 'Sign in' : 'Sign in or create an account'}
                 </Link>
               )}
             </div>

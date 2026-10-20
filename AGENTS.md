@@ -863,8 +863,7 @@ cannot weaken them and a new writer does not have to remember them:
   - `tests/unit/transfer-pointers-never-followed.test.ts` shows the screens and
   caps print the same whichever row a pointer names, and
   `tests/db/service-book-transfer.spec.ts` that following one as the buyer
-  finds nothing. While signups are invite-only, a pending handover admits its
-  recipient's address to `/api/beta/signup` with the link's token and no code.
+  finds nothing.
   `tests/e2e/service-book-handover.spec.ts` is the two-rider walk and records
   the copy's wall time for a 25-receipt bike.
 
@@ -1448,10 +1447,10 @@ collector call sites. The disposition is therefore a parameter of
 `collectEnvironmentRiderText`, next to the label suffix that was already
 per-route. Getting it backwards either way is a bug - skipping on day-plan
 silently discards submitted text, refusing on tuning-advice restores the trap.
-Day-plan collects nothing skippable at all (its recommendation list is always
-empty, its environment refuses), so only `prepareTuningAdvicePrompt` drops, and
-`prepareDayPlanPrompt` throws - failing closed into the route's shaped 500 - if a
-skip ever reaches it. The full
+Day-plan's only skips are what came with the bike - copied sessions and
+outcomes - which it drops (its recommendation list is always empty, its
+environment refuses); any other skip makes `prepareDayPlanPrompt` throw,
+failing closed into the route's shaped 500. The full
 sweep of which field is which, and why, is on the exclusion list in
 `lib/rag/prompt.ts`.
 
@@ -1484,7 +1483,8 @@ so it refuses with a label ending ", which came with the bike"; the buyer owns
 the row and the session form edits it. Its stored environment and telemetry
 summary take the same set, and an outcome on a copied session is marked by
 `markFeedbackFromCopiedSessions` (`lib/rag/race-engineer-context.ts`) and
-refuses on the full set; change records reach no prompt.
+screened on the full set the same way - refusing on the subject session,
+skipped as context everywhere else; change records reach no prompt.
 
 **The two passes are not the same screen, and the asymmetry is deliberate.**
 Stored text runs a *narrower* pattern set than submitted text, in two places now.

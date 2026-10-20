@@ -587,9 +587,10 @@ type SessionRole = 'subject' | 'context';
  * screened the same way. The subject session's stored environment and
  * telemetry summary take its author (`authorOf`); an outcome on a copied
  * session is marked by the loader (`ContextFeedback.came_with_the_bike`) and
- * screened with the full set too, refusing with a label that says it came with
- * the bike, since the buyer owns that session and its outcome panel rewrites
- * it. `session_changes` reach no prompt.
+ * screened with the full set too, with the same split: one on the subject
+ * session refuses, with a label that says it came with the bike, since the
+ * buyer owns that session and its outcome panel rewrites it, and every other
+ * one is context and skips. `session_changes` reach no prompt.
  */
 function authorOf(session: Session): RiderTextAuthor {
   return cameWithTheBike(session) ? 'previous_owner' : 'rider';
@@ -735,7 +736,7 @@ function collectRaceEngineerContextRiderText(
   context: RaceEngineerContext | null | undefined,
   environmentSuffix: string,
   environmentDisposition: RiderTextDisposition,
-  telemetryAuthor: RiderTextAuthor,
+  subject: Session | null,
   riderTimeZone: string | undefined,
 ): RiderTextField[] {
   if (!context) return [];
@@ -795,15 +796,19 @@ function collectRaceEngineerContextRiderText(
   // Dated in the rider's zone exactly as the memory label above is, and worded
   // the same way, because both name the outcome the rider logged.
   // An outcome on a session that came with the bike is the seller's, so it is
-  // screened with the full set and its label says where it came from.
+  // screened with the full set: on the subject session it refuses and its
+  // label says where it came from, and anywhere else it is context and skips,
+  // as a copied context session does (`sessionDisposition`).
   for (const feedback of context.recentFeedback) {
     const loggedOn = riderDateOfTimestamp(feedback.created_at, riderTimeZone);
     const suffix = feedback.came_with_the_bike
       ? `on the outcome logged on ${loggedOn}, which came with the bike`
       : `on the outcome you logged on ${loggedOn}`;
-    const disposition: RiderTextDisposition = feedback.came_with_the_bike
-      ? { onMatch: 'refuse', author: 'previous_owner' }
-      : REFUSE_ON_MATCH;
+    const disposition: RiderTextDisposition = !feedback.came_with_the_bike
+      ? REFUSE_ON_MATCH
+      : feedback.session_id === subject?.id
+        ? { onMatch: 'refuse', author: 'previous_owner' }
+        : { onMatch: 'skip', author: 'previous_owner', source: { kind: 'copiedFeedback', id: feedback.id } };
     pushRiderText(fields, disposition, `the symptoms ${suffix}`, feedback.symptoms.join(', '));
     pushRiderText(fields, disposition, `the notes ${suffix}`, feedback.notes);
   }
@@ -860,7 +865,7 @@ function collectRaceEngineerContextRiderText(
   // still cannot clear them, and these three fields move to the wrong side of the
   // refuse/skip split - re-decide this then rather than assuming it still holds.
   if (context.telemetrySummary) {
-    const telemetry: RiderTextDisposition = { onMatch: 'refuse', author: telemetryAuthor };
+    const telemetry: RiderTextDisposition = { onMatch: 'refuse', author: subject ? authorOf(subject) : 'rider' };
     pushRiderText(fields, telemetry, 'the telemetry source name', context.telemetrySummary.source);
     pushRiderText(fields, telemetry, 'the telemetry summary', context.telemetrySummary.summary);
     // "A numeric blob" is a convention this schema does not enforce: `metrics`
@@ -1012,7 +1017,7 @@ function collectDayPlanRiderText(
       input.raceEngineerContext,
       'you entered for today',
       REFUSE_ON_MATCH,
-      'rider',
+      null,
       riderTimeZone,
     ),
   ];
@@ -1055,7 +1060,7 @@ function collectTuningAdviceRiderText(
       input.raceEngineerContext,
       sessionLabelSuffix(input.session),
       { ...SKIP_SESSION_ENVIRONMENT, author: authorOf(input.session) },
-      authorOf(input.session),
+      input.session,
       riderTimeZone,
     ),
   ];
@@ -1152,9 +1157,9 @@ function collectDayPlanSessionIds(
  * filtering the full list would slide the next unscreened row into the window
  * the drop just freed and re-open the channel this exists to close. The
  * `prepare*` functions window before they screen, so everything that survives
- * here has been screened. `loadedRecommendations` is the unwindowed list, and
- * it is read for one thing only: the `feedback` flag, which describes what the
- * loader read rather than what the prompt prints.
+ * here has been screened. `loaded` is the unwindowed context, and its feedback
+ * and recommendations are read for one thing only: the `feedback` flag, which
+ * describes what the loader read rather than what the prompt prints.
  *
  * The switch is exhaustive and fail-closed twice over: a new `SkippableSource`
  * kind does not compile until it is handled here, and a drop that removed
@@ -1170,7 +1175,7 @@ function dropScreenedSources(
   context: RaceEngineerContext,
   droppedSources: readonly SkippableSource[],
   session: Session,
-  loadedRecommendations: RaceEngineerContext['recentRecommendations'],
+  loaded: Pick<RaceEngineerContext, 'recentFeedback' | 'recentRecommendations'>,
   /**
    * Copied sessions the CALLER already removed from the part of the prompt it
    * owns - the previous session, the day-plan recent sessions - which live
@@ -1183,6 +1188,7 @@ function dropScreenedSources(
 
   const droppedRecommendationIds = new Set<string>();
   const droppedCopiedSessionIds = new Set<string>();
+  const droppedFeedbackIds = new Set<string>();
   let dropSessionEnvironment = false;
 
   for (const source of droppedSources) {
@@ -1195,6 +1201,9 @@ function dropScreenedSources(
         break;
       case 'copiedSession':
         droppedCopiedSessionIds.add(source.id);
+        break;
+      case 'copiedFeedback':
+        droppedFeedbackIds.add(source.id);
         break;
       default: {
         const unhandled: never = source;
@@ -1213,6 +1222,13 @@ function dropScreenedSources(
       context.recentRecommendations.length - droppedRecommendationIds.size
     ) {
       throw new Error('A screened recommendation was not in the window it was collected from.');
+    }
+  }
+  let recentFeedback = context.recentFeedback;
+  if (droppedFeedbackIds.size > 0) {
+    recentFeedback = context.recentFeedback.filter((feedback) => !droppedFeedbackIds.has(feedback.id));
+    if (recentFeedback.length !== context.recentFeedback.length - droppedFeedbackIds.size) {
+      throw new Error('A screened outcome was not in the window it was collected from.');
     }
   }
   if (dropSessionEnvironment && !context.sessionEnvironment) {
@@ -1250,26 +1266,27 @@ function dropScreenedSources(
   // recommendation dropped the recompute is the loader's own value, so it is
   // skipped.
   const dataUsedAfterDrops: RaceEngineerContext['dataUsed'] =
-    droppedRecommendationIds.size === 0
+    droppedRecommendationIds.size === 0 && droppedFeedbackIds.size === 0
       ? context.dataUsed
       : {
           ...context.dataUsed,
           feedback:
-            context.recentFeedback.length > 0 ||
-            loadedRecommendations.some(
+            loaded.recentFeedback.some((feedback) => !droppedFeedbackIds.has(feedback.id)) ||
+            loaded.recentRecommendations.some(
               (recommendation) =>
                 !droppedRecommendationIds.has(recommendation.id) && recommendation.status !== 'proposed',
             ),
         };
 
   if (!dropSessionEnvironment && !similarChanged) {
-    return { ...context, recentRecommendations, dataUsed: dataUsedAfterDrops };
+    return { ...context, recentRecommendations, recentFeedback, dataUsed: dataUsedAfterDrops };
   }
 
   const sessionEnvironment = dropSessionEnvironment ? null : context.sessionEnvironment;
   return {
     ...context,
     recentRecommendations,
+    recentFeedback,
     similarSessions,
     sessionEnvironment,
     // All of these are read off the environment and the similar sessions where
@@ -1481,7 +1498,7 @@ export function prepareTuningAdvicePrompt(
     windowed.raceEngineerContext,
     assessment.droppedSources,
     fields.session,
-    fields.raceEngineerContext.recentRecommendations,
+    fields.raceEngineerContext,
     droppedElsewhere,
   );
   const promptInput = { ...windowed, previousSession, raceEngineerContext: screenedContext };
@@ -1511,8 +1528,9 @@ export function prepareTuningAdvicePrompt(
  * collectors at all: each is derived from the input its own prompt is built
  * from.
  *
- * The one skip it handles is a session that came with the bike
- * (`sessionDisposition`): dropped from the recent sessions, from the similar
+ * The skips it handles are what came with the bike: an outcome on a copied
+ * session, dropped from the outcomes printed and the `feedback` flag, and a
+ * copied session (`sessionDisposition`), dropped from the recent sessions, from the similar
  * sessions, from the ids the policy accepts, and from the day trend and the
  * `manual` and `history` flags the route derived from them. The route's
  * `buildContext` builds its planning session from the newest recent session
@@ -1551,12 +1569,17 @@ export function prepareDayPlanPrompt(input: DayPlanPromptInput): AdvicePromptPre
         'I could not build a plan from your saved setup data. Check your saved vehicle and session notes for wording that reads as an instruction.',
     };
   }
-  if (assessment.droppedSources.some((source) => source.kind !== 'copiedSession')) {
+  if (assessment.droppedSources.some((source) => source.kind !== 'copiedSession' && source.kind !== 'copiedFeedback')) {
     throw new Error(
       'Day-plan collected a skippable field but has no way to drop it from the prompt.',
     );
   }
-  const screenedInput = dropCopiedSessionsFromDayPlan(promptInput, fields.recentSessions, assessment.droppedSources);
+  const screenedInput = dropCopiedMaterialFromDayPlan(
+    promptInput,
+    fields.raceEngineerContext,
+    fields.recentSessions,
+    assessment.droppedSources,
+  );
 
   return {
     decision: 'proceed',
@@ -1575,18 +1598,20 @@ export function prepareDayPlanPrompt(input: DayPlanPromptInput): AdvicePromptPre
 }
 
 /**
- * Drop the copied sessions the screen named from a day-plan prompt input - the
- * printed recent sessions, the context's similar sessions, and what the route
- * derived from them. See `prepareDayPlanPrompt` for why the planning shape is
- * rebuilt here and what it rests on.
+ * Drop what came with the bike that the screen named from a day-plan prompt
+ * input - copied outcomes, and copied sessions from the printed recent
+ * sessions, the context's similar sessions, and what the route derived from
+ * them. See `prepareDayPlanPrompt` for why the planning shape is rebuilt here
+ * and what it rests on.
  */
-function dropCopiedSessionsFromDayPlan(
+function dropCopiedMaterialFromDayPlan(
   promptInput: Omit<BuildDayPlanInput, 'retrieved'> & { raceEngineerContext: RaceEngineerContext },
+  loadedContext: RaceEngineerContext,
   loadedRecentSessions: readonly Session[],
   droppedSources: readonly SkippableSource[],
 ): Omit<BuildDayPlanInput, 'retrieved'> & { raceEngineerContext: RaceEngineerContext } {
+  if (droppedSources.length === 0) return promptInput;
   const copiedDrops = droppedCopiedSessionIds(droppedSources);
-  if (copiedDrops.size === 0) return promptInput;
 
   const recentSessions = promptInput.recentSessions.filter((session) => !copiedDrops.has(session.id));
   const droppedElsewhere = new Set(
@@ -1602,9 +1627,10 @@ function dropCopiedSessionsFromDayPlan(
     context,
     droppedSources,
     planningShape(baseline ?? promptInput.recentSessions[0]),
-    context.recentRecommendations,
+    loadedContext,
     droppedElsewhere,
   );
+  if (copiedDrops.size === 0) return { ...promptInput, raceEngineerContext: screened };
   const raceEngineerContext: RaceEngineerContext = baseline
     ? { ...screened, dataUsed: { ...screened.dataUsed, manual: hasManualSessionData(planningShape(baseline)) } }
     : {

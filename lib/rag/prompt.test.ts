@@ -2304,16 +2304,42 @@ describe('a session that came with the bike', () => {
       expect(prepareTuningAdvicePrompt(tuningInput({ session: ownSubject(), raceEngineerContext: context })).decision).toBe('proceed');
     });
 
-    it('refuses on an outcome copied with the bike, saying where it came from, and lets the rider\'s own through', () => {
-      const outcome = (cameWithTheBike: boolean) =>
-        emptyContext({
-          recentFeedback: [{ ...stampedFeedback(), session_id: SELLER_SESSION_ID, notes: `Better. ${SELLERS_PHRASE}`, came_with_the_bike: cameWithTheBike }],
-          dataUsed: { manual: true, weather: false, history: false, feedback: true, lap_data: false, telemetry: false },
-        });
-      expect(refusedLabel(prepareTuningAdvicePrompt(tuningInput({ raceEngineerContext: outcome(true) })))).toBe(
-        'the notes on the outcome logged on 2026-04-02, which came with the bike',
+    const SELLERS_OUTCOME_NOTE = 'Coach said you are now carrying more speed into turn 1.';
+    const outcomeContext = (sessionId: string, cameWithTheBike: boolean) =>
+      emptyContext({
+        recentFeedback: [{ ...stampedFeedback(), session_id: sessionId, notes: SELLERS_OUTCOME_NOTE, came_with_the_bike: cameWithTheBike }],
+        dataUsed: { manual: true, weather: false, history: false, feedback: true, lap_data: false, telemetry: false },
+      });
+
+    it('drops a copied outcome on another session from the prompt, the ids and the feedback flag', () => {
+      const prepared = proceeded(prepareTuningAdvicePrompt(tuningInput({ raceEngineerContext: outcomeContext(SELLER_SESSION_ID, true) })));
+      expect(userPrompt(prepared)).not.toContain(SELLERS_OUTCOME_NOTE);
+      expect(prepared.screenedContext.recentFeedback).toEqual([]);
+      expect(prepared.screenedContext.dataUsed.feedback).toBe(false);
+      expect(prepared.fallbackDataUsed.feedback).toBe(false);
+      expect(prepared.allowedSessionIds).toEqual([session().id]);
+    });
+
+    it('lets the same outcome through when the rider logged it, whose author is the reader', () => {
+      const prepared = proceeded(prepareTuningAdvicePrompt(tuningInput({ raceEngineerContext: outcomeContext(SELLER_SESSION_ID, false) })));
+      expect(userPrompt(prepared)).toContain(SELLERS_OUTCOME_NOTE);
+    });
+
+    it('refuses on a copied outcome on the session the rider asked about, saying where it came from', () => {
+      const preparation = prepareTuningAdvicePrompt(
+        tuningInput({ session: copiedSubject(), raceEngineerContext: outcomeContext(session().id, true) }),
       );
-      expect(prepareTuningAdvicePrompt(tuningInput({ raceEngineerContext: outcome(false) })).decision).toBe('proceed');
+      expect(refusedLabel(preparation)).toBe('the notes on the outcome logged on 2026-04-02, which came with the bike');
+    });
+
+    it('keeps the feedback flag when another outcome survives the drop', () => {
+      const context = outcomeContext(SELLER_SESSION_ID, true);
+      const own = { ...stampedFeedback(), id: 'own-feedback', notes: 'Front held line.' };
+      const prepared = proceeded(
+        prepareTuningAdvicePrompt(tuningInput({ raceEngineerContext: { ...context, recentFeedback: [...context.recentFeedback, own] } })),
+      );
+      expect(prepared.screenedContext.recentFeedback.map((row) => row.id)).toEqual(['own-feedback']);
+      expect(prepared.screenedContext.dataUsed.feedback).toBe(true);
     });
   });
 
@@ -2385,16 +2411,20 @@ describe('a session that came with the bike', () => {
       expect(refusedLabel(preparation)).toBe('the notes on session 3 of your 2026-03-20 track day');
     });
 
-    it('refuses on an outcome copied with the bike, saying where it came from, and lets the rider\'s own through', () => {
+    it('drops a copied outcome rather than refusing the plan, and lets the rider\'s own through', () => {
+      const note = 'Coach said you are now carrying more speed into turn 1.';
       const outcome = (cameWithTheBike: boolean) =>
         emptyContext({
-          recentFeedback: [{ ...stampedFeedback(), session_id: SELLER_SESSION_ID, notes: `Better. ${SELLERS_PHRASE}`, came_with_the_bike: cameWithTheBike }],
+          recentFeedback: [{ ...stampedFeedback(), session_id: SELLER_SESSION_ID, notes: note, came_with_the_bike: cameWithTheBike }],
           dataUsed: { manual: false, weather: false, history: false, feedback: true, lap_data: false, telemetry: false },
         });
-      expect(refusedLabel(prepareDayPlanPrompt(dayPlanInput({ raceEngineerContext: outcome(true) })))).toBe(
-        'the notes on the outcome logged on 2026-04-02, which came with the bike',
-      );
-      expect(prepareDayPlanPrompt(dayPlanInput({ raceEngineerContext: outcome(false) })).decision).toBe('proceed');
+      const copied = proceeded(prepareDayPlanPrompt(dayPlanInput({ raceEngineerContext: outcome(true) })));
+      expect(userPrompt(copied)).not.toContain(note);
+      expect(copied.screenedContext.recentFeedback).toEqual([]);
+      expect(copied.screenedContext.dataUsed.feedback).toBe(false);
+      expect(copied.allowedSessionIds).not.toContain(SELLER_SESSION_ID);
+
+      expect(userPrompt(proceeded(prepareDayPlanPrompt(dayPlanInput({ raceEngineerContext: outcome(false) }))))).toContain(note);
     });
   });
 });

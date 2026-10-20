@@ -193,12 +193,6 @@ export function handoverPath(token: string): `/transfer/${string}` {
   return `/transfer/${token}`;
 }
 
-/** The token of a path `handoverPath` made, or null for any other path. */
-export function handoverTokenOfPath(path: string): string | null {
-  const token = /^\/transfer\/([^/?#]+)$/.exec(path)?.[1];
-  return isHandoverTokenShape(token) ? token : null;
-}
-
 export const HANDOVER_COPY = {
   invalid: 'This handover link is not valid any more.',
   wrongAccount: 'This handover was sent to a different email address. Sign in with the address the seller used.',
