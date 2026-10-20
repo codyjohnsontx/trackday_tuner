@@ -39,6 +39,8 @@ export const VEHICLE_PHOTO_BUCKET = 'vehicle-photos';
 
 export interface VehicleDeletionCounts {
   sessionCount: number;
+  /** The sessions among them the free plan's session cap counts: not ones copied in from an earlier owner (TQ1, TQ7). */
+  planSessionCount: number;
   lapCount: number;
   hasBaseline: boolean;
   recommendationCount: number;
@@ -68,15 +70,42 @@ function describeBikeRecords(counts: VehicleDeletionCounts): string[] {
   return records;
 }
 
+export interface VehicleDeletionOptions {
+  /**
+   * The bike was handed to a buyer (owner, TQ3): the rider's copy is read-only,
+   * the buyer's is untouched by this delete, and the sessions the rider logged
+   * on it still count toward their free plan until they go - which is the one
+   * thing a seller is likely to be here for.
+   */
+  sold?: boolean;
+  /** The rider is on the free plan, whose session cap the freed sessions count against. */
+  freePlan?: boolean;
+}
+
+/** What a sold bike's delete does and does not reach, after the counted sentence. */
+function describeSoldCopy(nickname: string, counts: VehicleDeletionCounts, freePlan: boolean): string {
+  const copy = ` You handed ${nickname} over, so this removes only your copy; the new owner's is untouched.`;
+  const freedCount = freePlan ? counts.planSessionCount : 0;
+  if (freedCount === 0) return copy;
+  const subject =
+    freedCount === counts.sessionCount
+      ? freedCount === 1
+        ? 'That session stops'
+        : 'Those sessions stop'
+      : `${freedCount} of those sessions ${freedCount === 1 ? 'stops' : 'stop'}`;
+  return `${copy} ${subject} counting toward your plan once ${freedCount === 1 ? 'it is' : 'they are'} gone.`;
+}
+
 /** The sentence under the heading: what goes with the bike, counted. */
-export function describeVehicleDeletion(nickname: string, counts: VehicleDeletionCounts): string {
+export function describeVehicleDeletion(nickname: string, counts: VehicleDeletionCounts, options: VehicleDeletionOptions = {}): string {
   const records = describeBikeRecords(counts);
   const alsoRecords = records.length > 0 ? ` It also deletes ${joinList(records)}.` : '';
+  const soldCopy = options.sold ? describeSoldCopy(nickname, counts, options.freePlan ?? false) : '';
 
   if (counts.sessionCount === 0) {
     return records.length > 0
-      ? `Deleting ${nickname} removes it from your garage. No sessions are logged on it.${alsoRecords} This cannot be undone.`
-      : `Deleting ${nickname} removes it from your garage. No sessions are logged on it, so nothing else is lost. This cannot be undone.`;
+      ? `Deleting ${nickname} removes it from your garage. No sessions are logged on it.${alsoRecords}${soldCopy} This cannot be undone.`
+      : `Deleting ${nickname} removes it from your garage. No sessions are logged on it, so nothing else is lost.${soldCopy} This cannot be undone.`;
   }
 
   const sessions =
@@ -86,7 +115,7 @@ export function describeVehicleDeletion(nickname: string, counts: VehicleDeletio
         ? 'both sessions'
         : `all ${plural(counts.sessionCount, 'session', 'sessions')}`;
   const laps = counts.lapCount > 0 ? ` and ${plural(counts.lapCount, 'lap time', 'lap times')}` : '';
-  return `Deleting ${nickname} also deletes ${sessions} you logged on it${laps}, with their setups, notes and outcomes.${alsoRecords} This cannot be undone.`;
+  return `Deleting ${nickname} also deletes ${sessions} you logged on it${laps}, with their setups, notes and outcomes.${alsoRecords}${soldCopy} This cannot be undone.`;
 }
 
 function foldNickname(value: string): string {

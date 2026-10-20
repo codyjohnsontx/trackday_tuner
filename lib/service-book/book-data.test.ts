@@ -34,7 +34,7 @@ const ENTRY: ServiceEntryRecord = {
 
 function data(ownerTimeZone: string | null): ServiceBookData {
   return {
-    vehicle: { id: '00000000-0000-4000-8000-0000000000v0', nickname: 'R6', type: 'motorcycle' },
+    vehicle: { id: '00000000-0000-4000-8000-0000000000v0', nickname: 'R6', type: 'motorcycle', sold_at: null },
     book: {
       id: BOOK_ID,
       vehicle_id: '00000000-0000-4000-8000-0000000000v0',

@@ -192,17 +192,24 @@ async function countVehicleCascade(
   { ok: true; counts: VehicleDeletionCounts; sessions: CascadedSession[] } | { ok: false; error: CountError }
 > {
   const sessions: CascadedSession[] = [];
+  let planSessionCount = 0;
   for (let from = 0; ; from += SESSION_ID_PAGE_SIZE) {
     const { data, error } = await supabase
       .from('sessions')
-      .select('id, photo_url')
+      .select('id, photo_url, copied_from_session_id, original_user_id')
       .eq('user_id', userId)
       .eq('vehicle_id', vehicleId)
       .order('id')
       .range(from, from + SESSION_ID_PAGE_SIZE - 1);
     if (error) return { ok: false, error };
-    const page = (data ?? []) as CascadedSession[];
+    const page = (data ?? []) as (CascadedSession & {
+      copied_from_session_id: string | null;
+      original_user_id: string | null;
+    })[];
     sessions.push(...page.map((row) => ({ id: row.id, photo_url: row.photo_url ?? null })));
+    planSessionCount += page.filter(
+      (row) => !row.copied_from_session_id || row.original_user_id === userId,
+    ).length;
     if (page.length < SESSION_ID_PAGE_SIZE) break;
   }
   const sessionIds = sessions.map((session) => session.id);
@@ -247,6 +254,7 @@ async function countVehicleCascade(
     ok: true,
     counts: {
       sessionCount: sessionIds.length,
+      planSessionCount,
       lapCount,
       hasBaseline: (baselineCount ?? 0) > 0,
       recommendationCount,

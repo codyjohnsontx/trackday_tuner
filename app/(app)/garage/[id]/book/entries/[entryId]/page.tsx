@@ -50,7 +50,9 @@ export default async function ServiceEntryPage({ params }: ServiceEntryPageProps
   const entry = data?.entries.find((candidate) => candidate.id === entryId);
   if (!data || !entry) notFound();
 
-  const editable = !demoMode && entry.deleted_at === null;
+  // The seller's copy of a handed-over bike is read-only (owner, TQ3), as the
+  // demo's and a removed entry are.
+  const editable = !demoMode && entry.deleted_at === null && data.vehicle.sold_at === null;
   // The rider's own layout decides whether attachments are asked for; ones
   // already attached are shown whatever it says.
   const attachmentsAsked = data.fields.some((field) => field.builtin_key === 'attachments' && field.enabled);

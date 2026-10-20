@@ -154,6 +154,8 @@ describe('supabase.rpc() call sites', () => {
         'confirm_service_attachment',
         'service_attachment_orphan_objects',
         'open_service_book_share',
+        'create_service_book_transfer',
+        'cancel_service_book_transfer',
         'consume_beta_rate_limit',
         'delete_vehicle_if_sessions_unchanged',
         'create_session_with_laps',

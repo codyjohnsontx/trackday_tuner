@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { DemoReadOnlyNotice } from '@/components/demo/read-only-notice';
-import { getVehicle, getVehicleDeletionCounts } from '@/lib/actions/vehicles';
+import { getUserProfile, getVehicle, getVehicleDeletionCounts } from '@/lib/actions/vehicles';
+import { resolveUserAccess } from '@/lib/access';
+import { hasServiceBook } from '@/lib/actions/service-book-transfers';
 import { isDemoMode } from '@/lib/demo/mode';
 import { VehicleForm } from '@/components/garage/vehicle-form';
 import { VehicleDeleteForm } from '@/components/garage/vehicle-delete-form';
@@ -24,7 +26,7 @@ export default async function EditVehiclePage({ params }: EditVehiclePageProps) 
     redirect('/garage');
   }
 
-  const counts = await getVehicleDeletionCounts(id);
+  const [counts, profile, hasBook] = await Promise.all([getVehicleDeletionCounts(id), getUserProfile(), hasServiceBook(id)]);
 
   return (
     <div className="space-y-5">
@@ -46,11 +48,33 @@ export default async function EditVehiclePage({ params }: EditVehiclePageProps) 
       <section className="rounded-card bg-surface p-4">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-faint">Delete Vehicle</h2>
         {counts.ok ? (
-          <VehicleDeleteForm vehicleId={result.data.id} nickname={result.data.nickname} counts={counts.data} />
+          <VehicleDeleteForm
+            vehicleId={result.data.id}
+            nickname={result.data.nickname}
+            counts={counts.data}
+            sold={result.data.sold_at !== null}
+            freePlan={!resolveUserAccess(profile).hasProAccess}
+          />
         ) : (
           <p className="text-sm text-slower" role="alert">{counts.error}</p>
         )}
       </section>
+
+      {result.data.sold_at === null && hasBook ? (
+        <section className="rounded-card bg-surface p-4">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-faint">Selling it?</h2>
+          <p className="text-sm text-ink-dim">
+            Hand the service book and the sessions to the buyer instead of deleting them. You keep a read-only copy of everything up to
+            the handover.
+          </p>
+          <Link
+            href={`/garage/${result.data.id}/book/handover`}
+            className="mt-3 inline-flex min-h-11 items-center justify-center rounded-control bg-surface-3 px-4 text-sm font-semibold text-ink transition hover:bg-surface-3/70 focus-visible:ring-2 focus-visible:ring-signal/80"
+          >
+            Hand over to a buyer
+          </Link>
+        </section>
+      ) : null}
     </div>
   );
 }
