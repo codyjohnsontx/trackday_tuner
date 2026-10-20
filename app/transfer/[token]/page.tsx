@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { resolveUserAccess } from '@/lib/access';
 import { getUserProfile, getVehicles } from '@/lib/actions/vehicles';
 import { getViewer } from '@/lib/auth';
+import { isBetaInviteOnly } from '@/lib/env.server';
 import { getFreePlanLimitMessage, isAtFreePlanLimit, vehiclesTowardPlan } from '@/lib/plans';
 import { describeHandover } from '@/lib/service-book-transfer';
 import {
@@ -96,6 +97,7 @@ export default async function TransferPage({ params }: TransferPageProps) {
             <p className="text-sm text-ink" data-testid="handover-sign-in">
               Someone is handing you a bike on Trackday Tuner, with its service book and track sessions. Sign in with the email address
               they sent this link to, or create an account with it, and you will come back here to accept.
+              {isBetaInviteOnly() ? ' This link stands in for an invitation code for that address.' : null}
             </p>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
               {viewer.status === 'demo' ? (

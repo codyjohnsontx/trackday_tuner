@@ -163,8 +163,9 @@ export function ServiceBookScreen({ data, demoMode }: ServiceBookScreenProps) {
 
 /**
  * A book that came with a bike handed over by its previous owner (owner, PQ2).
- * The counts are read off the rows' own `copied_from_*` pointers; nothing here
- * reaches the previous owner's data, and the two copies never do.
+ * The counts are what of that history is here now, read off the rows' own
+ * `copied_from_*` pointers; nothing here reaches the previous owner's data, and
+ * the two copies never do.
  */
 function ReceivedBanner({ handover }: { handover: ReceivedHistory }) {
   const entries = `${handover.entries} ${handover.entries === 1 ? 'entry' : 'entries'}`;
@@ -173,8 +174,8 @@ function ReceivedBanner({ handover }: { handover: ReceivedHistory }) {
     <Card id="received-book-banner">
       <Eyebrow>Handed over to you</Eyebrow>
       <p className="mt-2 text-sm text-ink">
-        Handed over to you on {handover.handedOverOn}. {entries} and {sessions} came with it; the previous owner keeps their own copy, and
-        nothing either of you adds from now on reaches the other.
+        Handed over to you on {handover.handedOverOn}. {entries} and {sessions} from before then are here now; the previous owner keeps
+        their own copy, and nothing either of you adds from now on reaches the other.
       </p>
       <p className="mt-1 text-xs text-ink-faint">Entries a previous owner logged can be removed but not edited. What you log is yours.</p>
     </Card>

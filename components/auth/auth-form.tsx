@@ -22,9 +22,21 @@ interface AuthFormProps {
    * one place a `next` is read off a URL.
    */
   nextPath?: string;
+  /**
+   * The token of the handover link that sent the rider here, when one did. While
+   * signups are invite-only it stands in for the invitation code for the
+   * address the bike was handed to; the server decides whether it does.
+   */
+  handoverToken?: string | null;
 }
 
-export function AuthForm({ providers: oauthProviders, inviteOnly = false, initialError = '', nextPath = '/dashboard' }: AuthFormProps) {
+export function AuthForm({
+  providers: oauthProviders,
+  inviteOnly = false,
+  initialError = '',
+  nextPath = '/dashboard',
+  handoverToken = null,
+}: AuthFormProps) {
   const router = useRouter();
   const [mode, setMode] = useState<AuthMode>('sign-in');
   const [email, setEmail] = useState('');
@@ -129,7 +141,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
         const response = await fetch('/api/beta/signup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password, invite_code: inviteCode }),
+          body: JSON.stringify({ email, password, invite_code: inviteCode, handover_token: handoverToken ?? undefined }),
         });
         const result = await response.json() as { ok: boolean; error?: string };
         if (!response.ok || !result.ok) {
@@ -251,12 +263,15 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
         />
         {mode === 'sign-up' && inviteOnly ? (
           <Input
-            label="Invitation code"
+            label={handoverToken ? 'Invitation code (optional)' : 'Invitation code'}
             value={inviteCode}
             onChange={(event) => setInviteCode(event.target.value)}
             autoComplete="one-time-code"
             placeholder="Your beta invitation code"
-            required
+            required={!handoverToken}
+            helperText={
+              handoverToken ? 'Creating the account with the email address the bike was handed to? You need no invitation code.' : undefined
+            }
           />
         ) : null}
         {!isReset ? (

@@ -1,7 +1,8 @@
 import { Document, Image, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
 import { ATTACHMENT_KIND_LABELS } from '@/lib/service-book/attachments';
 import { toPdfText, type PdfRequest } from '@/lib/service-book/pdf-plan';
-import { describeRemovedEntries, type SharedBookView, type SharedEntry } from '@/lib/service-book/shared-view';
+import { describeRemovedEntries } from '@/lib/service-book/book-data';
+import type { SharedBookView, SharedEntry } from '@/lib/service-book/shared-view';
 
 /**
  * A bike's service book as a PDF (owner, Q5 and PQ4), drawn from the same

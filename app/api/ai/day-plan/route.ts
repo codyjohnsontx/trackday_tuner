@@ -37,7 +37,9 @@ import {
   buildDayTrend,
   dayPlanNoHistoryTrend,
   hasManualSessionData,
+  markFeedbackFromCopiedSessions,
   selectSimilarSessions,
+  type ContextFeedback,
   type RaceEngineerContext,
 } from '@/lib/rag/race-engineer-context';
 import type { AdviceDataUsed } from '@/lib/rag/schema';
@@ -236,7 +238,7 @@ function buildContext(params: {
   recentEnvironments: SessionEnvironment[];
   environment: CreateSessionEnvironmentInput | null;
   memory: RaceEngineerMemory | null;
-  feedback: SessionFeedback[];
+  feedback: ContextFeedback[];
 }): RaceEngineerContext {
   const planningSessionId = params.recentSessions[0]
     ? `planned-${params.targetDate}-${params.recentSessions[0].id}`
@@ -643,7 +645,16 @@ export async function POST(request: Request) {
     return errorResponse(500, 'Unable to load planning history right now.', requestId);
   }
   const recentEnvironments = (environmentsResult.data ?? []) as SessionEnvironment[];
-  const feedback = (feedbackResult.data ?? []) as SessionFeedback[];
+  const marked = await markFeedbackFromCopiedSessions(supabase, user.id, (feedbackResult.data ?? []) as SessionFeedback[]);
+  if (marked.error) {
+    reportError(LOG_TAG, marked.error, {
+      requestId,
+      userId: user.id,
+      vehicleId: vehicle.id,
+      query: 'sessions (copied-session lookup for feedback)',
+    });
+  }
+  const feedback = marked.feedback;
 
   // Everything from here reads the stored session JSON, which is `jsonb not
   // null` but shape-unconstrained - `createSession` inserts the tyre and

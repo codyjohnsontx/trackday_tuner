@@ -181,8 +181,10 @@ interface NormalizeAdviceResponseInput {
  * person: every row reaching these prompts is RLS-scoped to the requesting
  * rider, and the one write path into a rider's rows that someone else holds -
  * a bike handed over by its previous owner (20261017000600) - is screened with
- * the full submitted set instead, by `RiderTextAuthor`. So working
- * around this manipulates only your own advice. `evaluateAdvicePolicy` then
+ * the full submitted set instead, by `RiderTextAuthor`: a copied session, and
+ * every row copied with it that a prompt prints (its environment, telemetry
+ * summary and outcomes). So working around this manipulates only your own
+ * advice. `evaluateAdvicePolicy` then
  * still force-refuses unless the result names a vocabulary component and
  * direction, a magnitude under its ceiling, a retrieved citation and real
  * session ids. Submitted text keeps the bare phrase below, where a refusal is

@@ -85,11 +85,6 @@ export function serviceYearOf(date: unknown): number | null {
   return isIsoDate(date) ? Number(date.slice(0, 4)) : null;
 }
 
-export function describeRemovedEntries(count: number): string | null {
-  if (count <= 0) return null;
-  return `${count} ${count === 1 ? 'entry' : 'entries'} removed by an owner`;
-}
-
 function readingsOf(readings: readonly UsageReading[], unit: DistanceUnit): SharedReading[] {
   const shown: SharedReading[] = [];
   const hours = latestReading(readings, 'hours');

@@ -266,7 +266,7 @@ test.describe('handing a bike to a buyer', () => {
 
       // The new book: the banner, the seller's entry labelled as theirs, the removed count.
       await expect(buyerPage.locator('#received-book-banner')).toContainText('Handed over to you on');
-      await expect(buyerPage.locator('#received-book-banner')).toContainText('1 entry and 1 session came with it');
+      await expect(buyerPage.locator('#received-book-banner')).toContainText('1 entry and 1 session from before then are here now');
       const rows = buyerPage.getByTestId('service-entry-row');
       await expect(rows).toHaveCount(1);
       const labels = rows.getByRole('list', { name: 'History' }).getByRole('listitem');
@@ -274,7 +274,7 @@ test.describe('handing a bike to a buyer', () => {
       const labelTexts = await labels.allTextContents();
       expect(labelTexts.some((text) => /^Logged by a previous owner, handed over on \d/.test(text))).toBe(true);
       expect(labelTexts).toContain('Receipt attached when logged');
-      await expect(buyerPage.getByTestId('received-removed-entries')).toHaveText('1 entry removed by an owner before the handover');
+      await expect(buyerPage.getByTestId('received-removed-entries')).toHaveText('1 entry removed by an owner');
       expect(await buyerPage.content()).not.toContain(REMOVED_NOTE);
 
       // The copied entry opens read-only and remove-only, with its receipt actually rendering.

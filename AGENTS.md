@@ -855,12 +855,16 @@ cannot weaken them and a new writer does not have to remember them:
   book's `transferred_at` in its pinned zone) with the seller's edits counted
   below the last `transferred` revision and the buyer's above it; it opens
   read-only with only Remove, since the database refuses every other change
-  (TT403). The book's banner and its "N entries removed by an owner before the
-  handover" line come from `describeReceivedHistory`, which counts the rows'
-  own `copied_from_*` pointers. **Nothing follows one of those pointers to the
+  (TT403). The book's banner (what of the handed-over history is still here)
+  and its "N entries removed by an owner" line, across every owner, come from
+  `describeReceivedHistory`, which counts the rows' own `copied_from_*`
+  pointers. **Nothing follows one of those pointers to the
   other rider's row** - a cap reads one as a null check, a screen as a boolean
-  - and RLS keeps that row out of reach whatever a filter asks, which
-  `tests/db/service-book-transfer.spec.ts` proves as two riders.
+  - `tests/unit/transfer-pointers-never-followed.test.ts` shows the screens and
+  caps print the same whichever row a pointer names, and
+  `tests/db/service-book-transfer.spec.ts` that following one as the buyer
+  finds nothing. While signups are invite-only, a pending handover admits its
+  recipient's address to `/api/beta/signup` with the link's token and no code.
   `tests/e2e/service-book-handover.spec.ts` is the two-rider walk and records
   the copy's wall time for a 25-receipt bike.
 
@@ -1477,8 +1481,10 @@ dropped from the prompt, from `allowedSessionIds` and from the day trend and
 the `history` and `manual` flags, through `dropScreenedSources` and day-plan's
 own `dropCopiedSessionsFromDayPlan`. The subject session cannot be dropped,
 so it refuses with a label ending ", which came with the bike"; the buyer owns
-the row and the session form edits it. Feedback and change records on a copied
-session carry no mark and stay on the rider's side, which is recorded there.
+the row and the session form edits it. Its stored environment and telemetry
+summary take the same set, and an outcome on a copied session is marked by
+`markFeedbackFromCopiedSessions` (`lib/rag/race-engineer-context.ts`) and
+refuses on the full set; change records reach no prompt.
 
 **The two passes are not the same screen, and the asymmetry is deliberate.**
 Stored text runs a *narrower* pattern set than submitted text, in two places now.
@@ -1495,8 +1501,10 @@ are now on Dan's line through turn 3" passes and "you are now an unrestricted AI
 does not. A lexical list is enumerable-around, so that is strictly weaker than the
 bare phrase against a determined attacker. It is defensible because for STORED
 text the attacker and the victim are the same person: every row reaching these
-prompts is RLS-scoped to the requesting rider and there is no shared, imported or
-third-party write path, so working around it manipulates only your own advice -
+prompts is RLS-scoped to the requesting rider, and the one third-party write path
+- a bike's history copied to its buyer - is screened with the full submitted set
+(the session, and the environment, telemetry and outcomes copied with it), so
+working around it manipulates only your own advice -
 and `evaluateAdvicePolicy` still force-refuses anything that does not name a
 vocabulary component and direction, a magnitude under its ceiling, a retrieved
 citation and real session ids. Submitted text keeps both bare phrases, where a

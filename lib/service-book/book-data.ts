@@ -78,6 +78,8 @@ export interface ServiceBookData {
    * makes (20261014000400).
    */
   attachmentCount: number;
+  /** How many of the book's entries are removed: counted, never read (owner, PQ6). */
+  removedEntryCount: number;
 }
 
 export function usageInputOf(data: ServiceBookData): UsageInput {
@@ -108,30 +110,39 @@ export interface ServiceBookView {
 /**
  * The banner on a book a buyer received (owner, PQ2): when it was handed over,
  * in the same zone the entries' labels are read in, and how much of the history
- * came with it - counted off the rows' own `copied_from_*` pointers, never by
- * following one to the previous owner's data.
+ * that came with it is here now - counted off the rows' own `copied_from_*`
+ * pointers, never by following one to the previous owner's data. Nothing
+ * records the counts as handed over, and a session is deleted outright, so the
+ * banner says what is present rather than what arrived.
  */
 export interface ReceivedHistory {
   /** The handover day, formatted. */
   handedOverOn: string;
+  /** Entries a previous owner logged that are still in the book. */
   entries: number;
+  /** Sessions that came with the bike and are still on it. */
   sessions: number;
-  /** "N entries removed by an owner", or null when none was. */
+  /** "N entries removed by an owner", across every owner, or null when none was. */
   removedEntries: string | null;
 }
 
+/** The line a book prints for its removed entries, across every owner (owner, TQ8). */
+export function describeRemovedEntries(count: number): string | null {
+  if (count <= 0) return null;
+  return `${count} ${count === 1 ? 'entry' : 'entries'} removed by an owner`;
+}
+
 export function describeReceivedHistory(
-  data: Pick<ServiceBookData, 'book' | 'entries' | 'sessions'>,
+  data: Pick<ServiceBookData, 'book' | 'entries' | 'sessions' | 'removedEntryCount'>,
   labelZone: string,
 ): ReceivedHistory | null {
   const transferredAt = data.book.transferred_at;
   if (transferredAt === null || instantOf(transferredAt) === null) return null;
-  const removed = data.book.transferred_removed_entry_count;
   return {
     handedOverOn: formatDay(riderDateOfTimestamp(transferredAt, labelZone)),
     entries: data.entries.filter((entry) => entryCameWithTheBike(entry) && entry.deleted_at === null).length,
     sessions: data.sessions.filter((session) => typeof session.copied_from_session_id === 'string' && session.copied_from_session_id !== '').length,
-    removedEntries: removed > 0 ? `${removed} ${removed === 1 ? 'entry' : 'entries'} removed by an owner before the handover` : null,
+    removedEntries: describeRemovedEntries(data.book.transferred_removed_entry_count + data.removedEntryCount),
   };
 }
 

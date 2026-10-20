@@ -583,11 +583,18 @@ type SessionRole = 'subject' | 'context';
  * its notes, so the refusal names something they can open. A session the
  * rider logged themselves keeps the narrower set and refuses, as before.
  *
- * `session_feedback` and `session_changes` on a copied session carry no mark
- * of their own and stay on the rider's side of the screen: they are the
- * buyer's rows, the outcome panel rewrites them, and a refusal names that
- * panel. Recorded rather than widened here.
+ * Accept copies a session's children with it, and the ones a prompt prints are
+ * screened the same way. The subject session's stored environment and
+ * telemetry summary take its author (`authorOf`); an outcome on a copied
+ * session is marked by the loader (`ContextFeedback.came_with_the_bike`) and
+ * screened with the full set too, refusing with a label that says it came with
+ * the bike, since the buyer owns that session and its outcome panel rewrites
+ * it. `session_changes` reach no prompt.
  */
+function authorOf(session: Session): RiderTextAuthor {
+  return cameWithTheBike(session) ? 'previous_owner' : 'rider';
+}
+
 function sessionDisposition(session: Session, role: SessionRole): RiderTextDisposition {
   if (!cameWithTheBike(session)) return REFUSE_ON_MATCH;
   return role === 'subject'
@@ -728,6 +735,7 @@ function collectRaceEngineerContextRiderText(
   context: RaceEngineerContext | null | undefined,
   environmentSuffix: string,
   environmentDisposition: RiderTextDisposition,
+  telemetryAuthor: RiderTextAuthor,
   riderTimeZone: string | undefined,
 ): RiderTextField[] {
   if (!context) return [];
@@ -786,10 +794,18 @@ function collectRaceEngineerContextRiderText(
 
   // Dated in the rider's zone exactly as the memory label above is, and worded
   // the same way, because both name the outcome the rider logged.
+  // An outcome on a session that came with the bike is the seller's, so it is
+  // screened with the full set and its label says where it came from.
   for (const feedback of context.recentFeedback) {
-    const suffix = `on the outcome you logged on ${riderDateOfTimestamp(feedback.created_at, riderTimeZone)}`;
-    pushRiderText(fields, REFUSE_ON_MATCH, `the symptoms ${suffix}`, feedback.symptoms.join(', '));
-    pushRiderText(fields, REFUSE_ON_MATCH, `the notes ${suffix}`, feedback.notes);
+    const loggedOn = riderDateOfTimestamp(feedback.created_at, riderTimeZone);
+    const suffix = feedback.came_with_the_bike
+      ? `on the outcome logged on ${loggedOn}, which came with the bike`
+      : `on the outcome you logged on ${loggedOn}`;
+    const disposition: RiderTextDisposition = feedback.came_with_the_bike
+      ? { onMatch: 'refuse', author: 'previous_owner' }
+      : REFUSE_ON_MATCH;
+    pushRiderText(fields, disposition, `the symptoms ${suffix}`, feedback.symptoms.join(', '));
+    pushRiderText(fields, disposition, `the notes ${suffix}`, feedback.notes);
   }
 
   // Model-authored at insert, rider-writable after that. `authenticated` holds
@@ -844,15 +860,16 @@ function collectRaceEngineerContextRiderText(
   // still cannot clear them, and these three fields move to the wrong side of the
   // refuse/skip split - re-decide this then rather than assuming it still holds.
   if (context.telemetrySummary) {
-    pushRiderText(fields, REFUSE_ON_MATCH, 'the telemetry source name', context.telemetrySummary.source);
-    pushRiderText(fields, REFUSE_ON_MATCH, 'the telemetry summary', context.telemetrySummary.summary);
+    const telemetry: RiderTextDisposition = { onMatch: 'refuse', author: telemetryAuthor };
+    pushRiderText(fields, telemetry, 'the telemetry source name', context.telemetrySummary.source);
+    pushRiderText(fields, telemetry, 'the telemetry summary', context.telemetrySummary.summary);
     // "A numeric blob" is a convention this schema does not enforce: `metrics`
     // is unconstrained `jsonb` and `authenticated` holds insert and update on
     // `telemetry_summaries`. The prompt prints `JSON.stringify(metrics)`, so
     // that string is what gets screened.
     pushRiderText(
       fields,
-      REFUSE_ON_MATCH,
+      telemetry,
       'the telemetry metrics',
       JSON.stringify(context.telemetrySummary.metrics),
     );
@@ -995,6 +1012,7 @@ function collectDayPlanRiderText(
       input.raceEngineerContext,
       'you entered for today',
       REFUSE_ON_MATCH,
+      'rider',
       riderTimeZone,
     ),
   ];
@@ -1036,7 +1054,8 @@ function collectTuningAdviceRiderText(
     ...collectRaceEngineerContextRiderText(
       input.raceEngineerContext,
       sessionLabelSuffix(input.session),
-      SKIP_SESSION_ENVIRONMENT,
+      { ...SKIP_SESSION_ENVIRONMENT, author: authorOf(input.session) },
+      authorOf(input.session),
       riderTimeZone,
     ),
   ];

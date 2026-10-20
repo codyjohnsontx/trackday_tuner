@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ServiceEntryRecord } from '@/lib/service-book/book-data';
-import { buildSharedBookView, describeRemovedEntries, type SharedBookInput } from '@/lib/service-book/shared-view';
+import { describeRemovedEntries } from '@/lib/service-book/book-data';
+import { buildSharedBookView, type SharedBookInput } from '@/lib/service-book/shared-view';
 
 const BOOK_ID = '00000000-0000-4000-8000-0000000000b0';
 const ITEM_ID = '00000000-0000-4000-8000-0000000000c0';

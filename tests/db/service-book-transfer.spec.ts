@@ -490,6 +490,24 @@ test.describe('handing a service book to a buyer', () => {
       expect(await record(accepted.vehicle_id, accepted.book_id)).toEqual(copyBefore);
     });
 
+    test('every copied_from pointer names a row the buyer cannot read and the seller still holds', async () => {
+      const copy = await record(accepted.vehicle_id, accepted.book_id);
+      const pointers = {
+        service_books: copy.service_books.map((row) => row.transferred_from_book_id),
+        service_entries: copy.service_entries.map((row) => row.copied_from_entry_id),
+        service_attachments: copy.service_attachments.map((row) => row.copied_from_attachment_id),
+        sessions: copy.sessions.map((row) => row.copied_from_session_id),
+      };
+      for (const [table, ids] of Object.entries(pointers)) {
+        const named = [...new Set(ids.filter((id): id is string => typeof id === 'string'))];
+        expect(named.length, table).toBeGreaterThan(0);
+        const followed = await buyer.client.from(table as 'sessions').select('id').in('id', named);
+        expect(followed.error, followed.error?.message).toBeNull();
+        expect(followed.data, table).toEqual([]);
+        expect((await admin.from(table as 'sessions').select('id').in('id', named)).data, table).toHaveLength(named.length);
+      }
+    });
+
     test('severs the two copies: what either adds afterwards, and what anyone else sees', async () => {
       const seller = bikeAtSale.seller;
       const sellerBefore = await record(seller.vehicle, seller.book);

@@ -13,6 +13,7 @@ import {
   buildDayTrend,
   hasDegradedContextPrefix,
   withDegradedContextPrefix,
+  type ContextFeedback,
   type RaceEngineerContext,
 } from '@/lib/rag/race-engineer-context';
 import { DISCLAIMER_NOTE, ONE_CHANGE_NOTE, type AdviceResponse } from '@/lib/rag/schema';
@@ -21,7 +22,6 @@ import type {
   AiRecommendation,
   Session,
   SessionEnvironment,
-  SessionFeedback,
   TelemetrySummary,
   Vehicle,
 } from '@/types';
@@ -768,7 +768,7 @@ function stampedSession(partial: Partial<Session> = {}): Session {
   });
 }
 
-function stampedFeedback(): SessionFeedback {
+function stampedFeedback(): ContextFeedback {
   return {
     id: '33333333-3333-3333-3333-333333333333',
     user_id: 'user-1',
@@ -785,6 +785,7 @@ function stampedFeedback(): SessionFeedback {
     recommendation_helpfulness: null,
     created_at: '2026-04-02T00:00:00Z',
     updated_at: '2026-04-02T00:00:00Z',
+    came_with_the_bike: false,
   };
 }
 
@@ -2248,6 +2249,72 @@ describe('a session that came with the bike', () => {
       );
       expect(refusedLabel(preparation)).toBe('the notes on session 2 of your 2026-04-01 track day');
     });
+
+    function subjectEnvironment(weather: string): SessionEnvironment {
+      return {
+        id: '55555555-5555-5555-5555-555555555555',
+        user_id: 'user-1',
+        session_id: session().id,
+        ambient_temperature_c: 24,
+        track_temperature_c: 33,
+        humidity_percent: 40,
+        weather_condition: weather,
+        surface_condition: 'dry',
+        source: 'manual',
+        created_at: '2026-04-01T00:00:00Z',
+        updated_at: '2026-04-01T00:00:00Z',
+      } as SessionEnvironment;
+    }
+
+    function subjectTelemetry(summary: string): TelemetrySummary {
+      return {
+        id: '66666666-6666-6666-6666-666666666666',
+        user_id: 'user-1',
+        session_id: session().id,
+        vehicle_id: '11111111-1111-1111-1111-111111111111',
+        source: 'manual',
+        summary,
+        metrics: {},
+        created_at: '2026-04-01T00:00:00Z',
+        updated_at: '2026-04-01T00:00:00Z',
+      } as TelemetrySummary;
+    }
+
+    const copiedSubject = () => copiedSession({ id: session().id, date: '2026-04-01', session_number: 2, notes: 'Front felt vague.' });
+    const ownSubject = () => ownSession({ id: session().id, date: '2026-04-01', session_number: 2, notes: 'Front felt vague.' });
+
+    it('screens a copied subject\'s stored environment with the full set and drops it', () => {
+      const context = emptyContext({
+        sessionEnvironment: subjectEnvironment(`Overcast. ${SELLERS_PHRASE}`),
+        dataUsed: { manual: true, weather: true, history: false, feedback: false, lap_data: false, telemetry: false },
+      });
+      const copied = proceeded(prepareTuningAdvicePrompt(tuningInput({ session: copiedSubject(), raceEngineerContext: context })));
+      expect(userPrompt(copied)).not.toContain(SELLERS_PHRASE);
+      expect(copied.screenedContext.sessionEnvironment).toBeNull();
+
+      const own = proceeded(prepareTuningAdvicePrompt(tuningInput({ session: ownSubject(), raceEngineerContext: context })));
+      expect(userPrompt(own)).toContain(SELLERS_PHRASE);
+    });
+
+    it('refuses on a copied subject\'s telemetry summary on a phrase only the full set carries', () => {
+      const context = emptyContext({ telemetrySummary: subjectTelemetry(`Laps steady. ${SELLERS_PHRASE}`) });
+      expect(refusedLabel(prepareTuningAdvicePrompt(tuningInput({ session: copiedSubject(), raceEngineerContext: context })))).toBe(
+        'the telemetry summary',
+      );
+      expect(prepareTuningAdvicePrompt(tuningInput({ session: ownSubject(), raceEngineerContext: context })).decision).toBe('proceed');
+    });
+
+    it('refuses on an outcome copied with the bike, saying where it came from, and lets the rider\'s own through', () => {
+      const outcome = (cameWithTheBike: boolean) =>
+        emptyContext({
+          recentFeedback: [{ ...stampedFeedback(), session_id: SELLER_SESSION_ID, notes: `Better. ${SELLERS_PHRASE}`, came_with_the_bike: cameWithTheBike }],
+          dataUsed: { manual: true, weather: false, history: false, feedback: true, lap_data: false, telemetry: false },
+        });
+      expect(refusedLabel(prepareTuningAdvicePrompt(tuningInput({ raceEngineerContext: outcome(true) })))).toBe(
+        'the notes on the outcome logged on 2026-04-02, which came with the bike',
+      );
+      expect(prepareTuningAdvicePrompt(tuningInput({ raceEngineerContext: outcome(false) })).decision).toBe('proceed');
+    });
   });
 
   describe('on day-plan', () => {
@@ -2316,6 +2383,18 @@ describe('a session that came with the bike', () => {
     it('still refuses on the rider\'s own text beside a dropped copied session', () => {
       const preparation = prepareDayPlanPrompt(dayPlanInput({ recentSessions: [ownSession({ notes: PAYLOAD }), copiedSession()] }));
       expect(refusedLabel(preparation)).toBe('the notes on session 3 of your 2026-03-20 track day');
+    });
+
+    it('refuses on an outcome copied with the bike, saying where it came from, and lets the rider\'s own through', () => {
+      const outcome = (cameWithTheBike: boolean) =>
+        emptyContext({
+          recentFeedback: [{ ...stampedFeedback(), session_id: SELLER_SESSION_ID, notes: `Better. ${SELLERS_PHRASE}`, came_with_the_bike: cameWithTheBike }],
+          dataUsed: { manual: false, weather: false, history: false, feedback: true, lap_data: false, telemetry: false },
+        });
+      expect(refusedLabel(prepareDayPlanPrompt(dayPlanInput({ raceEngineerContext: outcome(true) })))).toBe(
+        'the notes on the outcome logged on 2026-04-02, which came with the bike',
+      );
+      expect(prepareDayPlanPrompt(dayPlanInput({ raceEngineerContext: outcome(false) })).decision).toBe('proceed');
     });
   });
 });

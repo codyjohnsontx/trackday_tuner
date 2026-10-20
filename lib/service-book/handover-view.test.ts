@@ -3,6 +3,8 @@ import { getFreePlanLimitMessage } from '@/lib/plans';
 import {
   describeAcceptRefusal,
   describeHandoverSummary,
+  handoverPath,
+  handoverTokenOfPath,
   isHandoverTokenShape,
   readHandoverDescription,
   readHandoverSummary,
@@ -124,5 +126,15 @@ describe('the token in the link', () => {
     expect(isHandoverTokenShape('short')).toBe(false);
     expect(isHandoverTokenShape('has space '.repeat(5))).toBe(false);
     expect(isHandoverTokenShape(null)).toBe(false);
+  });
+});
+
+describe('the handover token of a path', () => {
+  it('reads back the token of a path handoverPath made, and nothing else', () => {
+    const token = 'A'.repeat(43);
+    expect(handoverTokenOfPath(handoverPath(token))).toBe(token);
+    for (const path of ['/dashboard', '/transfer/short', `/transfer/${token}/more`, `/transfer/${token}?x=1`, `/book/${token}`]) {
+      expect(handoverTokenOfPath(path)).toBeNull();
+    }
   });
 });

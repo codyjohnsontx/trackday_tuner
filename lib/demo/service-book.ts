@@ -287,6 +287,7 @@ export function getDemoServiceBook(vehicleId: string): DemoServiceBookRead | nul
       weights: [],
       overrides: [],
       attachmentCount: 0,
+      removedEntryCount: 0,
     },
   });
 }
