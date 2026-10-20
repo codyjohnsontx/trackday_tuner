@@ -321,7 +321,8 @@ test.describe('handing a bike to a buyer', () => {
 
       await gotoPage(buyerPage, `/garage/${newVehicleId}/book`);
       await expect(buyerPage.getByTestId('service-entry-row')).toHaveCount(2);
-      await expect(buyerPage.locator('#received-book-banner')).toContainText('1 entry and 1 session came with it');
+      // The buyer's own entry is theirs, so the banner still counts only what came with the bike.
+      await expect(buyerPage.locator('#received-book-banner')).toContainText('1 entry and 1 session from before then are here now');
     } finally {
       await buying.close();
     }
