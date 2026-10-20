@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { HandoverAccept } from '@/components/service-book/handover-accept';
+import { HandoverExpiry } from '@/components/service-book/handover-expiry';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { Card, CardGroup, Eyebrow, GroupRow } from '@/components/ui/surface';
 import { PageHeader } from '@/components/ui/page-header';
@@ -21,8 +22,6 @@ import {
   STAYS_WITH_SELLER,
   type HandoverPage,
 } from '@/lib/service-book/handover-view';
-import { formatDay } from '@/lib/service-book/calendar';
-import { riderDateOfTimestamp } from '@/lib/local-date';
 
 // Every open is counted against the link's rate limit and answers for the
 // viewer signed in right now, so nothing here may be cached. Accept copies a
@@ -154,7 +153,6 @@ export default async function TransferPage({ params }: TransferPageProps) {
 function Offer({ token, page }: { token: string; page: Extract<HandoverPage, { kind: 'offer' }> }) {
   const bike = page.bike;
   const subtitle = bike ? [bike.year, bike.make, bike.model].filter((part) => part !== null && String(part).trim() !== '').join(' ') : '';
-  const expiresOn = formatDay(riderDateOfTimestamp(page.expiresAt));
 
   return (
     <div className="space-y-5">
@@ -173,7 +171,9 @@ function Offer({ token, page }: { token: string; page: Extract<HandoverPage, { k
             {subtitle ? <p className="mt-0.5 truncate text-sm text-ink-dim">{subtitle}</p> : null}
           </div>
         </div>
-        <p className="mt-3 text-xs text-ink-faint">This link is good until {expiresOn}.</p>
+        <p className="mt-3 text-xs text-ink-faint">
+          <HandoverExpiry lead="This link is good until" expiresAt={page.expiresAt} />
+        </p>
       </Card>
 
       <CardGroup eyebrow="What comes with it" title="Everything up to the moment you accept">
@@ -204,8 +204,8 @@ function Offer({ token, page }: { token: string; page: Extract<HandoverPage, { k
             Your garage is full on the free plan
           </p>
           <p className="mt-1 text-sm text-ink-dim">
-            {getFreePlanLimitMessage('vehicles')} This bike would be a second one, so the handover waits until there is room for it. The
-            link stays good until {expiresOn}.
+            {getFreePlanLimitMessage('vehicles')} This bike would be a second one, so the handover waits until there is room for it.{' '}
+            <HandoverExpiry lead="The link stays good until" expiresAt={page.expiresAt} />
           </p>
           <div className="mt-4">
             <UpgradeToProButton fullWidth />

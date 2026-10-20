@@ -37,7 +37,9 @@ export async function acceptServiceBookTransfer(token: string): Promise<ActionRe
   });
 
   if (!outcome.ok) {
-    if (outcome.stage !== 'copy') {
+    if (outcome.stage === 'copy') return { ok: false, error: HANDOVER_COPY.copyFailed };
+    const refusal = describeAcceptRefusal(outcome.code);
+    if (refusal === HANDOVER_COPY.failed) {
       reportError('service-book-handover-accept', new Error(outcome.message), {
         userId: user.id,
         reason: outcome.code,
@@ -45,7 +47,7 @@ export async function acceptServiceBookTransfer(token: string): Promise<ActionRe
         attempts: outcome.attempts,
       });
     }
-    return { ok: false, error: outcome.stage === 'copy' ? HANDOVER_COPY.copyFailed : describeAcceptRefusal(outcome.code) };
+    return { ok: false, error: refusal };
   }
 
   // The bike is new in the garage, its sessions in the history, and the
