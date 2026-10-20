@@ -26,19 +26,20 @@ const nextConfig: NextConfig = {
     // evaluates this file, so `.env.local` counts.
     remotePatterns: supabaseStorageRemotePatterns(process.env.NEXT_PUBLIC_SUPABASE_URL),
   },
-  // A shared service book (`/book/<token>`) is a private link, not a page to
-  // find: kept out of search, and its token kept out of the Referer header that
-  // every thumbnail request to storage would otherwise carry. The page's own
-  // metadata says the same in HTML; the headers cover its attachment route too.
+  // A shared service book (`/book/<token>`) and a handover link
+  // (`/transfer/<token>`) are private links, not pages to find: kept out of
+  // search, and their tokens kept out of the Referer header that every
+  // thumbnail or bike-photo request to storage would otherwise carry. Each
+  // page's own metadata says the same in HTML; the headers cover the share's
+  // attachment route too.
   async headers() {
+    const privateLink = [
+      { key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive' },
+      { key: 'Referrer-Policy', value: 'no-referrer' },
+    ];
     return [
-      {
-        source: '/book/:path*',
-        headers: [
-          { key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive' },
-          { key: 'Referrer-Policy', value: 'no-referrer' },
-        ],
-      },
+      { source: '/book/:path*', headers: privateLink },
+      { source: '/transfer/:path*', headers: privateLink },
     ];
   },
 };

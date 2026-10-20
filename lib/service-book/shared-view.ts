@@ -25,8 +25,11 @@ import { latestReading, type UsageReading } from '@/lib/service-book/usage';
 
 export interface SharedBookInput {
   vehicle: Pick<Tables<'vehicles'>, 'nickname' | 'type' | 'year' | 'make' | 'model'>;
-  /** `transferred_removed_entry_count` is the removals the book came with from earlier owners. */
-  book: Pick<Tables<'service_books'>, 'distance_unit' | 'owner_time_zone' | 'transferred_removed_entry_count'>;
+  /**
+   * `transferred_removed_entry_count` is the removals the book came with from
+   * earlier owners; `transferred_at` dates "handed over on" on a copied entry.
+   */
+  book: Pick<Tables<'service_books'>, 'distance_unit' | 'owner_time_zone' | 'transferred_removed_entry_count' | 'transferred_at'>;
   fields: ServiceBookField[];
   items: ServiceItemRow[];
   /** Every entry of the book, removed ones included: those are counted, never shown. */
@@ -80,11 +83,6 @@ export interface SharedBookView {
 /** The calendar year of a stored service date, or null when it is not one. */
 export function serviceYearOf(date: unknown): number | null {
   return isIsoDate(date) ? Number(date.slice(0, 4)) : null;
-}
-
-export function describeRemovedEntries(count: number): string | null {
-  if (count <= 0) return null;
-  return `${count} ${count === 1 ? 'entry' : 'entries'} removed by an owner`;
 }
 
 function readingsOf(readings: readonly UsageReading[], unit: DistanceUnit): SharedReading[] {
@@ -159,7 +157,13 @@ export function buildSharedBookView(input: SharedBookInput): SharedBookView {
       parts: entry.parts.map(partText),
       notes: entry.notes && entry.notes.trim() !== '' ? entry.notes : null,
       labels: timeZone
-        ? describeEntryProvenance({ entry, revisions: entry.revisions, attachments: entry.attachments, timeZone }).labels.map((label) => label.text)
+        ? describeEntryProvenance({
+            entry,
+            revisions: entry.revisions,
+            attachments: entry.attachments,
+            transferredAt: input.book.transferred_at,
+            timeZone,
+          }).labels.map((label) => label.text)
         : [],
       attachments: entry.attachments,
     })),

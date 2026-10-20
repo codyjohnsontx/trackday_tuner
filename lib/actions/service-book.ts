@@ -142,13 +142,14 @@ export async function getServiceBook(
   const book = bookRead.book;
 
   const withEntry = options.entryId !== undefined && isUuid(options.entryId) ? options.entryId : null;
-  const [fields, items, entries, entryItems, entryParts, revisions, readings, sessions, laps, weights, overrides, attachments] = await Promise.all([
+  const [fields, items, entries, removedEntries, entryItems, entryParts, revisions, readings, sessions, laps, weights, overrides, attachments] = await Promise.all([
     supabase.from('service_book_fields').select('*').eq('book_id', book.id).order('sort_order'),
     supabase.from('service_items').select('*').eq('book_id', book.id).order('sort_order'),
     readAllRows((from, to) => {
       const query = supabase.from('service_entries').select('*').eq('book_id', book.id);
       return (withEntry ? query.or(`deleted_at.is.null,id.eq.${withEntry}`) : query.is('deleted_at', null)).order('id').range(from, to);
     }),
+    supabase.from('service_entries').select('id', { count: 'exact', head: true }).eq('book_id', book.id).not('deleted_at', 'is', null),
     readAllRows((from, to) =>
       supabase
         .from('service_entry_items')
@@ -178,7 +179,13 @@ export async function getServiceBook(
     ),
     readAllRows((from, to) => supabase.from('vehicle_readings').select('*').eq('book_id', book.id).order('reading_date').order('id').range(from, to)),
     readAllRows((from, to) =>
-      supabase.from('sessions').select('id, date, created_at').eq('user_id', user.id).eq('vehicle_id', vehicleId).order('id').range(from, to),
+      supabase
+        .from('sessions')
+        .select('id, date, created_at, copied_from_session_id')
+        .eq('user_id', user.id)
+        .eq('vehicle_id', vehicleId)
+        .order('id')
+        .range(from, to),
     ),
     readVehicleLaps(supabase, [vehicleId]),
     readAllRows((from, to) => supabase.from('session_usage_weights').select('*').eq('book_id', book.id).order('id').range(from, to)),
@@ -197,6 +204,7 @@ export async function getServiceBook(
     ['service_book_fields', fields],
     ['service_items', items],
     ['service_entries', entries],
+    ['service_entries', removedEntries],
     ['service_entry_items', entryItems],
     ['service_entry_parts', entryParts],
     ['service_entry_revisions', revisions],
@@ -246,6 +254,7 @@ export async function getServiceBook(
         weights: weights.data as Tables<'session_usage_weights'>[],
         overrides: overrides.data as Tables<'service_due_overrides'>[],
         attachmentCount: countTowardAllowance(attachmentRows, user.id, new Date()),
+        removedEntryCount: removedEntries.count ?? 0,
       },
     },
   };

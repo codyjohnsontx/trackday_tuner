@@ -10,7 +10,7 @@ import { VehicleReadingForm } from '@/components/service-book/vehicle-reading-fo
 import { SoldBanner } from '@/components/service-book/sold-banner';
 import { useRiderClock, type RiderClock } from '@/components/service-book/rider-clock';
 import { recordServiceBookOwnerTimeZone } from '@/lib/actions/service-book-shares';
-import { buildServiceBookView, liveItems, type ServiceBookData, type ServiceBookView } from '@/lib/service-book/book-data';
+import { buildServiceBookView, liveItems, type ReceivedHistory, type ServiceBookData, type ServiceBookView } from '@/lib/service-book/book-data';
 import { describeEntryItems } from '@/lib/service-book/entry-draft';
 import type { AxisDue, ItemDue, ItemDueStatus } from '@/lib/service-book/due';
 import { formatDistance, formatHours, formatInterval, formatReading, formatServiceDate } from '@/lib/service-book/format';
@@ -58,6 +58,7 @@ export function ServiceBookScreen({ data, demoMode }: ServiceBookScreenProps) {
   return (
     <div className="space-y-5">
       {soldAt !== null ? <SoldBanner soldAt={soldAt} /> : null}
+      {view?.handover ? <ReceivedBanner handover={view.handover} /> : null}
 
       <UsagePanel data={data} view={view} readOnly={readOnly} />
 
@@ -157,10 +158,38 @@ export function ServiceBookScreen({ data, demoMode }: ServiceBookScreenProps) {
             );
           })
         )}
+        {view?.handover?.removedEntries ? (
+          <GroupRow>
+            <p className="text-sm text-ink-dim" data-testid="received-removed-entries">
+              {view.handover.removedEntries}
+            </p>
+          </GroupRow>
+        ) : null}
       </CardGroup>
 
       <ReadingsPanel data={data} />
     </div>
+  );
+}
+
+/**
+ * A book that came with a bike handed over by its previous owner (owner, PQ2).
+ * The counts are what of that history is here now, read off the rows' own
+ * `copied_from_*` pointers; nothing here reaches the previous owner's data, and
+ * the two copies never do.
+ */
+function ReceivedBanner({ handover }: { handover: ReceivedHistory }) {
+  const entries = `${handover.entries} ${handover.entries === 1 ? 'entry' : 'entries'}`;
+  const sessions = `${handover.sessions} ${handover.sessions === 1 ? 'session' : 'sessions'}`;
+  return (
+    <Card id="received-book-banner">
+      <Eyebrow>Handed over to you</Eyebrow>
+      <p className="mt-2 text-sm text-ink">
+        Handed over to you on {handover.handedOverOn}. {entries} and {sessions} from before then are here now; the previous owner keeps
+        their own copy, and nothing either of you adds from now on reaches the other.
+      </p>
+      <p className="mt-1 text-xs text-ink-faint">Entries a previous owner logged can be removed but not edited. What you log is yours.</p>
+    </Card>
   );
 }
 

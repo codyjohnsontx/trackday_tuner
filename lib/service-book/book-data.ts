@@ -1,8 +1,11 @@
 import type { DistanceUnit, Tables } from '@/types/supabase';
+import { riderDateOfTimestamp } from '@/lib/local-date';
+import { formatDay, instantOf } from '@/lib/service-book/calendar';
 import type { DueOverride, ItemDue } from '@/lib/service-book/due';
 import type { ServiceBookField } from '@/lib/service-book/fields';
 import {
   describeEntryProvenance,
+  entryCameWithTheBike,
   isKnownTimeZone,
   type EntryProvenance,
   type ProvenanceAttachment,
@@ -50,6 +53,13 @@ export type ServiceEntryRevisionRecord = Pick<
   'id' | 'revision' | 'kind' | 'snapshot' | 'changed_at'
 >;
 
+/**
+ * A session as the book reads it: what the usage rules need, and whether it
+ * came with the bike at handover (`copied_from_session_id`, 20261017000600),
+ * which the received-book banner counts and nothing follows.
+ */
+export type ServiceBookSession = UsageSession & Pick<Tables<'sessions'>, 'copied_from_session_id'>;
+
 export interface ServiceBookData {
   /** `sold_at` is the Sold state (owner, TQ3): set, the book is the seller's read-only copy. */
   vehicle: Pick<Tables<'vehicles'>, 'id' | 'nickname' | 'type' | 'sold_at'>;
@@ -59,7 +69,7 @@ export interface ServiceBookData {
   /** Live entries, plus the one removed entry a caller names by `entryId`. */
   entries: ServiceEntryRecord[];
   readings: VehicleReadingRow[];
-  sessions: UsageSession[];
+  sessions: ServiceBookSession[];
   laps: UsageLap[];
   weights: UsageWeight[];
   overrides: DueOverride[];
@@ -69,6 +79,8 @@ export interface ServiceBookData {
    * makes (20261014000400).
    */
   attachmentCount: number;
+  /** How many of the book's entries are removed: counted, never read (owner, PQ6). */
+  removedEntryCount: number;
 }
 
 export function usageInputOf(data: ServiceBookData): UsageInput {
@@ -92,6 +104,47 @@ export interface ServiceBookView {
   due: ItemDue[];
   dueByItemId: Map<string, ItemDue>;
   provenanceByEntryId: Map<string, EntryProvenance>;
+  /** What the book came with, when it was handed to this owner; null on a book that was not. */
+  handover: ReceivedHistory | null;
+}
+
+/**
+ * The banner on a book a buyer received (owner, PQ2): when it was handed over,
+ * in the same zone the entries' labels are read in, and how much of the history
+ * that came with it is here now - counted off the rows' own `copied_from_*`
+ * pointers, never by following one to the previous owner's data. Nothing
+ * records the counts as handed over, and a session is deleted outright, so the
+ * banner says what is present rather than what arrived.
+ */
+export interface ReceivedHistory {
+  /** The handover day, formatted. */
+  handedOverOn: string;
+  /** Entries a previous owner logged that are still in the book. */
+  entries: number;
+  /** Sessions that came with the bike and are still on it. */
+  sessions: number;
+  /** "N entries removed by an owner", across every owner, or null when none was. */
+  removedEntries: string | null;
+}
+
+/** The line a book prints for its removed entries, across every owner (owner, TQ8). */
+export function describeRemovedEntries(count: number): string | null {
+  if (count <= 0) return null;
+  return `${count} ${count === 1 ? 'entry' : 'entries'} removed by an owner`;
+}
+
+export function describeReceivedHistory(
+  data: Pick<ServiceBookData, 'book' | 'entries' | 'sessions' | 'removedEntryCount'>,
+  labelZone: string,
+): ReceivedHistory | null {
+  const transferredAt = data.book.transferred_at;
+  if (transferredAt === null || instantOf(transferredAt) === null) return null;
+  return {
+    handedOverOn: formatDay(riderDateOfTimestamp(transferredAt, labelZone)),
+    entries: data.entries.filter((entry) => entryCameWithTheBike(entry) && entry.deleted_at === null).length,
+    sessions: data.sessions.filter((session) => typeof session.copied_from_session_id === 'string' && session.copied_from_session_id !== '').length,
+    removedEntries: describeRemovedEntries(data.book.transferred_removed_entry_count + data.removedEntryCount),
+  };
 }
 
 /**
@@ -120,6 +173,7 @@ export function buildServiceBookView(
         entry,
         revisions: entry.revisions,
         attachments: entry.attachments,
+        transferredAt: data.book.transferred_at,
         timeZone: labelZone,
       }),
     );
@@ -129,6 +183,7 @@ export function buildServiceBookView(
     due,
     dueByItemId: new Map(due.map((item) => [item.itemId, item])),
     provenanceByEntryId,
+    handover: describeReceivedHistory(data, labelZone),
   };
 }
 

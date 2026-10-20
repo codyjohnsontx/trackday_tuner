@@ -18,6 +18,8 @@ interface ServiceEntryHistoryProps {
   distanceUnit: DistanceUnit;
   /** The book's pinned `owner_time_zone`, null until one is recorded. */
   ownerTimeZone: string | null;
+  /** The book's `transferred_at`: when the bike was handed to this owner, or null. */
+  transferredAt: string | null;
   demoMode: boolean;
 }
 
@@ -52,7 +54,7 @@ function describeSnapshot(snapshot: unknown, unit: DistanceUnit): string[] {
  * shared view. The labels come from `describeEntryProvenance` in the book's
  * pinned zone, the one the shared view uses (`ownerLabelTimeZone`).
  */
-export function ServiceEntryHistory({ vehicleId, entry, revisions, distanceUnit, ownerTimeZone, demoMode }: ServiceEntryHistoryProps) {
+export function ServiceEntryHistory({ vehicleId, entry, revisions, distanceUnit, ownerTimeZone, transferredAt, demoMode }: ServiceEntryHistoryProps) {
   const clock = useRiderClock();
   const router = useRouter();
   const [error, setError] = useState('');
@@ -64,11 +66,13 @@ export function ServiceEntryHistory({ vehicleId, entry, revisions, distanceUnit,
             entry,
             revisions: entry.revisions,
             attachments: entry.attachments,
+            transferredAt,
             timeZone: ownerLabelTimeZone(ownerTimeZone, clock.timeZone),
           })
         : null,
-    [entry, clock, ownerTimeZone],
+    [entry, clock, ownerTimeZone, transferredAt],
   );
+  const copied = entry.copied_from_entry_id !== null;
 
   function remove() {
     setError('');
@@ -137,8 +141,9 @@ export function ServiceEntryHistory({ vehicleId, entry, revisions, distanceUnit,
         <section className="rounded-card bg-surface p-4">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Remove entry</h2>
           <p className="mt-2 text-sm text-ink-dim">
-            Removing takes this entry out of your book and stops its reading counting. The entry and its history are kept, and a buyer’s view will
-            say an entry was removed.
+            {copied
+              ? 'This entry came with the bike, so it can be removed but not edited. Removing takes it out of your book and stops its reading counting; the entry and its history are kept, the previous owner keeps their own copy, and a buyer’s view will say an entry was removed.'
+              : 'Removing takes this entry out of your book and stops its reading counting. The entry and its history are kept, and a buyer’s view will say an entry was removed.'}
           </p>
           {error ? (
             <p className="mt-2 text-sm text-slower" role="alert">

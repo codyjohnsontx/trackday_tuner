@@ -142,6 +142,11 @@ skipping.
 `tests/e2e/service-book-handover.spec.ts` needs the same plus `20261017000600`
 applied, and signs in a second throwaway rider as the buyer to accept the
 handover through the buyer's client.
+`tests/e2e/service-book-handover-buyer.spec.ts` makes two throwaway riders, a seller
+and a buyer, plus a third who was sent nothing. It needs the service-role key,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`, `20261017000600` applied and the
+`service-book`, `session-photos` and `vehicle-photos` buckets seeded, since
+accept copies the seller's receipts and photos.
 Set `PW_SKIP_WEBSERVER=1` if you already have the app running and want Playwright to reuse it.
 
 `next dev` rebuilds `request.url` with `localhost` whatever `Host` arrived, so a

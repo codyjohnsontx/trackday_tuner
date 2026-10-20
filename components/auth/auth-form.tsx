@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
+import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,9 +16,15 @@ interface AuthFormProps {
   inviteOnly?: boolean;
   /** Message from a redirect that landed here, e.g. an expired email link. */
   initialError?: string;
+  /**
+   * Where a signed-in rider lands: `/dashboard`, or the page that sent them to
+   * sign in. Already sanitized by the page (`sanitizeNextPath`), which is the
+   * one place a `next` is read off a URL.
+   */
+  nextPath?: string;
 }
 
-export function AuthForm({ providers: oauthProviders, inviteOnly = false, initialError = '' }: AuthFormProps) {
+export function AuthForm({ providers: oauthProviders, inviteOnly = false, initialError = '', nextPath = '/dashboard' }: AuthFormProps) {
   const router = useRouter();
   const [mode, setMode] = useState<AuthMode>('sign-in');
   const [email, setEmail] = useState('');
@@ -50,7 +57,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
     setInfoMessage('');
 
     const supabase = createClient();
-    const redirectTo = `${window.location.origin}/auth/callback?next=/dashboard&provider=${provider}`;
+    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath)}&provider=${provider}`;
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
@@ -108,7 +115,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
           return;
         }
 
-        router.replace('/dashboard');
+        router.replace(nextPath as Route);
         router.refresh();
       } catch {
         showError('Could not reach the server to sign you in. Check your connection and try again.');
@@ -137,7 +144,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
           setMode('sign-in');
           return;
         }
-        router.replace('/dashboard');
+        router.replace(nextPath as Route);
         router.refresh();
       } catch {
         showError('Unable to create your account right now. Please try again.');
@@ -159,7 +166,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
       }
 
       if (data.session) {
-        router.replace('/dashboard');
+        router.replace(nextPath as Route);
         router.refresh();
         return;
       }

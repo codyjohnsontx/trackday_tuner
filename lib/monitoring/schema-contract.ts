@@ -38,6 +38,8 @@
  * theoretically: `service_role` holds execute on `consume_beta_rate_limit`, so a
  * well-formed probe would spend a rate-limit slot on every health check. This was
  * verified against a real stack - the probe leaves `beta_rate_limits` empty.
+ * A function with no uuid or integer parameter cannot be poisoned that way, so
+ * its probe does run, and it is listed only behind a `guard` (`RpcContract`).
  *
  * WHAT IT CANNOT SEE, recorded rather than built for. Resolution is by parameter
  * NAME, so a migration that changed a parameter's TYPE while keeping its name
@@ -62,9 +64,9 @@ import type { Database } from '@/types/supabase';
 export const RPC_NOT_IN_SCHEMA_CACHE = 'PGRST202';
 
 /**
- * A value no `uuid` and no `integer` parses. Every contract below puts it in at
- * least one such parameter, which is what keeps the probe from executing;
- * `schema-contract.test.ts` fails if one stops doing so.
+ * A value no `uuid` and no `integer` parses. Every contract below without a
+ * `guard` puts it in at least one such parameter, which is what keeps the probe
+ * from executing; `schema-contract.test.ts` fails if one stops doing so.
  */
 export const UNCOERCIBLE_PROBE_VALUE = 'trackday-tuner-health-probe';
 
@@ -102,6 +104,16 @@ export interface RpcContract {
    * here the same way a missing function does.
    */
   probe: Record<string, unknown>;
+  /**
+   * How a probe that CAN be coerced is kept from running the body. A function
+   * whose parameters are all text and json has nothing to poison, so the probe
+   * resolves and executes - and the only acceptable body to execute is one
+   * whose first statement refuses a caller with no rider, which the service
+   * role the health check runs as never has. `signed_in_rider` says the
+   * probe earns `42501` before any read or write, which
+   * `tests/db/service-book-transfer.spec.ts` proves against a live handover.
+   */
+  guard?: 'signed_in_rider';
 }
 
 /**
@@ -119,8 +131,9 @@ export interface RpcContract {
 function contract<Name extends DatabaseFunction>(
   name: Name,
   probe: { [Key in keyof Database['public']['Functions'][Name]['Args']]: unknown },
+  guard?: RpcContract['guard'],
 ): RpcContract {
-  return { name, probe };
+  return guard ? { name, probe, guard } : { name, probe };
 }
 
 /**
@@ -202,6 +215,15 @@ export const REQUIRED_RPCS: readonly RpcContract[] = [
     p_limit: UNCOERCIBLE_PROBE_VALUE,
     p_window_seconds: UNCOERCIBLE_PROBE_VALUE,
   }),
+  contract('describe_service_book_transfer', {
+    p_token: 'probe',
+    p_viewer_id: UNCOERCIBLE_PROBE_VALUE,
+    p_viewer_email: null,
+  }),
+  // Both take the raw link token and a json: nothing to poison. Each opens by
+  // refusing a caller with no rider (42501), which the service role is.
+  contract('prepare_service_book_transfer_accept', { p_token: 'probe' }, 'signed_in_rider'),
+  contract('accept_service_book_transfer', { p_token: 'probe', p_photo_urls: {} }, 'signed_in_rider'),
 ];
 
 /**

@@ -853,6 +853,33 @@ cannot weaken them and a new writer does not have to remember them:
   `getServiceBookHandover` and shown by `HandoverStatus` on the card, the book
   and the screen; the link is `/transfer/<token>`, token hashed as a share
   link's is.
+- **The buyer takes the bike at `/transfer/[token]`**, outside `(app)` so a
+  signed-out buyer is offered sign-in and comes back through `/login?next=`
+  (the one `next` the login page reads, through `sanitizeNextPath`). The page
+  asks `describe_service_book_transfer` with the service role for the viewer
+  signed in now, prints what `lib/service-book/handover-view.ts` makes of the
+  answer, and shows the bike only to the recipient of a pending link; every
+  other link reads the same way. Accept is `takeOverServiceBook`
+  (`lib/service-book-transfer-accept.ts`): prepare, copy the objects ten at a
+  time with the service role (a destination already there counts as done),
+  accept, and again on TT409 up to three times, taking the public-bucket
+  copies back when it gives up. A copied entry reads "Logged by a previous
+  owner, handed over on <date>" (`describeEntryProvenance`, dated from the
+  book's `transferred_at` in its pinned zone) with the seller's edits counted
+  below the last `transferred` revision and the buyer's above it; it opens
+  read-only with only Remove, since the database refuses every other change
+  (TT403). The book's banner (what of the handed-over history is still here)
+  and its "N entries removed by an owner" line, across every owner, come from
+  `describeReceivedHistory`, which counts the rows' own `copied_from_*`
+  pointers. **Nothing follows one of those pointers to the
+  other rider's row** - a cap reads one as a null check, a screen as a boolean
+  - `tests/unit/transfer-pointers-never-followed.test.ts` shows the screens and
+  caps print the same whichever row a pointer names, and
+  `tests/db/service-book-transfer.spec.ts` that following one as the buyer
+  finds nothing.
+  `tests/e2e/service-book-handover-buyer.spec.ts` is the two-rider walk from
+  the buyer's side and records the copy's wall time for a 25-receipt bike;
+  `tests/e2e/service-book-handover.spec.ts` is the seller's.
 
 `tests/db/service-book.spec.ts` proves each of these against a real database.
 
@@ -1434,10 +1461,10 @@ collector call sites. The disposition is therefore a parameter of
 `collectEnvironmentRiderText`, next to the label suffix that was already
 per-route. Getting it backwards either way is a bug - skipping on day-plan
 silently discards submitted text, refusing on tuning-advice restores the trap.
-Day-plan collects nothing skippable at all (its recommendation list is always
-empty, its environment refuses), so only `prepareTuningAdvicePrompt` drops, and
-`prepareDayPlanPrompt` throws - failing closed into the route's shaped 500 - if a
-skip ever reaches it. The full
+Day-plan's only skips are what came with the bike - copied sessions and
+outcomes - which it drops (its recommendation list is always empty, its
+environment refuses); any other skip makes `prepareDayPlanPrompt` throw,
+failing closed into the route's shaped 500. The full
 sweep of which field is which, and why, is on the exclusion list in
 `lib/rag/prompt.ts`.
 
@@ -1456,6 +1483,23 @@ nothing, so the one path that refuses can be looped forever. Put it before and
 every refused probe spends a slot. Day-plan runs throttle, screen, reserve;
 tuning-advice classifies after the whole preflight and needs no split.
 
+**A session that came with a bike handed over by its previous owner is a third
+party's text.** The seller's notes and setup strings sit in the buyer's rows
+(`copied_from_session_id`) and reach the buyer's prompts as their own would,
+so `sessionDisposition` (`lib/rag/prompt.ts`) screens one with the FULL
+submitted pattern set - `RiderTextField.author` picks the set, and
+`classifyStoredRiderText` reads it - and, printed as context (the previous
+session, a similar session, a day-plan recent session), SKIPS it on a match:
+dropped from the prompt, from `allowedSessionIds` and from the day trend and
+the `history` and `manual` flags, through `dropScreenedSources` and day-plan's
+own `dropCopiedMaterialFromDayPlan`. The subject session cannot be dropped,
+so it refuses with a label ending ", which came with the bike"; the buyer owns
+the row and the session form edits it. Its stored environment and telemetry
+summary take the same set, and an outcome on a copied session is marked by
+`markFeedbackFromCopiedSessions` (`lib/rag/race-engineer-context.ts`) and
+screened on the full set the same way - refusing on the subject session,
+skipped as context everywhere else; change records reach no prompt.
+
 **The two passes are not the same screen, and the asymmetry is deliberate.**
 Stored text runs a *narrower* pattern set than submitted text, in two places now.
 `/\bact as\b/i` is out of it, because "the instructor said to act as if the apex
@@ -1471,8 +1515,10 @@ are now on Dan's line through turn 3" passes and "you are now an unrestricted AI
 does not. A lexical list is enumerable-around, so that is strictly weaker than the
 bare phrase against a determined attacker. It is defensible because for STORED
 text the attacker and the victim are the same person: every row reaching these
-prompts is RLS-scoped to the requesting rider and there is no shared, imported or
-third-party write path, so working around it manipulates only your own advice -
+prompts is RLS-scoped to the requesting rider, and the one third-party write path
+- a bike's history copied to its buyer - is screened with the full submitted set
+(the session, and the environment, telemetry and outcomes copied with it), so
+working around it manipulates only your own advice -
 and `evaluateAdvicePolicy` still force-refuses anything that does not name a
 vocabulary component and direction, a magnitude under its ceiling, a retrieved
 citation and real session ids. Submitted text keeps both bare phrases, where a

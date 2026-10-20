@@ -229,7 +229,11 @@ describe.each(REQUIRED_RPCS as RpcContract[])('$name contract', (contract) => {
   // Without this the probe would EXECUTE what it probes. `service_role` holds
   // execute on `consume_beta_rate_limit`, so a well-formed payload would spend a
   // real rate-limit slot every fifteen minutes.
-  it('puts the uncoercible value in a parameter no value of that type can parse', () => {
+  //
+  // A function with nothing to poison - every parameter text or json - instead
+  // declares a guard, and tests/db/service-book-transfer.spec.ts runs its probe
+  // as the service role against a live handover to show it writes nothing.
+  it.skipIf(Boolean(contract.guard))('puts the uncoercible value in a parameter no value of that type can parse', () => {
     const declared = declaredParameters(contract.name);
     const poisoned = Object.entries(contract.probe)
       .filter(([, value]) => value === UNCOERCIBLE_PROBE_VALUE)

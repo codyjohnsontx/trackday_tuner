@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { hasManualSessionData, selectSimilarSessions } from '@/lib/rag/race-engineer-context';
-import type { Session, SessionEnvironment } from '@/types';
+import { describe, expect, it, vi } from 'vitest';
+import { hasManualSessionData, markFeedbackFromCopiedSessions, selectSimilarSessions } from '@/lib/rag/race-engineer-context';
+import type { Session, SessionEnvironment, SessionFeedback } from '@/types';
 
 const baseSession: Session = {
   id: 'current',
@@ -329,5 +329,48 @@ describe('the setup jsonb a rider can actually have stored', () => {
     expect(result).toHaveLength(1);
     expect(result[0].reasons).not.toContain('matching front compound');
     expect(result[0].reasons).not.toContain('front pressure within 0.5');
+  });
+});
+
+describe('markFeedbackFromCopiedSessions', () => {
+  const row = (id: string, sessionId: string) => ({ id, session_id: sessionId, notes: null }) as unknown as SessionFeedback;
+
+  function client(answer: { data: { id: string }[] | null; error: { message: string } | null }) {
+    const calls: { method: string; args: unknown[] }[] = [];
+    const query = {
+      select: (...args: unknown[]) => (calls.push({ method: 'select', args }), query),
+      eq: (...args: unknown[]) => (calls.push({ method: 'eq', args }), query),
+      in: (...args: unknown[]) => (calls.push({ method: 'in', args }), query),
+      not: async (...args: unknown[]) => (calls.push({ method: 'not', args }), answer),
+    };
+    const from = vi.fn((table: string) => (calls.push({ method: 'from', args: [table] }), query));
+    return { supabase: { from } as unknown as Parameters<typeof markFeedbackFromCopiedSessions>[0], calls, from };
+  }
+
+  it('marks the outcomes on sessions that came with the bike, asking only about the rider\'s own sessions', async () => {
+    const { supabase, calls } = client({ data: [{ id: 'copied' }], error: null });
+    const marked = await markFeedbackFromCopiedSessions(supabase, 'user-1', [row('f1', 'copied'), row('f2', 'own'), row('f3', 'copied')]);
+    expect(marked.error).toBeNull();
+    expect(marked.feedback.map((feedback) => [feedback.id, feedback.came_with_the_bike])).toEqual([
+      ['f1', true],
+      ['f2', false],
+      ['f3', true],
+    ]);
+    expect(calls).toContainEqual({ method: 'eq', args: ['user_id', 'user-1'] });
+    expect(calls).toContainEqual({ method: 'in', args: ['id', ['copied', 'own']] });
+    expect(calls).toContainEqual({ method: 'not', args: ['copied_from_session_id', 'is', null] });
+  });
+
+  it('marks every outcome when the lookup fails, so none is screened as the rider\'s own', async () => {
+    const { supabase } = client({ data: null, error: { message: 'boom' } });
+    const marked = await markFeedbackFromCopiedSessions(supabase, 'user-1', [row('f1', 'a'), row('f2', 'b')]);
+    expect(marked.error).toEqual({ message: 'boom' });
+    expect(marked.feedback.every((feedback) => feedback.came_with_the_bike)).toBe(true);
+  });
+
+  it('asks nothing when there is no feedback', async () => {
+    const { supabase, from } = client({ data: [], error: null });
+    expect(await markFeedbackFromCopiedSessions(supabase, 'user-1', [])).toEqual({ feedback: [], error: null });
+    expect(from).not.toHaveBeenCalled();
   });
 });

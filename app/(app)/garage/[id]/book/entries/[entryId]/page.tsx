@@ -23,7 +23,10 @@ interface ServiceEntryPageProps {
  * One entry: its honest-history labels and revision list, its receipts and
  * photos, then the edit form. A removed entry still opens - its history is the
  * point - but read-only, and the demo's entries are read-only too, with no form
- * and no upload on the page at all.
+ * and no upload on the page at all. An entry that came with the bike is
+ * read-only as well, with only its Remove control (owner, TQ2): the database
+ * refuses every other change to it (TT403, 20261017000600), so the page offers
+ * no form that would only refuse.
  */
 export default async function ServiceEntryPage({ params }: ServiceEntryPageProps) {
   const { id, entryId } = await params;
@@ -51,8 +54,10 @@ export default async function ServiceEntryPage({ params }: ServiceEntryPageProps
   if (!data || !entry) notFound();
 
   // The seller's copy of a handed-over bike is read-only (owner, TQ3), as the
-  // demo's and a removed entry are.
-  const editable = !demoMode && entry.deleted_at === null && data.vehicle.sold_at === null;
+  // demo's and a removed entry are; an entry that came with the bike is
+  // remove-only for the buyer (TQ3 again: the database answers TT403).
+  const editable =
+    !demoMode && entry.deleted_at === null && entry.copied_from_entry_id === null && data.vehicle.sold_at === null;
   // The rider's own layout decides whether attachments are asked for; ones
   // already attached are shown whatever it says.
   const attachmentsAsked = data.fields.some((field) => field.builtin_key === 'attachments' && field.enabled);
@@ -77,6 +82,7 @@ export default async function ServiceEntryPage({ params }: ServiceEntryPageProps
         revisions={revisions.ok ? revisions.data : []}
         distanceUnit={data.book.distance_unit}
         ownerTimeZone={data.book.owner_time_zone}
+        transferredAt={data.book.transferred_at}
         demoMode={demoMode}
       />
 

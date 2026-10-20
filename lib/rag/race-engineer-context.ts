@@ -20,10 +20,19 @@ export interface ScoredSession {
   environment: SessionEnvironment | null;
 }
 
+/**
+ * A feedback row as a prompt reads it, with whether the session it is on came
+ * with the bike at handover (`copied_from_session_id`, 20261017000600). Accept
+ * copies the seller's outcomes into the buyer's rows and a feedback row carries
+ * no mark of its own, so the mark is read off its session
+ * (`markFeedbackFromCopiedSessions`).
+ */
+export type ContextFeedback = SessionFeedback & { came_with_the_bike: boolean };
+
 export interface RaceEngineerContext {
   similarSessions: ScoredSession[];
   sessionEnvironment: SessionEnvironment | null;
-  recentFeedback: SessionFeedback[];
+  recentFeedback: ContextFeedback[];
   recentRecommendations: AiRecommendation[];
   memory: RaceEngineerMemory | null;
   telemetrySummary: TelemetrySummary | null;
@@ -203,6 +212,18 @@ export function hasDegradedContextPrefix(dayTrend: string): boolean {
   return dayTrend.startsWith(DEGRADED_CONTEXT_PREFIX);
 }
 
+/**
+ * The day trend the day-plan route writes when a rider has no session history
+ * on the vehicle. Here rather than in the route because `prepareDayPlanPrompt`
+ * rebuilds it when the screen drops the only sessions there were, and two
+ * copies of one sentence drift.
+ */
+export function dayPlanNoHistoryTrend(hasEnvironment: boolean): string {
+  return hasEnvironment
+    ? 'A planned environment is available, but there is no prior session history for this vehicle yet.'
+    : 'No planned environment or prior session history is available yet.';
+}
+
 export function buildDayTrend(
   current: Session,
   currentEnv: SessionEnvironment | null,
@@ -258,6 +279,30 @@ function compactContextSnapshot(context: RaceEngineerContext): Json {
 
 export function createRecommendationSnapshot(context: RaceEngineerContext): Json {
   return compactContextSnapshot(context);
+}
+
+/**
+ * Marks each feedback row whose session came with the bike. A failed read
+ * cannot say which are the rider's own, so it marks every row: the prompt then
+ * screens them all as a third party's text rather than any as the rider's.
+ */
+export async function markFeedbackFromCopiedSessions(
+  supabase: SupabaseClient,
+  userId: string,
+  feedback: readonly SessionFeedback[],
+): Promise<{ feedback: ContextFeedback[]; error: { message: string } | null }> {
+  if (feedback.length === 0) return { feedback: [], error: null };
+  const { data, error } = await supabase
+    .from('sessions')
+    .select('id')
+    .eq('user_id', userId)
+    .in('id', [...new Set(feedback.map((row) => row.session_id))])
+    .not('copied_from_session_id', 'is', null);
+  const copied = new Set((data ?? []).map((row) => row.id));
+  return {
+    feedback: feedback.map((row) => ({ ...row, came_with_the_bike: error !== null || copied.has(row.session_id) })),
+    error,
+  };
 }
 
 export async function loadRaceEngineerContext(
@@ -394,7 +439,15 @@ export async function loadRaceEngineerContext(
     environments,
     limit: 6,
   });
-  const recentFeedback = (feedbackResult.data ?? []) as SessionFeedback[];
+  const marked = await markFeedbackFromCopiedSessions(supabase, userId, (feedbackResult.data ?? []) as SessionFeedback[]);
+  if (marked.error) {
+    console.error('[race-engineer-context] copied-session lookup for feedback failed', {
+      userId,
+      sessionId: session.id,
+      error: marked.error.message,
+    });
+  }
+  const recentFeedback = marked.feedback;
   const recentRecommendations = (recommendationResult.data ?? []) as AiRecommendation[];
   const memory = ((memoryResult.data ?? [])[0] ?? null) as RaceEngineerMemory | null;
   const telemetrySummary = ((telemetryResult.data ?? [])[0] ?? null) as TelemetrySummary | null;

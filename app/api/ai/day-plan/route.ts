@@ -35,8 +35,11 @@ import { trackNameKey } from '@/lib/session-track';
 import { findVisibleTrackByName } from '@/lib/track-lookup';
 import {
   buildDayTrend,
+  dayPlanNoHistoryTrend,
   hasManualSessionData,
+  markFeedbackFromCopiedSessions,
   selectSimilarSessions,
+  type ContextFeedback,
   type RaceEngineerContext,
 } from '@/lib/rag/race-engineer-context';
 import type { AdviceDataUsed } from '@/lib/rag/schema';
@@ -235,7 +238,7 @@ function buildContext(params: {
   recentEnvironments: SessionEnvironment[];
   environment: CreateSessionEnvironmentInput | null;
   memory: RaceEngineerMemory | null;
-  feedback: SessionFeedback[];
+  feedback: ContextFeedback[];
 }): RaceEngineerContext {
   const planningSessionId = params.recentSessions[0]
     ? `planned-${params.targetDate}-${params.recentSessions[0].id}`
@@ -264,9 +267,7 @@ function buildContext(params: {
       recentRecommendations: [],
       memory: params.memory,
       telemetrySummary: null,
-      dayTrend: params.environment
-        ? 'A planned environment is available, but there is no prior session history for this vehicle yet.'
-        : 'No planned environment or prior session history is available yet.',
+      dayTrend: dayPlanNoHistoryTrend(Boolean(params.environment)),
       dataUsed: {
         manual: false,
         weather: Boolean(params.environment),
@@ -644,7 +645,16 @@ export async function POST(request: Request) {
     return errorResponse(500, 'Unable to load planning history right now.', requestId);
   }
   const recentEnvironments = (environmentsResult.data ?? []) as SessionEnvironment[];
-  const feedback = (feedbackResult.data ?? []) as SessionFeedback[];
+  const marked = await markFeedbackFromCopiedSessions(supabase, user.id, (feedbackResult.data ?? []) as SessionFeedback[]);
+  if (marked.error) {
+    reportError(LOG_TAG, marked.error, {
+      requestId,
+      userId: user.id,
+      vehicleId: vehicle.id,
+      query: 'sessions (copied-session lookup for feedback)',
+    });
+  }
+  const feedback = marked.feedback;
 
   // Everything from here reads the stored session JSON, which is `jsonb not
   // null` but shape-unconstrained - `createSession` inserts the tyre and

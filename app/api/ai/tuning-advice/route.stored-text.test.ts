@@ -50,12 +50,11 @@ vi.mock('@/lib/rag/race-engineer-context', async (importOriginal) => ({
 
 import { POST } from '@/app/api/ai/tuning-advice/route';
 import type { PreparedAdvicePrompt } from '@/lib/rag/prompt';
-import type { RaceEngineerContext } from '@/lib/rag/race-engineer-context';
+import type { ContextFeedback, RaceEngineerContext } from '@/lib/rag/race-engineer-context';
 import type {
   AiRecommendation,
   Session,
   SessionEnvironment,
-  SessionFeedback,
   TelemetrySummary,
   Vehicle,
 } from '@/types';
@@ -138,7 +137,7 @@ function vehicle(partial: Partial<Vehicle> = {}): Vehicle {
   } as Vehicle;
 }
 
-function feedback(partial: Partial<SessionFeedback> = {}): SessionFeedback {
+function feedback(partial: Partial<ContextFeedback> = {}): ContextFeedback {
   return {
     id: '66666666-6666-6666-6666-666666666666',
     user_id: USER_ID,
@@ -155,8 +154,9 @@ function feedback(partial: Partial<SessionFeedback> = {}): SessionFeedback {
     recommendation_helpfulness: null,
     created_at: '2026-04-26T00:00:00.000Z',
     updated_at: '2026-04-26T00:00:00.000Z',
+    came_with_the_bike: false,
     ...partial,
-  } as SessionFeedback;
+  } as ContextFeedback;
 }
 
 function environment(partial: Partial<SessionEnvironment> = {}): SessionEnvironment {
