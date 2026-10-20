@@ -28,7 +28,9 @@ export default async function NewServiceEntryPage({ params }: NewServiceEntryPag
       </section>
     );
   }
-  if (result.data.data === null) redirect(`/garage/${id}/book`);
+  // A sold bike's book no longer changes (owner, TQ3), so the screen that
+  // would save to it is not offered.
+  if (result.data.data === null || result.data.vehicle.sold_at !== null) redirect(`/garage/${id}/book`);
   const { book, fields, items, vehicle } = result.data.data;
 
   return (

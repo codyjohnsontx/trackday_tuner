@@ -275,7 +275,7 @@ describe('vehicles actions', () => {
 
     expect(result).toEqual({
       ok: true,
-      data: { sessionCount: 2, lapCount: 7, hasBaseline: true, recommendationCount: 4, hasRaceEngineerMemory: true },
+      data: { sessionCount: 2, planSessionCount: 2, lapCount: 7, hasBaseline: true, recommendationCount: 4, hasRaceEngineerMemory: true },
     });
     expect(recommendations.eq).toHaveBeenCalledWith('user_id', 'user-1');
     expect(recommendations.eq).toHaveBeenCalledWith('vehicle_id', 'veh-1');
@@ -283,6 +283,30 @@ describe('vehicles actions', () => {
     expect(sessions.eq).toHaveBeenCalledWith('user_id', 'user-1');
     expect(sessions.eq).toHaveBeenCalledWith('vehicle_id', 'veh-1');
     expect(laps.in).toHaveBeenCalledWith('session_id', ['sess-0', 'sess-1']);
+  });
+
+  it('counts toward the plan only the sessions the rider logged, not ones copied in from an earlier owner', async () => {
+    vi.mocked(getRealUser).mockResolvedValue({ id: 'user-1' } as never);
+    const sessions = createQuery({
+      base: {
+        data: [
+          { id: 'sess-0', copied_from_session_id: null, original_user_id: null },
+          { id: 'sess-1', copied_from_session_id: 'orig-1', original_user_id: 'user-0' },
+          { id: 'sess-2', copied_from_session_id: 'orig-2', original_user_id: 'user-1' },
+        ],
+        error: null,
+      },
+    });
+    clientFor({
+      sessions: [sessions],
+      session_laps: [createQuery({ base: { data: null, error: null, count: 0 } })],
+      vehicle_baselines: [baselineCount(0)],
+      ...aiRecords(),
+    });
+
+    const result = await getVehicleDeletionCounts('veh-1');
+
+    expect(result).toMatchObject({ ok: true, data: { sessionCount: 3, planSessionCount: 2 } });
   });
 
   it('pages past the row limit rather than undercounting a long history', async () => {
@@ -299,7 +323,7 @@ describe('vehicles actions', () => {
 
     expect(result).toEqual({
       ok: true,
-      data: { sessionCount: 1001, lapCount: 33, hasBaseline: false, recommendationCount: 0, hasRaceEngineerMemory: false },
+      data: { sessionCount: 1001, planSessionCount: 1001, lapCount: 33, hasBaseline: false, recommendationCount: 0, hasRaceEngineerMemory: false },
     });
   });
 

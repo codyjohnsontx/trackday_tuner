@@ -250,14 +250,14 @@ function clone<T>(value: T): T {
 }
 
 export interface DemoServiceBookRead {
-  vehicle: Pick<Tables<'vehicles'>, 'id' | 'nickname' | 'type'>;
+  vehicle: Pick<Tables<'vehicles'>, 'id' | 'nickname' | 'type' | 'sold_at'>;
   data: ServiceBookData;
 }
 
 export function getDemoServiceBook(vehicleId: string): DemoServiceBookRead | null {
   const vehicle = DEMO_VEHICLES.find((candidate) => candidate.id === vehicleId);
   if (!vehicle || vehicle.id !== DEMO_VEHICLE_ID) return null;
-  const summary = { id: vehicle.id, nickname: vehicle.nickname, type: vehicle.type };
+  const summary = { id: vehicle.id, nickname: vehicle.nickname, type: vehicle.type, sold_at: vehicle.sold_at };
   const entries = DEMO_ENTRIES.map(({ record }) => record);
   const sessions = DEMO_SESSIONS.filter((session) => session.vehicle_id === vehicleId).map((session) => ({
     id: session.id,

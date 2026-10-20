@@ -52,7 +52,7 @@ function entry(id: string, copiedFrom: string | null): ServiceEntryRecord {
 /** A received book whose copied rows point at the ids `point` hands out. */
 function receivedBook(point: (row: string) => string | null): ServiceBookData {
   return {
-    vehicle: { id: '00000000-0000-4000-8000-0000000000c0', nickname: 'R6', type: 'motorcycle' },
+    vehicle: { id: '00000000-0000-4000-8000-0000000000c0', nickname: 'R6', type: 'motorcycle', sold_at: null },
     book: {
       id: BOOK_ID,
       vehicle_id: '00000000-0000-4000-8000-0000000000c0',

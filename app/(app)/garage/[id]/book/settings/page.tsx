@@ -28,7 +28,8 @@ export default async function ServiceBookSettingsPage({ params }: ServiceBookSet
       </section>
     );
   }
-  if (result.data.data === null) redirect(`/garage/${id}/book`);
+  // A sold bike's book takes no settings edit (owner, TQ3).
+  if (result.data.data === null || result.data.vehicle.sold_at !== null) redirect(`/garage/${id}/book`);
   const { book, fields, items, vehicle } = result.data.data;
   const unitLocked = await getServiceBookUnitLocked(id);
   if (!unitLocked.ok) {

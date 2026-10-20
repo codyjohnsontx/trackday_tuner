@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { DueOverrideForm } from '@/components/service-book/due-override-form';
 import { ServiceDueChip, ServiceDueNotices } from '@/components/service-book/due-badges';
+import { HandoverStatus } from '@/components/service-book/handover-status';
+import { ServiceBookHandoverForm } from '@/components/service-book/service-book-handover-form';
 import { ServiceBookScreen } from '@/components/service-book/service-book-screen';
 import { SessionServicePanel } from '@/components/service-book/session-service-panel';
 import { SessionWeightChoiceRow, SessionWeightSelect } from '@/components/service-book/session-weight';
@@ -27,6 +29,10 @@ import { getDemoServiceBook, getDemoServiceEntryRevisions } from '@/lib/demo/ser
  *   with nothing pressed until the rider has said, for the same reason;
  * - the reminders render nothing before the rider's clock is read, so a server
  *   render never carries a badge worked out from the server's day;
+ * - a bike handed to a buyer offers no save either (owner, TQ3), and says so;
+ * - the handover screen opens with nothing pressed, no email, no nickname
+ *   typed and the button off, and the pending-link line renders nothing before
+ *   the rider's clock is read;
  * - every pressable thing is at least 44 px tall, and the screens use the design
  *   tokens rather than raw palette classes.
  *
@@ -109,6 +115,78 @@ describe('the demo book', () => {
   });
 });
 
+describe('a sold bike', () => {
+  const sold = { ...demo.data, vehicle: { ...demo.data.vehicle, sold_at: '2026-10-03T15:00:00Z' } };
+  const soldHtml = renderToStaticMarkup(createElement(ServiceBookScreen, { data: sold, demoMode: false }));
+
+  it('offers no save on its book and says it was handed over', () => {
+    expect(soldHtml).not.toContain('<form');
+    expect(soldHtml).not.toContain('Log service');
+    expect(soldHtml).not.toContain('Log a reading');
+    expect(soldHtml).not.toContain('/book/settings');
+    expect(soldHtml).not.toContain('Adjust');
+    expect(soldHtml).not.toContain('<select');
+    expect(soldHtml).toContain('data-testid="sold-banner"');
+    expect(soldHtml).toContain('This is your copy of the history up to then, and it no longer changes.');
+    // The day is the rider's own, so a server render has none.
+    expect(soldHtml).not.toContain('Handed over on');
+  });
+
+  it('still shows the entries, the schedule and the readings', () => {
+    expect(soldHtml).toContain('Engine oil and filter');
+    expect(soldHtml).toContain('3 entries');
+    expect(soldHtml).toContain('Readings');
+  });
+
+  it('is not sold while sold_at is null', () => {
+    expect(realHtml()).not.toContain('data-testid="sold-banner"');
+  });
+});
+
+describe('the handover screen', () => {
+  const extra = { sessionPhotos: 1, outcomes: 2, removedEntries: 0 };
+  const html = renderToStaticMarkup(createElement(ServiceBookHandoverForm, { vehicleId: 'demo-r6', nickname: 'R6', data: demo.data, extra, pending: null }));
+  const handover = {
+    id: '00000000-0000-4000-8000-00000000c0de',
+    book_id: demo.data.book.id,
+    to_email_normalized: 'buyer@example.com',
+    status: 'pending' as const,
+    expires_at: '2099-01-01T00:00:00Z',
+    handover_hours: null,
+    handover_distance: null,
+    created_at: '2026-10-18T00:00:00Z',
+  };
+
+  it('opens with nothing pressed, no email, no nickname typed, and the button off', () => {
+    expect(html).toContain('data-testid="handover-form"');
+    expect(html).not.toContain('aria-pressed="true"');
+    expect(html).toMatch(/<input[^>]*type="email"[^>]*value=""/);
+    expect(html).toMatch(/<input[^>]*type="submit"[^>]*disabled=""|<button[^>]*type="submit"[^>]*disabled=""/);
+    expect(html).toContain('Type R6 to confirm');
+    expect(html).not.toContain('handover-link-url');
+  });
+
+  it('counts nothing before the rider\'s clock is read, since two of the counts are labels', () => {
+    expect(html).toContain('Counting what goes over…');
+    expect(html).not.toContain('data-testid="handover-goes-over"');
+    // The reading is prefilled with the clock too, never on the server.
+    expect(html).toMatch(/<input[^>]*inputmode="decimal"[^>]*value=""/i);
+  });
+
+  it('renders the pending-link line only once the clock is read', () => {
+    expect(renderToStaticMarkup(createElement(HandoverStatus, { vehicleId: 'demo-r6', handover }))).toBe('');
+  });
+
+  it('offers no second form while a link is out', () => {
+    const pendingHtml = renderToStaticMarkup(
+      createElement(ServiceBookHandoverForm, { vehicleId: 'demo-r6', nickname: 'R6', data: demo.data, extra, pending: handover }),
+    );
+    expect(pendingHtml).toContain('data-testid="handover-pending"');
+    expect(pendingHtml).not.toContain('<form');
+    expect(pendingHtml).toContain('One link at a time');
+  });
+});
+
 describe('the reminders', () => {
   const sessionId = demo.data.sessions[0].id;
 
@@ -188,6 +266,16 @@ describe('the service-book screens as rendered', () => {
     ['session service panel', renderToStaticMarkup(createElement(SessionServicePanel, { sessionId: demo.data.sessions[0].id, vehicleId: 'demo-r6', data: demo.data, demoMode: false }))],
     ['session weight row', renderToStaticMarkup(createElement(SessionWeightChoiceRow, { vehicleId: 'demo-r6', sessionId: demo.data.sessions[0].id, weight: 2 }))],
     ['session weight select', renderToStaticMarkup(createElement(SessionWeightSelect, { vehicleId: 'demo-r6', sessionId: demo.data.sessions[0].id, weight: null, label: '18 May 2026' }))],
+    [
+      'handover',
+      renderToStaticMarkup(
+        createElement(ServiceBookHandoverForm, { vehicleId: 'demo-r6', nickname: 'R6', data: demo.data, extra: { sessionPhotos: 0, outcomes: 0, removedEntries: 0 }, pending: null }),
+      ),
+    ],
+    [
+      'sold book',
+      renderToStaticMarkup(createElement(ServiceBookScreen, { data: { ...demo.data, vehicle: { ...demo.data.vehicle, sold_at: '2026-10-03T15:00:00Z' } }, demoMode: false })),
+    ],
   ];
 
   it('use design tokens, never raw palette classes', () => {

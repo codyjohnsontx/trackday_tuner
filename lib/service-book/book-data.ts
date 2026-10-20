@@ -61,7 +61,8 @@ export type ServiceEntryRevisionRecord = Pick<
 export type ServiceBookSession = UsageSession & Pick<Tables<'sessions'>, 'copied_from_session_id'>;
 
 export interface ServiceBookData {
-  vehicle: Pick<Tables<'vehicles'>, 'id' | 'nickname' | 'type'>;
+  /** `sold_at` is the Sold state (owner, TQ3): set, the book is the seller's read-only copy. */
+  vehicle: Pick<Tables<'vehicles'>, 'id' | 'nickname' | 'type' | 'sold_at'>;
   book: ServiceBookRow;
   fields: ServiceBookField[];
   items: ServiceItemRow[];

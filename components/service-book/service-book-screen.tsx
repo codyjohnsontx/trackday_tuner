@@ -7,6 +7,7 @@ import { Card, CardGroup, Eyebrow, GroupRow } from '@/components/ui/surface';
 import { DueOverrideForm } from '@/components/service-book/due-override-form';
 import { SessionWeightSelect } from '@/components/service-book/session-weight';
 import { VehicleReadingForm } from '@/components/service-book/vehicle-reading-form';
+import { SoldBanner } from '@/components/service-book/sold-banner';
 import { useRiderClock, type RiderClock } from '@/components/service-book/rider-clock';
 import { recordServiceBookOwnerTimeZone } from '@/lib/actions/service-book-shares';
 import { buildServiceBookView, liveItems, type ReceivedHistory, type ServiceBookData, type ServiceBookView } from '@/lib/service-book/book-data';
@@ -31,12 +32,17 @@ interface ServiceBookScreenProps {
  * rider's day and zone are known only on their device (`useRiderClock`).
  *
  * In demo it is a tour: no reading form, no "Log service", no settings link,
- * so a visitor is never offered a save that would only refuse.
+ * so a visitor is never offered a save that would only refuse. A bike handed
+ * to a buyer reads the same way (owner, TQ3): the seller's copy no longer
+ * changes, the database refuses every write to it with TT410, and the screen
+ * says so once at the top rather than offering saves that refuse.
  */
 export function ServiceBookScreen({ data, demoMode }: ServiceBookScreenProps) {
   const clock = useRiderClock();
   const view = useMemo(() => (clock ? buildServiceBookView(data, clock) : null), [data, clock]);
   const vehicleId = data.vehicle.id;
+  const soldAt = data.vehicle.sold_at;
+  const readOnly = demoMode || soldAt !== null;
   const items = liveItems(data.items);
   const unit = data.book.distance_unit;
   const storedZone = data.book.owner_time_zone;
@@ -51,17 +57,18 @@ export function ServiceBookScreen({ data, demoMode }: ServiceBookScreenProps) {
 
   return (
     <div className="space-y-5">
+      {soldAt !== null ? <SoldBanner soldAt={soldAt} /> : null}
       {view?.handover ? <ReceivedBanner handover={view.handover} /> : null}
 
-      <UsagePanel data={data} view={view} demoMode={demoMode} />
+      <UsagePanel data={data} view={view} readOnly={readOnly} />
 
-      <CountedSessions data={data} view={view} demoMode={demoMode} />
+      <CountedSessions data={data} view={view} readOnly={readOnly} />
 
       <CardGroup
         eyebrow="Schedule"
         title={`${items.length} ${items.length === 1 ? 'item' : 'items'}`}
         action={
-          demoMode ? null : (
+          readOnly ? null : (
             <Link href={`/garage/${vehicleId}/book/settings`} className="flex min-h-11 items-center text-sm font-medium text-ink-dim hover:text-ink">
               Edit schedule →
             </Link>
@@ -70,7 +77,9 @@ export function ServiceBookScreen({ data, demoMode }: ServiceBookScreenProps) {
       >
         {items.length === 0 ? (
           <GroupRow>
-            <p className="text-sm text-ink-dim">No items yet. Add what this bike needs from the schedule settings.</p>
+            <p className="text-sm text-ink-dim">
+              {soldAt !== null ? 'No items were set up.' : 'No items yet. Add what this bike needs from the schedule settings.'}
+            </p>
           </GroupRow>
         ) : (
           items.map((item) => {
@@ -86,7 +95,7 @@ export function ServiceBookScreen({ data, demoMode }: ServiceBookScreenProps) {
                   </div>
                   <DueChip due={due} />
                 </div>
-                {demoMode ? null : (
+                {readOnly ? null : (
                   <DueOverrideForm vehicleId={vehicleId} item={{ id: item.id, name: item.name }} book={data.book} usage={view?.usage ?? null} due={due} />
                 )}
               </GroupRow>
@@ -99,7 +108,7 @@ export function ServiceBookScreen({ data, demoMode }: ServiceBookScreenProps) {
         eyebrow="Entries"
         title={`${data.entries.length} ${data.entries.length === 1 ? 'entry' : 'entries'}`}
         action={
-          demoMode ? null : (
+          readOnly ? null : (
             <Button asChild size="sm">
               <Link href={`/garage/${vehicleId}/book/entries/new`}>+ Log service</Link>
             </Button>
@@ -108,10 +117,12 @@ export function ServiceBookScreen({ data, demoMode }: ServiceBookScreenProps) {
       >
         {data.entries.length === 0 ? (
           <GroupRow>
-            <p className="text-sm text-ink-dim">Nothing logged yet.</p>
-            <p className="mt-1 text-xs text-ink-faint">
-              Every entry records the day you log it apart from the date the work was done, so the book stays honest about what was back-filled.
-            </p>
+            <p className="text-sm text-ink-dim">{soldAt !== null ? 'Nothing was logged.' : 'Nothing logged yet.'}</p>
+            {soldAt !== null ? null : (
+              <p className="mt-1 text-xs text-ink-faint">
+                Every entry records the day you log it apart from the date the work was done, so the book stays honest about what was back-filled.
+              </p>
+            )}
           </GroupRow>
         ) : (
           data.entries.map((entry) => {
@@ -182,7 +193,7 @@ function ReceivedBanner({ handover }: { handover: ReceivedHistory }) {
   );
 }
 
-function UsagePanel({ data, view, demoMode }: { data: ServiceBookData; view: ServiceBookView | null; demoMode: boolean }) {
+function UsagePanel({ data, view, readOnly }: { data: ServiceBookData; view: ServiceBookView | null; readOnly: boolean }) {
   const axes = [view?.usage.hours ?? null, view?.usage.distance ?? null].filter((axis): axis is AxisUsage => axis !== null);
   const unit = data.book.distance_unit;
 
@@ -205,7 +216,7 @@ function UsagePanel({ data, view, demoMode }: { data: ServiceBookData; view: Ser
           ))}
         </div>
       )}
-      {demoMode ? null : (
+      {readOnly ? null : (
         <div className="mt-4">
           <VehicleReadingForm vehicleId={data.vehicle.id} book={data.book} />
         </div>
@@ -308,7 +319,7 @@ function OverrideLine({ data, due, clock, unit }: { data: ServiceBookData; due: 
  * these move the figure above, so only these are offered here; the session
  * page offers the same control for any session of the bike.
  */
-function CountedSessions({ data, view, demoMode }: { data: ServiceBookData; view: ServiceBookView | null; demoMode: boolean }) {
+function CountedSessions({ data, view, readOnly }: { data: ServiceBookData; view: ServiceBookView | null; readOnly: boolean }) {
   if (!view) return null;
   const byId = new Map<string, SessionUsage>();
   for (const axis of [view.usage.hours, view.usage.distance]) {
@@ -335,7 +346,7 @@ function CountedSessions({ data, view, demoMode }: { data: ServiceBookData; view
                 {session.weight !== 1 ? ` · counted ×${session.weight}` : ''}
               </span>
             </Link>
-            {demoMode ? (
+            {readOnly ? (
               <span className="shrink-0 text-xs text-ink-dim">{label}</span>
             ) : (
               <SessionWeightSelect vehicleId={data.vehicle.id} sessionId={session.sessionId} weight={weight} label={formatDay(session.date)} />

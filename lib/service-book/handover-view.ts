@@ -4,7 +4,7 @@ import { getFreePlanLimitMessage } from '@/lib/plans';
  * What the handover link page shows a buyer (owner, PQ2; TQ1 to TQ7), worked out
  * from what `describe_service_book_transfer` (20261017000600) answered for the
  * viewer and from the buyer's own garage - never from a row. The page prints
- * this; `tests/e2e/service-book-handover.spec.ts` is the walk.
+ * this; `tests/e2e/service-book-handover-buyer.spec.ts` is the walk.
  *
  * Pure: no Supabase, no Next, so the phone app can render the same page.
  */

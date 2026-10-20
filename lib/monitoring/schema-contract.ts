@@ -199,6 +199,17 @@ export const REQUIRED_RPCS: readonly RpcContract[] = [
     p_limit: UNCOERCIBLE_PROBE_VALUE,
     p_window_seconds: UNCOERCIBLE_PROBE_VALUE,
   }),
+  contract('create_service_book_transfer', {
+    p_book_id: UNCOERCIBLE_PROBE_VALUE,
+    p_to_email: 'probe',
+    p_token_hash: 'probe',
+    p_handover_hours: null,
+    p_handover_distance: null,
+    p_time_zone: null,
+  }),
+  contract('cancel_service_book_transfer', {
+    p_transfer_id: UNCOERCIBLE_PROBE_VALUE,
+  }),
   contract('consume_beta_rate_limit', {
     p_key_hash: UNCOERCIBLE_PROBE_VALUE,
     p_limit: UNCOERCIBLE_PROBE_VALUE,

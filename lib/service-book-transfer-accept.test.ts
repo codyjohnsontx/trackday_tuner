@@ -18,7 +18,7 @@ import {
  * from accept runs the three steps again and nothing else does, and that a
  * handover that will not complete takes its public-bucket copies back. The
  * functions themselves are proven in tests/db/service-book-transfer.spec.ts
- * and the walk in tests/e2e/service-book-handover.spec.ts.
+ * and the walk in tests/e2e/service-book-handover-buyer.spec.ts.
  */
 
 const TOKEN = 'a'.repeat(43);

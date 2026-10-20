@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Route } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -113,7 +113,7 @@ export default async function TransferPage({ params }: TransferPageProps) {
                 </a>
               ) : (
                 <Link
-                  href={loginPath}
+                  href={loginPath as Route}
                   className="flex min-h-12 flex-1 items-center justify-center rounded-control bg-ink px-4 text-sm font-semibold text-canvas"
                   data-testid="handover-sign-in-link"
                 >
