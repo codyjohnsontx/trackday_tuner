@@ -17,7 +17,9 @@ const NOT_AUTHENTICATED = 'Not authenticated.';
  * bounded retry, through `takeOverServiceBook`. The two functions run as the
  * rider, so the database decides whether this account may take the bike; the
  * service role copies the storage objects, which SQL cannot. What the buyer
- * reads on a refusal is worded from the code the database answered with.
+ * reads on a refusal is worded from the code the database answered with, and
+ * only a refusal `describeAcceptRefusal` does not recognise is reported - the
+ * rest are the buyer's to act on, not faults.
  */
 export async function acceptServiceBookTransfer(token: string): Promise<ActionResult<AcceptedHandover>> {
   const demoError = await assertNotDemoMode<AcceptedHandover>();
