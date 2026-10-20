@@ -448,6 +448,11 @@ Two properties are deliberate and worth keeping:
   parse. It is rejected with `22P02` before any function body runs. That is not
   decoration: `service_role` holds execute on `consume_beta_rate_limit`, so a
   well-formed probe would spend a rate-limit slot every fifteen minutes.
+  A function whose parameters are all text and json has nothing to poison, so
+  its probe does run the body. Such a function is listed only when its first
+  statement refuses a caller with no rider (`42501`), which the service role
+  never has. That is the `guard: 'signed_in_rider'` on the handover's prepare
+  and accept contracts.
 
 **When it fires**, the two causes need different fixes and one query separates
 them. Run it in the SQL editor (read-only):

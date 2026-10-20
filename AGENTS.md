@@ -1478,7 +1478,7 @@ submitted pattern set - `RiderTextField.author` picks the set, and
 session, a similar session, a day-plan recent session), SKIPS it on a match:
 dropped from the prompt, from `allowedSessionIds` and from the day trend and
 the `history` and `manual` flags, through `dropScreenedSources` and day-plan's
-own `dropCopiedSessionsFromDayPlan`. The subject session cannot be dropped,
+own `dropCopiedMaterialFromDayPlan`. The subject session cannot be dropped,
 so it refuses with a label ending ", which came with the bike"; the buyer owns
 the row and the session form edits it. Its stored environment and telemetry
 summary take the same set, and an outcome on a copied session is marked by

@@ -38,6 +38,8 @@
  * theoretically: `service_role` holds execute on `consume_beta_rate_limit`, so a
  * well-formed probe would spend a rate-limit slot on every health check. This was
  * verified against a real stack - the probe leaves `beta_rate_limits` empty.
+ * A function with no uuid or integer parameter cannot be poisoned that way, so
+ * its probe does run, and it is listed only behind a `guard` (`RpcContract`).
  *
  * WHAT IT CANNOT SEE, recorded rather than built for. Resolution is by parameter
  * NAME, so a migration that changed a parameter's TYPE while keeping its name
@@ -62,9 +64,9 @@ import type { Database } from '@/types/supabase';
 export const RPC_NOT_IN_SCHEMA_CACHE = 'PGRST202';
 
 /**
- * A value no `uuid` and no `integer` parses. Every contract below puts it in at
- * least one such parameter, which is what keeps the probe from executing;
- * `schema-contract.test.ts` fails if one stops doing so.
+ * A value no `uuid` and no `integer` parses. Every contract below without a
+ * `guard` puts it in at least one such parameter, which is what keeps the probe
+ * from executing; `schema-contract.test.ts` fails if one stops doing so.
  */
 export const UNCOERCIBLE_PROBE_VALUE = 'trackday-tuner-health-probe';
 
