@@ -535,8 +535,8 @@ layered.
 `tests/unit/globals-css-layers.test.ts` enforces this and runs in the required
 checks; the comments in `app/globals.css` record why each block is layered. That
 guard reads one file, so a contrast regression arriving any other way - a changed
-token, a Button variant, a new component - still needs a browser. Only the manual
-e2e suite asserts a rendered colour.
+token, a Button variant, a new component - still needs a browser. Only the e2e
+suite asserts a rendered colour.
 
 ## Path Alias
 
@@ -568,9 +568,10 @@ It is a route handler that changes state on GET, and Next prefetches `<Link>`
 targets - on hover in dev, on viewport entry in a production build - which runs
 the handler and drops the demo cookie before the rider has clicked anything.
 Links to it therefore carry `prefetch={false}` or use a plain `<a>`, as
-`components/demo/demo-banner.tsx` does. No spec guards that: the e2e suite runs
-`next dev`, which does not prefetch on viewport, so it was checked by building
-with and without the flag and watching the cookie survive or vanish on render.
+`components/demo/demo-banner.tsx` does. No spec guards that: locally the e2e
+suite runs `next dev`, which does not prefetch on viewport, and no spec CI runs
+against its production build watches for it, so it was checked by building with
+and without the flag and watching the cookie survive or vanish on render.
 
 ## Supabase Notes
 

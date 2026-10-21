@@ -204,10 +204,10 @@ npm run test:e2e      # Playwright browser specs; see TESTING.md
 ```
 
 CI (`.github/workflows/ci.yml`) runs lint, the unit suite, the offline RAG eval,
-the build and the type check on every pull request, and runs `test:db` against
-a fresh local Supabase stack. The browser e2e suite is run manually, since it
-needs a running app and real credentials. [TESTING.md](TESTING.md) covers the
-environment each suite needs.
+the build and the type check on every pull request, and runs `test:db` and the
+Playwright e2e suite against a fresh local Supabase stack, the e2e suite on a
+production build of the app. [TESTING.md](TESTING.md) covers the environment
+each suite needs.
 
 ## More documentation
 
