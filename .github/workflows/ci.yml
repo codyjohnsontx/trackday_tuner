@@ -7,8 +7,8 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      run_e2e:
-        description: Run Playwright e2e tests (needs real Supabase/OpenAI secrets)
+      all_devices:
+        description: Run the e2e suite on all six device projects, not only the two merge-blocking ones
         type: boolean
         default: false
 
@@ -21,7 +21,8 @@ permissions:
   contents: read
 
 # Dummy values so `next build` can prerender without real credentials.
-# Never put real secrets here — the e2e job pulls real values from repo secrets.
+# Never put real secrets here. The db and e2e jobs replace the Supabase ones
+# with the fixed local credentials of a stack started inside the runner.
 env:
   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
@@ -118,23 +119,31 @@ jobs:
           export NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY
           npm run test:db
 
-  # Manual-only: needs a live app plus real Supabase/OpenAI credentials.
-  # Deliberately NOT part of the PR-required checks.
+  # The Playwright suite (tests/e2e/, TESTING.md) in a real browser on every pull
+  # request, against a local Supabase stack built from supabase/migrations/ the
+  # way the db job builds one, and a production build of the app pointed at it.
+  # No hosted project and no secret is involved: the stack is thrown away with
+  # the runner, and scripts/seed-e2e-accounts.mjs makes the shared Pro account
+  # and the free-tier fixture the specs sign in as.
+  #
+  # No spec needs a model. The AI specs assert the refusals that happen before
+  # one is called, and OPENAI_BASE_URL points the client at a closed local port
+  # so a spec that did reach one would fail here instead of leaving the runner.
+  #
+  # Pull requests run the two merge-blocking device projects (TESTING.md
+  # "Support Matrix"); a manual dispatch with all_devices runs all six.
   e2e:
-    name: Playwright e2e (manual)
-    if: github.event_name == 'workflow_dispatch' && inputs.run_e2e
+    name: Playwright e2e (local Supabase)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
-      STRIPE_PRO_MONTHLY_PRICE_ID: ${{ secrets.STRIPE_PRO_MONTHLY_PRICE_ID }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      AI_REQUEST_FINGERPRINT_SECRET: ${{ secrets.AI_REQUEST_FINGERPRINT_SECRET }}
-      BETA_INVITE_SECRET: ${{ secrets.BETA_INVITE_SECRET }}
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+      OPENAI_BASE_URL: http://127.0.0.1:9/v1
+      # The signup specs need the form to sign up through GoTrue rather than
+      # /api/beta/signup (TESTING.md).
+      BETA_INVITE_ONLY: 'false'
       RUN_E2E: '1'
+      ALL_DEVICES: ${{ inputs.all_devices == true }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -148,16 +157,54 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+      # The same services as the db job.
+      - name: Start local Supabase
+        run: npx supabase start -x imgproxy,supavisor,postgres-meta,vector,logflare,studio,edge-runtime,realtime
 
+      # Replaces the placeholders above for every later step. The build needs
+      # them too, because the browser bundle has NEXT_PUBLIC_SUPABASE_URL baked
+      # in and next.config.ts derives the next/image host from it.
+      - name: Point the app at the local stack
+        run: |
+          eval "$(npx supabase status -o env \
+            --override-name api.url=NEXT_PUBLIC_SUPABASE_URL \
+            --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY \
+            --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY)"
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"
+          } >> "$GITHUB_ENV"
+
+      - name: Seed the e2e accounts
+        run: node scripts/seed-e2e-accounts.mjs >> "$GITHUB_ENV"
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright browsers
+        run: |
+          if [ "$ALL_DEVICES" = "true" ]; then
+            npx playwright install --with-deps chromium webkit msedge
+          else
+            npx playwright install --with-deps chromium webkit
+          fi
+
+      # playwright.config.ts serves the build with `next start` under CI.
       - name: Run e2e tests
-        run: npm run test:e2e
+        run: |
+          if [ "$ALL_DEVICES" = "true" ]; then
+            npm run test:e2e
+          else
+            npm run test:e2e -- --project=iphone-safari --project=android-chrome
+          fi
 
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: playwright-report
-          path: playwright-report/
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 7

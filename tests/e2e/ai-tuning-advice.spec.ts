@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { signInWith } from '@/tests/e2e/helpers/auth';
 
 const FREE_EMAIL = process.env.E2E_FREE_EMAIL;
 const FREE_PASSWORD = process.env.E2E_FREE_PASSWORD;
@@ -30,11 +31,9 @@ test.describe('/api/ai/tuning-advice', () => {
       'Requires E2E_FREE_EMAIL, E2E_FREE_PASSWORD, E2E_FREE_VEHICLE_ID, E2E_FREE_SESSION_ID to be set for a seeded free-tier account.',
     );
 
-    await page.goto('/login');
-    await page.getByLabel('Email').fill(FREE_EMAIL!);
-    await page.getByLabel('Password').fill(FREE_PASSWORD!);
-    await page.getByRole('button', { name: /^Sign In$/ }).first().click();
-    await expect(page).toHaveURL(/\/dashboard/);
+    // The helper clicks the form's own Sign In button; the first control by that
+    // name is the mode toggle above the form, which leaves the page on /login.
+    await signInWith(page, FREE_EMAIL!, FREE_PASSWORD!);
 
     // Use the page's authenticated request context so login cookies are
     // carried; the standalone `request` fixture does not share state with

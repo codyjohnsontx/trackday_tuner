@@ -14,7 +14,7 @@ if (isCI && !forceRun) {
   process.exit(0);
 }
 
-const result = spawnSync('npx', ['playwright', 'test'], {
+const result = spawnSync('npx', ['playwright', 'test', ...process.argv.slice(2)], {
   stdio: 'inherit',
   shell: process.platform === 'win32',
   env: process.env,

@@ -84,6 +84,21 @@ test.describe('password reset from demo mode', () => {
   // may be shortened to fit a budget.
   test.describe.configure({ timeout: 120_000 });
 
+  // A production build sets the demo cookie `Secure` (app/demo/route.ts), and
+  // Playwright's WebKit stores a Secure cookie from http://127.0.0.1 but never
+  // sends it back, where Chromium treats loopback as a secure origin. On WebKit
+  // over plain http the demo is then never entered and neither test can reach
+  // what it is about. `next dev` sets no Secure, and a deployed build is https,
+  // where both engines send it - so ask the server rather than guess.
+  test.beforeEach(async ({ browserName, baseURL, request }) => {
+    if (browserName !== 'webkit' || !baseURL?.startsWith('http:')) return;
+    const response = await request.get('/demo', { maxRedirects: 0 });
+    test.skip(
+      /;\s*secure/i.test(response.headers()['set-cookie'] ?? ''),
+      'WebKit does not send the Secure demo cookie back over http',
+    );
+  });
+
   test('a signed-in rider leaving the demo reaches the password form', async ({ page }) => {
     test.skip(!hasE2EAuth(), 'Needs E2E_EMAIL and E2E_PASSWORD to hold a real session.');
 

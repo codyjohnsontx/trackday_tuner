@@ -1016,10 +1016,15 @@ and nothing that needs a click, a state change or a layout. Logic that needs a
 regression test still belongs in `lib/`; behaviour that only exists on screen (a row
 opening unpressed, a save refusing, a confirm appearing) belongs in `tests/e2e/`.
 
-`npm run test:e2e` **skips itself in CI** unless `RUN_E2E=1`, so an e2e spec is
-evidence a change works, not a gate that will catch its regression. Run the specs
-locally against a Supabase stack - `TESTING.md` owns the environment they need -
-and watch each new one fail before it passes.
+`npm run test:e2e` **is a gate too, on the two merge-blocking device projects**
+(`iphone-safari`, `android-chrome`): the `e2e` job in `.github/workflows/ci.yml`
+builds a local stack the way the `db` job does, seeds the shared accounts with
+`scripts/seed-e2e-accounts.mjs`, and serves a production build, because
+`playwright.config.ts` runs `next start` under `CI`. It reaches no model -
+`OPENAI_BASE_URL` points at a closed port - so a spec that needs one cannot pass
+there. A manual dispatch with `all_devices` runs all six projects. The script
+still skips under `CI` unless `RUN_E2E=1`, which the job sets. `TESTING.md` owns
+the environment, and a new spec is watched failing before it passes.
 
 `npm run test:db` **is** a gate: `tests/db/` needs no browser or dev server, so CI
 starts a local stack from `supabase/migrations/` and runs it on every pull

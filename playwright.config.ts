@@ -11,7 +11,11 @@ export default defineConfig({
   timeout: 30_000,
   fullyParallel: false,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // Two in CI: one worker was on course for 30+ minutes on the merge-blocking
+  // pair, against about five for two. The specs are written for parallel
+  // projects (TESTING.md: per-run identifiers and throwaway riders), so a
+  // second worker costs no isolation.
+  workers: process.env.CI ? 2 : undefined,
   reporter: process.env.CI ? 'dot' : 'list',
   use: {
     baseURL,
@@ -21,7 +25,14 @@ export default defineConfig({
     process.env.PW_SKIP_WEBSERVER === '1'
       ? undefined
       : {
-          command: `npm run dev -- --hostname 127.0.0.1 --port ${port}`,
+          // CI serves the production build the job has just made. `next dev`
+          // compiles each route on first request, and with every spec landing
+          // on cold routes the suite fails on timeouts that have nothing to do
+          // with what it tests (97 failures against `next dev`, 13 against
+          // `next start`, same commit and database, 2026-08-26).
+          command: process.env.CI
+            ? `npm run start -- --hostname 127.0.0.1 --port ${port}`
+            : `npm run dev -- --hostname 127.0.0.1 --port ${port}`,
           env: {
             ...process.env,
             NEXT_PUBLIC_AUTH_GOOGLE_ENABLED:
