@@ -8,6 +8,7 @@ import {
 import { runResourceId } from '@/tests/e2e/helpers/run-id';
 import { EMPTY_SUSPENSION, EMPTY_TIRES } from '@/tests/e2e/helpers/session-fixtures';
 import { MISSING_TRACK_MESSAGE } from '@/lib/session-track';
+import { addVehicle } from '@/tests/e2e/helpers/garage';
 
 /**
  * The New Session form accepted a blank Track while Vehicle and Date were both
@@ -27,31 +28,6 @@ import { MISSING_TRACK_MESSAGE } from '@/lib/session-track';
  */
 
 const SESSION_DATE = '2019-06-11';
-
-async function addVehicle(page: Page, nickname: string): Promise<string> {
-  await page.goto('/garage/new');
-
-  const nicknameField = page.getByLabel('Nickname', { exact: true });
-  await expect(async () => {
-    await nicknameField.fill(nickname);
-    await expect(nicknameField).toHaveValue(nickname);
-  }).toPass({ timeout: 10_000 });
-
-  await page.getByRole('button', { name: 'Add Vehicle' }).click();
-  await expect(page).toHaveURL(/\/garage$/, { timeout: 20_000 });
-
-  const { data, error } = await createTestAdminClient()
-    .from('vehicles')
-    .select('id')
-    .eq('nickname', nickname)
-    .single();
-
-  if (error || !data) {
-    throw new Error(`Vehicle "${nickname}" was not created: ${error?.message ?? 'no row returned'}`);
-  }
-
-  return data.id;
-}
 
 /** Fills everything the save needs except the circuit. */
 async function openNewSession(page: Page, vehicleId: string) {

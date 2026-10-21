@@ -2,6 +2,7 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { runResourceId } from '@/tests/e2e/helpers/run-id';
+import { addVehicle } from '@/tests/e2e/helpers/garage';
 
 /**
  * The core loop on the shape of data riders actually produce: several sessions on
@@ -46,32 +47,6 @@ function formattedSessionDate(): string {
  * vehicle makes this run's two sessions the only rows it can choose between and keeps
  * one project's cleanup away from another project's data. Returns the vehicle id.
  */
-async function createRunVehicle(page: Page, nickname: string): Promise<string> {
-  await page.goto('/garage/new');
-
-  const nicknameField = page.getByLabel('Nickname', { exact: true });
-  // Controlled input: a value typed into the streamed HTML before React hydrates is
-  // thrown away. Retry until it sticks.
-  await expect(async () => {
-    await nicknameField.fill(nickname);
-    await expect(nicknameField).toHaveValue(nickname);
-  }).toPass({ timeout: 10_000 });
-
-  await page.getByRole('button', { name: 'Add Vehicle' }).click();
-  await expect(page).toHaveURL(/\/garage$/, { timeout: 20_000 });
-
-  const { data, error } = await createTestAdminClient()
-    .from('vehicles')
-    .select('id')
-    .eq('nickname', nickname)
-    .single();
-
-  if (error || !data) {
-    throw new Error(`Vehicle "${nickname}" was not created: ${error?.message ?? 'no row returned'}`);
-  }
-
-  return data.id;
-}
 
 /** Logs one session with Start Time deliberately left blank. Returns its id. */
 async function logSessionWithoutStartTime(
@@ -159,7 +134,7 @@ test.describe('same-day sessions logged without a start time', () => {
     await signIn(page);
 
     trackName = `PW Same-Day Track ${runResourceId(testInfo)}`;
-    const vehicleId = await createRunVehicle(page, `PW Same-Day ${runResourceId(testInfo)}`);
+    const vehicleId = await addVehicle(page, `PW Same-Day ${runResourceId(testInfo)}`);
     createdVehicleId = vehicleId;
 
     const firstSessionId = await logSessionWithoutStartTime(page, {

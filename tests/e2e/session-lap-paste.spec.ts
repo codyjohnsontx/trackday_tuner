@@ -1,7 +1,8 @@
-import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { test, expect, type TestInfo } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { runResourceId } from '@/tests/e2e/helpers/run-id';
+import { addVehicle } from '@/tests/e2e/helpers/garage';
 
 /**
  * Lap times a rider entered but never pressed "Add" on used to be dropped by the
@@ -17,31 +18,6 @@ const SESSION_DATE = '2019-05-11';
 let trackName = '';
 const PASTED_LAPS = ['1:42.350', '1:41.920', '1:41.700', '1:41.480'];
 const QUICK_LAP = '1:40.900';
-
-async function createRunVehicle(page: Page, nickname: string): Promise<string> {
-  await page.goto('/garage/new');
-
-  const nicknameField = page.getByLabel('Nickname', { exact: true });
-  await expect(async () => {
-    await nicknameField.fill(nickname);
-    await expect(nicknameField).toHaveValue(nickname);
-  }).toPass({ timeout: 10_000 });
-
-  await page.getByRole('button', { name: 'Add Vehicle' }).click();
-  await expect(page).toHaveURL(/\/garage$/, { timeout: 20_000 });
-
-  const { data, error } = await createTestAdminClient()
-    .from('vehicles')
-    .select('id')
-    .eq('nickname', nickname)
-    .single();
-
-  if (error || !data) {
-    throw new Error(`Vehicle "${nickname}" was not created: ${error?.message ?? 'no row returned'}`);
-  }
-
-  return data.id;
-}
 
 test.describe('lap times left in the editor entry boxes', () => {
   test.describe.configure({ timeout: 120_000 });
@@ -78,7 +54,7 @@ test.describe('lap times left in the editor entry boxes', () => {
     await signIn(page);
 
     trackName = `PW Lap Paste Track ${runResourceId(testInfo)}`;
-    const vehicleId = await createRunVehicle(page, `PW Lap Paste ${runResourceId(testInfo)}`);
+    const vehicleId = await addVehicle(page, `PW Lap Paste ${runResourceId(testInfo)}`);
     createdVehicleId = vehicleId;
 
     await page.goto('/sessions/new');

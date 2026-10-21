@@ -2,6 +2,7 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { runResourceId } from '@/tests/e2e/helpers/run-id';
+import { addVehicle } from '@/tests/e2e/helpers/garage';
 
 /**
  * The Date field used to be seeded from `toISOString()`, which is UTC, so an
@@ -32,31 +33,6 @@ const RIDERS_CLOCK = '23:30';
 // Twenty minutes on, the same evening in Texas.
 const LATER_IN_TEXAS = new Date('2026-08-18T04:50:00.000Z');
 const RIDERS_LATER_CLOCK = '23:50';
-
-async function createRunVehicle(page: Page, nickname: string): Promise<string> {
-  await page.goto('/garage/new');
-
-  const nicknameField = page.getByLabel('Nickname', { exact: true });
-  await expect(async () => {
-    await nicknameField.fill(nickname);
-    await expect(nicknameField).toHaveValue(nickname);
-  }).toPass({ timeout: 10_000 });
-
-  await page.getByRole('button', { name: 'Add Vehicle' }).click();
-  await expect(page).toHaveURL(/\/garage$/, { timeout: 20_000 });
-
-  const { data, error } = await createTestAdminClient()
-    .from('vehicles')
-    .select('id')
-    .eq('nickname', nickname)
-    .single();
-
-  if (error || !data) {
-    throw new Error(`Vehicle "${nickname}" was not created: ${error?.message ?? 'no row returned'}`);
-  }
-
-  return data.id;
-}
 
 test.describe('a rider logging in the evening', () => {
   test.describe.configure({ timeout: 120_000 });
@@ -133,7 +109,7 @@ test.describe('a rider logging in the evening', () => {
   }, testInfo: TestInfo) => {
     await signIn(page);
 
-    createdVehicleId = await createRunVehicle(
+    createdVehicleId = await addVehicle(
       page,
       `PW Evening ${runResourceId(testInfo)}`,
     );
@@ -171,7 +147,7 @@ test.describe('a rider logging in the evening', () => {
   }, testInfo: TestInfo) => {
     await signIn(page);
     trackName = `PW Start Time Track ${runResourceId(testInfo)}`;
-    createdVehicleId = await createRunVehicle(page, `PW Start Time ${runResourceId(testInfo)}`);
+    createdVehicleId = await addVehicle(page, `PW Start Time ${runResourceId(testInfo)}`);
 
     await openFreshForm(page);
     const startTimeField = page.getByLabel('Start Time', { exact: true });
@@ -184,7 +160,7 @@ test.describe('a rider logging in the evening', () => {
   test('keeps a start time the rider typed over the default', async ({ page }, testInfo: TestInfo) => {
     await signIn(page);
     trackName = `PW Start Time Edit Track ${runResourceId(testInfo)}`;
-    createdVehicleId = await createRunVehicle(page, `PW Start Time Edit ${runResourceId(testInfo)}`);
+    createdVehicleId = await addVehicle(page, `PW Start Time Edit ${runResourceId(testInfo)}`);
 
     await openFreshForm(page);
     const startTimeField = page.getByLabel('Start Time', { exact: true });
@@ -199,7 +175,7 @@ test.describe('a rider logging in the evening', () => {
     page,
   }, testInfo: TestInfo) => {
     await signIn(page);
-    createdVehicleId = await createRunVehicle(page, `PW Start Time Draft ${runResourceId(testInfo)}`);
+    createdVehicleId = await addVehicle(page, `PW Start Time Draft ${runResourceId(testInfo)}`);
 
     await openFreshForm(page);
     const startTimeField = page.getByLabel('Start Time', { exact: true });
@@ -218,7 +194,7 @@ test.describe('a rider logging in the evening', () => {
     page,
   }, testInfo: TestInfo) => {
     await signIn(page);
-    createdVehicleId = await createRunVehicle(page, `PW Start Time Draft Edit ${runResourceId(testInfo)}`);
+    createdVehicleId = await addVehicle(page, `PW Start Time Draft Edit ${runResourceId(testInfo)}`);
 
     await openFreshForm(page);
     const startTimeField = page.getByLabel('Start Time', { exact: true });

@@ -28,7 +28,9 @@ const DEMO_BOOK: Tables<'service_books'> = {
   transferred_from_book_id: null,
   transferred_at: null,
   transferred_removed_entry_count: 0,
-  owner_time_zone: null,
+  // Pinned like a real book's, so a viewer's own zone relabels nothing. The
+  // track day is in Texas and the logged times are evenings there.
+  owner_time_zone: 'America/Chicago',
   created_at: bookCreatedAt,
   updated_at: bookCreatedAt,
 };

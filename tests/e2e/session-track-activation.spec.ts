@@ -2,7 +2,8 @@ import { test, expect, type Locator, type Page, type TestInfo } from '@playwrigh
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { runResourceId } from '@/tests/e2e/helpers/run-id';
-import { addVehicle, seedTrack, typeRunQuery } from '@/tests/e2e/helpers/track-picker';
+import { addVehicle } from '@/tests/e2e/helpers/garage';
+import { seedTrack, typeRunQuery } from '@/tests/e2e/helpers/track-picker';
 
 /**
  * Activating a suggestion row, however the activation arrives.

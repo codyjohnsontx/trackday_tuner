@@ -316,7 +316,19 @@ export function Button({
     onBlur?.(event);
   };
 
-  const label = holdToConfirm && holding && holdingLabel != null ? holdingLabel : children;
+  // Both labels share one grid cell and only the active one is visible, so the
+  // button keeps the wider label's size. Swapping one for the other resized it
+  // under the press: a shorter holding label moved the edge out from under the
+  // pointer, WebKit ended the hold, and the confirm never fired.
+  const label =
+    holdToConfirm && holdingLabel != null ? (
+      <span className="inline-grid justify-items-center">
+        <span className={cn('[grid-area:1/1]', holding && 'invisible')}>{children}</span>
+        <span className={cn('[grid-area:1/1]', !holding && 'invisible')}>{holdingLabel}</span>
+      </span>
+    ) : (
+      children
+    );
 
   return (
     <button
