@@ -1,7 +1,8 @@
-import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { test, expect, type TestInfo } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { runResourceId } from '@/tests/e2e/helpers/run-id';
+import { addVehicle } from '@/tests/e2e/helpers/garage';
 
 /**
  * The app only spoke Celsius, to a rider base whose tracks are all in Texas: an
@@ -18,31 +19,6 @@ const SESSION_DATE = '2019-07-19';
 // the worker - see tests/e2e/helpers/run-id.ts.
 let trackName = '';
 const SESSION_DRAFT_KEY = 'track_tuner:draft:session_form_new';
-
-async function createRunVehicle(page: Page, nickname: string): Promise<string> {
-  await page.goto('/garage/new');
-
-  const nicknameField = page.getByLabel('Nickname', { exact: true });
-  await expect(async () => {
-    await nicknameField.fill(nickname);
-    await expect(nicknameField).toHaveValue(nickname);
-  }).toPass({ timeout: 10_000 });
-
-  await page.getByRole('button', { name: 'Add Vehicle' }).click();
-  await expect(page).toHaveURL(/\/garage$/, { timeout: 20_000 });
-
-  const { data, error } = await createTestAdminClient()
-    .from('vehicles')
-    .select('id')
-    .eq('nickname', nickname)
-    .single();
-
-  if (error || !data) {
-    throw new Error(`Vehicle "${nickname}" was not created: ${error?.message ?? 'no row returned'}`);
-  }
-
-  return data.id;
-}
 
 test.describe('a rider who reads in Fahrenheit', () => {
   test.describe.configure({ timeout: 120_000 });
@@ -80,7 +56,7 @@ test.describe('a rider who reads in Fahrenheit', () => {
     await signIn(page);
 
     trackName = `PW Fahrenheit Track ${runResourceId(testInfo)}`;
-    const vehicleId = await createRunVehicle(page, `PW Fahrenheit ${runResourceId(testInfo)}`);
+    const vehicleId = await addVehicle(page, `PW Fahrenheit ${runResourceId(testInfo)}`);
     createdVehicleId = vehicleId;
 
     await page.goto('/settings');
@@ -180,7 +156,7 @@ test.describe('a rider who reads in Fahrenheit', () => {
     // sibling test's afterEach takes its vehicle with it. Seeding one here keeps
     // this guard from depending on what the shared account happens to hold - it
     // otherwise fails on the Date assertion below, naming nothing about vehicles.
-    createdVehicleId = await createRunVehicle(
+    createdVehicleId = await addVehicle(
       page,
       `PW Legacy Draft ${runResourceId(testInfo)}`,
     );
@@ -189,8 +165,9 @@ test.describe('a rider who reads in Fahrenheit', () => {
     // the old key names, and no unit recorded. Reading only the new keys left both
     // fields empty and the draft-saving effect then overwrote the rider's values,
     // so coming back to the form lost them for good.
-    await page.goto('/sessions/new');
-    await page.evaluate((key) => {
+    // Planted before any of the page's own script runs: written into a page that
+    // was still hydrating, it was overwritten by the form's first draft save.
+    await page.addInitScript((key) => {
       window.localStorage.setItem(
         key,
         JSON.stringify({
@@ -208,7 +185,7 @@ test.describe('a rider who reads in Fahrenheit', () => {
         }),
       );
     }, SESSION_DRAFT_KEY);
-    await page.reload();
+    await page.goto('/sessions/new');
 
     // Hydration has run: the draft's own date is back on screen.
     await expect(page.getByLabel('Date', { exact: true })).toHaveValue('2019-07-19');

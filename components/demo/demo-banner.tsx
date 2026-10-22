@@ -18,9 +18,10 @@ export function DemoBanner() {
           A plain `<a>` rather than `<Link>`: `/demo/exit` is a route handler that
           clears the demo cookie on GET, and a production build prefetches `<Link>`
           targets on viewport entry - so scrolling this banner into view would end
-          the rider's demo before they clicked anything. No test can catch that
-          regression: the e2e suite runs `next dev`, which does not prefetch on
-          viewport.
+          the rider's demo before they clicked anything. No test catches that
+          regression: locally the e2e suite runs `next dev`, which does not
+          prefetch on viewport, and no spec CI runs against its production build
+          watches for it.
         */}
         <a
           href="/demo/exit"

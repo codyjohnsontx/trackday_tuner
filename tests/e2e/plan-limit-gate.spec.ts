@@ -4,6 +4,7 @@ import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { runResourceId } from '@/tests/e2e/helpers/run-id';
 import { EMPTY_SUSPENSION, EMPTY_TIRES } from '@/tests/e2e/helpers/session-fixtures';
+import { addVehicle } from '@/tests/e2e/helpers/garage';
 import { getFreePlanLimit, getFreePlanLimitTitle } from '@/lib/plans';
 
 /**
@@ -144,21 +145,7 @@ test.describe('the sticky Save bar', () => {
     const runId = runResourceId(testInfo);
 
     const nickname = `PW Save Bar ${runId}`;
-    await page.goto('/garage/new');
-    const nicknameField = page.getByLabel('Nickname', { exact: true });
-    await expect(async () => {
-      await nicknameField.fill(nickname);
-      await expect(nicknameField).toHaveValue(nickname);
-    }).toPass({ timeout: 10_000 });
-    await page.getByRole('button', { name: 'Add Vehicle' }).click();
-    await expect(page).toHaveURL(/\/garage$/, { timeout: 20_000 });
-
-    const { data: vehicle } = await createTestAdminClient()
-      .from('vehicles')
-      .select('id')
-      .eq('nickname', nickname)
-      .single();
-    createdVehicleId = vehicle?.id ?? null;
+    createdVehicleId = await addVehicle(page, nickname);
 
     await page.goto('/sessions/new');
     await expect(page.getByRole('heading', { name: 'New Session' })).toBeVisible({ timeout: 20_000 });

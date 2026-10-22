@@ -2,6 +2,7 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { runResourceId } from '@/tests/e2e/helpers/run-id';
+import { addVehicle } from '@/tests/e2e/helpers/garage';
 
 /**
  * A database built from this repository had no tracks at all, so every rider
@@ -27,31 +28,6 @@ const CRESSON_SLUG = 'motorsport-ranch';
 async function seededTrackId(slug: string): Promise<string | null> {
   const { data } = await createTestAdminClient().from('tracks').select('id').eq('slug', slug).maybeSingle();
   return (data as { id: string } | null)?.id ?? null;
-}
-
-async function createRunVehicle(page: Page, nickname: string): Promise<string> {
-  await page.goto('/garage/new');
-
-  const nicknameField = page.getByLabel('Nickname', { exact: true });
-  await expect(async () => {
-    await nicknameField.fill(nickname);
-    await expect(nicknameField).toHaveValue(nickname);
-  }).toPass({ timeout: 10_000 });
-
-  await page.getByRole('button', { name: 'Add Vehicle' }).click();
-  await expect(page).toHaveURL(/\/garage$/, { timeout: 20_000 });
-
-  const { data, error } = await createTestAdminClient()
-    .from('vehicles')
-    .select('id')
-    .eq('nickname', nickname)
-    .single();
-
-  if (error || !data) {
-    throw new Error(`Vehicle "${nickname}" was not created: ${error?.message ?? 'no row returned'}`);
-  }
-
-  return data.id;
 }
 
 async function openNewSession(page: Page, vehicleId: string) {
@@ -130,7 +106,7 @@ test.describe('a circuit the rider names', () => {
     const runId = runResourceId(testInfo);
     const cotaId = await seededTrackId(COTA_SLUG);
 
-    createdVehicleId = await createRunVehicle(page, `PW Seeded Track ${runId}`);
+    createdVehicleId = await addVehicle(page, `PW Seeded Track ${runId}`);
 
     // Typed out in full, never picked from the list.
     await openNewSession(page, createdVehicleId);
@@ -165,7 +141,7 @@ test.describe('a circuit the rider names', () => {
     const runId = runResourceId(testInfo);
     const cressonId = await seededTrackId(CRESSON_SLUG);
 
-    createdVehicleId = await createRunVehicle(page, `PW Seeded Layout ${runId}`);
+    createdVehicleId = await addVehicle(page, `PW Seeded Layout ${runId}`);
 
     await openNewSession(page, createdVehicleId);
     await typeTrack(page, 'MSR Cresson');
@@ -204,7 +180,7 @@ test.describe('a circuit the rider names', () => {
     const runId = runResourceId(testInfo);
     const typedName = `PW Unseeded Raceway ${runId}`;
 
-    createdVehicleId = await createRunVehicle(page, `PW Unseeded ${runId}`);
+    createdVehicleId = await addVehicle(page, `PW Unseeded ${runId}`);
 
     await openNewSession(page, createdVehicleId);
     await typeTrack(page, typedName);

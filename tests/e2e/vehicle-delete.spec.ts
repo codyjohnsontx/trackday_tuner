@@ -1,5 +1,6 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { signInWith } from '@/tests/e2e/helpers/auth';
+import { confirmVehicleDelete } from '@/tests/e2e/helpers/garage';
 import { gotoPage } from '@/tests/e2e/helpers/navigation';
 import { createTestAdminClient, expectRows, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { EMPTY_SUSPENSION, EMPTY_TIRES } from '@/tests/e2e/helpers/session-fixtures';
@@ -49,17 +50,6 @@ async function plantVehicle(riderId: string): Promise<string> {
   return data!.id;
 }
 
-async function typeNickname(page: Page, value: string) {
-  const field = page.getByLabel(`Type ${NICKNAME} to confirm`);
-  // Controlled input: text typed before React hydrates is dropped, so retry
-  // until the value is in React's state, not just the DOM.
-  await expect(async () => {
-    await field.fill('');
-    await field.fill(value);
-    await expect(field).toHaveValue(value);
-  }).toPass({ timeout: 10_000 });
-}
-
 test.describe('deleting a vehicle', () => {
   test.describe.configure({ timeout: 120_000 });
   test.skip(!hasServiceRole(), 'NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
@@ -104,12 +94,14 @@ test.describe('deleting a vehicle', () => {
       ),
     ).toBeVisible();
 
-    const button = page.getByRole('button', { name: 'Delete vehicle' });
-    await expect(button).toBeDisabled();
-    await typeNickname(page, 'Gate Test');
+    await expect(page.getByRole('button', { name: 'Delete vehicle' })).toBeDisabled();
+    // The whole nickname enables it, which also proves the field reaches state.
+    const button = await confirmVehicleDelete(page, NICKNAME);
+    const field = page.getByLabel(`Type ${NICKNAME} to confirm`);
+    await field.fill('Gate Test');
     await expect(button).toBeDisabled();
     // A phone keyboard's own capitalisation is not a reason to refuse.
-    await typeNickname(page, 'gate test r6');
+    await field.fill('gate test r6');
     await expect(button).toBeEnabled();
 
     await button.click();
@@ -139,8 +131,7 @@ test.describe('deleting a vehicle', () => {
     // Logged from another tab while this confirmation sat open.
     await plantSession(rider!.id, vehicleId, '2019-09-08');
 
-    await typeNickname(page, NICKNAME);
-    await page.getByRole('button', { name: 'Delete vehicle' }).click();
+    await (await confirmVehicleDelete(page, NICKNAME)).click();
 
     await expect(
       page.getByRole('alert').filter({ hasText: 'The sessions on this vehicle changed since this page loaded' }),
@@ -168,8 +159,7 @@ test.describe('deleting a vehicle', () => {
       ),
     ).toHaveLength(1);
 
-    await typeNickname(page, NICKNAME);
-    await page.getByRole('button', { name: 'Delete vehicle' }).click();
+    await (await confirmVehicleDelete(page, NICKNAME)).click();
 
     await expect(page.getByRole('alert').filter({ hasText: 'This vehicle could not be found.' })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/garage/${vehicleId}/edit$`));

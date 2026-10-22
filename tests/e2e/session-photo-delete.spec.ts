@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { signInWith } from '@/tests/e2e/helpers/auth';
+import { confirmVehicleDelete } from '@/tests/e2e/helpers/garage';
 import { gotoPage } from '@/tests/e2e/helpers/navigation';
 import { createTestAdminClient, expectRows, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { EMPTY_SUSPENSION, EMPTY_TIRES } from '@/tests/e2e/helpers/session-fixtures';
@@ -150,12 +151,7 @@ test.describe('deleting what a session photo belongs to', () => {
 
     await signInWith(page, rider!.email, rider!.password);
     await gotoPage(page, `/garage/${vehicleId}/edit`);
-    const field = page.getByLabel(`Type ${NICKNAME} to confirm`);
-    await expect(async () => {
-      await field.fill(NICKNAME);
-      await expect(field).toHaveValue(NICKNAME);
-    }).toPass({ timeout: 10_000 });
-    await page.getByRole('button', { name: 'Delete vehicle' }).click();
+    await (await confirmVehicleDelete(page, NICKNAME)).click();
     await expect(page).toHaveURL(/\/garage$/, { timeout: 20_000 });
 
     const admin = createTestAdminClient();

@@ -1,5 +1,6 @@
 import { test, expect, type Locator } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
+import { fillTrackForm } from '@/tests/e2e/helpers/track-picker';
 
 /**
  * The sag fields are controlled inputs, so a value typed into the streamed HTML
@@ -144,8 +145,7 @@ test.describe('authenticated tracks smoke', () => {
 
     await page.goto('/tracks/new');
     await expect(page.getByRole('heading', { name: 'Add Track' })).toBeVisible();
-    await page.getByLabel('Track name').fill(trackName);
-    await page.getByLabel('Location (optional)').fill(location);
+    await fillTrackForm(page, { name: trackName, location });
     await page.getByRole('button', { name: 'Add Track' }).click();
 
     await expect(page).toHaveURL(/\/tracks$/);

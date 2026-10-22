@@ -2,6 +2,7 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { runResourceId } from '@/tests/e2e/helpers/run-id';
+import { addVehicle } from '@/tests/e2e/helpers/garage';
 
 /**
  * A circuit typed into the Track field used to store `track_id` null forever, so
@@ -22,31 +23,6 @@ const SESSION_DATE = '2019-06-08';
 let runId = '';
 let typedName = '';
 let retypedName = '';
-
-async function createRunVehicle(page: Page, nickname: string): Promise<string> {
-  await page.goto('/garage/new');
-
-  const nicknameField = page.getByLabel('Nickname', { exact: true });
-  await expect(async () => {
-    await nicknameField.fill(nickname);
-    await expect(nicknameField).toHaveValue(nickname);
-  }).toPass({ timeout: 10_000 });
-
-  await page.getByRole('button', { name: 'Add Vehicle' }).click();
-  await expect(page).toHaveURL(/\/garage$/, { timeout: 20_000 });
-
-  const { data, error } = await createTestAdminClient()
-    .from('vehicles')
-    .select('id')
-    .eq('nickname', nickname)
-    .single();
-
-  if (error || !data) {
-    throw new Error(`Vehicle "${nickname}" was not created: ${error?.message ?? 'no row returned'}`);
-  }
-
-  return data.id;
-}
 
 async function logSession(page: Page, vehicleId: string, trackName: string): Promise<string> {
   await page.goto('/sessions/new');
@@ -109,7 +85,7 @@ test.describe('a track name the rider types', () => {
     typedName = `PW Harris Hill Raceway ${runId}`;
     retypedName = `pw harris  hill RACEWAY  ${runId}`;
 
-    const vehicleId = await createRunVehicle(page, `PW Track Autosave ${runId}`);
+    const vehicleId = await addVehicle(page, `PW Track Autosave ${runId}`);
     createdVehicleId = vehicleId;
 
     const admin = createTestAdminClient();

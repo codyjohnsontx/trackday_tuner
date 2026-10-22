@@ -209,7 +209,7 @@ describe('AdviceReport renders the whole response', () => {
  * here is the structure that carries the difference - the rejection reaches the
  * rider, it comes FIRST, it is body-sized primary ink where the standing
  * disclaimer is footnote-sized amber, and it survives a withheld answer. Whether
- * it lands on a phone is a browser question and belongs in the manual e2e walk.
+ * it lands on a phone is a browser question and belongs in the e2e suite.
  */
 describe('a rejected premise does not read as the standing disclaimer', () => {
   const REJECTION =

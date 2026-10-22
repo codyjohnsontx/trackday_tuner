@@ -2,7 +2,8 @@ import { test, expect, type Locator, type Page, type TestInfo } from '@playwrigh
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { runResourceId } from '@/tests/e2e/helpers/run-id';
-import { addVehicle, seedTrack, typeRunQuery } from '@/tests/e2e/helpers/track-picker';
+import { addVehicle } from '@/tests/e2e/helpers/garage';
+import { seedTrack, typeRunQuery } from '@/tests/e2e/helpers/track-picker';
 
 /**
  * Activating a suggestion row, however the activation arrives.
@@ -172,6 +173,11 @@ test.describe('activating a track suggestion', () => {
   }, testInfo: TestInfo) => {
     const { trackField, listbox, trackName } = await openPicker(page, testInfo, 'Held Press Circuit');
 
+    // A raw mouse press goes to whatever is at that point, and the floating
+    // bottom nav overlays the lower edge of the viewport, where the row lands on
+    // a desktop and a phone alike. Centre the field first so the press reaches
+    // the row; `locator.click()` in the tests above scrolls for itself.
+    await trackField.evaluate((input) => input.scrollIntoView({ block: 'center' }));
     const box = await listbox.getByRole('option').first().boundingBox();
     if (!box) throw new Error('the suggestion row has no box to press');
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

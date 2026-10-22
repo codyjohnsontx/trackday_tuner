@@ -1,7 +1,8 @@
-import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { test, expect, type TestInfo } from '@playwright/test';
 import { hasE2EAuth, signIn } from '@/tests/e2e/helpers/auth';
 import { createTestAdminClient, hasServiceRole } from '@/tests/e2e/helpers/supabase';
 import { runResourceId } from '@/tests/e2e/helpers/run-id';
+import { addVehicle } from '@/tests/e2e/helpers/garage';
 
 /**
  * A default is not an answer.
@@ -20,33 +21,6 @@ const SESSION_DATE = '2019-04-02';
 // Set per test from runResourceId, which carries the device project as well as
 // the worker - see tests/e2e/helpers/run-id.ts.
 let trackName = '';
-
-async function createRunVehicle(page: Page, nickname: string): Promise<string> {
-  await page.goto('/garage/new');
-
-  const nicknameField = page.getByLabel('Nickname', { exact: true });
-  // Controlled input: a value typed into the streamed HTML before React hydrates
-  // is thrown away. Retry until it sticks.
-  await expect(async () => {
-    await nicknameField.fill(nickname);
-    await expect(nicknameField).toHaveValue(nickname);
-  }).toPass({ timeout: 10_000 });
-
-  await page.getByRole('button', { name: 'Add Vehicle' }).click();
-  await expect(page).toHaveURL(/\/garage$/, { timeout: 20_000 });
-
-  const { data, error } = await createTestAdminClient()
-    .from('vehicles')
-    .select('id')
-    .eq('nickname', nickname)
-    .single();
-
-  if (error || !data) {
-    throw new Error(`Vehicle "${nickname}" was not created: ${error?.message ?? 'no row returned'}`);
-  }
-
-  return data.id;
-}
 
 test.describe('answers the rider did not give', () => {
   test.describe.configure({ timeout: 120_000 });
@@ -84,7 +58,7 @@ test.describe('answers the rider did not give', () => {
     trackName = `PW Unanswered Track ${runResourceId(testInfo)}`;
     await signIn(page);
 
-    const vehicleId = await createRunVehicle(
+    const vehicleId = await addVehicle(
       page,
       `PW Unanswered ${runResourceId(testInfo)}`,
     );
@@ -153,7 +127,7 @@ test.describe('answers the rider did not give', () => {
     await signIn(page);
 
     trackName = `PW Verdict Track ${runResourceId(testInfo)}`;
-    const vehicleId = await createRunVehicle(
+    const vehicleId = await addVehicle(
       page,
       `PW Verdict ${runResourceId(testInfo)}`,
     );

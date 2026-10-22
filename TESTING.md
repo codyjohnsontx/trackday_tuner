@@ -175,6 +175,36 @@ By default, `npm run test:e2e` skips in CI unless explicitly enabled.
 - Force E2E in CI: `RUN_E2E=1 npm run test:e2e`
 - Skip E2E anywhere: `SKIP_E2E=1 npm run test:e2e`
 
+Arguments after `--` reach Playwright, e.g.
+`npm run test:e2e -- --project=iphone-safari --project=android-chrome`.
+
+### E2E in CI
+The `e2e` job in `.github/workflows/ci.yml` runs the suite on every pull request
+and push to `main`, on the two merge-blocking projects in the support matrix.
+A manual `workflow_dispatch` with `all_devices` runs all six. It uses no hosted
+project and no secret:
+
+1. `npx supabase start` builds a stack from `supabase/migrations/` inside the
+   runner, as the `db` job does, and its local keys replace the placeholders.
+2. `node scripts/seed-e2e-accounts.mjs` makes the shared Pro account (with a
+   standing vehicle and session) and the free-tier fixture, and prints
+   `E2E_EMAIL`, `E2E_PASSWORD` and the `E2E_FREE_*` variables for `$GITHUB_ENV`.
+   It refuses any non-loopback Supabase URL.
+3. `npm run build`, then Playwright serves it: under `CI`, `playwright.config.ts`
+   runs `next start` rather than `next dev`.
+
+`BETA_INVITE_ONLY=false` there, so the signup specs run. No spec reaches a
+model: the AI specs assert refusals that happen before one is called, and the
+job sets `OPENAI_BASE_URL` to a closed local port so a spec that did would fail
+rather than leave the runner. To run the same thing locally, start a stack
+(see "Real-database tests"), export its three keys, run the seed script and
+export what it prints, build, and run with `CI=true RUN_E2E=1`.
+
+The CI app is served over plain `http://127.0.0.1`, and a production build sets
+the demo cookie `Secure`. Playwright's WebKit stores that cookie but never sends
+it back over http, so `tests/e2e/demo-reset-password.spec.ts` skips itself on
+WebKit when the server sets it `Secure`; Chromium runs it.
+
 Watch mode for units:
 ```bash
 npm run test:unit:watch
