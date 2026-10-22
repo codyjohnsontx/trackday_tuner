@@ -20,7 +20,7 @@
     "db:new": "supabase migration new",
     "db:audit": "node scripts/build-migration-audit.mjs",
     "db:drift": "node scripts/schema-drift.mjs",
-    "analyze": "ANALYZE=true next build",
+    "analyze": "ANALYZE=true next build --webpack",
     "check:agent-docs": "node scripts/check-agent-docs.mjs",
     "ai:requests": "node scripts/inspect-ai-requests.mjs",
     "ai:export-replay": "node scripts/export-ai-replay.mjs",
