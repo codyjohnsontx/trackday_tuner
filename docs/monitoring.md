@@ -315,7 +315,7 @@ is deliberately not among them: nothing in the app reads it, only
 ### `/api/health`
 
 `200` when the deployment can serve, `503` with a named failing check when it
-cannot. Public, uncached, and excluded from the middleware matcher so it depends
+cannot. Public, uncached, and excluded from the proxy matcher (`proxy.ts`) so it depends
 on as little as possible. The body carries an error *name* and never a message,
 because `MissingKnowledgeIndexError`'s own message embeds the absolute index
 path.
