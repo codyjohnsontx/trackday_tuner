@@ -135,7 +135,7 @@ Screenshots are from the demo on the live app, at phone width.
 
 ## Architecture
 
-- **Next.js 15** App Router with React 19 and TypeScript (strict). Server
+- **Next.js 16** App Router with React 19 and TypeScript (strict). Server
   components and server actions for most reads and writes, route handlers for
   the AI, Stripe, mobile and monitoring endpoints. Tailwind CSS v4.
 - **Supabase**: Postgres with row-level security on rider data, Auth

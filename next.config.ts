@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 import withBundleAnalyzer from '@next/bundle-analyzer';
 import { withSentryConfig } from '@sentry/nextjs/config';
-import { supabaseStorageRemotePatterns } from './lib/supabase-storage-remote-patterns';
+import { supabaseStorageAllowsLocalIp, supabaseStorageRemotePatterns } from './lib/supabase-storage-remote-patterns';
 
 const nextConfig: NextConfig = {
   typedRoutes: true,
@@ -25,6 +25,11 @@ const nextConfig: NextConfig = {
     // and the local-stack failure it closes. Next loads `.env*` before it
     // evaluates this file, so `.env.local` counts.
     remotePatterns: supabaseStorageRemotePatterns(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    // Next 16 refuses to optimise an image from a loopback or private host
+    // unless this is set. A local stack serves every photo from 127.0.0.1, so
+    // it is opened for exactly that URL and never for a hosted one - the rule
+    // sits beside the one above, in the same file.
+    dangerouslyAllowLocalIP: supabaseStorageAllowsLocalIp(process.env.NEXT_PUBLIC_SUPABASE_URL),
   },
   // A shared service book (`/book/<token>`) and a handover link
   // (`/transfer/<token>`) are private links, not pages to find: kept out of

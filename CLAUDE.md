@@ -9,7 +9,7 @@ Mobile-first motorsport setup logger. Users log vehicle setups per track session
 
 ## Tech Stack
 
-- **Framework**: Next.js 15 (App Router), React 19, TypeScript 5 strict
+- **Framework**: Next.js 16 (App Router), React 19, TypeScript 5 strict
 - **Styling**: Tailwind CSS v4, dark theme only, design tokens in `@theme` (canvas bg, sodium-amber `signal` accent)
 - **UI**: shadcn/ui pattern — `cva` + `cn()` from `lib/utils.ts`, Radix primitives
 - **Backend/Auth**: Supabase (email/password)
@@ -80,11 +80,13 @@ npm run db:audit     # regenerate the live-schema migration audit query
 npm run db:drift -- <hosted.csv>  # diff a hosted schema inventory against the local stack
 ```
 
-**Never run `npm run build` while a dev server is up.** They share `.next`, and
-the build overwrites the dev chunk manifest. The running server then 404s on
-`/_next/static/chunks/main-app.js`, so pages still render but React never
-hydrates and every click silently does nothing — it looks exactly like a broken
-component. Recover with `rm -rf .next` and restart dev.
+`next dev` writes to `.next/dev` and `next build` to `.next` (since Next 16), so
+a build while a dev server is up no longer breaks it. On Next 15 they shared
+`.next`: the build overwrote the dev chunk manifest, the running server 404ed on
+`/_next/static/chunks/main-app.js`, pages still rendered but React never
+hydrated, and every click silently did nothing - it looked exactly like a broken
+component. A page behaving that way still gets `rm -rf .next` and a restart
+before a component is blamed.
 
 ## Database Migrations
 
@@ -577,7 +579,8 @@ and without the flag and watching the cookie survive or vanish on render.
 
 - Use `lib/supabase/server.ts` in Server Components and Route Handlers
 - Use `lib/supabase/client.ts` in Client Components
-- `lib/supabase/middleware.ts` handles session refresh — runs via `middleware.ts`
+- `lib/supabase/middleware.ts` handles session refresh - runs via `proxy.ts`
+  (Next 16's name for `middleware.ts`; a proxy always runs on the Node.js runtime)
 - Admin client (`lib/supabase/admin.ts`) uses service role key — server only
 - `sessions.start_time` is nullable, and PostgREST filters inherit SQL NULL
   semantics, so `start_time.lt.<t>` silently drops every row that has none. Session
@@ -981,12 +984,19 @@ today, which is what the rule reads as the schedule's own answer again. A
 `session_usage_weights` row with weight 1 and no row are the same day to the
 math and different to the screen, which shows nothing pressed until the rider
 has said. **A weight the server confirmed is shown from the control's own state
-ahead of the next server render** (`useStoredWeight`): on a production build the
-client router was measured dropping a server action's revalidated re-render of
-the session page in roughly half of saves (2026-10-14, no console error, the
-same action and `router.refresh()` pattern lands every time on the book page),
-so a control that waited for it read the rows from before the click. A new
-control on that page does the same. **"Edited" is counted from
+ahead of the next server render** (`useStoredWeight`), because a confirmed save
+read back at once is the better screen. It began as a workaround: on a
+production build the client router dropped a server action's revalidated
+re-render of the session page in roughly half of saves (2026-10-14, no console
+error), and the service book's client navigations fetched a page - RSC 200,
+chunk loaded - and never committed it. Both were one React defect, a Suspense
+ping lost while a transition was mid-render (facebook/react#35821), in the
+React that Next 15.5 vendored for the App Router - the router never runs the
+app's own `react-dom`, so bumping that changed nothing - and fixed in the React
+Next 16.3+ vendors, which is why this project is on Next 16 (owner,
+2026-10-22; reproduced on 15.5.12 at CI concurrency, gone on 16.4.2). A
+re-render that never lands is a framework bug to pin down, not a pattern to
+design around. **"Edited" is counted from
 `service_entry_revisions`, never from `updated_at`**: a save that changes nothing
 writes no revision but still moves `updated_at`.
 
@@ -1010,8 +1020,9 @@ a localStorage preference cannot be read.
 project has no React testing library and no DOM, so **nothing in the unit suite is
 interactive**. A suite can still `renderToStaticMarkup` a component and read the
 attributes back - `vitest.config.ts` sets `esbuild.jsx: 'automatic'` so an imported
-`.tsx` compiles, since tsconfig's `jsx: preserve` would otherwise fail it with
-`React is not defined`. That reaches structural facts about one render
+`.tsx` compiles whatever `jsx` Next writes into tsconfig (`preserve` until Next
+15, which failed one with `React is not defined`; `react-jsx` since 16). That
+reaches structural facts about one render
 (`tests/unit/input-label-association.test.ts`, `tests/unit/sag-percentage-basis.test.ts`)
 and nothing that needs a click, a state change or a layout. Logic that needs a
 regression test still belongs in `lib/`; behaviour that only exists on screen (a row

@@ -110,3 +110,35 @@ export function supabaseStorageRemotePatterns(supabaseUrl: string | undefined): 
     },
   ];
 }
+
+/**
+ * Whether `next/image` may fetch a photo from a loopback address: true exactly
+ * when the configured project is a local stack (`supabase start` on 127.0.0.1
+ * or localhost). Next 16's optimizer refuses an upstream image whose host
+ * resolves to a private or loopback address unless `images.dangerouslyAllowLocalIP`
+ * is set - the right guard for a deployment, where the storage host is public,
+ * and the wrong one for the local stack, where every vehicle photo lives on
+ * 127.0.0.1 and `/_next/image` would answer 400 for each of them
+ * (tests/e2e/vehicle-photo-upload.spec.ts ends on the card rendering). The flag
+ * follows the one URL the app already reads, so a hosted or self-hosted
+ * project never opens it; a LAN address is not loopback and stays closed, and a
+ * value this cannot read stays closed too and leaves the complaint to
+ * `supabaseStorageRemotePatterns`.
+ */
+export function supabaseStorageAllowsLocalIp(supabaseUrl: string | undefined): boolean {
+  const configured = supabaseUrl?.trim();
+  if (!configured) return false;
+  let hostname: string;
+  try {
+    hostname = new URL(configured).hostname;
+  } catch {
+    return false;
+  }
+  return isLoopbackHost(hostname);
+}
+
+/** `localhost`, any 127.0.0.0/8 address, or the IPv6 loopback as `url.hostname` spells it. */
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === 'localhost' || host === '[::1]' || /^127(\.\d{1,3}){3}$/.test(host);
+}

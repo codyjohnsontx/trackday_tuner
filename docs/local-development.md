@@ -115,4 +115,4 @@ npm run lint
 Notes:
 
 - `next lint` is intentionally not used here; the lint script runs the ESLint CLI directly.
-- `next-env.d.ts` is ignored by ESLint because Next generates a triple-slash reference there that conflicts with `@typescript-eslint/triple-slash-reference`.
+- `next-env.d.ts` is ignored by ESLint because Next generates it, and what it wrote there (a triple-slash reference until Next 15) tripped `@typescript-eslint/triple-slash-reference`.

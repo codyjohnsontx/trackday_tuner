@@ -6,6 +6,7 @@ import {
   HOSTED_SUPABASE_STORAGE,
   SUPABASE_PUBLIC_OBJECT_PATHNAME,
   escapeForRemotePattern,
+  supabaseStorageAllowsLocalIp,
   supabaseStorageRemotePatterns,
 } from '@/lib/supabase-storage-remote-patterns';
 
@@ -33,6 +34,13 @@ import {
 // path-prefixed self-hosted URL was the case where those two disagreed. The last
 // block imports next.config.ts itself, so a refactor that stops calling the
 // derivation is caught at the call site and not just in the helper.
+//
+// Since Next 16 admitting the host is not enough for a local stack: the
+// optimizer refuses an upstream on a loopback or private address unless
+// `images.dangerouslyAllowLocalIP` is set, and `/_next/image` answers 400 for
+// every photo on 127.0.0.1. `supabaseStorageAllowsLocalIp` opens it for exactly
+// a loopback project URL, so a hosted or self-hosted deployment keeps the
+// optimizer's guard; the last block checks next.config.ts wires it the same way.
 //
 // WHAT IT DOES NOT CATCH: that the optimizer can reach the host and fetch the
 // bytes, or that the card renders. tests/e2e/vehicle-photo-upload.spec.ts is that
@@ -214,6 +222,50 @@ describe('supabaseStorageRemotePatterns', () => {
   });
 });
 
+describe('supabaseStorageAllowsLocalIp', () => {
+  it('opens the optimizer to loopback for a local stack, however the address is spelled', () => {
+    for (const configured of [
+      'http://127.0.0.1:55321',
+      'http://127.0.0.1:55321/',
+      'http://127.0.0.1:56321',
+      'http://127.1.2.3:54321',
+      'http://localhost:54321',
+      'http://LOCALHOST:54321',
+      'http://[::1]:54321',
+    ]) {
+      expect(supabaseStorageAllowsLocalIp(configured), configured).toBe(true);
+    }
+  });
+
+  it('keeps it closed for a hosted, self-hosted or LAN project, and when nothing is configured', () => {
+    for (const configured of [
+      undefined,
+      '',
+      '   ',
+      'https://abcdefghijklmnop.supabase.co',
+      'https://supabase.example.com',
+      'https://example.com/supabase',
+      // Private but not loopback: a stack on another machine on the LAN, or a
+      // container host name, resolves wherever DNS says and stays behind the guard.
+      'http://192.168.1.20:54321',
+      'http://10.0.0.5:54321',
+      'http://host.docker.internal:54321',
+      // A public name that merely starts like the loopback address.
+      'http://127.0.0.1.example.com:54321',
+      'https://localhost.example.com',
+    ]) {
+      expect(supabaseStorageAllowsLocalIp(configured), String(configured)).toBe(false);
+    }
+  });
+
+  it('reads a value it cannot parse as closed, leaving the complaint to the pattern derivation', () => {
+    for (const configured of ['not a url', '127.0.0.1:55321']) {
+      expect(supabaseStorageAllowsLocalIp(configured), configured).toBe(false);
+      expect(() => supabaseStorageRemotePatterns(configured), configured).toThrow(/NEXT_PUBLIC_SUPABASE_URL/);
+    }
+  });
+});
+
 // The first import of next.config.ts is cold - it pulls in Next's config types
 // and every module the config imports - and under the full suite's parallel load
 // it intermittently ran past vitest's 5s default and failed the first case here
@@ -248,5 +300,13 @@ describe('next.config.ts', { timeout: 30_000 }, () => {
   it('still names the hosted platform when the variable is unset', async () => {
     const images = await loadImagesConfig(undefined);
     expect(images?.remotePatterns).toEqual([HOSTED_SUPABASE_STORAGE]);
+  });
+
+  it('opens next/image to loopback exactly when the project is a local stack', async () => {
+    expect((await loadImagesConfig('http://127.0.0.1:55321'))?.dangerouslyAllowLocalIP).toBe(true);
+    expect((await loadImagesConfig('https://abcdefghijklmnop.supabase.co'))?.dangerouslyAllowLocalIP).toBe(
+      false,
+    );
+    expect((await loadImagesConfig(undefined))?.dangerouslyAllowLocalIP).toBe(false);
   });
 });

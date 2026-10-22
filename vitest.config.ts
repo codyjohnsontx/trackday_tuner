@@ -2,9 +2,10 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 
 export default defineConfig({
-  // tsconfig sets `jsx: preserve` for Next, which leaves esbuild on the classic
-  // runtime and makes any imported .tsx fail with `React is not defined`. Tests
-  // are still node-environment and .ts only, but a suite can now import a
+  // Next 15 wrote `jsx: preserve` into tsconfig, which left esbuild on the
+  // classic runtime and made any imported .tsx fail with `React is not defined`;
+  // Next 16 writes `react-jsx`, and this keeps the suite independent of which.
+  // Tests are still node-environment and .ts only, but a suite can import a
   // component and render it with react-dom/server.
   esbuild: {
     jsx: 'automatic',

@@ -1,7 +1,11 @@
 import type { NextRequest } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
 
-export async function middleware(request: NextRequest) {
+// Next 16's name for the request boundary that was `middleware.ts`: same job,
+// same matcher. A proxy always runs on the Node.js runtime, where
+// `middleware.ts` ran on the edge runtime, so the Sentry init that now covers
+// it is `sentry.server.config.ts` (see `sentry.edge.config.ts`).
+export async function proxy(request: NextRequest) {
   return updateSession(request);
 }
 
