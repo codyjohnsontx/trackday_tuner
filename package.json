@@ -20,7 +20,7 @@
     "db:new": "supabase migration new",
     "db:audit": "node scripts/build-migration-audit.mjs",
     "db:drift": "node scripts/schema-drift.mjs",
-    "analyze": "ANALYZE=true next build --webpack",
+    "analyze": "next experimental-analyze",
     "check:agent-docs": "node scripts/check-agent-docs.mjs",
     "ai:requests": "node scripts/inspect-ai-requests.mjs",
     "ai:export-replay": "node scripts/export-ai-replay.mjs",
@@ -50,7 +50,6 @@
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
-    "@next/bundle-analyzer": "^16.1.6",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4.2.0",
     "@types/node": "^22.19.11",

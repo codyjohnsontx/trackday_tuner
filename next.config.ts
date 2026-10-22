@@ -1,10 +1,31 @@
 import type { NextConfig } from 'next';
-import withBundleAnalyzer from '@next/bundle-analyzer';
 import { withSentryConfig } from '@sentry/nextjs/config';
 import { supabaseStorageAllowsLocalIp, supabaseStorageRemotePatterns } from './lib/supabase-storage-remote-patterns';
 
 const nextConfig: NextConfig = {
   typedRoutes: true,
+  // The Sentry SDK lands in the bundle every rider downloads, so the parts this
+  // project does not use are switched off at build time. Sentry's own
+  // `bundleSizeOptimizations` sets these same flags, but only through its
+  // webpack plugin, and `next build` is Turbopack since Next 16, so they are
+  // defined here where both bundlers read them. Session Replay is never
+  // initialised (lib/sentry-options.ts explains why), and without the three
+  // replay flags its shadow-DOM, iframe and worker support ships anyway.
+  //
+  // Tracing is excluded rather than sampled. This is a mobile-first app and the
+  // client SDK is downloaded by every rider on track-side 4G; the performance
+  // question it would answer - how slow is the AI path - is already answered
+  // from `ai_requests` by /api/monitoring/ai-health, on a schema this project
+  // owns. Errors come from Sentry, latency from the audit table.
+  compiler: {
+    define: {
+      __SENTRY_DEBUG__: 'false',
+      __SENTRY_TRACING__: 'false',
+      __RRWEB_EXCLUDE_SHADOW_DOM__: 'true',
+      __RRWEB_EXCLUDE_IFRAME__: 'true',
+      __SENTRY_EXCLUDE_REPLAY_WORKER__: 'true',
+    },
+  },
   // The retriever reads the index via `path.join(process.cwd(), 'data', ...)`, which
   // output file tracing cannot follow statically. Without this the file ships in the
   // repo but is left out of the serverless bundle, and the AI routes 500 at runtime.
@@ -65,7 +86,7 @@ const sentryUploadEnabled = Boolean(process.env.SENTRY_AUTH_TOKEN);
  * the bundle.
  */
 export default withSentryConfig(
-  withBundleAnalyzer({ enabled: process.env.ANALYZE === 'true' })(nextConfig),
+  nextConfig,
   {
     org: process.env.SENTRY_ORG,
     project: process.env.SENTRY_PROJECT,
@@ -79,22 +100,5 @@ export default withSentryConfig(
     // Sentry's build plugin phones home about the build by default. There is no
     // Sentry project to correlate it with until a DSN is set, so it is off.
     telemetry: false,
-    // The client SDK lands in the bundle every rider downloads, so the parts
-    // this project does not use are excluded. Session Replay is never
-    // initialised (lib/sentry-options.ts explains why), and without these its
-    // shadow-DOM, iframe and worker support ships anyway.
-    bundleSizeOptimizations: {
-      excludeDebugStatements: true,
-      // Tracing is excluded rather than sampled. This is a mobile-first app and
-      // the client SDK is downloaded by every rider on track-side 4G; the
-      // performance question it would answer - how slow is the AI path - is
-      // already answered from `ai_requests` by /api/monitoring/ai-health, on a
-      // schema this project owns. Errors come from Sentry, latency from the
-      // audit table.
-      excludeTracing: true,
-      excludeReplayShadowDom: true,
-      excludeReplayIframe: true,
-      excludeReplayWorker: true,
-    },
   },
 );

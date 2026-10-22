@@ -534,9 +534,15 @@ is the only channel that works with no DSN, and it is what a log drain indexes.
 
 Two deliberate settings:
 
-- **No tracing.** `bundleSizeOptimizations.excludeTracing` in `next.config.ts`
-  strips it from the bundle, which is the difference between +82 kB and +33 kB
-  of shared JS on a mobile-first app. The performance question tracing would
+- **No tracing.** `__SENTRY_TRACING__: 'false'` in `compiler.define` in
+  `next.config.ts` keeps the SDK from adding its browser-tracing integration.
+  Sentry's `bundleSizeOptimizations` sets the same flags through its webpack
+  plugin only, so on Next 16's Turbopack build it did nothing and the flags
+  moved to `compiler.define`. Measured on 2026-10-22 (Next 16.4.2,
+  `@sentry/nextjs` 10.73.0, Turbopack), the five flags take the shared client
+  JS from 769.4 to 769.1 kB raw (240.1 kB gzip either way): the tracing code
+  itself still ships, so that saving is far smaller than the +82 kB against
+  +33 kB once measured on webpack. The performance question tracing would
   answer - how slow is the AI path - is already answered from `ai_requests` by
   `/api/monitoring/ai-health`.
 - **No session replay, no breadcrumbs, and no headers, cookies or request bodies

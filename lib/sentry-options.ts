@@ -33,8 +33,8 @@ export const sharedSentryOptions = {
   dsn: SENTRY_DSN,
   environment: process.env.NEXT_PUBLIC_VERCEL_ENV ?? process.env.NODE_ENV,
   // There is deliberately no `tracesSampleRate`: tracing is excluded from the
-  // bundle entirely by `bundleSizeOptimizations.excludeTracing` in
-  // next.config.ts, where the reasoning lives. Setting a rate here would only
+  // bundle by `__SENTRY_TRACING__` in `compiler.define` in next.config.ts,
+  // where the reasoning lives. Setting a rate here would only
   // ship an option nothing reads.
 
   // Session Replay is never added as an integration, so nothing records what a

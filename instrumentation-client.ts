@@ -11,7 +11,7 @@ if (sentryEnabled) {
 // navigation. It is inert in this configuration: `captureRouterTransitionStart`
 // does nothing unless a router transition handler has been registered, and only
 // the browser-tracing integration registers one - tracing is excluded from the
-// bundle (`bundleSizeOptimizations.excludeTracing` in next.config.ts). It is
+// bundle (`__SENTRY_TRACING__` in `compiler.define` in next.config.ts). It is
 // kept deliberately so that turning tracing on later is a change there and not
 // also here.
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
