@@ -5,7 +5,7 @@ import { supabaseStorageAllowsLocalIp, supabaseStorageRemotePatterns } from './l
 const nextConfig: NextConfig = {
   typedRoutes: true,
   // The Sentry SDK lands in the bundle every rider downloads, so the parts this
-  // project does not use are switched off at build time. Sentry's own
+  // project does not use are compiled out. Sentry's own
   // `bundleSizeOptimizations` sets these same flags, but only through its
   // webpack plugin, and `next build` is Turbopack since Next 16, so they are
   // defined here where both bundlers read them. Session Replay is never
@@ -19,11 +19,11 @@ const nextConfig: NextConfig = {
   // owns. Errors come from Sentry, latency from the audit table.
   compiler: {
     define: {
-      __SENTRY_DEBUG__: 'false',
-      __SENTRY_TRACING__: 'false',
-      __RRWEB_EXCLUDE_SHADOW_DOM__: 'true',
-      __RRWEB_EXCLUDE_IFRAME__: 'true',
-      __SENTRY_EXCLUDE_REPLAY_WORKER__: 'true',
+      __SENTRY_DEBUG__: false,
+      __SENTRY_TRACING__: false,
+      __RRWEB_EXCLUDE_SHADOW_DOM__: true,
+      __RRWEB_EXCLUDE_IFRAME__: true,
+      __SENTRY_EXCLUDE_REPLAY_WORKER__: true,
     },
   },
   // The retriever reads the index via `path.join(process.cwd(), 'data', ...)`, which
