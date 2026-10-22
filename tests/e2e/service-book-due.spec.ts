@@ -154,7 +154,7 @@ test.describe('the service reminders', () => {
     const counted = page.getByTestId('session-weight-select');
     await expect(counted).toHaveValue('none');
 
-    // Known product bug, to be fixed in a follow-up: on a `next start` build the
+    // Known product bug, follow-up task tt-snooze-rerender-bug: on a `next start` build the
     // snooze below is stored at once, but /garage/[id]/book keeps showing "Due
     // soon" until a reload in about two runs of three. DueOverrideForm saves
     // through a server action and then router.refresh(), and the client drops
