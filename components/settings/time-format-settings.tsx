@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { PreferenceToggle } from '@/components/settings/preference-toggle';
-import { readTimeFormat, writeTimeFormat, type TimeFormat } from '@/lib/time-format';
+import { useTimeFormat } from '@/components/ui/time-display';
+import { writeTimeFormat } from '@/lib/time-format';
 
 const OPTIONS = [
   { value: '12h' as const, label: '12-hour' },
@@ -10,11 +10,7 @@ const OPTIONS = [
 ];
 
 export function TimeFormatSettings() {
-  const [format, setFormat] = useState<TimeFormat>('12h');
-
-  useEffect(() => {
-    setFormat(readTimeFormat());
-  }, []);
+  const format = useTimeFormat();
 
   return (
     <PreferenceToggle
@@ -24,10 +20,7 @@ export function TimeFormatSettings() {
       groupLabel="Time format"
       options={OPTIONS}
       value={format}
-      onChange={(next) => {
-        setFormat(next);
-        writeTimeFormat(next);
-      }}
+      onChange={writeTimeFormat}
     />
   );
 }

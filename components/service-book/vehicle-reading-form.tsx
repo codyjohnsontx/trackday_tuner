@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,9 +29,9 @@ export function VehicleReadingForm({ vehicleId, book }: VehicleReadingFormProps)
   const [error, setError] = useState('');
   const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
-    if (open && date === '') setDate(todayLocalDate());
-  }, [open, date]);
+  // Seeded while rendering: the form only opens on a click, so this never
+  // runs on the server.
+  if (open && date === '') setDate(todayLocalDate());
 
   if (!open) {
     return (

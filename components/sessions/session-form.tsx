@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { Clock, Copy } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { useHydrated } from '@/components/ui/device-value';
 import { ChoiceRow } from '@/components/ui/choice-row';
 import { Input } from '@/components/ui/input';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
@@ -213,8 +214,8 @@ export function SessionForm({
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
   const trackInputRef = useRef<HTMLInputElement>(null);
-  const hydratedRef = useRef(false);
-  const formOpenedAtRef = useRef(Date.now());
+  // When the form opened, for the capture-duration analytics on save.
+  const [formOpenedAt] = useState(() => Date.now());
   const previousEnabledModulesRef = useRef<Pick<SessionEnabledModules, 'geometry' | 'drivetrain' | 'aero'> | null>(
     null,
   );
@@ -367,12 +368,27 @@ export function SessionForm({
     document.getElementById(activeTrackOptionId)?.scrollIntoView({ block: 'nearest' });
   }, [activeTrackOptionId]);
 
-  useEffect(() => {
+  // Both of these are set while rendering rather than in an effect, in this
+  // order: the restore below sets the modules outright, so it overrides the
+  // sanitise queued ahead of it, and the vehicle type it restores is sanitised
+  // against on the render after.
+  const [modulesSanitizedFor, setModulesSanitizedFor] = useState<typeof selectedVehicleType | null>(null);
+  if (modulesSanitizedFor !== selectedVehicleType) {
+    setModulesSanitizedFor(selectedVehicleType);
     setEnabledModules((current) => sanitizeEnabledModules(selectedVehicleType, current));
     setShowAdvancedModules((current) => sanitizeAdvancedVisibility(selectedVehicleType, current));
-  }, [selectedVehicleType]);
+  }
 
-  useEffect(() => {
+  // The draft and the rider's clock live on this device, so they are read once
+  // hydrated, and read again only when the vehicle list does.
+  const hydrated = useHydrated();
+  const [draftReadFor, setDraftReadFor] = useState<SessionFormProps['vehicles'] | null>(null);
+  if (hydrated && draftReadFor !== vehicles) {
+    setDraftReadFor(vehicles);
+    restoreDraft();
+  }
+
+  function restoreDraft() {
     const draft = loadDraft<SessionDraft>(sessionDraftKey);
     if (!draft) {
       // Start Time defaults to when the session is logged and stays editable.
@@ -380,7 +396,6 @@ export function SessionForm({
       const now = new Date();
       setDate(todayLocalDate(now));
       setStartTime(localTimeOfDay(now));
-      hydratedRef.current = true;
       return;
     }
 
@@ -399,8 +414,8 @@ export function SessionForm({
     setConditions(isSessionCondition(draft.conditions) ? draft.conditions : null);
     // A draft typed in one unit, reopened under another, is re-expressed rather
     // than reread as if the number had always meant the current unit.
-    // Read from storage rather than from the hook: the hook's own effect has not
-    // committed its state by the time this one runs, so it still reads Celsius.
+    // Read from storage rather than from the hook, which answers Celsius on the
+    // hydrating render.
     const draftUnit = draft.temperatureUnit ?? 'c';
     const currentUnit = readTemperatureUnit();
     const ambientText = draft.ambientTemperature ?? draft.ambientTemperatureC ?? '';
@@ -425,11 +440,11 @@ export function SessionForm({
     setNotes(draft.notes ?? '');
     setLapEditorValue(draft.lapEditor ?? lapEditorValueFrom(draft.laps ?? []));
     setDraftMessage('Draft restored from this device.');
-    hydratedRef.current = true;
-  }, [initialVehicleType, vehicles, setAmbientTemperature, setTrackTemperature]);
+  }
 
   useEffect(() => {
-    if (!hydratedRef.current) return;
+    // Until the draft is read, what is on screen is not the rider's yet.
+    if (draftReadFor !== vehicles) return;
     saveDraft(sessionDraftKey, {
       vehicleId,
       trackQuery,
@@ -491,6 +506,8 @@ export function SessionForm({
     aero,
     notes,
     lapEditorValue,
+    draftReadFor,
+    vehicles,
   ]);
 
   useEffect(() => {
@@ -822,7 +839,7 @@ export function SessionForm({
           : undefined,
         notes: notes.trim() || null,
         laps,
-        capture_duration_ms: Date.now() - formOpenedAtRef.current,
+        capture_duration_ms: Date.now() - formOpenedAt,
       });
 
       if (!result.ok) {
@@ -834,7 +851,7 @@ export function SessionForm({
       trackProductEvent('session_created', {
         session_id: result.data.id,
         vehicle_id: result.data.vehicle_id,
-        properties: { capture_duration_ms: Date.now() - formOpenedAtRef.current, lap_count: laps.length },
+        properties: { capture_duration_ms: Date.now() - formOpenedAt, lap_count: laps.length },
       });
       if (laps.length > 0) {
         trackProductEvent('lap_data_saved', {

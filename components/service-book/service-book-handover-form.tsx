@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
+import { useHydrated } from '@/components/ui/device-value';
 import { Input } from '@/components/ui/input';
 import { Card, CardGroup, Eyebrow, GroupRow } from '@/components/ui/surface';
 import { HandoverStatus } from '@/components/service-book/handover-status';
@@ -61,20 +62,23 @@ export function ServiceBookHandoverForm({ vehicleId, nickname, data, extra, pend
   const [created, setCreated] = useState<{ handover: ServiceBookHandoverRow; url: string } | null>(null);
   const [cancelledId, setCancelledId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [canShare, setCanShare] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  // The prefill arrives with the clock; a figure the rider has already typed stays.
-  useEffect(() => {
-    if (!view || readingTouched) return;
+  // The prefill arrives with the clock, and follows the book until the rider
+  // types a figure; one they have typed stays. Set while rendering rather than
+  // in an effect, so the prefilled form is the first one painted. `view` is
+  // rebuilt whenever `data` is, so keying on it also covers the two flags.
+  const [prefilledFrom, setPrefilledFrom] = useState<typeof view>(null);
+  if (view && !readingTouched && prefilledFrom !== view) {
+    setPrefilledFrom(view);
     const defaults = handoverReadingDefaults(view);
     setHours(tracksHours ? defaults.hours : '');
     setDistance(tracksDistance ? defaults.distance : '');
-  }, [view, readingTouched, tracksHours, tracksDistance]);
+  }
 
-  useEffect(() => {
-    setCanShare(typeof navigator !== 'undefined' && typeof navigator.share === 'function');
-  }, []);
+  // Only the browser knows whether it can share, so the server and the
+  // hydrating render both go without the button.
+  const canShare = useHydrated() && typeof navigator.share === 'function';
 
   const parsedHours = parseNumberText(hours);
   const parsedDistance = parseNumberText(distance);

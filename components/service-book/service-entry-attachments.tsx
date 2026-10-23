@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState, useTransition } from 'react';
+import { useId, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { encodeAttachment } from '@/components/service-book/attachment-encoding';
@@ -62,10 +62,14 @@ export function ServiceEntryAttachments({
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState('');
   const [limitReached, setLimitReached] = useState(atLimit);
+  // A fresh `atLimit` from the server replaces what this screen worked out.
+  const [atLimitSeen, setAtLimitSeen] = useState(atLimit);
+  if (atLimit !== atLimitSeen) {
+    setAtLimitSeen(atLimit);
+    setLimitReached(atLimit);
+  }
   const [viewing, setViewing] = useState<ServiceAttachmentLink | null>(null);
   const [isPending, startTransition] = useTransition();
-
-  useEffect(() => setLimitReached(atLimit), [atLimit]);
 
   function upload() {
     setError('');

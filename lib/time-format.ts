@@ -8,21 +8,47 @@ export function parseTimeFormat(value: string | null): TimeFormat {
   return value === '24h' ? '24h' : '12h';
 }
 
+/**
+ * What the rider chose when storage would not keep it - Safari private mode, a
+ * full quota, storage disabled - and what the key still held when it refused.
+ * Every screen reads the format through `readTimeFormat`, so without this a
+ * refused write would leave the toggle and every clock on the old format. Same
+ * rule as `unitFallback` in `lib/temperature.ts`.
+ */
+let formatFallback: TimeFormat | null = null;
+let formatFallbackShadowed: string | null = null;
+
+function readStoredFormat(): string | null {
+  try {
+    return localStorage.getItem(TIME_FORMAT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export function readTimeFormat(): TimeFormat {
   if (typeof window === 'undefined') return '12h';
-  try {
-    return parseTimeFormat(localStorage.getItem(TIME_FORMAT_STORAGE_KEY));
-  } catch {
-    return '12h';
+  const stored = readStoredFormat();
+
+  if (formatFallback !== null) {
+    // Anything else in the key is a later choice - another tab writing it.
+    if (stored === formatFallbackShadowed) return formatFallback;
+    formatFallback = null;
+    formatFallbackShadowed = null;
   }
+
+  return parseTimeFormat(stored);
 }
 
 export function writeTimeFormat(format: TimeFormat): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(TIME_FORMAT_STORAGE_KEY, format);
+    formatFallback = null;
+    formatFallbackShadowed = null;
   } catch {
-    // Ignore storage failures so the in-memory UI state can still update.
+    formatFallback = format;
+    formatFallbackShadowed = readStoredFormat();
   }
   window.dispatchEvent(new CustomEvent<TimeFormat>(TIME_FORMAT_CHANGE_EVENT, { detail: format }));
 }
