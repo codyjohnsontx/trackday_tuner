@@ -184,16 +184,6 @@ test.describe('sharing a service book by link', () => {
       const views = await admin.from('service_book_shares').select('view_count').eq('book_id', bookId).single();
       expect(views.data!.view_count).toBe(1);
 
-      // Known product bug, follow-up task tt-snooze-rerender-bug: on a `next start`
-      // build the router fetches a service book update - RSC response 200 with the
-      // expected content - but never commits it, with no console or network error.
-      // Here the create-link server action answers and its transition never
-      // settles, so "Revoke this link" stays disabled (traced locally); in CI the
-      // owner's later click into the entry page never committed either. The
-      // database already holds the write; a reload shows the right state.
-      // Everything above still runs.
-      test.fixme(true, 'service book client navigation never commits on next start (tt-snooze-rerender-bug)');
-
       await page.getByRole('button', { name: 'Revoke this link' }).click();
       await expect(page.getByTestId('share-link-row')).toHaveCount(0);
       await expect

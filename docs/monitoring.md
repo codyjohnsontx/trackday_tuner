@@ -315,7 +315,7 @@ is deliberately not among them: nothing in the app reads it, only
 ### `/api/health`
 
 `200` when the deployment can serve, `503` with a named failing check when it
-cannot. Public, uncached, and excluded from the middleware matcher so it depends
+cannot. Public, uncached, and excluded from the proxy matcher (`proxy.ts`) so it depends
 on as little as possible. The body carries an error *name* and never a message,
 because `MissingKnowledgeIndexError`'s own message embeds the absolute index
 path.
@@ -534,9 +534,16 @@ is the only channel that works with no DSN, and it is what a log drain indexes.
 
 Two deliberate settings:
 
-- **No tracing.** `bundleSizeOptimizations.excludeTracing` in `next.config.ts`
-  strips it from the bundle, which is the difference between +82 kB and +33 kB
-  of shared JS on a mobile-first app. The performance question tracing would
+- **No tracing.** `__SENTRY_TRACING__: false` in `compiler.define` in
+  `next.config.ts` strips the browser-tracing integration from the bundle, and
+  `__SENTRY_DEBUG__: false` beside it the SDK's debug logging. Sentry's
+  `bundleSizeOptimizations` sets the same flags through its webpack plugin
+  only, so on Next 16's Turbopack build it did nothing and the flags moved to
+  `compiler.define`. They are booleans because Next JSON-stringifies every
+  define value, so a string `'false'` reaches the bundle as a truthy literal.
+  Measured on 2026-10-22 (Next 16.4.2, `@sentry/nextjs` 10.73.0, Turbopack),
+  the five flags take the shared client JS from 769.4 to 703.3 kB raw and from
+  240.1 to 218.5 kB gzip. The performance question tracing would
   answer - how slow is the AI path - is already answered from `ai_requests` by
   `/api/monitoring/ai-health`.
 - **No session replay, no breadcrumbs, and no headers, cookies or request bodies

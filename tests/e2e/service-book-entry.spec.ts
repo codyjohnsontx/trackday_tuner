@@ -66,21 +66,13 @@ test.describe('the service book', () => {
     await expect(page).toHaveURL(new RegExp(`/garage/${vehicleId}/book$`));
     await expect(page.getByRole('heading', { name: `Start the service book for ${NICKNAME}` })).toBeVisible();
 
-    // Known product bug, follow-up task tt-snooze-rerender-bug: on a `next start`
-    // build a client navigation into the service book (/garage/[id]/book and its
-    // entry pages) fetches the page - RSC response 200 with the expected content,
-    // page chunk loaded - but never commits it, with no console or network error.
-    // It shows after a server action then router.push and router.refresh
-    // (service-entry-form.tsx), after a refresh alone (service-book-setup.tsx),
-    // and on a plain link click into the book. The database already holds the
-    // write; a reload shows the right state. Every step below - Start service
-    // book, Save entry, opening the entry, Save changes - went through it and
-    // failed all three attempts on iphone-safari in CI. Everything above still runs.
-    test.fixme(true, 'service book client navigation never commits on next start (tt-snooze-rerender-bug)');
-
     await page.getByRole('button', { name: 'Start service book' }).click();
-    await expect(page.getByText('Engine oil and filter')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText('No reading yet')).toBeVisible();
+    // The setup screen already names the starter items as chips, so the item
+    // name cannot say the book screen has landed; the usage card can, and the
+    // action behind it writes the book and its items and then refreshes, which
+    // ran past the 5 s default once in 96 runs at CI concurrency.
+    await expect(page.getByText('No reading yet')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText('Engine oil and filter')).toBeVisible();
 
     // The form opens on the rider's own day with nothing pressed for "Done by".
     await page.getByRole('link', { name: '+ Log service' }).click();

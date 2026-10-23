@@ -1,7 +1,7 @@
 'use server';
 
 import { randomUUID } from 'node:crypto';
-import { revalidatePath, revalidateTag } from 'next/cache';
+import { revalidatePath } from 'next/cache';
 import { getRealUser } from '@/lib/auth';
 import {
   getDemoComparableSessions,
@@ -508,7 +508,6 @@ export async function createSession(
   if (result.data.createdTrack) {
     // The tracks list, the track's own page and the picker that will fill this
     // field next time all read the row just written.
-    revalidateTag('tracks');
     revalidatePath('/tracks');
     revalidatePath('/sessions/new');
   }

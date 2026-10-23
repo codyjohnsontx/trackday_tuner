@@ -1,7 +1,7 @@
 'use server';
 
 import { cache } from 'react';
-import { revalidatePath, revalidateTag } from 'next/cache';
+import { revalidatePath } from 'next/cache';
 import { getRealUser } from '@/lib/auth';
 import { getDemoTrackLayouts, getDemoTracks } from '@/lib/demo/data';
 import { assertNotDemoMode, isDemoMode } from '@/lib/demo/mode';
@@ -149,7 +149,6 @@ export async function createTrack(input: {
 
   if (error) return { ok: false, error: error.message };
 
-  revalidateTag('tracks');
   revalidatePath('/tracks');
   revalidatePath('/sessions/new');
 
@@ -203,7 +202,6 @@ export async function updateTrack(
 
   if (error || !data) return { ok: false, error: error?.message ?? 'Track not found.' };
 
-  revalidateTag('tracks');
   revalidatePath('/tracks');
   revalidatePath(`/tracks/${id}`);
   revalidatePath('/sessions/new');
@@ -232,7 +230,6 @@ export async function deleteTrack(id: string): Promise<ActionResult> {
 
   if (error) return { ok: false, error: error.message };
 
-  revalidateTag('tracks');
   revalidatePath('/tracks');
   revalidatePath('/sessions/new');
 
