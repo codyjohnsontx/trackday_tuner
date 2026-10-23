@@ -380,11 +380,11 @@ export function SessionForm({
   }
 
   // The draft and the rider's clock live on this device, so they are read once
-  // hydrated, and read again only when the vehicle list does.
+  // hydrated, once per mount.
   const hydrated = useHydrated();
-  const [draftReadFor, setDraftReadFor] = useState<SessionFormProps['vehicles'] | null>(null);
-  if (hydrated && draftReadFor !== vehicles) {
-    setDraftReadFor(vehicles);
+  const [draftRead, setDraftRead] = useState(false);
+  if (hydrated && !draftRead) {
+    setDraftRead(true);
     restoreDraft();
   }
 
@@ -444,7 +444,7 @@ export function SessionForm({
 
   useEffect(() => {
     // Until the draft is read, what is on screen is not the rider's yet.
-    if (draftReadFor !== vehicles) return;
+    if (!draftRead) return;
     saveDraft(sessionDraftKey, {
       vehicleId,
       trackQuery,
@@ -506,8 +506,7 @@ export function SessionForm({
     aero,
     notes,
     lapEditorValue,
-    draftReadFor,
-    vehicles,
+    draftRead,
   ]);
 
   useEffect(() => {
