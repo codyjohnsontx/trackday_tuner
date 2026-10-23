@@ -237,7 +237,7 @@ export function SessionForm({
   // the whole time and this index becomes `aria-activedescendant`, which is what
   // a screen reader follows - see the combobox notes on the field below.
   const [activeTrackIndex, setActiveTrackIndex] = useState<number | null>(null);
-  // Seeded on mount rather than at render, because the rider's calendar day and
+  // Seeded once hydrated rather than during SSR, because the rider's calendar day and
   // clock are only knowable in their browser: SSR would stamp the server's day (UTC in
   // production) into the markup and hydrate over it. See lib/local-date.ts.
   const [date, setDate] = useState('');
