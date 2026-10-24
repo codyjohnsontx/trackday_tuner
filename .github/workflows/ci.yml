@@ -144,6 +144,8 @@ jobs:
       BETA_INVITE_ONLY: 'false'
       RUN_E2E: '1'
       ALL_DEVICES: ${{ inputs.all_devices == true }}
+      # See "Pull the Playwright image" below before changing this.
+      PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.58.2-noble
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -182,22 +184,61 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Install Playwright browsers
+      # The suite runs inside Playwright's official image, which ships the
+      # browsers and every system library they need. `playwright install
+      # --with-deps` used to fetch about 190 WebKit packages from Ubuntu's apt
+      # mirror on every run, and on a slow mirror that step alone took 30-40
+      # minutes and once ran the job past its time limit. Only the test run is in
+      # the container: Supabase, the build and the seed stay on the runner, and
+      # --network host keeps 127.0.0.1 meaning the runner, so the stack and the
+      # NEXT_PUBLIC_SUPABASE_URL baked into the build are reached exactly as
+      # before. The runner's own Node (setup-node above) is mounted and put
+      # first on PATH so `next start` runs on the Node the app was built with.
+      #
+      # The tag must equal the locked @playwright/test version
+      # (package-lock.json), or the runner looks for browser builds the image
+      # does not have. When Playwright is upgraded, change PLAYWRIGHT_IMAGE (job
+      # env above) to mcr.microsoft.com/playwright:v<new version>-noble in the
+      # same change; this step fails until the two agree.
+      #
+      # The image has no Microsoft Edge, so an all_devices dispatch installs it
+      # inside the container for desktop-edge; pull requests never do.
+      - name: Pull the Playwright image
         run: |
-          if [ "$ALL_DEVICES" = "true" ]; then
-            npx playwright install --with-deps chromium webkit msedge
-          else
-            npx playwright install --with-deps chromium webkit
-          fi
+          locked="$(node -p "require('./node_modules/@playwright/test/package.json').version")"
+          case "$PLAYWRIGHT_IMAGE" in
+            *":v$locked-"*) ;;
+            *) echo "::error::$PLAYWRIGHT_IMAGE does not match the locked @playwright/test $locked"; exit 1 ;;
+          esac
+          docker pull --quiet "$PLAYWRIGHT_IMAGE"
 
       # playwright.config.ts serves the build with `next start` under CI.
       - name: Run e2e tests
         run: |
+          # Forward the job's environment (the placeholders, the local stack's
+          # keys and the seeded accounts written to GITHUB_ENV, CI) by name.
+          env_args=()
+          for name in $(compgen -e); do
+            case "$name" in
+              PATH|HOME|HOSTNAME|PWD|OLDPWD|SHLVL|USER|LOGNAME|SHELL|TMPDIR|_) ;;
+              *) env_args+=(-e "$name") ;;
+            esac
+          done
+
           if [ "$ALL_DEVICES" = "true" ]; then
-            npm run test:e2e
+            suite='npx playwright install msedge && npm run test:e2e'
           else
-            npm run test:e2e -- --project=iphone-safari --project=android-chrome
+            suite='npm run test:e2e -- --project=iphone-safari --project=android-chrome'
           fi
+
+          node_dir="$(dirname "$(dirname "$(command -v node)")")"
+          docker run --rm --network host --ipc host --init \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$GITHUB_WORKSPACE" \
+            -v "$node_dir:$node_dir:ro" \
+            "${env_args[@]}" \
+            -e HOME=/root \
+            -e PATH="$node_dir/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+            "$PLAYWRIGHT_IMAGE" bash -c "$suite"
 
       - name: Upload Playwright report
         if: failure()
