@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { useHydrated } from '@/components/ui/device-value';
 import { Card, CardGroup, Eyebrow, GroupRow } from '@/components/ui/surface';
 import { formatInstant, useRiderClock } from '@/components/service-book/rider-clock';
 import { removeServiceEntry } from '@/lib/actions/service-book';
@@ -49,6 +50,16 @@ function describeSnapshot(snapshot: unknown, unit: DistanceUnit): string[] {
 }
 
 /**
+ * A stored instant in the rider's own zone. The server's zone is not theirs, so
+ * the server and hydrating renders carry only the timestamp and the text
+ * arrives once hydrated, as `RiderDate` does for a calendar day.
+ */
+function RiderInstant({ iso }: { iso: string }) {
+  const hydrated = useHydrated();
+  return <time dateTime={iso}>{hydrated ? formatInstant(iso) : null}</time>;
+}
+
+/**
  * The honest-history labels on one entry and the list of its revisions - what
  * the owner reads above the edit form, and what a buyer will read in the
  * shared view. The labels come from `describeEntryProvenance` in the book's
@@ -92,7 +103,7 @@ export function ServiceEntryHistory({ vehicleId, entry, revisions, distanceUnit,
       <Card>
         <Eyebrow>History</Eyebrow>
         <p className="mt-2 text-sm text-ink-dim">
-          Work dated {formatServiceDate(entry.service_date)}, logged {formatInstant(entry.logged_at)}.
+          Work dated {formatServiceDate(entry.service_date)}, logged <RiderInstant iso={entry.logged_at} />.
         </p>
         {provenance ? (
           <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="History labels">
@@ -104,7 +115,7 @@ export function ServiceEntryHistory({ vehicleId, entry, revisions, distanceUnit,
           </ul>
         ) : null}
         {entry.deleted_at ? (
-          <p className="mt-3 text-sm text-ink-faint">Removed from the book {formatInstant(entry.deleted_at)}. The entry stays in its history.</p>
+          <p className="mt-3 text-sm text-ink-faint">Removed from the book <RiderInstant iso={entry.deleted_at} />. The entry stays in its history.</p>
         ) : null}
       </Card>
 
@@ -123,7 +134,7 @@ export function ServiceEntryHistory({ vehicleId, entry, revisions, distanceUnit,
                     {KIND_LABEL[revision.kind]}
                     <span className="text-ink-faint"> · revision {revision.revision}</span>
                   </p>
-                  <p className="text-xs text-ink-faint">{formatInstant(revision.changed_at)}</p>
+                  <p className="text-xs text-ink-faint"><RiderInstant iso={revision.changed_at} /></p>
                 </div>
                 <ul className="mt-1.5 space-y-0.5">
                   {describeSnapshot(revision.snapshot, distanceUnit).map((line, index) => (

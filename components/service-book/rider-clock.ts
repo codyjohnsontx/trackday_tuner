@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
+import { useHydrated } from '@/components/ui/device-value';
 import { todayLocalDate } from '@/lib/local-date';
 
 export interface RiderClock {
@@ -13,9 +14,10 @@ export interface RiderClock {
 /**
  * The two inputs the service-book rules need that only the rider's device
  * knows: today's date in their calendar (`todayLocalDate`, never the server's
- * UTC day) and their time zone. Both are read after mount, so a server render
- * cannot seed them with where the server is; until then the hook answers
- * `null` and a screen shows nothing derived from them.
+ * UTC day) and their time zone. Both are read only once hydrated
+ * (`useHydrated`), so a server render cannot seed them with where the server
+ * is; until then the hook answers `null` and a screen shows nothing derived
+ * from them.
  *
  * An entry's honest-history labels are read in `service_books.owner_time_zone`
  * on every screen - the owner's, the share link, a PDF - so they never move with
@@ -24,12 +26,12 @@ export interface RiderClock {
  * recorded (`ownerLabelTimeZone`).
  */
 export function useRiderClock(): RiderClock | null {
-  const [clock, setClock] = useState<RiderClock | null>(null);
-  useEffect(() => {
+  const hydrated = useHydrated();
+  return useMemo(() => {
+    if (!hydrated) return null;
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-    setClock({ today: todayLocalDate(), timeZone });
-  }, []);
-  return clock;
+    return { today: todayLocalDate(), timeZone };
+  }, [hydrated]);
 }
 
 /** A stored instant as the rider reads it, in their own zone and locale. */

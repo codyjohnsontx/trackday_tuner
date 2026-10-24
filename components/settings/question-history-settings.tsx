@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { PreferenceToggle } from '@/components/settings/preference-toggle';
 import { Button } from '@/components/ui/button';
+import { useHydrated } from '@/components/ui/device-value';
 import { GroupRow } from '@/components/ui/surface';
 import {
   deleteAllRetainedQuestions,
@@ -36,10 +37,10 @@ interface QuestionHistorySettingsProps {
 // the mismatch left the server's calendar day on screen after hydration for a
 // rider whose day differs from the server's.
 export function RiderDate({ iso }: { iso: string }) {
-  const [text, setText] = useState<string | null>(null);
-  useEffect(() => {
-    setText(new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }));
-  }, [iso]);
+  const hydrated = useHydrated();
+  const text = hydrated
+    ? new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+    : null;
   return <time dateTime={iso}>{text}</time>;
 }
 

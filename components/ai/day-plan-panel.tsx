@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { UpgradeToProButton } from '@/components/billing/billing-buttons';
 import { AdviceReport } from '@/components/ai/advice-report';
@@ -165,10 +165,12 @@ export function DayPlanPanel({ vehicles, tier, demoMode = false, keepsQuestionTe
     [vehicleId, vehicles],
   );
 
-  useEffect(() => {
-    if (vehicles.some((vehicle) => vehicle.id === vehicleId)) return;
-    setVehicleId(vehicles[0]?.id ?? '');
-  }, [vehicleId, vehicles]);
+  // A vehicle no longer in the list falls back to the first one, set while
+  // rendering so the stale choice is never painted.
+  const fallbackVehicleId = vehicles[0]?.id ?? '';
+  if (!vehicles.some((vehicle) => vehicle.id === vehicleId) && vehicleId !== fallbackVehicleId) {
+    setVehicleId(fallbackVehicleId);
+  }
 
   if (vehicles.length === 0) return null;
 

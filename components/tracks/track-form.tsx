@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { useHydrated } from '@/components/ui/device-value';
 import { Input } from '@/components/ui/input';
 import { createTrack, updateTrack } from '@/lib/actions/tracks';
 import { clearDraft, loadDraft, saveDraft } from '@/lib/drafts';
@@ -26,18 +27,25 @@ export function TrackForm({ initialTrack, onSuccessPath = '/tracks' }: TrackForm
   const [errorMessage, setErrorMessage] = useState('');
   const [draftMessage, setDraftMessage] = useState('');
 
-  useEffect(() => {
+  // A draft lives on this device, so it is restored once hydrated, while
+  // rendering, and again only for a different form.
+  const hydrated = useHydrated();
+  const [draftReadFor, setDraftReadFor] = useState<string | null>(null);
+  if (hydrated && draftReadFor !== draftKey) {
+    setDraftReadFor(draftKey);
     const draft = loadDraft<{ name: string; location: string }>(draftKey);
-    if (!draft) return;
-
-    setName(draft.name ?? '');
-    setLocation(draft.location ?? '');
-    setDraftMessage('Draft restored from this device.');
-  }, [draftKey]);
+    if (draft) {
+      setName(draft.name ?? '');
+      setLocation(draft.location ?? '');
+      setDraftMessage('Draft restored from this device.');
+    }
+  }
 
   useEffect(() => {
+    // Until the draft is read, what is on screen is not the rider's yet.
+    if (draftReadFor !== draftKey) return;
     saveDraft(draftKey, { name, location });
-  }, [draftKey, name, location]);
+  }, [draftKey, draftReadFor, name, location]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

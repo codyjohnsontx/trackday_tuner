@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { useHydrated } from '@/components/ui/device-value';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
@@ -40,18 +41,23 @@ export function UnitConverter() {
     [category, fromUnit, toUnit, inputValue],
   );
 
-  useEffect(() => {
+  // Recent pairs live on this device, so they are read once hydrated.
+  const hydrated = useHydrated();
+  const [recentPairsLoaded, setRecentPairsLoaded] = useState(false);
+  if (hydrated && !recentPairsLoaded) {
+    setRecentPairsLoaded(true);
     setRecentPairs(loadRecentPairs());
-  }, []);
+  }
 
-  useEffect(() => {
-    if (!unitsForCategory.includes(fromUnit) || !unitsForCategory.includes(toUnit)) {
-      const nextFrom = unitsForCategory[0] ?? '';
-      const nextTo = unitsForCategory[1] ?? unitsForCategory[0] ?? '';
+  // A category change keeps the chosen units only if the new category has them.
+  if (!unitsForCategory.includes(fromUnit) || !unitsForCategory.includes(toUnit)) {
+    const nextFrom = unitsForCategory[0] ?? '';
+    const nextTo = unitsForCategory[1] ?? unitsForCategory[0] ?? '';
+    if (nextFrom !== fromUnit || nextTo !== toUnit) {
       setFromUnit(nextFrom);
       setToUnit(nextTo);
     }
-  }, [unitsForCategory, fromUnit, toUnit]);
+  }
 
   function selectPair(pair: ConverterPair) {
     setCategory(pair.category);

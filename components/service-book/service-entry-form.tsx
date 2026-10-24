@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useId, useState, useTransition } from 'react';
+import { useId, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { useHydrated } from '@/components/ui/device-value';
 import { ChoiceRow } from '@/components/ui/choice-row';
 import { Input } from '@/components/ui/input';
 import { saveServiceEntry } from '@/lib/actions/service-book';
@@ -93,11 +94,14 @@ export function ServiceEntryForm({ vehicleId, book, fields, items, entry }: Serv
   const [nextPartKey, setNextPartKey] = useState(parts.length);
   const [error, setError] = useState('');
 
-  // The rider's day is only knowable in their browser, so it is seeded here
-  // rather than during SSR, and only for a new entry.
-  useEffect(() => {
-    if (!isEditing) setServiceDate((current) => current || todayLocalDate());
-  }, [isEditing]);
+  // The rider's day is only knowable in their browser, so it is seeded once
+  // hydrated rather than during SSR, and only for a new entry.
+  const hydrated = useHydrated();
+  const [dateSeededFor, setDateSeededFor] = useState<boolean | null>(null);
+  if (hydrated && dateSeededFor !== isEditing) {
+    setDateSeededFor(isEditing);
+    if (!isEditing && serviceDate === '') setServiceDate(todayLocalDate());
+  }
 
   const schedule = liveItems(items);
   // An archived item the entry already names stays selectable so an edit does not drop it.

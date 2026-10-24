@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { PreferenceToggle } from '@/components/settings/preference-toggle';
-import { readTemperatureUnit, writeTemperatureUnit, type TemperatureUnit } from '@/lib/temperature';
+import { useTemperatureUnit } from '@/components/ui/temperature-display';
+import { writeTemperatureUnit } from '@/lib/temperature';
 
 const OPTIONS = [
   { value: 'c' as const, label: '°C' },
@@ -10,11 +10,7 @@ const OPTIONS = [
 ];
 
 export function TemperatureUnitSettings() {
-  const [unit, setUnit] = useState<TemperatureUnit>('c');
-
-  useEffect(() => {
-    setUnit(readTemperatureUnit());
-  }, []);
+  const unit = useTemperatureUnit();
 
   return (
     <PreferenceToggle
@@ -24,10 +20,7 @@ export function TemperatureUnitSettings() {
       groupLabel="Temperature unit"
       options={OPTIONS}
       value={unit}
-      onChange={(next) => {
-        setUnit(next);
-        writeTemperatureUnit(next);
-      }}
+      onChange={writeTemperatureUnit}
     />
   );
 }

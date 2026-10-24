@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
+import { useHydrated } from '@/components/ui/device-value';
 import { Input } from '@/components/ui/input';
 import { SagSection, type SagSectionValues } from '@/components/sag/sag-section';
 import { SagHistoryList } from '@/components/sag/sag-history-list';
@@ -95,29 +96,36 @@ export function SagCalculator({ initialEntries, demoMode = false }: SagCalculato
   // Save button "Saving...".
   const [, startHistoryTransition] = useTransition();
 
-  useEffect(() => {
-    if (demoMode) return;
-    const draft = loadDraft<{
-      front: SagSectionValues;
-      rear: SagSectionValues;
-      label: string;
-      notes: string;
-    }>(draftKey);
-    if (!draft) return;
+  // A draft lives on this device, so it is restored once hydrated, while
+  // rendering, and again only if demo mode changes.
+  const hydrated = useHydrated();
+  const [draftReadFor, setDraftReadFor] = useState<boolean | null>(null);
+  if (hydrated && draftReadFor !== demoMode) {
+    setDraftReadFor(demoMode);
+    const draft = demoMode
+      ? null
+      : loadDraft<{
+          front: SagSectionValues;
+          rear: SagSectionValues;
+          label: string;
+          notes: string;
+        }>(draftKey);
+    if (draft) {
+      // A draft saved before the travel field existed has no `travel` key, and an
+      // undefined value would flip that input from controlled to uncontrolled.
+      setFront({ ...emptySide, ...draft.front });
+      setRear({ ...emptySide, ...draft.rear });
+      setLabel(draft.label ?? '');
+      setNotes(draft.notes ?? '');
+      setDraftMessage('Draft restored from this device.');
+    }
+  }
 
-    // A draft saved before the travel field existed has no `travel` key, and an
-    // undefined value would flip that input from controlled to uncontrolled.
-    setFront({ ...emptySide, ...draft.front });
-    setRear({ ...emptySide, ...draft.rear });
-    setLabel(draft.label ?? '');
-    setNotes(draft.notes ?? '');
-    setDraftMessage('Draft restored from this device.');
-  }, [demoMode]);
-
   useEffect(() => {
-    if (demoMode) return;
+    // Until the draft is read, what is on screen is not the rider's yet.
+    if (demoMode || draftReadFor !== demoMode) return;
     saveDraft(draftKey, { front, rear, label, notes });
-  }, [demoMode, front, rear, label, notes]);
+  }, [demoMode, draftReadFor, front, rear, label, notes]);
 
   function resetAll() {
     setFront(emptySide);

@@ -308,3 +308,45 @@ function settingsHtml(unitLocked: boolean): string {
     createElement(ServiceBookSettings, { vehicleId: 'demo-r6', book, fields: demo.data.fields, items: demo.data.items, unitLocked }),
   );
 }
+
+describe('the entry history', () => {
+  // An instant read in the server's zone and again in the rider's is a
+  // hydration mismatch, so the server render, which is also what the
+  // hydrating render must reproduce, prints no instant at all. Rendered in two
+  // zones, it has to come out the same.
+  const entry = { ...demo.data.entries[0], logged_at: '2026-10-23T21:23:00Z', deleted_at: '2026-10-23T22:05:00Z' };
+  const revisions = getDemoServiceEntryRevisions(demo.data.entries[0].id) ?? [];
+
+  function historyHtmlIn(timeZone: string) {
+    const previous = process.env.TZ;
+    process.env.TZ = timeZone;
+    try {
+      return renderToStaticMarkup(
+        createElement(ServiceEntryHistory, {
+          vehicleId: 'demo-r6',
+          entry,
+          revisions,
+          distanceUnit: demo.data.book.distance_unit,
+          ownerTimeZone: demo.data.book.owner_time_zone,
+          transferredAt: demo.data.book.transferred_at,
+          demoMode: false,
+        }),
+      );
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  }
+
+  it('renders the same before hydration whichever zone the server is in', () => {
+    expect(revisions.length).toBeGreaterThan(0);
+    expect(historyHtmlIn('Pacific/Kiritimati')).toBe(historyHtmlIn('UTC'));
+  });
+
+  it('carries each instant as a machine-readable timestamp for the rider’s zone to fill', () => {
+    const html = historyHtmlIn('UTC');
+    expect(html).toContain('<time dateTime="2026-10-23T21:23:00Z"></time>');
+    expect(html).toContain('<time dateTime="2026-10-23T22:05:00Z"></time>');
+    for (const revision of revisions) expect(html).toContain(`<time dateTime="${revision.changed_at}"></time>`);
+  });
+});

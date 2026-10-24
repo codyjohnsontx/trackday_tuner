@@ -1,6 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
+import { preferenceSubscription } from '@/components/ui/device-value';
 import {
   TEMPERATURE_UNIT_CHANGE_EVENT,
   TEMPERATURE_UNIT_STORAGE_KEY,
@@ -11,31 +19,18 @@ import {
 } from '@/lib/temperature';
 import { cn } from '@/lib/utils';
 
+const subscribeToTemperatureUnit = preferenceSubscription(
+  TEMPERATURE_UNIT_STORAGE_KEY,
+  TEMPERATURE_UNIT_CHANGE_EVENT,
+);
+
 /**
  * The rider's temperature unit, kept in step with the Settings toggle and with
- * other tabs. Starts at Celsius so the server and the first client render agree;
- * the stored preference arrives on mount.
+ * other tabs. Celsius on the server and on the hydrating render so the two
+ * agree; the stored preference arrives on the render after.
  */
 export function useTemperatureUnit(): TemperatureUnit {
-  const [unit, setUnit] = useState<TemperatureUnit>('c');
-
-  useEffect(() => {
-    setUnit(readTemperatureUnit());
-
-    const onCustom = (event: Event) => setUnit((event as CustomEvent<TemperatureUnit>).detail);
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === TEMPERATURE_UNIT_STORAGE_KEY) setUnit(readTemperatureUnit());
-    };
-
-    window.addEventListener(TEMPERATURE_UNIT_CHANGE_EVENT, onCustom);
-    window.addEventListener('storage', onStorage);
-    return () => {
-      window.removeEventListener(TEMPERATURE_UNIT_CHANGE_EVENT, onCustom);
-      window.removeEventListener('storage', onStorage);
-    };
-  }, []);
-
-  return unit;
+  return useSyncExternalStore(subscribeToTemperatureUnit, readTemperatureUnit, () => 'c');
 }
 
 /**
@@ -45,7 +40,7 @@ export function useTemperatureUnit(): TemperatureUnit {
  * Drop-in for `useState`, so every field that asks for a temperature gets this.
  *
  * Which unit the text is written in comes from storage rather than from `unit`,
- * which starts at Celsius so the server and the first client render agree. The
+ * which is Celsius on the hydrating render so the server and the client agree. The
  * preference it settles to on mount is one the field was already filled in, so
  * treating that settle as a flip converts a restored draft a second time.
  */
