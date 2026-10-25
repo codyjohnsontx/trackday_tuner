@@ -192,6 +192,13 @@ project and no secret:
    It refuses any non-loopback Supabase URL.
 3. `npm run build`, then Playwright serves it: under `CI`, `playwright.config.ts`
    runs `next start` rather than `next dev`.
+4. The suite itself runs inside `mcr.microsoft.com/playwright`, pinned to the
+   locked `@playwright/test` version, with `--network host` so `127.0.0.1` is
+   still the runner. The image carries the browsers and their system
+   libraries, so no pull-request run downloads them; an `all_devices`
+   dispatch still installs Microsoft Edge, which the image lacks. Upgrading
+   Playwright means bumping `PLAYWRIGHT_IMAGE` in the workflow too, and the
+   step fails if they differ.
 
 `BETA_INVITE_ONLY=false` there, so the signup specs run. No spec reaches a
 model: the AI specs assert refusals that happen before one is called, and the
