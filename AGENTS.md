@@ -468,7 +468,9 @@ data/session-logs/   # sample session log JSON
 ## Design Conventions
 
 - Dark mode only — no light mode
-- Mobile-first, max-w-5xl (1024px) app shell - the cap lives in `components/layout/app-shell.tsx`
+- Mobile-first, max-w-5xl (1024px) app shell - the cap lives in `components/layout/app-shell.tsx`,
+  on the header's content and on `main` rather than on the root, so a screen can bleed to the
+  viewport edge with `mx-[calc(50%-50vw)]` while its copy stays on the column (the landing hero does)
 - 44px minimum touch targets
 - Use the tokens in `app/globals.css`, never raw palette classes (`zinc-*`, `cyan-*`, `amber-*`)
 

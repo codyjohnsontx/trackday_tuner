@@ -4,8 +4,15 @@ import { WaitlistForm } from '@/components/beta/waitlist-form';
 import { Button } from '@/components/ui/button';
 
 export default function HomePage() {
+  // Full bleed: `calc(50% - 50vw)` walks from the edge of `main`'s content box
+  // out to the viewport edge, past its padding AND the shell's 1024px cap
+  // (`components/layout/app-shell.tsx`). It used to cancel the padding alone, so
+  // at 1200px the hero and its photo stopped at x=1112 against a flat canvas
+  // band, and at 1920px the lead rider was sliced off at x=1472. The copy does
+  // not move: every section centres its own `max-w-4xl` column, and below 1024px
+  // the two margins are the same number.
   return (
-    <div className="-mx-4 -mt-5 sm:-mx-5 md:-mx-6">
+    <div className="-mt-5 mx-[calc(50%-50vw)]">
       <section className="relative min-h-[calc(100svh-4.5rem)] overflow-hidden border-b border-white/5 px-4 pb-12 pt-10 sm:px-8 md:px-12">
         {/* Photo: provenance unconfirmed - see PR discussion */}
         {/* Decorative rather than described: the headline and subhead carry the
@@ -20,13 +27,10 @@ export default function HomePage() {
             ~1370px. In LANDSCAPE the box is wider than 16:9 and the fit flips to
             width-driven, where `178vh` under-advertises: measured at 844x390 dpr1
             the browser picked w=750 for an 844px paint. So each branch advertises
-            whichever of the two is LARGER. Below the shell's max-w-5xl cap the box
-            width is the viewport width, and `100vw` wins exactly when the viewport
-            reaches 16/9. At or above the cap the box width is pinned to 1024px,
-            which beats `178vh` only below 575px of viewport height - the cap is why
-            the branch is a height and not an aspect ratio: at 2560x1440 the viewport
-            IS 16/9 while the box is a tall 1024x1368, and an aspect test there
-            advertised 1024 against a 2432px paint.
+            whichever of the two is LARGER. The box is full bleed, so its width is
+            the viewport width at every size and `100vw` wins once the viewport
+            reaches 16/9. There used to be a third branch pinning 1024px above the
+            shell's cap; the hero no longer sits inside that cap, so it went.
             The residue this cannot reach: the box grows past `100svh-4.5rem` when
             the copy outgrows that min-height, and no `vh` figure sees that. It
             needs a viewport short enough to wrap the copy tall - measured fine at
@@ -35,14 +39,17 @@ export default function HomePage() {
         {/* `44%` centres the crop on the leading pair: a 1024px-wide desktop hero
             shows 70% of the frame (all three bikes), a 390px phone shows 28% and
             lands on the KTM whole. Pushing it right to follow the subjects loses
-            the phone crop into one rider's back. */}
+            the phone crop into one rider's back. Above 1024px the full-bleed box
+            widens towards 16:9 and shows more of the frame, until at 1920x1080
+            the whole width of it is in view and the position has nothing to
+            choose. */}
         <Image
           src="/images/gpslide.webp"
           alt=""
           aria-hidden
           fill
           priority
-          sizes="(min-width: 1024px) and (max-height: 575px) 1024px, (max-width: 1023px) and (min-aspect-ratio: 16/9) 100vw, 178vh"
+          sizes="(min-aspect-ratio: 16/9) 100vw, 178vh"
           className="object-cover object-[44%_45%] opacity-60"
         />
         {/* Same canvas fades as the login hero, plus one it does not need. That
@@ -64,7 +71,15 @@ export default function HomePage() {
             clearing on a coarse sweep and dip to 2.95-2.99 around 690-750, which
             is why the band was measured at 4px. It is bounded on both sides by
             stops already here - `to-canvas/65` still governs below 640 and
-            `lg:to-transparent` above 1023 - so phone and desktop do not move. */}
+            `lg:to-transparent` above 1023 - so phone and desktop do not move.
+            The stops are percentages of a box that is now full bleed, so above
+            1024px they scale with the viewport while the copy stays on its
+            centred column. The `lg:via-[72%]` stop moves right 0.72px for every
+            viewport px and the headline's right edge (at most `50% + 320px`)
+            only 0.5px, so the copy's right-hand end, the part that came near
+            the transparent stop at 1024, sits under more scrim at every width
+            above it. Copy left of centre drifts toward the lighter middle of
+            the ramp instead, but stays over near-solid canvas. */}
         <div className="absolute inset-x-0 top-0 h-[22%] bg-gradient-to-b from-canvas to-transparent" />
         <div className="absolute inset-x-0 bottom-0 h-[45%] bg-gradient-to-t from-canvas via-canvas/80 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-canvas via-canvas/90 via-[55%] to-canvas/65 sm:to-canvas/72 lg:via-canvas/85 lg:via-[72%] lg:to-transparent" />
