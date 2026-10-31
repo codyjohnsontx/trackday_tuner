@@ -76,10 +76,10 @@ export default function HomePage() {
             1024px they scale with the viewport while the copy stays on its
             centred column. The `lg:via-[72%]` stop moves right 0.72px for every
             viewport px and the headline's right edge (at most `50% + 320px`)
-            only 0.5px, so the scrim covers more of the copy at every width
-            above 1024 than it does at 1024, and the contrast measured there is
-            the floor for every desktop. Only the photo's right-hand end ever
-            reaches the transparent stop. */}
+            only 0.5px, so the copy's right-hand end, the part that came near
+            the transparent stop at 1024, sits under more scrim at every width
+            above it. Copy left of centre drifts toward the lighter middle of
+            the ramp instead, but stays over near-solid canvas. */}
         <div className="absolute inset-x-0 top-0 h-[22%] bg-gradient-to-b from-canvas to-transparent" />
         <div className="absolute inset-x-0 bottom-0 h-[45%] bg-gradient-to-t from-canvas via-canvas/80 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-canvas via-canvas/90 via-[55%] to-canvas/65 sm:to-canvas/72 lg:via-canvas/85 lg:via-[72%] lg:to-transparent" />
