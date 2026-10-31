@@ -9,8 +9,10 @@ import { test, expect } from '@playwright/test';
  * defect never showed, so the viewport is widened here on purpose.
  *
  * The break-out is `calc(50% - 50vw)`, and `100vw` includes a classic
- * scrollbar, so the shell clips horizontal overflow; the scroll-width check is
- * what proves the clip holds rather than the page gaining a sideways scroll.
+ * scrollbar, so the shell clips horizontal overflow. Every project here hides
+ * scrollbars or overlays them, so `100vw` equals `clientWidth` and that residue
+ * is never exercised; the scroll-width check only confirms the page gains no
+ * sideways scroll.
  */
 const WIDTHS = [1200, 1440, 1920];
 
