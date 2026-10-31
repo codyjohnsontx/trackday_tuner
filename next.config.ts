@@ -4,6 +4,10 @@ import { supabaseStorageAllowsLocalIp, supabaseStorageRemotePatterns } from './l
 
 const nextConfig: NextConfig = {
   typedRoutes: true,
+  // `next dev` otherwise appends a nextjs-agent-rules block to AGENTS.md on
+  // every run, dirtying the tree and breaking the byte-for-byte CLAUDE.md /
+  // AGENTS.md mirror that `npm run check:agent-docs` enforces.
+  agentRules: false,
   // The Sentry SDK lands in the bundle every rider downloads, so the parts this
   // project does not use are compiled out. Sentry's own
   // `bundleSizeOptimizations` sets these same flags, but only through its

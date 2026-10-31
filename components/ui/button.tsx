@@ -251,8 +251,12 @@ export function Button({
           className,
         )}
       >
-        {loading && <Spinner />}
-        <Slottable>{children}</Slottable>
+        {/* `children` goes straight to the Slot unless a spinner has to go in
+            front of it. A Server Component's child reaches the client as a lazy
+            reference, and Radix unwraps one only as the Slot's own child - inside
+            a `Slottable` it renders nothing, which emptied every server page's
+            asChild button after hydration under `next dev`. */}
+        {loading ? [<Spinner key="spinner" />, <Slottable key="label">{children}</Slottable>] : children}
       </Slot>
     );
   }
