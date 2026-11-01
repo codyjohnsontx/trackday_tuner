@@ -25,7 +25,11 @@ interface AuthFormProps {
   nextPath?: string;
 }
 
-const SELECTED_TAB_WHILE_LOADING = 'disabled:bg-ink disabled:text-canvas disabled:opacity-60';
+// The mode tabs are disabled while a request is in flight, and a disabled
+// primary Button recedes to a dark fill. On the selected tab that would read
+// darker than the unselected one, as if the other mode were active, so it
+// keeps the dimmed white pill instead.
+const SELECTED_TAB_WHILE_LOADING ='disabled:bg-ink disabled:text-canvas disabled:opacity-60';
 
 export function AuthForm({ providers: oauthProviders, inviteOnly = false, initialError = '', nextPath = '/dashboard' }: AuthFormProps) {
   const router = useRouter();
