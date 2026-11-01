@@ -171,6 +171,20 @@ describe('primary button disabled treatment', () => {
     expect(style.get([':hover'], 'background-color')).toBe('var(--color-surface-3)');
   });
 
+  it('keeps the dimmed white pill while loading or showing its success check', async () => {
+    const states = {
+      loading: renderButton({ loading: true, children: 'Save session' }),
+      success: renderButton({ disabled: true, success: true, children: 'Save session' }),
+    };
+    for (const [name, button] of Object.entries(states)) {
+      expect(button.disabled, name).toBe(true);
+      const style = await styleOf(button);
+      expect(style.get([], 'background-color'), name).toBe('var(--color-ink)');
+      expect(style.get([], 'color'), name).toBe('var(--color-canvas)');
+      expect(style.get([], 'opacity'), name).toBe('60%');
+    }
+  });
+
   it('leaves the enabled fill, hover and focus ring as they were', async () => {
     const button = renderButton({ children: 'Add Vehicle' });
     expect(button.disabled).toBe(false);

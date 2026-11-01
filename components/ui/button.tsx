@@ -28,9 +28,11 @@ const buttonVariants = cva(
         // Disabled, it recedes to a surface fill with muted text rather than
         // dimming. Sixty percent of white on the canvas was still the brightest
         // thing on the page, so a disabled Download CSV or Add Vehicle pulled
-        // the eye to the one control that did nothing. The other variants are
+        // the eye to the one control that did nothing. A button that is busy
+        // or showing its success check is working, not unavailable, so it
+        // keeps the dimmed pill (see `busy` below). The other variants are
         // already dark, so dimming them is what recedes.
-        primary: 'bg-ink text-canvas hover:bg-white disabled:bg-surface-3 disabled:text-ink-faint',
+        primary: 'bg-ink text-canvas hover:bg-white',
         secondary: 'bg-surface-3 text-ink hover:bg-surface-3/70 disabled:opacity-60',
         ghost: 'text-ink-dim hover:bg-surface-3 hover:text-ink disabled:opacity-60',
         destructive: 'bg-slower/12 text-slower hover:bg-slower/20 disabled:opacity-60',
@@ -40,10 +42,19 @@ const buttonVariants = cva(
         md: 'min-h-12 px-4 py-3 text-sm',
         lg: 'min-h-14 px-6 py-4 text-base',
       },
+      busy: {
+        true: '',
+        false: '',
+      },
     },
+    compoundVariants: [
+      { variant: 'primary', busy: false, className: 'disabled:bg-surface-3 disabled:text-ink-faint' },
+      { variant: 'primary', busy: true, className: 'disabled:opacity-60' },
+    ],
     defaultVariants: {
       variant: 'primary',
       size: 'md',
+      busy: false,
     },
   }
 );
@@ -66,7 +77,9 @@ const HOLD_FILL: Record<ButtonVariant, string> = {
   destructive: 'rgba(255,83,71,0.45)',
 };
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
+interface ButtonProps
+  extends ButtonHTMLAttributes<HTMLButtonElement>,
+    Omit<VariantProps<typeof buttonVariants>, 'busy'> {
   fullWidth?: boolean;
   loading?: boolean;
   asChild?: boolean;
@@ -251,7 +264,7 @@ export function Button({
       <Slot
         {...slotProps}
         className={cn(
-          buttonVariants({ variant, size }),
+          buttonVariants({ variant, size, busy: loading || success }),
           fullWidth && 'w-full',
           isDisabled && 'pointer-events-none',
           className,
@@ -346,7 +359,7 @@ export function Button({
       disabled={isDisabled}
       aria-busy={loading}
       className={cn(
-        buttonVariants({ variant, size }),
+        buttonVariants({ variant, size, busy: loading || success }),
         fullWidth && 'w-full',
         holdToConfirm && 'touch-none select-none',
         className,
