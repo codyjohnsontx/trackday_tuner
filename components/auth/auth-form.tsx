@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/surface';
 import { type OAuthProvider, type OAuthProviderConfig } from '@/lib/auth/providers';
 import { createClient } from '@/lib/supabase/client';
+import { cn } from '@/lib/utils';
 
 type AuthMode = 'sign-in' | 'sign-up' | 'reset';
 
@@ -23,6 +24,12 @@ interface AuthFormProps {
    */
   nextPath?: string;
 }
+
+// The mode tabs are disabled while a request is in flight, and a disabled
+// primary Button recedes to a dark fill. On the selected tab that would read
+// darker than the unselected one, as if the other mode were active, so it
+// keeps the dimmed white pill instead.
+const SELECTED_TAB_WHILE_LOADING ='disabled:bg-ink disabled:text-canvas disabled:opacity-60';
 
 export function AuthForm({ providers: oauthProviders, inviteOnly = false, initialError = '', nextPath = '/dashboard' }: AuthFormProps) {
   const router = useRouter();
@@ -222,7 +229,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
         <div className="grid grid-cols-2 gap-2 rounded-row bg-surface-2 p-1">
           <Button
             variant={mode === 'sign-in' ? 'primary' : 'secondary'}
-            className="min-h-11"
+            className={cn('min-h-11', mode === 'sign-in' && SELECTED_TAB_WHILE_LOADING)}
             disabled={loading}
             onClick={() => switchMode('sign-in')}
           >
@@ -230,7 +237,7 @@ export function AuthForm({ providers: oauthProviders, inviteOnly = false, initia
           </Button>
           <Button
             variant={mode === 'sign-up' ? 'primary' : 'secondary'}
-            className="min-h-11"
+            className={cn('min-h-11', mode === 'sign-up' && SELECTED_TAB_WHILE_LOADING)}
             disabled={loading}
             onClick={() => switchMode('sign-up')}
           >

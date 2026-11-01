@@ -222,7 +222,8 @@ export function VehicleForm({ vehicle }: VehicleFormProps) {
       <Button
         type="submit"
         fullWidth
-        disabled={isPending || !nickname.trim()}
+        disabled={!nickname.trim()}
+        loading={isPending}
       >
         {isPending ? 'Saving...' : isEditing ? 'Save Changes' : 'Add Vehicle'}
       </Button>

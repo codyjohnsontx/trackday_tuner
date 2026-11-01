@@ -57,7 +57,7 @@ export function UpgradeToProButton({ fullWidth = false, className }: BillingButt
         fullWidth={fullWidth}
         className={className}
         onClick={handleUpgrade}
-        disabled={loading}
+        loading={loading}
       >
         {loading ? 'Redirecting...' : 'Upgrade to Pro'}
       </Button>
