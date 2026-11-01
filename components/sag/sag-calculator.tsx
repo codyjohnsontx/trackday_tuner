@@ -269,7 +269,7 @@ export function SagCalculator({ initialEntries, demoMode = false }: SagCalculato
               {draftMessage ? <p className="text-sm text-faster">{draftMessage}</p> : null}
 
               <div className="grid grid-cols-2 gap-2">
-                <Button type="submit" fullWidth disabled={isPending}>
+                <Button type="submit" fullWidth loading={isPending}>
                   {isPending ? 'Saving...' : 'Save'}
                 </Button>
                 <Button type="button" variant="secondary" fullWidth onClick={resetAll}>

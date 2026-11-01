@@ -97,7 +97,7 @@ export function TrackForm({ initialTrack, onSuccessPath = '/tracks' }: TrackForm
       ) : null}
       {draftMessage ? <p className="text-sm text-faster">{draftMessage}</p> : null}
 
-      <Button type="submit" fullWidth disabled={isPending}>
+      <Button type="submit" fullWidth loading={isPending}>
         {isPending ? 'Saving...' : isEditing ? 'Save Track' : 'Add Track'}
       </Button>
     </form>
