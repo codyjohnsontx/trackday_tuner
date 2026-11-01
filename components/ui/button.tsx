@@ -17,17 +17,23 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  'relative isolate inline-flex items-center justify-center overflow-hidden rounded-control font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98]',
+  'relative isolate inline-flex items-center justify-center overflow-hidden rounded-control font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/80 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:cursor-not-allowed active:scale-[0.98]',
   {
     variants: {
       variant: {
         // The primary action is a white fill rather than an accent fill. Amber
         // stays reserved for marking state (active tab, focus, live values), so
         // a screen never has to compete with its own call to action.
-        primary: 'bg-ink text-canvas hover:bg-white',
-        secondary: 'bg-surface-3 text-ink hover:bg-surface-3/70',
-        ghost: 'text-ink-dim hover:bg-surface-3 hover:text-ink',
-        destructive: 'bg-slower/12 text-slower hover:bg-slower/20',
+        //
+        // Disabled, it recedes to a surface fill with muted text rather than
+        // dimming. Sixty percent of white on the canvas was still the brightest
+        // thing on the page, so a disabled Download CSV or Add Vehicle pulled
+        // the eye to the one control that did nothing. The other variants are
+        // already dark, so dimming them is what recedes.
+        primary: 'bg-ink text-canvas hover:bg-white disabled:bg-surface-3 disabled:text-ink-faint',
+        secondary: 'bg-surface-3 text-ink hover:bg-surface-3/70 disabled:opacity-60',
+        ghost: 'text-ink-dim hover:bg-surface-3 hover:text-ink disabled:opacity-60',
+        destructive: 'bg-slower/12 text-slower hover:bg-slower/20 disabled:opacity-60',
       },
       size: {
         sm: 'min-h-11 px-3 py-2 text-xs',
