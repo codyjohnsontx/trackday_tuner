@@ -216,4 +216,5 @@ each suite needs.
 - [docs/ai-mvp-spec.md](docs/ai-mvp-spec.md): the AI feature spec
 - [docs/monitoring.md](docs/monitoring.md): monitoring runbook
 - [docs/beta-runbook.md](docs/beta-runbook.md): operating the hosted project
-- [CLAUDE.md](CLAUDE.md): engineering notes for contributors and coding agents
+- [CLAUDE.md](CLAUDE.md): engineering notes for contributors and coding agents,
+  with area detail in [.agents/skills/](.agents/skills/)
