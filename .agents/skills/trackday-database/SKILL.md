@@ -46,7 +46,7 @@ grants by hand" in `docs/beta-runbook.md`.
 - A new migration also needs a probe in `scripts/build-migration-audit.mjs` and
   `npm run db:audit` re-run to regenerate the committed query; the unit suite
   fails until both are done. The audit is what answers whether the *hosted*
-  project has the migration - see the note under "Production Monitoring"
+  project has the migration - see "Production Monitoring" in the `trackday-monitoring` skill
 - `create table`, `create index`, and `create function` statements are written
   idempotently (`if not exists` / `or replace`). `create policy` is not, so a
   half-applied migration cannot simply be replayed — check `db:status` first. The
@@ -193,7 +193,7 @@ from `NEXT_PUBLIC_SUPABASE_URL` when `next.config.ts` loads - so a local stack
 renders its own photos and the rule is not a second copy of the URL. It once named
 `*.supabase.co` alone, and the garage threw on every local photo while the spec
 passed, because nothing looked at the card. Seeded tracks are a migration too -
-see "A circuit is an identity" under "What a Rider Told You".
+see "A circuit is an identity" in the `trackday-session-domain` skill.
 
 **Retained AI question text (`ai_request_text`, 20260924001700) is the one table a
 rider may DELETE and must never UPDATE or INSERT.** Deleting is the rider's control

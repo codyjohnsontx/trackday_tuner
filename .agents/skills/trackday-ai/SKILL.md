@@ -249,8 +249,8 @@ that question.
 wrote the value in it.** Previous recommendations were once excluded as "already
 through `evaluateAdvicePolicy`" - true of the row at insert and untrue when it is
 read back, because `authenticated` holds `update` on `ai_recommendations` and RLS
-picks the row, not the column (the `profiles.tier` argument in the migrations
-section, one table over). Same for `telemetry_summaries`, which `authenticated`
+picks the row, not the column (the `profiles.tier` argument in the
+`trackday-database` skill). Same for `telemetry_summaries`, which `authenticated`
 can insert and update outright, so its `metrics` blob is screened as the string
 the prompt prints. What stays excluded is text no rider can reach (the day trend,
 a similar session's match reasons) and values a DATABASE constraint pins

@@ -817,7 +817,7 @@ function collectRaceEngineerContextRiderText(
   // `update` on `ai_recommendations`, and RLS picks the row rather than the
   // column, so a rider can PATCH their own row's `component`, `direction`,
   // `magnitude` and `predicted_effect` to anything - the same shape as the
-  // `profiles.tier` finding in .agents/skills/trackday-ai/SKILL.md. `evaluateAdvicePolicy` ran before the
+  // `profiles.tier` finding in .agents/skills/trackday-database/SKILL.md. `evaluateAdvicePolicy` ran before the
   // insert and cannot speak for what the row says when it is read back.
   //
   // A skip, so a match drops the row from the prompt instead of refusing the
