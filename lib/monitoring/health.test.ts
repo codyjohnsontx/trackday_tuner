@@ -67,7 +67,7 @@ describe('checkSupabase', () => {
 
   // The R3-shaped hole: `PGRST205` is what PostgREST answers when the table is
   // gone or the schema cache is stale after a migration - the same family as the
-  // `PGRST202` incident in CLAUDE.md. Every rider-facing page is broken and the
+  // `PGRST202` incident in .agents/skills/trackday-monitoring/SKILL.md. Every rider-facing page is broken and the
   // health check has to say so rather than report a healthy deployment.
   it('fails when PostgREST cannot find the table', async () => {
     stubPostgrest(404, {

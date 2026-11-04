@@ -22,7 +22,8 @@ import type {
  * separate app, and `sessions.tires`, `suspension`, `alignment` and
  * `extra_modules` are shape-unconstrained `jsonb`: whatever arrives is stored
  * verbatim, and a number where a screen expects a string takes the sessions list
- * down (see "The same unconstrained column" in CLAUDE.md). So every leaf of those
+ * down (see "The same unconstrained column" in
+ * .agents/skills/trackday-ai/SKILL.md). So every leaf of those
  * blobs is required to be the type its TypeScript declares, and an unknown key is
  * refused rather than stored, so a typo in the app surfaces as a 400 instead of a
  * field nobody reads. Which keys a setup blob may hold comes from `SETUP_FIELDS`,

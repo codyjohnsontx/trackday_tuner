@@ -81,7 +81,7 @@ import { describe, expect, it } from 'vitest';
 // every ordinary statement against a table that does exist and a guard that
 // cries wolf gets skipped. It also says nothing about the hosted project, whose
 // applied history is recorded remotely and cannot be read from these files at
-// all - see the migration notes in CLAUDE.md.
+// all - see .agents/skills/trackday-database/SKILL.md.
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(testDir, '../../supabase/migrations');
@@ -239,7 +239,8 @@ function namesPublic(roleList: string | undefined): boolean {
 // revoked, and a null proacl is execute to public, so the function ships callable
 // by an unauthenticated PostgREST caller while running as its owner and bypassing
 // every RLS policy. The routines default privilege in 20260719001100 does not
-// reach it - that was measured, not reasoned about, and is written up in CLAUDE.md.
+// reach it - that was measured, not reasoned about, and is written up in
+// .agents/skills/trackday-database/SKILL.md.
 //
 // The decision, not the lockdown, is what is required. Either spelling passes:
 //   revoke ... on function public.f(...) from public, ...   -- not callable by all
@@ -490,7 +491,7 @@ const AUTH_USERS_TRIGGER_EVENT = new RegExp(
 // A function's declaration *including* its body, and the last one wins. Everything
 // else here reads the first declaration it finds, which is right for a table but
 // wrong for a function: `create or replace` in a later migration supersedes the
-// earlier body entirely, and CLAUDE.md sends every correction to a new migration,
+// earlier body entirely, and the trackday-database skill sends every correction to a new migration,
 // so the later file is where a rewritten body would actually arrive.
 //
 // functionStatements() above deliberately drops the body, because it is reading
@@ -563,7 +564,7 @@ function lastFunctionDeclaration(
 // firing for ordinary traffic; a trigger pointed at
 // a function no migration defines; and a function whose *last* declaration runs on
 // signup without inserting the row, whether that declaration
-// is the original or a `create or replace` in a later migration. CLAUDE.md sends
+// is the original or a `create or replace` in a later migration. The trackday-database skill sends
 // every correction to a new migration, so a later file is the ordinary way any of
 // those would arrive, not a hypothetical - which is why judging the first match
 // would have caught none of them.
@@ -1045,7 +1046,7 @@ describe('the profiles-writer check, against migrations written wrongly on purpo
   });
 
   // The four below are the regression arriving in a *later* migration, which is
-  // where CLAUDE.md sends every correction and so the only realistic place any of
+  // where the trackday-database skill sends every correction and so the only realistic place any of
   // this would change. Each pairs the schema as 20260816001200 leaves it with one
   // file undoing it. A guard that stopped at the first migration installing a
   // trigger passed all four, which is what these were written to watch fail.

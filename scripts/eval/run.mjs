@@ -406,7 +406,7 @@ function buildVehicle(caseInput, ids) {
  * than inventing one, and `PLACEHOLDER_SESSION_REFERENCES` in `lib/rag/schema.ts`
  * now normalises it to null at the parser. The entry is a record of what was
  * true on the day it was written and is append-only, so the correction lives
- * here and in CLAUDE.md rather than inside it - read the two together. No metric
+ * here and in .agents/skills/trackday-rag-eval/SKILL.md rather than inside it - read the two together. No metric
  * moved, so there was no re-baseline to carry it into `eval-baseline.json`.
  */
 const BASELINE_LIVE_RERECORDS = [{
@@ -2488,8 +2488,8 @@ async function report(ctx) {
    * requests that went to the network, failed ones included as unmeasured
    * calls. Both endpoints are counted - the tape is the one place an
    * embedding call is still visible, since `embedQuery` discards its usage -
-   * so each is the whole bill rather than the completion half of it. AGENTS.md
-   * carries the dollar figure, its prices and the date they were read.
+   * so each is the whole bill rather than the completion half of it.
+   * .agents/skills/trackday-rag-eval/SKILL.md carries the dollar figure, its prices and the date they were read.
    */
   const printUsage = (rows) => {
     for (const entry of rows) {

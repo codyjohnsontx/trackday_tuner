@@ -8,7 +8,7 @@ import { compile } from 'tailwindcss';
 import { describe, expect, it } from 'vitest';
 import { PageHeader } from '@/components/ui/page-header';
 
-// Guards the page-title face recorded in CLAUDE.md ("Type"): a page title
+// Guards the page-title face recorded in .agents/skills/trackday-ui/SKILL.md ("Type"): a page title
 // rendered by `PageHeader` has to come out of the real stylesheet as Barlow
 // Semi Condensed 600, the face app/layout.tsx loads into
 // `--font-barlow-semi-condensed`.

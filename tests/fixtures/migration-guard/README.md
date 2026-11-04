@@ -86,7 +86,7 @@ cascade takes the dependent trigger silently.
 with the identifier spelled `On_Auth_User_Created`: Postgres folds unquoted names,
 so that is the same trigger, and a guard keying its bookkeeping on the name as
 written was evadable by changing the spelling. All five arrive in a later file
-because CLAUDE.md sends every correction to a new migration, which is what makes
+because the trackday-database skill sends every correction to a new migration, which is what makes
 them the realistic shape of this regression and not a contrived one. The guard used
 to pass all five.
 

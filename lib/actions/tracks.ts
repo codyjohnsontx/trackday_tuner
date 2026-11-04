@@ -55,7 +55,8 @@ export async function getTracks(): Promise<Track[]> {
  * A failed read degrades to an empty index rather than refusing: the rider can
  * still type their circuit and `resolveSessionTrack` still resolves it
  * server-side. What they lose is the typeahead offering it, which is a worse
- * form and not a lost session. See the sibling-readers note in CLAUDE.md for
+ * form and not a lost session. See the sibling-readers note in
+ * .agents/skills/trackday-data-access/SKILL.md for
  * which reads may do this and which may not.
  */
 export async function getTrackDirectory(): Promise<TrackDirectory> {
