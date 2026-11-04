@@ -24,7 +24,7 @@ export default async function ServiceBookPage({ params }: ServiceBookPageProps) 
   const result = await getServiceBook(id);
 
   if (!result.ok && result.error === 'Vehicle not found.') notFound();
-  // Demo is a tour, so it offers no link to make (CLAUDE.md, "The Demo Is Read-Only").
+  // Demo is a tour, so it offers no link to make (.agents/skills/trackday-demo/SKILL.md).
   const [shares, handover] =
     result.ok && result.data.data && !demoMode ? await Promise.all([getServiceBookShares(id), getServiceBookHandover(id)]) : [null, null];
   // A sold bike's book is the seller's read-only copy (owner, TQ3): no

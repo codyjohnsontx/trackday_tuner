@@ -132,7 +132,8 @@ export function tallyMissedSources(perCase) {
  * without going stale: tokens. A price table committed here would be a number
  * nobody re-checks, drifting silently against the vendor's - and the model is
  * about to change, which is exactly when a stale price misleads most. The
- * dollar figure, its prices and the date they were read live in AGENTS.md,
+ * dollar figure, its prices and the date they were read live in
+ * .agents/skills/trackday-rag-eval/SKILL.md,
  * derived from these counts.
  *
  * The caller picks the ledger. `OpenAiTape.usage` totals every response the

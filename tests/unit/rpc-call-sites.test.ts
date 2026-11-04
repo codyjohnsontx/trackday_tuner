@@ -12,7 +12,7 @@ import { REQUIRED_RPCS } from '@/lib/monitoring/schema-contract';
  * keeps answering 200 with `detail: "3 rpcs"` - green because it was never
  * asked.
  *
- * That rule lived only as prose in CLAUDE.md, and this repository already
+ * That rule lived only as prose in the agent notes, and this repository already
  * decided prose is not enough for the neighbouring invariant: `next.config.ts`'s
  * `outputFileTracingIncludes` is the same shape and
  * `tests/unit/rag-index-bundling.test.ts` walks the import graph to hold it.

@@ -280,7 +280,8 @@ test.describe('handing a bike to a buyer', () => {
       // The copied entry opens read-only and remove-only, with its receipt actually rendering.
       // Opened by its link rather than a click: a client navigation into the
       // entry page under `next start` is not reliable enough to hang a walk on
-      // (CLAUDE.md, "Load the browser Supabase client lazily").
+      // (.agents/skills/trackday-service-book/SKILL.md, on loading the browser
+      // Supabase client lazily).
       const entryHref = await rows.getAttribute('href');
       expect(entryHref).toMatch(/\/book\/entries\/[0-9a-f-]{36}$/);
       await gotoPage(buyerPage, entryHref!);

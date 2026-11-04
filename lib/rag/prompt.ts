@@ -629,7 +629,7 @@ function collectEnvironmentRiderText(
  *
  * The date alone is ambiguous exactly where it is most often used. Sessions on
  * one track day all carry the same `date` (see the list-ordering note in
- * CLAUDE.md), `fetchPreviousSession` usually returns an earlier one from that
+ * .agents/skills/trackday-data-access/SKILL.md), `fetchPreviousSession` usually returns an earlier one from that
  * same day, and the similar-session search draws from it too - so a rider told
  * to edit "the notes on your 2026-04-01 session" can have three of them open
  * and no way to tell which. A stored-text refusal repeats until the offending
@@ -817,7 +817,7 @@ function collectRaceEngineerContextRiderText(
   // `update` on `ai_recommendations`, and RLS picks the row rather than the
   // column, so a rider can PATCH their own row's `component`, `direction`,
   // `magnitude` and `predicted_effect` to anything - the same shape as the
-  // `profiles.tier` finding in CLAUDE.md. `evaluateAdvicePolicy` ran before the
+  // `profiles.tier` finding in .agents/skills/trackday-ai/SKILL.md. `evaluateAdvicePolicy` ran before the
   // insert and cannot speak for what the row says when it is read back.
   //
   // A skip, so a match drops the row from the prompt instead of refusing the

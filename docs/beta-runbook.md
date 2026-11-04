@@ -7,7 +7,8 @@
    baseline `20260223000000` first, then everything between it and the tail,
    including `20260224000100`, `20260228000200` and `20260422000400`. `supabase
    start` and `db push` do this for you; the point is that no file in that range
-   is optional. See "Building a database from nothing" in CLAUDE.md.
+   is optional. See "Building a database from nothing" in
+   `.agents/skills/trackday-database/SKILL.md`.
    The beta-specific tail of that same order is `20260716000800` (session
    outcomes), `20260717000900` (session laps), `20260718001000` (beta
    foundation), then `20260719001100` (the Data API grants), then
@@ -134,7 +135,7 @@ accept it fails all signups rather than only the new path.
 That is worth checking rather than assuming, because these four tables were
 originally made by hand in the dashboard and `npm run db:status` compares
 recorded migration versions, not schema - it cannot see a column added or
-tightened in the dashboard afterwards (see CLAUDE.md). The trigger supplies `id`
+tightened in the dashboard afterwards (see `.agents/skills/trackday-database/SKILL.md`). The trigger supplies `id`
 and `tier` and nothing else, so two things can stop its insert, and each has a
 query.
 
@@ -212,7 +213,7 @@ The expected result is zero rows, because every rider so far arrived through the
 beta invite route, which creates the profile itself. **That expectation has not
 been verified against the hosted project** - this repository carries no linked
 project ref or hosted credentials, and `supabase login` / `supabase link` are the
-operator's interactive steps rather than an agent's (see CLAUDE.md). Treat it as
+operator's interactive steps rather than an agent's (see `.agents/skills/trackday-database/SKILL.md`). Treat it as
 an open check, not a confirmed "none".
 
 Two paths leave an `auth.users` row with no profile, so the query is worth
@@ -359,7 +360,7 @@ What it deliberately leaves alone: `service_role` keeps whatever the platform
 already gave it (it is the trusted server identity and bypasses RLS either
 way), the legacy default privilege on *functions* for the Data API roles is
 not withdrawn (a new function's own migration decides its execute, exactly as
-CLAUDE.md requires), and no function other than the two named changes hands.
+`.agents/skills/trackday-database/SKILL.md` requires), and no function other than the two named changes hands.
 A `function ... does not exist` error on one of those two means the hosted
 project is missing an RPC the app calls, which is a finding to escalate, not a
 line to delete.

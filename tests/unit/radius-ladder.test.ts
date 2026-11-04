@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-// Guards the radius ladder recorded in CLAUDE.md and in the `@theme` block of
+// Guards the radius ladder recorded in .agents/skills/trackday-ui/SKILL.md and in the `@theme` block of
 // app/globals.css: card 10px, row 8px, plate 6px, control 6px, with the Button
 // taking its shape from the `control` rung.
 //

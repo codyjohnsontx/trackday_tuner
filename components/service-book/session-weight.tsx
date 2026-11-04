@@ -34,7 +34,7 @@ import { cn } from '@/lib/utils';
  * from before the click. A save the server confirmed is the rider's stored
  * word, so it is shown from here; a fresh render replaces it with what the
  * server read. The drop itself was React losing a Suspense ping, fixed by the
- * React that Next 16.3 and later vendor (CLAUDE.md, "The Service Book"); this
+ * React that Next 16.3 and later vendor (.agents/skills/trackday-service-book/SKILL.md); this
  * stays because a confirmed save read back at once is the better screen.
  */
 function useStoredWeight(weight: number | null): [number | null, (saved: number) => void] {

@@ -162,8 +162,8 @@ and execution order may legitimately diverge; the reason is recorded there.
    migration cleanly and then answered every PostgREST request with
    `permission denied for table ...`. `20260719001100_grant_data_api_access.sql`
    closes that, and `tests/unit/migrations-bootstrap.test.ts` guards both. The
-   mechanics and the hosted-project caveat are in CLAUDE.md under "Building a
-   database from nothing".
+   mechanics and the hosted-project caveat are in `.agents/skills/trackday-database/SKILL.md`
+   under "Building a database from nothing".
 
    Remaining: the hosted project carries no CLI migration history at all (as of
    2026-08-25), so it has recorded neither the baseline nor anything else;

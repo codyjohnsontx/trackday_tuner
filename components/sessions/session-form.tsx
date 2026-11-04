@@ -1010,7 +1010,7 @@ export function SessionForm({
             <label htmlFor="session-layout" className="block text-sm font-medium text-ink-dim">
               Layout <span className="font-normal text-ink-faint">(optional)</span>
             </label>
-            {/* Native, like Vehicle above: see "UI Component Rules" in CLAUDE.md. */}
+            {/* Native, like Vehicle above: see "UI Component Rules" in .agents/skills/trackday-ui/SKILL.md. */}
             <select
               id="session-layout"
               className="w-full rounded-row bg-surface-3 px-3 py-3 text-sm text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-signal/80"

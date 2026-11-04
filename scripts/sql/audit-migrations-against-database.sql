@@ -9,7 +9,7 @@
 -- `supabase_migrations.schema_migrations` history for `npm run db:status` to
 -- read. It asks the schema what is there rather than asking the CLI what it was
 -- told, which is the only question that can be answered on this project today
--- (CLAUDE.md, "Database Migrations").
+-- (.agents/skills/trackday-database/SKILL.md, "Database Migrations").
 --
 -- Each row names one migration and the object that migration is the only thing
 -- to create. `present = false` means that migration has not been applied - or was

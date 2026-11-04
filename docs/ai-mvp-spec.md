@@ -113,7 +113,7 @@ rider sees it.
   layer reads the response, so `lib/rag/premise-guard.ts` reads what was asked
   and `/api/ai/tuning-advice` stamps the rejection after `evaluateAdvicePolicy`,
   which is why it survives a force-refusal. The rider gets the warning *and* the
-  setup advice. AGENTS.md owns the boundary and what it deliberately misses.
+  setup advice. `.agents/skills/trackday-ai/SKILL.md` owns the boundary and what it deliberately misses.
 - Screen every rider-authored field a request submits for prompt injection, not
   the question alone: `symptoms` and `change_intent` are printed into the prompt
   too (`lib/rag/domain-guard.ts`).
@@ -122,7 +122,7 @@ rider sees it.
   without this request submitting anything. Both live routes run
   `classifyStoredRiderText` (`lib/rag/domain-guard.ts`) over a per-route
   collector in `lib/rag/prompt.ts`; those collectors own the field list and the
-  exclusions, and AGENTS.md explains why the two passes use different patterns.
+  exclusions, and `.agents/skills/trackday-ai/SKILL.md` explains why the two passes use different patterns.
 
 ## Rate Limiting + Abuse Controls
 
@@ -180,5 +180,5 @@ Read the criterion against `eval-baseline.json` alone.
 
 The 85% is a target the harness prints and deliberately does not enforce; what
 gates CI is a metric regressing against the committed `eval-baseline.json`.
-AGENTS.md ("The RAG Eval Harness") owns the reasoning and the operating
+`.agents/skills/trackday-rag-eval/SKILL.md` owns the reasoning and the operating
 instructions - do not restate them here.
