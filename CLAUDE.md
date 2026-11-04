@@ -138,7 +138,7 @@ fails on one that does not. `trackday-demo` has the rest.
   CI gate; behaviour that lives in the database is proven there, not with a faked client
 - `npm run test:e2e` is a CI gate on `iphone-safari` and `android-chrome` against a production build;
   `TESTING.md` owns the environment, and a new spec is watched failing before it passes
-- A run with any failure, skip or error is not verified; report its pass/fail counts and the
+- A run with any failing test or error is not verified; report its pass/fail counts and the
   failing test names instead
 - `trackday-testing` has the detail
 
