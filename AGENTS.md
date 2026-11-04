@@ -2335,6 +2335,20 @@ monitor that reads what it does not understand as healthy is the defect it
 exists to catch. Adding a status to `updateRequestLog` means classifying it in
 `lib/monitoring/ai-health.ts`.
 
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in this repo's GitHub Issues (`codyjohnsontx/trackday_tuner`), through the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels, each equal to its role name: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` (the glossary) and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.
